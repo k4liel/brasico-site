@@ -50,7 +50,7 @@ function buildHandler(token: string) {
       // ---------- Projetos ----------
       server.tool(
         "listar_projetos",
-        "Lista os projetos do Brasico e indica qual está ativo nesta conversa. Use primeiro, antes de ler ou editar.",
+        "Lista os projetos do Brasico e indica qual está ativo nesta conversa, e também os que estão na Lixeira. Use primeiro, antes de ler ou editar.",
         {},
         async () => call("mcp_listar_projetos")
       );
@@ -74,6 +74,20 @@ function buildHandler(token: string) {
         "Muda o nome do projeto ativo.",
         { nome: z.string().min(1) },
         async ({ nome }) => call("mcp_renomear_projeto", { p_nome: nome })
+      );
+
+      server.tool(
+        "remover_projeto",
+        "Manda um projeto para a Lixeira: ele some da lista da equipe, mas fica guardado e pode voltar com restaurar_projeto. Confirme com o usuário antes, dizendo o nome do projeto. Você não consegue excluir um projeto para sempre; isso só se faz no site, na Lixeira.",
+        { projeto_id: z.string().uuid() },
+        async ({ projeto_id }) => call("mcp_remover_projeto", { p_projeto: projeto_id })
+      );
+
+      server.tool(
+        "restaurar_projeto",
+        "Tira um projeto da Lixeira e devolve à lista (veja 'lixeira' em listar_projetos).",
+        { projeto_id: z.string().uuid() },
+        async ({ projeto_id }) => call("mcp_restaurar_projeto", { p_projeto: projeto_id })
       );
 
       server.tool(

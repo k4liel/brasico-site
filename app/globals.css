@@ -408,3 +408,15 @@ section.folha[id], section.secao[id] { scroll-margin-top: 72px; }
 .visor-alt { flex: 1; overflow: auto; display: grid; justify-items: center; align-content: start; gap: 16px; padding: 20px; background: #525659; }
 .visor-alt img { width: min(420px, 100%); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
 .visor-abrir { padding: 12px 22px; border-radius: 10px; background: var(--gold); color: #fff; font-weight: 600; text-decoration: none; }
+
+/* Lixeira de projetos */
+.lixeira { margin-top: 40px; }
+.lixeira-botao { font-size: 14px; }
+.lixeira-lista { list-style: none; margin: 12px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.lixeira-lista li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
+.lixeira-lista li + li { border-top: 1px solid var(--border); }
+.lixeira-nome { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.lixeira-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.botao-excluir { color: var(--danger); }
+.aviso-lixeira { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 12px auto 0; padding: 12px 16px; max-width: 900px; border: 1px solid var(--danger); border-radius: 12px; background: var(--panel); }
+.aviso-lixeira span { flex: 1 1 260px; }

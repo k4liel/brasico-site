@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { haQuanto } from "@/lib/tempo";
 import Topo from "./Topo";
 
-type Projeto = { id: string; name: string; created_at: string };
+type Projeto = { id: string; name: string; created_at: string; removido_em: string | null };
 type Info = { capitulos: number; quando: string | null; quem: string | null; claude: boolean };
 
 export default function Central({ userId, userEmail }: { userId: string; userEmail: string }) {
@@ -15,15 +15,21 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
   const [temClaude, setTemClaude] = useState(true);
   const [criando, setCriando] = useState(false);
   const [nome, setNome] = useState("");
+  const [lixeira, setLixeira] = useState<Projeto[]>([]);
+  const [verLixeira, setVerLixeira] = useState(false);
 
   async function carregar() {
     await supabase.rpc("accept_invites");
     const [{ data: ws }, { data: tk }] = await Promise.all([
-      supabase.from("workspaces").select("id,name,created_at").order("created_at"),
+      supabase.from("workspaces").select("id,name,created_at,removido_em").order("created_at"),
       supabase.from("mcp_tokens").select("id").eq("user_id", userId).is("revoked_at", null).limit(1),
     ]);
-    const lista = (ws as Projeto[]) ?? [];
+    const todos = (ws as Projeto[]) ?? [];
+    const lista = todos.filter((p) => !p.removido_em);
     setProjetos(lista);
+    setLixeira(
+      todos.filter((p) => p.removido_em).sort((a, b) => (b.removido_em ?? "").localeCompare(a.removido_em ?? ""))
+    );
     setTemClaude(!!tk?.length);
     if (!lista.length) return;
 
@@ -60,6 +66,27 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function restaurar(p: Projeto) {
+    const { error } = await supabase.rpc("restaurar_projeto", { p_projeto: p.id });
+    if (error) return alert(error.message);
+    carregar();
+  }
+
+  async function excluirParaSempre(p: Projeto) {
+    const digitado = window.prompt(
+      `Excluir "${p.name}" para sempre?
+
+O projeto, os capítulos, as versões e o histórico serão apagados e não dá para desfazer (só pelo backup semanal).
+
+Para confirmar, digite o nome do projeto:`
+    );
+    if (digitado === null) return;
+    if (digitado.trim() !== p.name.trim()) return alert("O nome digitado não confere. Nada foi excluído.");
+    const { error } = await supabase.rpc("excluir_projeto_para_sempre", { p_projeto: p.id, p_nome: digitado });
+    if (error) return alert(error.message);
+    carregar();
+  }
 
   async function criar(e: React.FormEvent) {
     e.preventDefault();
@@ -131,6 +158,30 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
               );
             })}
           </div>
+        )}
+
+        {lixeira.length > 0 && (
+          <section className="lixeira">
+            <button className="ghost lixeira-botao" onClick={() => setVerLixeira(!verLixeira)} aria-expanded={verLixeira}>
+              Lixeira · {lixeira.length} projeto{lixeira.length === 1 ? "" : "s"} {verLixeira ? "▴" : "▾"}
+            </button>
+            {verLixeira && (
+              <ul className="lixeira-lista">
+                {lixeira.map((p) => (
+                  <li key={p.id}>
+                    <span className="lixeira-nome">
+                      {p.name}
+                      <span className="muted small"> · removido {haQuanto(p.removido_em!)}</span>
+                    </span>
+                    <span className="lixeira-acoes">
+                      <button className="ghost" onClick={() => restaurar(p)}>Restaurar</button>
+                      <button className="ghost danger" onClick={() => excluirParaSempre(p)}>Excluir para sempre</button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
       </main>
     </div>

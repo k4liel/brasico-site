@@ -38,7 +38,8 @@ O site é só para **ver**. Quem cria, edita e organiza é o Claude de cada um.
 1. **Entrar:** e-mail e senha (ou link por e-mail).
 2. **Projetos:** a página inicial mostra os projetos, com quem mexeu por último.
 3. **Dentro do projeto:** o documento em dois jeitos de ver — **Página** (largura da tela) ou **PDF** (folhas A4) — e os botões **Sumário** e **Mudanças**, que abrem painéis por cima e somem quando fechados. Atualiza sozinho quando qualquer Claude mexe.
-4. **Claude e equipe:** cada pessoa gera o próprio link e cola no Claude em *Configurações → Conectores → Adicionar conector personalizado*. Um link vale para todos os projetos. Na mesma página, convide o sócio: quem está na equipe vê todos os projetos, inclusive os novos.
+4. **Excluir um projeto:** botão **Excluir** dentro do projeto (ou peça ao Claude). Ele vai para a **Lixeira**, no fim da página de projetos, de onde dá para **Restaurar** ou **Excluir para sempre** (digitando o nome).
+5. **Claude e equipe:** cada pessoa gera o próprio link e cola no Claude em *Configurações → Conectores → Adicionar conector personalizado*. Um link vale para todos os projetos. Na mesma página, convide o sócio: quem está na equipe vê todos os projetos, inclusive os novos.
 
 Exemplos de pedido ao Claude: “liste meus projetos no Brasico”, “crie o projeto Carnaval 2027 com capa e cardápio”, “no projeto X, refaça o capítulo de custos”.
 
@@ -70,6 +71,7 @@ O número no começo do título (`03 · Cardápio`) define a ordem. Cada projeto
 | Ferramenta | O que faz |
 |---|---|
 | `listar_projetos`, `usar_projeto`, `criar_projeto`, `renomear_projeto` | Projetos |
+| `remover_projeto`, `restaurar_projeto` | Mandar um projeto para a Lixeira e trazer de volta (o Claude nunca exclui de vez) |
 | `ver_documento`, `definir_rodape`, `definir_abas` | Documento inteiro, rodapé e abas |
 | `listar_notas`, `ler_nota`, `criar_nota`, `atualizar_nota` | Capítulos (`atualizar_nota` exige a `versao` lida, para um Claude não apagar o trabalho do outro) |
 | `versoes_capitulo`, `versoes_estilo`, `ler_versao`, `restaurar_versao` | Versões anteriores: desfazer qualquer mudança |

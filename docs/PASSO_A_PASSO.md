@@ -90,6 +90,7 @@ O site é para ver; tudo se pede ao Claude.
 |---|---|
 | Começar um projeto | "Crie no Brasico o projeto Carnaval 2027, com capa e um capítulo de cardápio" |
 | Mudar um capítulo | "No projeto X, refaça o capítulo de custos com o novo público" |
+| Excluir um projeto | Botão **Excluir** no projeto, ou "mande o projeto X para a Lixeira". Restaurar ou excluir para sempre: seção **Lixeira** no fim da página de projetos |
 | Tirar um capítulo | "Remova o capítulo 11 do projeto X" (dá para restaurar depois) |
 | Saber o que mudou | Olhe *Últimas mudanças* no projeto, ou peça "o que mudou hoje no projeto X?" |
 

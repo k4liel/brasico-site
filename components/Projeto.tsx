@@ -9,7 +9,7 @@ import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
 
-type Info = { id: string; name: string; doc_rodape: string | null; doc_css: string | null; doc_abas: boolean | null };
+type Info = { id: string; name: string; doc_rodape: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null };
 type Nota = { id: string; title: string; content: string; archived_at: string | null };
 type Log = { id: string; user_id: string | null; action: string; entity: string; details: string | null; source: string; created_at: string };
 type Perfil = { id: string; email: string | null; display_name: string | null };
@@ -20,6 +20,9 @@ const VERBO: Record<string, string> = {
   archive: "removeu",
   restore: "restaurou",
   delete: "apagou",
+  restore_version: "voltou a uma versão anterior:",
+  trash: "mandou para a Lixeira",
+  untrash: "tirou da Lixeira",
 };
 const COISA: Record<string, string> = {
   notes: "o capítulo",
@@ -68,7 +71,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   useEffect(() => {
     (async () => {
       await supabase.rpc("accept_invites");
-      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_css,doc_abas").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_css,doc_abas,removido_em").eq("id", projectId).maybeSingle();
       setInfo((data as Info) ?? null);
       const { data: m } = await supabase.from("workspace_members").select("user_id").eq("workspace_id", projectId);
       const ids = (m ?? []).map((x: { user_id: string }) => x.user_id);
@@ -138,6 +141,22 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     return p?.display_name || p?.email?.split("@")[0] || "Alguém";
   };
 
+  async function excluir() {
+    if (!info) return;
+    if (!window.confirm(`Mandar "${info.name}" para a Lixeira?
+
+Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página de projetos.`)) return;
+    const { error } = await supabase.rpc("remover_projeto", { p_projeto: projectId });
+    if (error) return alert(error.message);
+    window.location.href = "/";
+  }
+
+  async function restaurar() {
+    const { error } = await supabase.rpc("restaurar_projeto", { p_projeto: projectId });
+    if (error) return alert(error.message);
+    setInfo((i) => (i ? { ...i, removido_em: null } : i));
+  }
+
   if (info === undefined) return <main className="center muted">Carregando…</main>;
   if (info === null)
     return (
@@ -174,7 +193,19 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
           <button className={modo === "pagina" ? "on" : ""} onClick={() => trocarModo("pagina")}>Página</button>
           <button className={modo === "pdf" ? "on" : ""} onClick={() => trocarModo("pdf")}>PDF</button>
         </div>
+        {!info.removido_em && (
+          <button className="botao-painel botao-excluir" onClick={excluir} title="Mandar para a Lixeira">
+            Excluir
+          </button>
+        )}
       </div>
+
+      {info.removido_em && (
+        <div className="aviso-lixeira">
+          <span>Este projeto está na <b>Lixeira</b> desde {haQuanto(info.removido_em)}. Ele não aparece na lista da equipe.</span>
+          <button onClick={restaurar}>Restaurar</button>
+        </div>
+      )}
 
       {info.doc_css && (
         <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(info.doc_css, ".doc-escopo") }} />

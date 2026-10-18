@@ -6,6 +6,8 @@
 --   1. supabase/schema.sql          (este arquivo)
 --   2. supabase/mcp_functions.sql   (funções do conector do Claude)
 --   3. supabase/opcional_exclusoes.sql  (opcional: permissões de exclusão)
+--   Depois, os demais arquivos de supabase/ na ordem em que foram criados
+--   (documentos, equipe_e_simplificacao, abas_por_projeto, versoes_e_protecao, lixeira_projetos).
 -- =====================================================================
 
 create extension if not exists pgcrypto;

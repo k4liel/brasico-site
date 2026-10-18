@@ -31,4 +31,5 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Leia o capítulo antes de alterar e envie a `versao` lida em `atualizar_nota`. Se a gravação for recusada porque o capítulo mudou, leia de novo e junte as mudanças. Nunca descarte o trabalho do outro.
 - Antes de uma mudança grande, olhe `ver_atividade` (o painel Mudanças do site).
 - Antes de reestruturar um projeto, mostre o plano e espere a confirmação.
+- Excluir projeto pelo conector (`remover_projeto`) só manda para a Lixeira; confirme o nome com o usuário antes. Excluir para sempre só existe no site, na Lixeira, digitando o nome do projeto.
 - Antes de qualquer ação difícil de desfazer (excluir, reescrever histórico do git, deixar algo público), mostre o plano e espere a confirmação.
