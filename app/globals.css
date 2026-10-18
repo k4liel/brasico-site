@@ -177,6 +177,12 @@ button.danger { color: var(--danger); }
   display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap;
 }
 .proj-barra h1 { margin: 0; }
+.proj-nome { display: inline-flex; align-items: center; gap: 8px; }
+.editar-nome { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border-radius: 7px; background: transparent; color: var(--muted); opacity: .55; transition: opacity .15s, background .15s; }
+.proj-nome:hover .editar-nome, .editar-nome:focus-visible { opacity: 1; }
+.editar-nome:hover { background: var(--seg); color: var(--strong); filter: none; }
+.renomear { display: flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
+.renomear input { flex: 1; min-width: 0; font-family: var(--font-serif), Georgia, serif; font-size: 22px; font-weight: 600; padding: 6px 10px; }
 .voltar { color: var(--muted); text-decoration: none; font-size: 14px; }
 .voltar:hover { color: var(--strong); }
 .proj-doc { max-width: 960px; margin: 0 auto; padding: 16px 20px 48px; min-width: 0; }

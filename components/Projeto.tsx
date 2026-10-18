@@ -23,6 +23,7 @@ const VERBO: Record<string, string> = {
   restore: "restaurou",
   delete: "apagou",
   restore_version: "voltou a uma versão anterior:",
+  rename: "renomeou",
   trash: "mandou para a Lixeira",
   untrash: "tirou da Lixeira",
 };
@@ -165,6 +166,28 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     return p?.display_name || p?.email?.split("@")[0] || "Alguém";
   };
 
+  // Renomear o projeto direto no título
+  const [editandoNome, setEditandoNome] = useState(false);
+  const [novoNome, setNovoNome] = useState("");
+  const [salvandoNome, setSalvandoNome] = useState(false);
+  function comecarRenomear() {
+    if (!info) return;
+    setNovoNome(info.name);
+    setEditandoNome(true);
+  }
+  async function salvarNome() {
+    if (!info || salvandoNome) return;
+    const nome = novoNome.trim();
+    if (!nome) return alert("Informe o nome do projeto.");
+    if (nome === info.name) return setEditandoNome(false);
+    setSalvandoNome(true);
+    const { error } = await supabase.rpc("renomear_projeto", { p_projeto: projectId, p_nome: nome });
+    setSalvandoNome(false);
+    if (error) return alert(error.message);
+    setInfo((i) => (i ? { ...i, name: nome } : i));
+    setEditandoNome(false);
+  }
+
   async function excluir() {
     if (!info) return;
     if (!window.confirm(`Mandar "${info.name}" para a Lixeira?
@@ -199,7 +222,33 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
 
       <div className="proj-barra">
         <a href="/" className="voltar">← Projetos</a>
-        <h1>{info.name}</h1>
+        {editandoNome ? (
+          <form
+            className="renomear"
+            onSubmit={(e) => {
+              e.preventDefault();
+              salvarNome();
+            }}
+          >
+            <input
+              autoFocus
+              value={novoNome}
+              maxLength={120}
+              aria-label="Nome do projeto"
+              onChange={(e) => setNovoNome(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setEditandoNome(false)}
+            />
+            <button type="submit" disabled={salvandoNome}>{salvandoNome ? "Salvando…" : "Salvar"}</button>
+            <button type="button" className="botao-painel" onClick={() => setEditandoNome(false)}>Cancelar</button>
+          </form>
+        ) : (
+          <h1 className="proj-nome">
+            {info.name}
+            <button className="editar-nome" onClick={comecarRenomear} title="Renomear projeto" aria-label="Renomear projeto">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+            </button>
+          </h1>
+        )}
         <div className="spacer" />
         <button
           className={painel === "sumario" ? "botao-painel on" : "botao-painel"}
