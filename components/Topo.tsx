@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
@@ -43,37 +43,85 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
     window.location.href = "/login";
   }
 
+  // Menu lateral retrátil (computador e celular)
+  const [aberto, setAberto] = useState(false);
+  const primeiro = useRef<HTMLAnchorElement | null>(null);
+  useEffect(() => {
+    if (!aberto) return;
+    primeiro.current?.focus();
+    const f = (e: KeyboardEvent) => e.key === "Escape" && setAberto(false);
+    window.addEventListener("keydown", f);
+    return () => window.removeEventListener("keydown", f);
+  }, [aberto]);
+
+  const inicial = (email || "?").trim().charAt(0).toUpperCase();
+
   return (
-    <header className="topo">
-      <a className="marca" href="/">Brasico</a>
-      <nav className="topo-nav">
-        <a className={ativo === "projetos" ? "ativo" : ""} href="/">Projetos</a>
-        <a className={ativo === "conectar" ? "ativo" : ""} href="/conectar">Claude e equipe</a>
-      </nav>
-      <div className="spacer" />
-      <span className="topo-email">{email}</span>
-      <button
-        className={tema === "dark" ? "tema-switch escuro" : "tema-switch"}
-        onClick={trocarTema}
-        role="switch"
-        aria-checked={tema === "dark"}
-        title={tema === "dark" ? "Modo claro" : "Modo escuro"}
-        aria-label="Modo escuro"
-      >
-        <span className="tema-estrelas" aria-hidden>
-          <i /><i /><i /><i />
-        </span>
-        <span className="tema-nuvens" aria-hidden>
-          <i /><i />
-        </span>
-        <span className="tema-bola" aria-hidden>
-          <span className="tema-sol" />
-          <span className="tema-lua">
-            <i /><i /><i />
-          </span>
-        </span>
-      </button>
-      <button className="ghost small" onClick={sair}>Sair</button>
-    </header>
+    <>
+      <header className="topo">
+        <button
+          className={aberto ? "menu-botao aberto" : "menu-botao"}
+          onClick={() => setAberto((a) => !a)}
+          aria-label={aberto ? "Fechar menu" : "Abrir menu"}
+          aria-expanded={aberto}
+          aria-controls="menu-lateral"
+        >
+          <span /><span /><span />
+        </button>
+        <a className="marca" href="/">Brasico</a>
+      </header>
+
+      <div className={aberto ? "menu-fundo on" : "menu-fundo"} onClick={() => setAberto(false)} aria-hidden="true" />
+      <aside id="menu-lateral" className={aberto ? "menu-lateral aberto" : "menu-lateral"} aria-hidden={!aberto} aria-label="Menu">
+        <div className="menu-cabeca">
+          <a className="marca" href="/" tabIndex={aberto ? 0 : -1}>Brasico</a>
+          <button className="fechar" onClick={() => setAberto(false)} aria-label="Fechar menu" tabIndex={aberto ? 0 : -1}>×</button>
+        </div>
+
+        <nav className="menu-nav">
+          <a ref={primeiro} className={ativo === "projetos" ? "ativo" : ""} href="/" tabIndex={aberto ? 0 : -1}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>
+            Projetos
+          </a>
+          <a className={ativo === "conectar" ? "ativo" : ""} href="/conectar" tabIndex={aberto ? 0 : -1}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 4.5a3 3 0 0 1 0 6M17.5 14.2A5 5 0 0 1 20.5 19" /></svg>
+            Claude e equipe
+          </a>
+        </nav>
+
+        <div className="menu-rodape">
+          <div className="menu-tema">
+            <span>{tema === "dark" ? "Modo escuro" : "Modo claro"}</span>
+            <button
+              className={tema === "dark" ? "tema-switch escuro" : "tema-switch"}
+              onClick={trocarTema}
+              role="switch"
+              aria-checked={tema === "dark"}
+              title={tema === "dark" ? "Modo claro" : "Modo escuro"}
+              aria-label="Modo escuro"
+              tabIndex={aberto ? 0 : -1}
+            >
+              <span className="tema-estrelas" aria-hidden>
+                <i /><i /><i /><i />
+              </span>
+              <span className="tema-nuvens" aria-hidden>
+                <i /><i />
+              </span>
+              <span className="tema-bola" aria-hidden>
+                <span className="tema-sol" />
+                <span className="tema-lua">
+                  <i /><i /><i />
+                </span>
+              </span>
+            </button>
+          </div>
+          <div className="menu-conta">
+            <span className="menu-avatar" aria-hidden="true">{inicial}</span>
+            <span className="menu-email" title={email}>{email}</span>
+            <button className="menu-sair" onClick={sair} tabIndex={aberto ? 0 : -1}>Sair</button>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }

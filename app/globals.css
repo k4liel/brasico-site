@@ -102,8 +102,8 @@ button.danger { color: var(--danger); }
 /* ---------- Topo ---------- */
 .topo {
   position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: 20px;
-  padding: 0 20px; height: 56px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px; height: 56px;
   background: var(--panel); border-bottom: 1px solid var(--border);
 }
 .marca {
@@ -116,6 +116,48 @@ button.danger { color: var(--danger); }
 .topo-nav a:hover { color: var(--strong); }
 .topo-nav a.ativo { color: var(--strong); background: var(--beige); font-weight: 500; }
 .topo-email { color: var(--muted); font-size: 13px; }
+
+/* Botão hambúrguer: três traços que viram um X */
+.menu-botao {
+  position: relative; width: 36px; height: 36px; padding: 0; flex: none;
+  background: transparent; color: var(--strong); border-radius: 9px;
+  display: grid; place-content: center; gap: 4px;
+}
+.menu-botao:hover { background: var(--seg); filter: none; }
+.menu-botao span { display: block; width: 18px; height: 1.8px; border-radius: 2px; background: currentColor; transition: transform .25s ease, opacity .2s ease; }
+.menu-botao.aberto span:nth-child(1) { transform: translateY(5.8px) rotate(45deg); }
+.menu-botao.aberto span:nth-child(2) { opacity: 0; }
+.menu-botao.aberto span:nth-child(3) { transform: translateY(-5.8px) rotate(-45deg); }
+
+/* Menu lateral retrátil */
+.menu-fundo { position: fixed; inset: 0; z-index: 40; background: rgba(15, 20, 32, .32); opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility .25s; }
+.menu-fundo.on { opacity: 1; visibility: visible; }
+.menu-lateral {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 41;
+  width: min(300px, 84vw); display: flex; flex-direction: column;
+  background: var(--panel); border-right: 1px solid var(--border);
+  box-shadow: 12px 0 40px var(--shadow);
+  transform: translateX(-100%); visibility: hidden;
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1), visibility .28s;
+}
+.menu-lateral.aberto { transform: none; visibility: visible; }
+.menu-cabeca { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--border); }
+.menu-nav { display: grid; gap: 2px; padding: 14px 10px; }
+.menu-nav a {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px;
+  color: var(--muted); text-decoration: none; font-size: 14.5px; font-weight: 500;
+}
+.menu-nav a:hover { background: var(--seg); color: var(--strong); }
+.menu-nav a.ativo { background: var(--beige); color: var(--strong); }
+.menu-nav a.ativo svg { color: var(--gold); }
+.menu-rodape { margin-top: auto; padding: 12px 14px 18px; border-top: 1px solid var(--border); display: grid; gap: 12px; }
+.menu-tema { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: 13px; color: var(--muted); }
+.menu-conta { display: flex; align-items: center; gap: 10px; padding: 8px 6px 0; }
+.menu-avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--beige); color: var(--strong); font-size: 13px; font-weight: 600; }
+.menu-email { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--muted); }
+.menu-sair { flex: none; height: 28px; padding: 0 12px; font-size: 12.5px; background: transparent; color: var(--strong); border: 1px solid var(--border); border-radius: 7px; }
+.menu-sair:hover { background: var(--seg); filter: none; }
+@media (prefers-reduced-motion: reduce) { .menu-lateral, .menu-fundo, .menu-botao span { transition: none; } }
 
 /* ---------- Páginas ---------- */
 .pagina { min-height: 100vh; }
