@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { renderConteudo } from "@/lib/livre";
+import EscalaDica from "./EscalaDica";
 
 export type Capitulo = { id?: string; titulo: string; conteudo: string };
 
@@ -49,6 +50,7 @@ export default function DocView({
           );
         })}
         {rodape && <footer className="doc-pagina-rodape">{rodape}</footer>}
+        <EscalaDica />
       </article>
     );
   }
@@ -67,6 +69,7 @@ export default function DocView({
   return (
     <div className="doc">
       {css && <style dangerouslySetInnerHTML={{ __html: css }} />}
+      <EscalaDica />
       {folhas.map((f, n) => {
         const primeiraDoCap = f.idx !== ultimoCap;
         ultimoCap = f.idx;

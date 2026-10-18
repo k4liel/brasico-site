@@ -98,39 +98,53 @@ function renderCards(body: string[]) {
 // ---------------------------------------------------------------------
 // :::escala — grade mensal de escala, um quadradinho por dia
 // ---------------------------------------------------------------------
-type Turno = { tipo: "folga" | "descanso" | "dia" | "noite" | "partido" | "plantao"; linhas: string[]; titulo: string };
+type TipoTurno = "folga" | "descanso" | "dia" | "abertura" | "manha" | "inter" | "tarde" | "noite" | "partido" | "plantao";
+type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; entrada: number | null };
+
+const dois = (n: number) => String(n).padStart(2, "0");
+
+// Cor do turno pelo horário de entrada
+function tipoPorEntrada(a: number, b: number): TipoTurno {
+  const duracao = (b <= a ? b + 24 : b) - a;
+  if (b <= a && duracao >= 11 && a >= 17) return "plantao";
+  if (a <= 7) return "abertura";
+  if (a <= 10) return "manha";
+  if (a <= 13) return "inter";
+  if (a <= 15) return "tarde";
+  return "noite";
+}
 
 function lerTurno(raw: string): Turno {
   let t = raw.trim().replace(/[–—]/g, "-").replace(/h/gi, "");
-  if (/^(f|folga)$/i.test(t)) return { tipo: "folga", linhas: ["F"], titulo: "Folga" };
-  if (t === "" || /^(-|·|descanso)$/i.test(t)) return { tipo: "descanso", linhas: ["·"], titulo: "Descanso" };
-  const dois = (n: number) => String(n).padStart(2, "0");
-  // Intervalo opcional entre parênteses: "07-16 (11-12)" → aparece ao passar o mouse
+  const vazio = { horario: "", intervalo: "", entrada: null };
+  if (/^(f|folga)$/i.test(t)) return { tipo: "folga", linhas: ["F"], ...vazio, horario: "Folga" };
+  if (t === "" || /^(-|·|descanso)$/i.test(t)) return { tipo: "descanso", linhas: ["·"], ...vazio, horario: "Descanso" };
+  // Intervalo opcional entre parênteses: "07-16 (11-12)" → aparece no balão ao passar o mouse
   let intervalo = "";
   const mi = t.match(/^(.*?)\s*[([]\s*(\d{1,2})\s*-\s*(\d{1,2})\s*[)\]]\s*$/);
   if (mi) {
     t = mi[1];
-    intervalo = ` · intervalo ${dois(parseInt(mi[2], 10))}h–${dois(parseInt(mi[3], 10))}h`;
+    intervalo = `${dois(parseInt(mi[2], 10))}h–${dois(parseInt(mi[3], 10))}h`;
   }
   const partes = t.split("/").map((p) => p.trim()).filter(Boolean);
   const horas = partes.map((p) => p.split("-").map((h) => parseInt(h, 10)));
   const ok = horas.every((h) => h.length === 2 && h.every((n) => !Number.isNaN(n)));
-  if (!ok) return { tipo: "dia", linhas: [raw.trim()], titulo: raw.trim() };
-  const titulo = horas.map(([a, b]) => `${dois(a)}h–${dois(b)}h`).join(" / ") + intervalo;
+  if (!ok) return { tipo: "dia", linhas: [raw.trim()], ...vazio, horario: raw.trim() };
+  const horario = horas.map(([a, b]) => `${dois(a)}h–${dois(b)}h`).join(" / ");
   if (horas.length > 1) {
-    return { tipo: "partido", linhas: horas.map(([a, b]) => `${dois(a)}·${dois(b)}`), titulo };
+    return { tipo: "partido", linhas: horas.map(([a, b]) => `${dois(a)}·${dois(b)}`), horario, intervalo, entrada: horas[0][0] };
   }
   const [a, b] = horas[0];
-  const duracao = (b <= a ? b + 24 : b) - a;
-  let tipo: Turno["tipo"] = "dia";
-  if (b <= a && duracao >= 11) tipo = "plantao";
-  else if (b <= a || b >= 22) tipo = "noite";
-  return { tipo, linhas: [dois(a), dois(b)], titulo };
+  return { tipo: tipoPorEntrada(a, b), linhas: [dois(a), dois(b)], horario, intervalo, entrada: a };
 }
 
-const ROTULO_TIPO: Record<Turno["tipo"], string> = {
-  dia: "Turno de dia",
-  noite: "Fecha às 22h, 00h ou 01h",
+const ROTULO_TIPO: Record<TipoTurno, string> = {
+  abertura: "Abertura",
+  manha: "Manhã",
+  inter: "Intermediário",
+  tarde: "Tarde",
+  noite: "Noite",
+  dia: "Turno",
   partido: "Turno partido",
   plantao: "Plantão 12x36",
   folga: "Folga",
@@ -165,8 +179,14 @@ function renderEscala(body: string[]) {
   }
   const n = dias.length || Math.max(0, ...linhas.map((l) => ("turnos" in l ? l.turnos.length : 0)));
   const pessoas = linhas.filter((l): l is { nome: string; sexo: string; turnos: Turno[] } => "turnos" in l);
-  const usados = new Set<Turno["tipo"]>();
-  pessoas.forEach((p) => p.turnos.forEach((t) => usados.add(t.tipo)));
+  const usados = new Map<TipoTurno, Set<number>>();
+  pessoas.forEach((p) =>
+    p.turnos.forEach((t) => {
+      if (!usados.has(t.tipo)) usados.set(t.tipo, new Set());
+      if (t.entrada !== null) usados.get(t.tipo)!.add(t.entrada);
+    })
+  );
+  const temIntervalo = pessoas.some((p) => p.turnos.some((t) => t.intervalo));
 
   // Cabeçalho
   let html = `<div class="escala">`;
@@ -195,7 +215,11 @@ function renderEscala(body: string[]) {
       const dom = dias[d]?.dom;
       if (t.tipo !== "folga" && t.tipo !== "descanso") trab++;
       else if (dom && t.tipo === "folga") domFolga++;
-      html += `<td class="esc-c t-${t.tipo}${dom ? " dom" : ""}" title="${esc(t.titulo)}">${t.linhas.map((x) => `<span>${esc(x)}</span>`).join("")}</td>`;
+      const trabalha = t.tipo !== "folga" && t.tipo !== "descanso";
+      const dica = trabalha
+        ? ` data-h="${esc(t.horario)}" data-t="${esc(ROTULO_TIPO[t.tipo])}"${t.intervalo ? ` data-i="${esc(t.intervalo)}"` : ""} aria-label="${esc(t.horario + (t.intervalo ? `, intervalo ${t.intervalo}` : ""))}"`
+        : ` aria-label="${esc(t.horario)}"`;
+      html += `<td class="esc-c t-${t.tipo}${dom ? " dom" : ""}"${dica}>${t.linhas.map((x) => `<span>${esc(x)}</span>`).join("")}</td>`;
     }
     html += `<td class="esc-tot">${trab}</td><td class="esc-tot">${l.turnos.some((t) => t.tipo === "plantao") ? "—" : domFolga}</td></tr>`;
   }
@@ -216,11 +240,18 @@ function renderEscala(body: string[]) {
   html += `</table></div>`;
 
   // Legenda só com os tipos que aparecem
-  const ordem: Turno["tipo"][] = ["dia", "noite", "partido", "plantao", "folga", "descanso"];
+  const ordem: TipoTurno[] = ["abertura", "manha", "inter", "tarde", "noite", "dia", "partido", "plantao", "folga", "descanso"];
+  const entra = (t: TipoTurno) => {
+    const hs = Array.from(usados.get(t) ?? []).sort((x, y) => x - y);
+    if (!hs.length || t === "partido" || t === "dia") return "";
+    return `<em>entra ${hs.map((h) => `${dois(h)}h`).join(hs.length > 2 ? ", " : " ou ").replace(/, ([^,]*)$/, " ou $1")}</em>`;
+  };
   html += `<div class="escala-legenda">${ordem
     .filter((t) => usados.has(t))
-    .map((t) => `<span><i class="esc-chip t-${t}"></i>${ROTULO_TIPO[t]}</span>`)
-    .join("")}${dias.some((d) => d.dom) ? `<span><i class="esc-chip dom-chip"></i>Domingo</span>` : ""}</div>`;
+    .map((t) => `<span><i class="esc-chip t-${t}"></i><b>${ROTULO_TIPO[t]}</b>${entra(t)}</span>`)
+    .join("")}${dias.some((d) => d.dom) ? `<span><i class="esc-chip dom-chip"></i><b>Domingo</b></span>` : ""}${
+    temIntervalo ? `<span class="esc-dica-aviso nao-imprimir">Passe o mouse no horário para ver o intervalo</span>` : ""
+  }</div>`;
   return html + `</div>`;
 }
 

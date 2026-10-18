@@ -372,7 +372,11 @@
    ===================================================================== */
 :root {
   --esc-dia: #e3eee6;      --esc-dia-ink: #1f4d3a;
-  --esc-noite: #e1e8f3;    --esc-noite-ink: #23395e;
+  --esc-abertura: #f5ead0; --esc-abertura-ink: #7a5714;
+  --esc-manha: #e2eee4;    --esc-manha-ink: #285a3e;
+  --esc-inter: #d9ecec;    --esc-inter-ink: #1b5a5e;
+  --esc-tarde: #ebe4f3;    --esc-tarde-ink: #4b3874;
+  --esc-noite: #d9e1f1;    --esc-noite-ink: #1c2a48;
   --esc-partido: #fbf1d6;  --esc-partido-ink: #6b4f12;
   --esc-plantao: #e9e2f2;  --esc-plantao-ink: #4a3570;
   --esc-folga: #f6d9cc;    --esc-folga-ink: #b5401c;
@@ -422,6 +426,13 @@
 .doc .escala-grade td.esc-c span { display: block; }
 .doc .escala-grade td.t-dia { background: var(--esc-dia); color: var(--esc-dia-ink); }
 .doc .escala-grade td.t-noite { background: var(--esc-noite); color: var(--esc-noite-ink); }
+.doc .escala-grade td.t-abertura { background: var(--esc-abertura); color: var(--esc-abertura-ink); }
+.doc .escala-grade td.t-manha { background: var(--esc-manha); color: var(--esc-manha-ink); }
+.doc .escala-grade td.t-inter { background: var(--esc-inter); color: var(--esc-inter-ink); }
+.doc .escala-grade td.t-tarde { background: var(--esc-tarde); color: var(--esc-tarde-ink); }
+.doc .escala-grade td.esc-c[data-h] { cursor: default; transition: box-shadow .12s ease, transform .12s ease; }
+.doc .escala-grade td.esc-c[data-h]:hover,
+.doc .escala-grade td.esc-c.esc-ativo { box-shadow: inset 0 0 0 1.5px currentColor; transform: translateY(-1px); }
 .doc .escala-grade td.t-partido { background: var(--esc-partido); color: var(--esc-partido-ink); font-size: 5.3px; letter-spacing: -0.02em; }
 .doc .escala-grade td.t-plantao { background: var(--esc-plantao); color: var(--esc-plantao-ink); }
 .doc .escala-grade td.t-folga { background: var(--esc-folga); color: var(--esc-folga-ink); font-weight: 800; font-size: 7px; }
@@ -437,6 +448,13 @@
 .doc .esc-chip { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .doc .esc-chip.t-dia { background: var(--esc-dia); }
 .doc .esc-chip.t-noite { background: var(--esc-noite); }
+.doc .esc-chip.t-abertura { background: var(--esc-abertura); }
+.doc .esc-chip.t-manha { background: var(--esc-manha); }
+.doc .esc-chip.t-inter { background: var(--esc-inter); }
+.doc .esc-chip.t-tarde { background: var(--esc-tarde); }
+.doc .escala-legenda b { font-weight: 600; color: var(--doc-ink); }
+.doc .escala-legenda em { font-style: normal; color: var(--doc-muted); margin-left: 2px; }
+.doc .escala-legenda .esc-dica-aviso { margin-left: auto; font-style: italic; color: var(--doc-muted); }
 .doc .esc-chip.t-partido { background: var(--esc-partido); }
 .doc .esc-chip.t-plantao { background: var(--esc-plantao); }
 .doc .esc-chip.t-folga { background: var(--esc-folga); }
@@ -498,6 +516,10 @@
 :root[data-theme="dark"] .doc-pagina {
   --esc-dia: #1d3328;      --esc-dia-ink: #9fd8b6;
   --esc-noite: #1e2a3e;    --esc-noite-ink: #a9c2ec;
+  --esc-abertura: #3a2f17; --esc-abertura-ink: #ecd08c;
+  --esc-manha: #1d3328;    --esc-manha-ink: #9fd8b6;
+  --esc-inter: #17353a;    --esc-inter-ink: #8fd3d6;
+  --esc-tarde: #2c2442;    --esc-tarde-ink: #c9b6f0;
   --esc-partido: #352d17;  --esc-partido-ink: #ecd08c;
   --esc-plantao: #2b2440;  --esc-plantao-ink: #c9b6f0;
   --esc-folga: #3d2219;    --esc-folga-ink: #f49a76;
@@ -559,3 +581,24 @@
   .arq-abrir { display: none; }
 }
 @media print { .arq { break-inside: avoid; } .arq-abrir { display: none; } }
+
+/* =====================================================================
+   Balão da escala: horário e intervalo ao passar o mouse (ou tocar)
+   ===================================================================== */
+.esc-dica {
+  position: fixed; z-index: 60; pointer-events: none;
+  min-width: 168px; max-width: 260px; padding: 10px 14px 11px;
+  background: #1c2a48; color: #f4efe6; border-radius: 10px;
+  border-left: 3px solid #b08a4a;
+  box-shadow: 0 10px 28px rgba(16, 24, 44, 0.28), 0 2px 6px rgba(16, 24, 44, 0.18);
+  font-family: Inter, system-ui, sans-serif; font-size: 12px; line-height: 1.35;
+  opacity: 0; transform: translateY(4px); transition: opacity .12s ease, transform .12s ease;
+}
+.esc-dica.on { opacity: 1; transform: translateY(0); }
+.esc-dica-top { font-size: 10.5px; letter-spacing: .04em; color: rgba(244, 239, 230, .62); margin-bottom: 4px; }
+.esc-dica-h { display: flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.esc-dica-tipo { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #d9bd86; }
+.esc-dica-i { display: flex; justify-content: space-between; gap: 12px; margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(244, 239, 230, .14); font-variant-numeric: tabular-nums; }
+.esc-dica-i span { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #d9bd86; }
+.esc-dica-i b { font-weight: 600; }
+@media print { .esc-dica { display: none; } }

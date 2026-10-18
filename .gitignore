@@ -13,3 +13,4 @@ next-env.d.ts
 privado/
 *.pdf
 supabase/seed_*.sql
+.playwright-mcp/
