@@ -144,9 +144,9 @@ begin
 
   if p_versao is not null and r.updated_at is distinct from p_versao then
     select coalesce(p.display_name, p.email) into v_quem
-    from public.activity_log l left join public.profiles p on p.id = l.user_id
-    where l.entity = 'notes' and l.entity_id = r.id
-    order by l.created_at desc limit 1;
+    from public.versoes v left join public.profiles p on p.id = v.substituido_por
+    where v.tipo = 'capitulo' and v.ref_id = r.id
+    order by v.id desc limit 1;
     raise exception 'O capítulo "%" mudou depois que você leu (por %, em %). Nada foi gravado. Leia de novo com ler_nota, junte as suas mudanças com as novas e envie com a versao nova.',
       r.title, coalesce(v_quem, 'outra pessoa'),
       to_char(r.updated_at at time zone 'America/Sao_Paulo', 'DD/MM HH24:MI');
