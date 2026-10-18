@@ -5,13 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 import { useTable } from "@/lib/useTable";
 import { haQuanto } from "@/lib/tempo";
 import { cssDoProjeto } from "@/lib/livre";
+import { semDuplicatas } from "@/lib/historico";
 import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
 
 type Info = { id: string; name: string; doc_rodape: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null };
 type Nota = { id: string; title: string; content: string; archived_at: string | null };
-type Log = { id: string; user_id: string | null; action: string; entity: string; details: string | null; source: string; created_at: string };
+type Log = { id: string; user_id: string | null; action: string; entity: string; entity_id: string | null; details: string | null; source: string; created_at: string };
 type Perfil = { id: string; email: string | null; display_name: string | null };
 
 const VERBO: Record<string, string> = {
@@ -66,7 +67,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
 
   const { rows: notas, loading } = useTable<Nota>("notes", projectId, { orderBy: "title", ascending: true, limit: 500 });
   const { rows: logTodo } = useTable<Log>("activity_log", projectId, { orderBy: "created_at", ascending: false, limit: 40 });
-  const log = logTodo.filter((l) => l.entity === "notes" || l.entity === "workspaces").slice(0, 15);
+  const log = semDuplicatas(logTodo).filter((l) => l.entity === "notes" || l.entity === "workspaces").slice(0, 15);
 
   useEffect(() => {
     (async () => {

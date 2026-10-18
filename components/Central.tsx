@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { haQuanto } from "@/lib/tempo";
+import { semDuplicatas } from "@/lib/historico";
 import Topo from "./Topo";
 
 type Projeto = { id: string; name: string; created_at: string; removido_em: string | null };
@@ -36,7 +37,7 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     const ids = lista.map((p) => p.id);
     const [{ data: notas }, { data: log }, { data: membros }] = await Promise.all([
       supabase.from("notes").select("workspace_id").in("workspace_id", ids).is("archived_at", null),
-      supabase.from("activity_log").select("workspace_id,user_id,created_at,source").in("workspace_id", ids)
+      supabase.from("activity_log").select("workspace_id,user_id,entity_id,created_at,source").in("workspace_id", ids)
         .order("created_at", { ascending: false }).limit(200),
       supabase.from("workspace_members").select("user_id").in("workspace_id", ids),
     ]);
@@ -51,7 +52,7 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     const r: Record<string, Info> = {};
     ids.forEach((id) => (r[id] = { capitulos: 0, quando: null, quem: null, claude: false }));
     (notas ?? []).forEach((n: { workspace_id: string }) => r[n.workspace_id].capitulos++);
-    (log ?? []).forEach((l: { workspace_id: string; user_id: string | null; created_at: string; source: string }) => {
+    semDuplicatas((log ?? []) as { workspace_id: string; user_id: string | null; entity_id: string | null; created_at: string; source: string }[]).forEach((l) => {
       const x = r[l.workspace_id];
       if (x && !x.quando) {
         x.quando = l.created_at;
