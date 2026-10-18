@@ -92,15 +92,15 @@ function buildHandler(token: string) {
 
       server.tool(
         "ver_documento",
-        "Mostra o documento completo do projeto ativo: todos os capítulos em ordem (id, título, conteúdo), o rodapé e os capítulos removidos. Com idioma \"en\", mostra a versão em inglês (tem_ingles diz quais capítulos já têm tradução).",
-        { idioma: z.enum(["pt", "en"]).optional().describe("pt (padrão, o original) ou en (versão em inglês)") },
+        "Mostra o documento completo do projeto ativo: todos os capítulos em ordem (id, título, conteúdo), o rodapé e os capítulos removidos. Com idioma \"en\" ou \"pl\", mostra a versão em inglês ou polonês (tem_ingles e tem_polones dizem quais capítulos já têm tradução).",
+        { idioma: z.enum(["pt", "en", "pl"]).optional().describe("pt (padrão, o original), en (inglês) ou pl (polonês)") },
         async ({ idioma }) => call("mcp_documento", { p_idioma: idioma ?? "pt" })
       );
 
       server.tool(
         "definir_rodape",
-        "Define o texto do rodapé das páginas do documento do projeto ativo. Com idioma \"en\", define o rodapé da versão em inglês.",
-        { rodape: z.string(), idioma: z.enum(["pt", "en"]).optional() },
+        "Define o texto do rodapé das páginas do documento do projeto ativo. Com idioma \"en\" ou \"pl\", define o rodapé da versão em inglês ou polonês.",
+        { rodape: z.string(), idioma: z.enum(["pt", "en", "pl"]).optional() },
         async ({ rodape, idioma }) => call("mcp_definir_rodape", { p_rodape: rodape, p_idioma: idioma ?? "pt" })
       );
 
@@ -114,7 +114,7 @@ function buildHandler(token: string) {
 
       server.tool(
         "ler_nota",
-        "Lê o conteúdo completo de um capítulo (Markdown): title e content em português (o original) e, se houver, title_en e content_en (versão em inglês).",
+        "Lê o conteúdo completo de um capítulo (Markdown): title e content em português (o original) e, se houver, title_en/content_en (inglês) e title_pl/content_pl (polonês).",
         { id: z.string().uuid() },
         async ({ id }) => call("mcp_ler_nota", { p_id: id })
       );
@@ -134,7 +134,7 @@ function buildHandler(token: string) {
           versao: z.string().min(1).describe("O campo 'versao' que ler_nota ou ver_documento devolveu para este capítulo"),
           title: z.string().optional(),
           content: z.string().optional(),
-          idioma: z.enum(["pt", "en"]).optional().describe("pt (padrão) grava o original; en grava a versão em inglês do capítulo (title_en / content_en)"),
+          idioma: z.enum(["pt", "en", "pl"]).optional().describe("pt (padrão) grava o original; en grava a versão em inglês (title_en / content_en); pl grava a versão em polonês (title_pl / content_pl)"),
         },
         async ({ id, versao, title, content, idioma }) =>
           call("mcp_atualizar_nota", {
@@ -232,7 +232,7 @@ function buildHandler(token: string) {
         "2. Antes de uma mudança grande, olhe ver_atividade para saber o que o outro fez há pouco.\n" +
         "3. Antes de reestruturar um projeto (renomear, reordenar, remover ou reescrever vários capítulos, trocar o CSS), mostre o plano ao usuário e espere a confirmação.\n" +
         "4. Errou? Toda mudança guarda a versão anterior: versoes_capitulo, ler_versao e restaurar_versao.\n" +
-        "5. Idiomas: o português é o original. Cada capítulo pode ter uma versão em inglês (atualizar_nota com idioma \"en\"); o site mostra o seletor PT | EN quando há tradução. Ao mudar o português de um capítulo que já tem inglês, atualize o inglês também.\n" +
+        "5. Idiomas: o português é o original. Cada capítulo pode ter versão em inglês e em polonês (atualizar_nota com idioma \"en\" ou \"pl\"); o site mostra o seletor PT | EN | PL com os idiomas que têm tradução. Ao mudar o português de um capítulo que já tem tradução, atualize as traduções também.\n" +
         "6. Arquivos de clientes (PDFs, planilhas, documentos) ficam só no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/, nunca no GitHub.",
     },
     { basePath: "/api", maxDuration: 60 }

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { renderConteudo } from "@/lib/livre";
 import EscalaDica from "./EscalaDica";
-import { TEXTOS, type Idioma } from "@/lib/idioma";
+import { LANG, TEXTOS, type Idioma } from "@/lib/idioma";
 
 export type Capitulo = { id?: string; titulo: string; conteudo: string };
 
@@ -38,7 +38,7 @@ export default function DocView({
   // Modo página: o documento corre livre, como um site, sem folhas A4.
   if (modo === "pagina") {
     return (
-      <article className="doc doc-pagina" lang={idioma === "en" ? "en" : "pt-BR"}>
+      <article className="doc doc-pagina" lang={LANG[idioma]}>
         {montarFolhas(capitulos).map((f, n, todas) => {
           const primeira = n === 0 || todas[n - 1].idx !== f.idx;
           return (
@@ -70,7 +70,7 @@ export default function DocView({
     : "";
 
   return (
-    <div className="doc" lang={idioma === "en" ? "en" : "pt-BR"}>
+    <div className="doc" lang={LANG[idioma]}>
       {css && <style dangerouslySetInnerHTML={{ __html: css }} />}
       <EscalaDica idioma={idioma} />
       {folhas.map((f, n) => {

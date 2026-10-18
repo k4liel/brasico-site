@@ -1,6 +1,13 @@
-// Idioma do documento. O português é o original; o inglês é opcional, por capítulo
-// (notes.title_en / notes.content_en) e no rodapé (workspaces.doc_rodape_en).
-export type Idioma = "pt" | "en";
+// Idioma do documento. O português é o original; inglês e polonês são opcionais, por capítulo
+// (notes.title_en / content_en, title_pl / content_pl) e no rodapé (workspaces.doc_rodape_en / _pl).
+export type Idioma = "pt" | "en" | "pl";
+
+export const IDIOMAS: { id: Idioma; sigla: string; nome: string; lang: string }[] = [
+  { id: "pt", sigla: "PT", nome: "Português", lang: "pt-BR" },
+  { id: "en", sigla: "EN", nome: "English", lang: "en" },
+  { id: "pl", sigla: "PL", nome: "Polski", lang: "pl" },
+];
+export const LANG: Record<Idioma, string> = { pt: "pt-BR", en: "en", pl: "pl" };
 
 // Textos fixos que aparecem dentro do documento (não os do site).
 export const TEXTOS = {
@@ -62,6 +69,36 @@ export const TEXTOS = {
       plantao: "12x36 shift",
       folga: "Day off",
       descanso: "12x36 rest",
+    },
+  },
+  pl: {
+    equipe: "Zespół",
+    dias: "Dni",
+    domFolga: "Wolne nd.",
+    trabalhando: "Osoby w pracy",
+    domingo: "Niedziela",
+    entra: "start",
+    ou: "lub",
+    dicaIntervalo: "Najedź kursorem na godziny, aby zobaczyć przerwę",
+    intervalo: "Przerwa",
+    intervaloAria: "przerwa",
+    restrito: "Poufne",
+    interno: "Do użytku wewnętrznego",
+    abrir: "Otwórz",
+    pagina: (n: number, total: number) => `str. ${n} z ${total}`,
+    anterior: "← Poprzedni",
+    proximo: "Następny →",
+    turnos: {
+      abertura: "Otwarcie",
+      manha: "Rano",
+      inter: "Zmiana pośrednia",
+      tarde: "Popołudnie",
+      noite: "Wieczór",
+      dia: "Zmiana",
+      partido: "Zmiana dzielona",
+      plantao: "Dyżur 12x36",
+      folga: "Wolne",
+      descanso: "Odpoczynek 12x36",
     },
   },
 } as const;
