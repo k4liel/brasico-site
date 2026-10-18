@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env*.local
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+
+# Arquivos de clientes nunca vão para o GitHub (ficam no bucket workspace-files)
+privado/
+*.pdf
+supabase/seed_*.sql
