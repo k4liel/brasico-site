@@ -99,13 +99,20 @@ O site é para ver; tudo se pede ao Claude.
 - **Arquivos de clientes (PDFs, planilhas, documentos):** nunca no GitHub. Sempre no bucket `workspace-files`, pasta do projeto.
 
 ### Dois Claudes no mesmo projeto
-- Ler o capítulo antes de alterar.
+- Ler o capítulo antes de alterar. O conector obriga isso: se o capítulo mudou depois da leitura, a gravação é recusada e o Claude precisa ler de novo.
+- Mudou algo errado? Peça ao Claude: "volte o capítulo 03 para a versão de ontem". Toda mudança guarda a versão anterior.
 - Olhar **Mudanças** antes de uma mudança grande (o outro pode ter mexido).
 - Mostrar o plano antes de reestruturar um projeto.
 
 ### Segurança
 - Nunca colocar a chave `service_role` do Supabase, senhas ou tokens no código.
-- Nunca apagar dados do banco sem pedido explícito.
+- Nunca apagar dados do banco sem pedido explícito. O banco bloqueia exclusões por conta própria (veja `supabase/versoes_e_protecao.sql`).
+- O sócio só precisa conectar o Supabase no Claude dele se for mexer na estrutura do banco. Para o dia a dia, o conector Brasico basta.
+
+### Backup
+- Toda segunda-feira, o GitHub copia o banco inteiro para o repositório **privado** `k4liel/brasico-backup` (pasta `banco/`).
+- Para rodar na hora: GitHub → brasico-backup → **Actions → Backup semanal → Run workflow**.
+- Os arquivos do bucket não podem ser apagados pelo site nem pelo conector (o Supabase bloqueia), então não entram no backup.
 
 ---
 

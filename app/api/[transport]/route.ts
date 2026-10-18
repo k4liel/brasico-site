@@ -114,10 +114,43 @@ function buildHandler(token: string) {
 
       server.tool(
         "atualizar_nota",
-        "Atualiza o título e/ou o conteúdo de um capítulo (o conteúdo enviado substitui o anterior; leia antes com ler_nota). Cada nota é um capítulo do documento; o número no início do título define a ordem (ex.: \"03 · Cardápio\"). Conteúdo em Markdown: 1ª linha **N · SEÇÃO** vira a etiqueta dourada; # Título; tabelas com | (1ª célula em negrito = linha de total); linha toda em *itálico* = frase de abertura; > aviso; blocos :::cards (Rótulo | Valor | Descrição, ! no início = cartão azul), :::colunas (duas colunas), :::capa (chaves marca, sobretitulo, titulo, subtitulo, info: Rótulo | Valor, lema), :::escala (grade de escala em quadradinhos coloridos: titulo: …; dias: Dom 01 | Seg 02 | …; ## grupo; linhas Nome | F/M | 08-17 | F | 09-13/17-21 | 19-07 | - …, onde F = folga e - = descanso) e :::checks (status ok ou alerta | título | detalhe), fechados com :::.",
-        { id: z.string().uuid(), title: z.string().optional(), content: z.string().optional() },
-        async ({ id, title, content }) =>
-          call("mcp_atualizar_nota", { p_id: id, p_title: title ?? null, p_content: content ?? null })
+        "Atualiza o título e/ou o conteúdo de um capítulo. O conteúdo enviado substitui o anterior (a versão antiga fica guardada; veja versoes_capitulo). Leia antes com ler_nota (ou ver_documento) e envie a 'versao' que veio na leitura: se outra pessoa mudou o capítulo depois disso, nada é gravado e você precisa ler de novo e juntar as mudanças. Cada nota é um capítulo do documento; o número no início do título define a ordem (ex.: \"03 · Cardápio\"). Conteúdo em Markdown: 1ª linha **N · SEÇÃO** vira a etiqueta dourada; # Título; tabelas com | (1ª célula em negrito = linha de total); linha toda em *itálico* = frase de abertura; > aviso; blocos :::cards (Rótulo | Valor | Descrição, ! no início = cartão azul), :::colunas (duas colunas), :::capa (chaves marca, sobretitulo, titulo, subtitulo, info: Rótulo | Valor, lema), :::escala (grade de escala em quadradinhos coloridos: titulo: …; dias: Dom 01 | Seg 02 | …; ## grupo; linhas Nome | F/M | 08-17 | F | 09-13/17-21 | 19-07 | - …, onde F = folga e - = descanso) e :::checks (status ok ou alerta | título | detalhe), fechados com :::.",
+        {
+          id: z.string().uuid(),
+          versao: z.string().min(1).describe("O campo 'versao' que ler_nota ou ver_documento devolveu para este capítulo"),
+          title: z.string().optional(),
+          content: z.string().optional(),
+        },
+        async ({ id, versao, title, content }) =>
+          call("mcp_atualizar_nota", { p_id: id, p_versao: versao, p_title: title ?? null, p_content: content ?? null })
+      );
+
+      server.tool(
+        "versoes_capitulo",
+        "Lista as versões anteriores de um capítulo (as 50 mais recentes): quando foram trocadas, por quem e o tamanho. Use para desfazer uma mudança errada.",
+        { id: z.string().uuid() },
+        async ({ id }) => call("mcp_listar_versoes", { p_ref: id })
+      );
+
+      server.tool(
+        "versoes_estilo",
+        "Lista as versões anteriores do CSS do projeto ativo.",
+        {},
+        async () => call("mcp_listar_versoes", { p_ref: null })
+      );
+
+      server.tool(
+        "ler_versao",
+        "Mostra o conteúdo de uma versão anterior (de versoes_capitulo ou versoes_estilo).",
+        { versao_id: z.number().int() },
+        async ({ versao_id }) => call("mcp_ler_versao", { p_versao: versao_id })
+      );
+
+      server.tool(
+        "restaurar_versao",
+        "Volta um capítulo (ou o CSS do projeto) para uma versão anterior. O estado atual também fica guardado, então dá para desfazer. Confirme com o usuário antes.",
+        { versao_id: z.number().int() },
+        async ({ versao_id }) => call("mcp_restaurar_versao", { p_versao: versao_id })
       );
 
       server.tool(
@@ -172,7 +205,13 @@ function buildHandler(token: string) {
     },
     {
       instructions:
-        "Brasico é a central de projetos compartilhada da equipe. Cada projeto é um documento (capítulos em Markdown) mostrado no site como página ou como PDF no visual de uma proposta, com o histórico de mudanças. Comece com listar_projetos e usar_projeto. Para ler tudo, use ver_documento. Edite capítulos com atualizar_nota (leia antes), crie com criar_nota e tire com remover_capitulo. Os projetos são totalmente editáveis: além dos blocos prontos, cada capítulo aceita HTML livre em blocos :::html e cada projeto tem seu próprio CSS (ver_estilo / definir_estilo), então qualquer layout pode ser feito sem mudar o código do site. Antes de criar ou reestruturar, leia guia_formatacao. Tudo o que você muda aparece na hora para toda a equipe, com o selo 'via Claude'.",
+        "Brasico é a central de projetos compartilhada da equipe. Cada projeto é um documento (capítulos em Markdown) mostrado no site como página ou como PDF no visual de uma proposta, com o histórico de mudanças. Comece com listar_projetos e usar_projeto. Para ler tudo, use ver_documento. Edite capítulos com atualizar_nota (leia antes e envie a 'versao' lida), crie com criar_nota e tire com remover_capitulo. Os projetos são totalmente editáveis: além dos blocos prontos, cada capítulo aceita HTML livre em blocos :::html e cada projeto tem seu próprio CSS (ver_estilo / definir_estilo), então qualquer layout pode ser feito sem mudar o código do site. Antes de criar ou reestruturar, leia guia_formatacao. Tudo o que você muda aparece na hora para toda a equipe, com o selo 'via Claude'.\n\n" +
+        "Regras da equipe (duas pessoas, cada uma com o próprio Claude, mexem nos mesmos projetos):\n" +
+        "1. Sempre leia o capítulo antes de alterar. Se atualizar_nota disser que o capítulo mudou, leia de novo e junte as mudanças; nunca apague o trabalho do outro.\n" +
+        "2. Antes de uma mudança grande, olhe ver_atividade para saber o que o outro fez há pouco.\n" +
+        "3. Antes de reestruturar um projeto (renomear, reordenar, remover ou reescrever vários capítulos, trocar o CSS), mostre o plano ao usuário e espere a confirmação.\n" +
+        "4. Errou? Toda mudança guarda a versão anterior: versoes_capitulo, ler_versao e restaurar_versao.\n" +
+        "5. Arquivos de clientes (PDFs, planilhas, documentos) ficam só no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/, nunca no GitHub.",
     },
     { basePath: "/api", maxDuration: 60 }
   );

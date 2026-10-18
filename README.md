@@ -71,7 +71,8 @@ O número no começo do título (`03 · Cardápio`) define a ordem. Cada projeto
 |---|---|
 | `listar_projetos`, `usar_projeto`, `criar_projeto`, `renomear_projeto` | Projetos |
 | `ver_documento`, `definir_rodape`, `definir_abas` | Documento inteiro, rodapé e abas |
-| `listar_notas`, `ler_nota`, `criar_nota`, `atualizar_nota` | Capítulos |
+| `listar_notas`, `ler_nota`, `criar_nota`, `atualizar_nota` | Capítulos (`atualizar_nota` exige a `versao` lida, para um Claude não apagar o trabalho do outro) |
+| `versoes_capitulo`, `versoes_estilo`, `ler_versao`, `restaurar_versao` | Versões anteriores: desfazer qualquer mudança |
 | `remover_capitulo`, `restaurar_capitulo` | Tirar/devolver capítulo (nada se perde) |
 | `guia_formatacao`, `ver_estilo`, `definir_estilo` | Formatação e CSS do projeto |
 | `resumo_espaco`, `listar_membros`, `ver_atividade` | Visão geral, equipe, histórico |
@@ -86,6 +87,8 @@ Tudo o que o Claude faz aparece em *Mudanças* com o selo **via Claude**.
 - Arquivos no bucket **privado** `workspace-files`, entregues por `/api/arquivo/...` só para quem está logado e é da equipe do projeto.
 - Os links do Claude são guardados só como hash (SHA-256). Trate cada link como uma senha e revogue se vazar.
 - **Nenhuma chave secreta** no projeto: só a URL e a chave pública (`anon`) do Supabase, que são feitas para ficar no navegador. O conector do Claude acessa o banco só por funções `mcp_*` que validam o link.
+- **Nada se perde:** toda mudança em capítulo ou no CSS guarda a versão anterior (tabela `versoes`). Exclusões (DELETE, TRUNCATE, DROP) nas tabelas do Brasico são bloqueadas pelo próprio banco.
+- **Backup semanal** do banco no repositório privado `k4liel/brasico-backup` (GitHub Actions, toda segunda-feira).
 - Recomendado: 2FA no GitHub, na Vercel e no Supabase.
 
 ---
@@ -108,6 +111,8 @@ components/                        telas do site
 lib/                               Supabase, Markdown, blocos livres, guia de formatação
 supabase/schema.sql                banco + segurança
 supabase/mcp_functions.sql         funções do conector do Claude
+supabase/versoes_e_protecao.sql    versões, trava contra sobrescrever, proteção contra exclusões
 supabase/*.sql                     demais mudanças já aplicadas no banco
+CLAUDE.md                          regras que o Claude Code lê sozinho
 docs/PASSO_A_PASSO.md              guia de operação
 ```
