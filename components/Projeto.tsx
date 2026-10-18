@@ -250,12 +250,15 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
           </h1>
         )}
         <div className="spacer" />
-        <button
-          className={painel === "sumario" ? "botao-painel on" : "botao-painel"}
-          onClick={() => setPainel(painel === "sumario" ? null : "sumario")}
-        >
-          Sumário
-        </button>
+        {/* Projetos com abas já mostram os capítulos nas abas: sem botão Sumário */}
+        {!info.doc_abas && (
+          <button
+            className={painel === "sumario" ? "botao-painel on" : "botao-painel"}
+            onClick={() => setPainel(painel === "sumario" ? null : "sumario")}
+          >
+            Sumário
+          </button>
+        )}
         <button
           className={painel === "mudancas" ? "botao-painel on" : "botao-painel"}
           onClick={() => setPainel(painel === "mudancas" ? null : "mudancas")}
