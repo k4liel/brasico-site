@@ -101,15 +101,22 @@ function renderCards(body: string[]) {
 type Turno = { tipo: "folga" | "descanso" | "dia" | "noite" | "partido" | "plantao"; linhas: string[]; titulo: string };
 
 function lerTurno(raw: string): Turno {
-  const t = raw.trim().replace(/[–—]/g, "-").replace(/h/gi, "");
+  let t = raw.trim().replace(/[–—]/g, "-").replace(/h/gi, "");
   if (/^(f|folga)$/i.test(t)) return { tipo: "folga", linhas: ["F"], titulo: "Folga" };
   if (t === "" || /^(-|·|descanso)$/i.test(t)) return { tipo: "descanso", linhas: ["·"], titulo: "Descanso" };
+  const dois = (n: number) => String(n).padStart(2, "0");
+  // Intervalo opcional entre parênteses: "07-16 (11-12)" → aparece ao passar o mouse
+  let intervalo = "";
+  const mi = t.match(/^(.*?)\s*[([]\s*(\d{1,2})\s*-\s*(\d{1,2})\s*[)\]]\s*$/);
+  if (mi) {
+    t = mi[1];
+    intervalo = ` · intervalo ${dois(parseInt(mi[2], 10))}h–${dois(parseInt(mi[3], 10))}h`;
+  }
   const partes = t.split("/").map((p) => p.trim()).filter(Boolean);
   const horas = partes.map((p) => p.split("-").map((h) => parseInt(h, 10)));
   const ok = horas.every((h) => h.length === 2 && h.every((n) => !Number.isNaN(n)));
   if (!ok) return { tipo: "dia", linhas: [raw.trim()], titulo: raw.trim() };
-  const dois = (n: number) => String(n).padStart(2, "0");
-  const titulo = horas.map(([a, b]) => `${dois(a)}h–${dois(b)}h`).join(" / ");
+  const titulo = horas.map(([a, b]) => `${dois(a)}h–${dois(b)}h`).join(" / ") + intervalo;
   if (horas.length > 1) {
     return { tipo: "partido", linhas: horas.map(([a, b]) => `${dois(a)}·${dois(b)}`), titulo };
   }

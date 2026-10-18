@@ -15,7 +15,7 @@ O site mostra o documento em dois modos: Página (largura da tela) e PDF (folhas
 - :::capa ... ::: → capa azul. Linhas: marca:, sobretitulo:, titulo: (use | para quebrar a linha), subtitulo:, info: Rótulo | Valor (várias), lema:
 - :::cards ... ::: → cartões. Linha: Rótulo | Valor | Descrição (comece com ! para o cartão azul)
 - :::colunas ... ::: → duas colunas (cardápios, listas longas)
-- :::escala ... ::: → escala em quadradinhos (titulo:, dias: Dom 01 | Seg 02 | ..., ## grupo, linhas Nome | F/M | 08-17 | F | - ...)
+- :::escala ... ::: → escala em quadradinhos (titulo:, dias: Dom 01 | Seg 02 | ..., ## grupo, linhas Nome | F/M | 08-17 | F | - ...; intervalo opcional entre parênteses, como 08-17 (12-13), que aparece ao passar o mouse)
 - :::checks ... ::: → checagens: ok ou alerta | título | detalhe
 
 2) HTML LIVRE (qualquer estrutura)
