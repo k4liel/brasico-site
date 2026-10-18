@@ -244,15 +244,33 @@ section.folha[id], section.secao[id] { scroll-margin-top: 72px; }
 }
 
 /* Alternar Página / PDF */
-.alternar { display: inline-flex; background: var(--seg); border-radius: 9px; padding: 3px; gap: 2px; }
-.alternar button { background: transparent; color: var(--muted); padding: 5px 14px; font-size: 13px; border-radius: 7px; }
+.alternar { display: inline-flex; align-items: center; background: color-mix(in srgb, var(--seg) 70%, transparent); border-radius: 8px; padding: 2px; gap: 1px; }
+.alternar button { display: inline-flex; align-items: center; height: 24px; background: transparent; color: var(--muted); padding: 0 10px; font-size: 12px; letter-spacing: .01em; border-radius: 6px; transition: background .15s, color .15s; }
 .alternar button:hover { filter: none; color: var(--strong); }
 .alternar button.on { background: var(--seg-on); color: var(--strong); font-weight: 600; box-shadow: 0 1px 2px var(--shadow); }
-.alternar-idioma button { padding: 5px 11px; font-size: 12px; letter-spacing: .06em; }
+
+/* Barra de ações do projeto: discreta, compacta */
+.proj-acoes { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.acao {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  background: transparent; color: var(--muted); border: 0; border-radius: 7px;
+  font-size: 12.5px; font-weight: 500; transition: background .15s, color .15s;
+}
+.acao:hover { background: var(--seg); color: var(--strong); filter: none; }
+.acao.on { background: var(--seg); color: var(--strong); }
+.acao-quando { opacity: .7; font-weight: 400; }
+.acao-icone { width: 28px; padding: 0; justify-content: center; }
+.acao-excluir:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+/* Idiomas: só a bandeira */
+.alternar-idioma button { padding: 0 6px; }
+.bandeira { display: block; width: 18px; height: 12px; border-radius: 2px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); filter: saturate(.35); opacity: .6; transition: filter .2s, opacity .2s; }
+.bandeira svg { display: block; width: 100%; height: 100%; }
+.alternar-idioma button:hover .bandeira, .alternar-idioma button.on .bandeira { filter: none; opacity: 1; }
 
 /* Interruptor claro/escuro: sol que vira lua, céu que vira noite */
 .tema-switch {
-  position: relative; flex: none;
+  position: relative; flex: none; zoom: 0.68;
   width: 62px; height: 30px; padding: 0; border-radius: 999px; overflow: hidden;
   background: linear-gradient(180deg, #7cc4f5 0%, #b9e2fb 100%);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);

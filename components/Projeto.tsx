@@ -9,6 +9,7 @@ import { semDuplicatas } from "@/lib/historico";
 import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
+import Bandeira from "./Bandeira";
 import { IDIOMAS, TEXTOS, type Idioma } from "@/lib/idioma";
 
 type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null };
@@ -251,39 +252,51 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
           </h1>
         )}
         <div className="spacer" />
-        {/* Projetos com abas já mostram os capítulos nas abas: sem botão Sumário */}
-        {!info.doc_abas && (
+        <div className="proj-acoes">
+          {/* Projetos com abas já mostram os capítulos nas abas: sem botão Sumário */}
+          {!info.doc_abas && (
+            <button
+              className={painel === "sumario" ? "acao on" : "acao"}
+              onClick={() => setPainel(painel === "sumario" ? null : "sumario")}
+            >
+              Sumário
+            </button>
+          )}
           <button
-            className={painel === "sumario" ? "botao-painel on" : "botao-painel"}
-            onClick={() => setPainel(painel === "sumario" ? null : "sumario")}
+            className={painel === "mudancas" ? "acao on" : "acao"}
+            onClick={() => setPainel(painel === "mudancas" ? null : "mudancas")}
+            title="Últimas mudanças"
           >
-            Sumário
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+            Mudanças{ultimaMudanca ? <span className="acao-quando"> · {haQuanto(ultimaMudanca)}</span> : null}
           </button>
-        )}
-        <button
-          className={painel === "mudancas" ? "botao-painel on" : "botao-painel"}
-          onClick={() => setPainel(painel === "mudancas" ? null : "mudancas")}
-        >
-          Mudanças{ultimaMudanca ? <span className="muted"> · {haQuanto(ultimaMudanca)}</span> : null}
-        </button>
-        {idiomas.length > 1 && (
-          <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
-            {idiomas.map((l) => (
-              <button key={l.id} className={lingua === l.id ? "on" : ""} onClick={() => trocarIdioma(l.id)} title={l.nome} lang={l.lang}>
-                {l.sigla}
-              </button>
-            ))}
+          {idiomas.length > 1 && (
+            <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
+              {idiomas.map((l) => (
+                <button
+                  key={l.id}
+                  className={lingua === l.id ? "on" : ""}
+                  onClick={() => trocarIdioma(l.id)}
+                  title={l.nome}
+                  aria-label={l.nome}
+                  aria-pressed={lingua === l.id}
+                  lang={l.lang}
+                >
+                  <Bandeira idioma={l.id} />
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="alternar" role="group" aria-label="Visualização">
+            <button className={modo === "pagina" ? "on" : ""} onClick={() => trocarModo("pagina")}>Página</button>
+            <button className={modo === "pdf" ? "on" : ""} onClick={() => trocarModo("pdf")}>PDF</button>
           </div>
-        )}
-        <div className="alternar" role="group" aria-label="Visualização">
-          <button className={modo === "pagina" ? "on" : ""} onClick={() => trocarModo("pagina")}>Página</button>
-          <button className={modo === "pdf" ? "on" : ""} onClick={() => trocarModo("pdf")}>PDF</button>
+          {!info.removido_em && (
+            <button className="acao acao-icone acao-excluir" onClick={excluir} title="Mandar para a Lixeira" aria-label="Excluir projeto">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /></svg>
+            </button>
+          )}
         </div>
-        {!info.removido_em && (
-          <button className="botao-painel botao-excluir" onClick={excluir} title="Mandar para a Lixeira">
-            Excluir
-          </button>
-        )}
       </div>
 
       {info.removido_em && (
