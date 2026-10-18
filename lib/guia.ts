@@ -52,9 +52,12 @@ Exemplo:
 Se uma regra não pegar, use um seletor mais específico (ex.: .doc-pagina .secao h1) ou !important.
 O modo escuro troca as variáveis só no modo Página; prefira usar as variáveis em vez de cores fixas para funcionar nos dois temas.
 
-4) BOAS PRÁTICAS
+4) VERSÃO EM INGLÊS
+O português é o original. Cada capítulo pode ter também uma versão em inglês: atualizar_nota com idioma "en" (title = título em inglês, content = Markdown completo em inglês). O rodapé em inglês sai de definir_rodape com idioma "en". O site mostra o seletor PT | EN quando algum capítulo tem tradução; capítulo sem tradução aparece em português. Os textos fixos dos blocos (legenda da escala, "pág. X de Y", balão do intervalo) mudam sozinhos. Na tradução, mantenha a mesma estrutura de blocos, números e nomes de pessoas; em :::escala, traduza titulo:, dias: (Mon 01 | Tue 02 | …) e os ## grupos, sem mexer nas linhas das pessoas.
+
+5) BOAS PRÁTICAS
 - Leia o capítulo (ler_nota) antes de alterar e preserve o que não foi pedido.
-- Ao mudar um número, refaça as contas que dependem dele em todos os capítulos.
+- Ao mudar um número, refaça as contas que dependem dele em todos os capítulos (e na versão em inglês, se houver).
 - Mudanças grandes de estrutura: mostre o plano antes e espere confirmação.
 - Para tirar um capítulo use remover_capitulo (pode voltar com restaurar_capitulo).
 `.trim();

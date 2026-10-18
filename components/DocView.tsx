@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { renderConteudo } from "@/lib/livre";
 import EscalaDica from "./EscalaDica";
+import { TEXTOS, type Idioma } from "@/lib/idioma";
 
 export type Capitulo = { id?: string; titulo: string; conteudo: string };
 
@@ -26,16 +27,18 @@ export default function DocView({
   rodape,
   acoes,
   modo = "pdf",
+  idioma = "pt",
 }: {
   capitulos: Capitulo[];
   rodape?: string | null;
   acoes?: (cap: Capitulo, idx: number) => ReactNode;
   modo?: "pdf" | "pagina";
+  idioma?: Idioma;
 }) {
   // Modo página: o documento corre livre, como um site, sem folhas A4.
   if (modo === "pagina") {
     return (
-      <article className="doc doc-pagina">
+      <article className="doc doc-pagina" lang={idioma === "en" ? "en" : "pt-BR"}>
         {montarFolhas(capitulos).map((f, n, todas) => {
           const primeira = n === 0 || todas[n - 1].idx !== f.idx;
           return (
@@ -45,12 +48,12 @@ export default function DocView({
               className={f.capa ? "secao secao-capa" : "secao"}
             >
               {acoes && primeira && <div className="folha-acoes nao-imprimir">{acoes(f.cap, f.idx)}</div>}
-              <div dangerouslySetInnerHTML={{ __html: renderConteudo(f.md) }} />
+              <div dangerouslySetInnerHTML={{ __html: renderConteudo(f.md, idioma) }} />
             </section>
           );
         })}
         {rodape && <footer className="doc-pagina-rodape">{rodape}</footer>}
-        <EscalaDica />
+        <EscalaDica idioma={idioma} />
       </article>
     );
   }
@@ -67,9 +70,9 @@ export default function DocView({
     : "";
 
   return (
-    <div className="doc">
+    <div className="doc" lang={idioma === "en" ? "en" : "pt-BR"}>
       {css && <style dangerouslySetInnerHTML={{ __html: css }} />}
-      <EscalaDica />
+      <EscalaDica idioma={idioma} />
       {folhas.map((f, n) => {
         const primeiraDoCap = f.idx !== ultimoCap;
         ultimoCap = f.idx;
@@ -80,13 +83,11 @@ export default function DocView({
             className={f.capa ? "folha folha-capa" : "folha"}
           >
             {acoes && primeiraDoCap && <div className="folha-acoes nao-imprimir">{acoes(f.cap, f.idx)}</div>}
-            <div className="folha-corpo" dangerouslySetInnerHTML={{ __html: renderConteudo(f.md) }} />
+            <div className="folha-corpo" dangerouslySetInnerHTML={{ __html: renderConteudo(f.md, idioma) }} />
             {!f.capa && (
               <div className="folha-rodape">
                 <span>{rodape ?? ""}</span>
-                <span>
-                  pág. {n + offset} de {total}
-                </span>
+                <span>{TEXTOS[idioma].pagina(n + offset, total)}</span>
               </div>
             )}
           </section>

@@ -9,9 +9,10 @@ import { semDuplicatas } from "@/lib/historico";
 import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
+import { TEXTOS, type Idioma } from "@/lib/idioma";
 
-type Info = { id: string; name: string; doc_rodape: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null };
-type Nota = { id: string; title: string; content: string; archived_at: string | null };
+type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null };
+type Nota = { id: string; title: string; content: string; title_en: string | null; content_en: string | null; archived_at: string | null };
 type Log = { id: string; user_id: string | null; action: string; entity: string; entity_id: string | null; details: string | null; source: string; created_at: string };
 type Perfil = { id: string; email: string | null; display_name: string | null };
 
@@ -43,6 +44,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   const [perfis, setPerfis] = useState<Record<string, Perfil>>({});
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
   const [painel, setPainel] = useState<"sumario" | "mudancas" | null>(null);
+  const [idioma, setIdioma] = useState<Idioma>("pt");
 
   // Fecha o painel com Esc
   useEffect(() => {
@@ -56,8 +58,16 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     try {
       const v = new URLSearchParams(window.location.search).get("ver") ?? localStorage.getItem("brasico-ver");
       if (v === "pdf" || v === "pagina") setModo(v);
+      const l = new URLSearchParams(window.location.search).get("lang") ?? localStorage.getItem("brasico-idioma");
+      if (l === "pt" || l === "en") setIdioma(l);
     } catch {}
   }, []);
+  function trocarIdioma(l: Idioma) {
+    setIdioma(l);
+    try {
+      localStorage.setItem("brasico-idioma", l);
+    } catch {}
+  }
   function trocarModo(m: "pagina" | "pdf") {
     setModo(m);
     try {
@@ -72,7 +82,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   useEffect(() => {
     (async () => {
       await supabase.rpc("accept_invites");
-      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_css,doc_abas,removido_em").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_css,doc_abas,removido_em").eq("id", projectId).maybeSingle();
       setInfo((data as Info) ?? null);
       const { data: m } = await supabase.from("workspace_members").select("user_id").eq("workspace_id", projectId);
       const ids = (m ?? []).map((x: { user_id: string }) => x.user_id);
@@ -98,10 +108,23 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // Inglês: só aparece a opção quando algum capítulo tem versão em inglês.
+  // Capítulo sem tradução continua em português.
+  const temIngles = notas.some((n) => !n.archived_at && n.content_en?.trim());
+  const lingua: Idioma = temIngles ? idioma : "pt";
+  const en = lingua === "en";
   const capitulos = useMemo(
-    () => notas.filter((n) => !n.archived_at).map((n) => ({ id: n.id, titulo: n.title, conteudo: n.content })),
-    [notas]
+    () =>
+      notas
+        .filter((n) => !n.archived_at)
+        .map((n) => ({
+          id: n.id,
+          titulo: (en && n.title_en?.trim()) || n.title,
+          conteudo: (en && n.content_en?.trim()) || n.content,
+        })),
+    [notas, en]
   );
+  const rodape = (en && info?.doc_rodape_en?.trim()) || info?.doc_rodape || null;
   const ultimaMudanca = log[0]?.created_at;
 
   // Abas: no modo página cada capítulo abre sozinho. A aba fica no endereço (#cap-…).
@@ -190,6 +213,12 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
         >
           Mudanças{ultimaMudanca ? <span className="muted"> · {haQuanto(ultimaMudanca)}</span> : null}
         </button>
+        {temIngles && (
+          <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
+            <button className={lingua === "pt" ? "on" : ""} onClick={() => trocarIdioma("pt")} title="Português" lang="pt-BR">PT</button>
+            <button className={lingua === "en" ? "on" : ""} onClick={() => trocarIdioma("en")} title="English" lang="en">EN</button>
+          </div>
+        )}
         <div className="alternar" role="group" aria-label="Visualização">
           <button className={modo === "pagina" ? "on" : ""} onClick={() => trocarModo("pagina")}>Página</button>
           <button className={modo === "pdf" ? "on" : ""} onClick={() => trocarModo("pdf")}>PDF</button>
@@ -242,25 +271,25 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
                   );
                 })}
               </nav>
-              <DocView key={abaAtual.id} capitulos={[abaAtual]} modo="pagina" />
+              <DocView key={`${abaAtual.id}-${lingua}`} capitulos={[abaAtual]} modo="pagina" idioma={lingua} />
               <div className="abas-passo">
                 {idxAtual > 0 ? (
                   <button className="passo" onClick={() => abrirAba(capitulos[idxAtual - 1].id)}>
-                    <span className="muted small">← Anterior</span>
+                    <span className="muted small">{TEXTOS[lingua].anterior}</span>
                     <b>{semNumero(capitulos[idxAtual - 1].titulo)}</b>
                   </button>
                 ) : <span />}
                 {idxAtual < capitulos.length - 1 ? (
                   <button className="passo passo-prox" onClick={() => abrirAba(capitulos[idxAtual + 1].id)}>
-                    <span className="muted small">Próximo →</span>
+                    <span className="muted small">{TEXTOS[lingua].proximo}</span>
                     <b>{semNumero(capitulos[idxAtual + 1].titulo)}</b>
                   </button>
                 ) : <span />}
               </div>
-              {info.doc_rodape && <footer className="doc-pagina-rodape">{info.doc_rodape}</footer>}
+              {rodape && <footer className="doc-pagina-rodape">{rodape}</footer>}
             </>
           ) : (
-            <DocView capitulos={capitulos} rodape={info.doc_rodape} modo={modo} />
+            <DocView capitulos={capitulos} rodape={rodape} modo={modo} idioma={lingua} />
           )
         )}
       </main>

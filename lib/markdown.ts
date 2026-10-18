@@ -25,6 +25,8 @@
 //   - linha de tabela cuja 1ª célula está em negrito vira linha de total
 //   - "### Título — valor" mostra o valor alinhado à direita
 
+import { TEXTOS, type Idioma } from "./idioma";
+
 function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -54,7 +56,7 @@ const isNumeric = (c: string) => {
   return t !== "" && t !== "—" && /^(≈\s*|~\s*)?(R\$\s*)?[\d.,]+(\s*(%|×|x|kg|L|un))?(\s*\/\s*R\$\s*[\d.,]+)?$/.test(t);
 };
 
-type Opts = { colunas?: boolean };
+type Opts = { colunas?: boolean; idioma?: Idioma };
 
 function renderCapa(body: string[]) {
   const kv: Record<string, string[]> = {};
@@ -138,20 +140,10 @@ function lerTurno(raw: string): Turno {
   return { tipo: tipoPorEntrada(a, b), linhas: [dois(a), dois(b)], horario, intervalo, entrada: a };
 }
 
-const ROTULO_TIPO: Record<TipoTurno, string> = {
-  abertura: "Abertura",
-  manha: "Manhã",
-  inter: "Intermediário",
-  tarde: "Tarde",
-  noite: "Noite",
-  dia: "Turno",
-  partido: "Turno partido",
-  plantao: "Plantão 12x36",
-  folga: "Folga",
-  descanso: "Descanso 12x36",
-};
 
-function renderEscala(body: string[]) {
+function renderEscala(body: string[], idioma: Idioma = "pt") {
+  const T = TEXTOS[idioma];
+  const rotulo = (t: TipoTurno) => T.turnos[t];
   let titulo = "";
   let dias: { nome: string; num: string; dom: boolean }[] = [];
   type Linha = { grupo: string } | { nome: string; sexo: string; turnos: Turno[] };
@@ -193,12 +185,12 @@ function renderEscala(body: string[]) {
   if (titulo) html += `<div class="escala-titulo">${inline(titulo)}</div>`;
   html += `<div class="escala-wrap"><table class="escala-grade"><colgroup><col class="esc-col-nome" />`;
   for (let d = 0; d < n; d++) html += `<col />`;
-  html += `<col class="esc-col-tot" /><col class="esc-col-tot" /></colgroup><thead><tr><th class="esc-nome">Equipe</th>`;
+  html += `<col class="esc-col-tot" /><col class="esc-col-tot" /></colgroup><thead><tr><th class="esc-nome">${T.equipe}</th>`;
   for (let d = 0; d < n; d++) {
     const dia = dias[d] ?? { nome: "", num: String(d + 1), dom: false };
     html += `<th class="esc-dia${dia.dom ? " dom" : ""}"><span>${inline(dia.nome)}</span><b>${inline(dia.num)}</b></th>`;
   }
-  html += `<th class="esc-tot">Dias</th><th class="esc-tot">Dom. folga</th></tr></thead><tbody>`;
+  html += `<th class="esc-tot">${T.dias}</th><th class="esc-tot">${T.domFolga}</th></tr></thead><tbody>`;
 
   // Linhas
   for (const l of linhas) {
@@ -217,8 +209,8 @@ function renderEscala(body: string[]) {
       else if (dom && t.tipo === "folga") domFolga++;
       const trabalha = t.tipo !== "folga" && t.tipo !== "descanso";
       const dica = trabalha
-        ? ` data-h="${esc(t.horario)}" data-t="${esc(ROTULO_TIPO[t.tipo])}"${t.intervalo ? ` data-i="${esc(t.intervalo)}"` : ""} aria-label="${esc(t.horario + (t.intervalo ? `, intervalo ${t.intervalo}` : ""))}"`
-        : ` aria-label="${esc(t.horario)}"`;
+        ? ` data-h="${esc(t.horario)}" data-t="${esc(rotulo(t.tipo))}"${t.intervalo ? ` data-i="${esc(t.intervalo)}"` : ""} aria-label="${esc(t.horario + (t.intervalo ? `, ${T.intervaloAria} ${t.intervalo}` : ""))}"`
+        : ` aria-label="${esc(rotulo(t.tipo))}"`;
       html += `<td class="esc-c t-${t.tipo}${dom ? " dom" : ""}"${dica}>${t.linhas.map((x) => `<span>${esc(x)}</span>`).join("")}</td>`;
     }
     html += `<td class="esc-tot">${trab}</td><td class="esc-tot">${l.turnos.some((t) => t.tipo === "plantao") ? "—" : domFolga}</td></tr>`;
@@ -233,7 +225,7 @@ function renderEscala(body: string[]) {
     const min = Math.min(...tot);
     const max = Math.max(...tot);
     const corte = min + (max - min) * 0.25;
-    html += `<tfoot><tr><td class="esc-nome">Pessoas trabalhando</td>${tot
+    html += `<tfoot><tr><td class="esc-nome">${T.trabalhando}</td>${tot
       .map((v, d) => `<td class="esc-c${max > min && v <= corte ? " baixo" : ""}${dias[d]?.dom ? " dom" : ""}">${v}</td>`)
       .join("")}<td class="esc-tot"></td><td class="esc-tot"></td></tr></tfoot>`;
   }
@@ -244,13 +236,13 @@ function renderEscala(body: string[]) {
   const entra = (t: TipoTurno) => {
     const hs = Array.from(usados.get(t) ?? []).sort((x, y) => x - y);
     if (!hs.length || t === "partido" || t === "dia") return "";
-    return `<em>entra ${hs.map((h) => `${dois(h)}h`).join(hs.length > 2 ? ", " : " ou ").replace(/, ([^,]*)$/, " ou $1")}</em>`;
+    return `<em>${T.entra} ${hs.map((h) => `${dois(h)}h`).join(hs.length > 2 ? ", " : ` ${T.ou} `).replace(/, ([^,]*)$/, ` ${T.ou} $1`)}</em>`;
   };
   html += `<div class="escala-legenda">${ordem
     .filter((t) => usados.has(t))
-    .map((t) => `<span><i class="esc-chip t-${t}"></i><b>${ROTULO_TIPO[t]}</b>${entra(t)}</span>`)
-    .join("")}${dias.some((d) => d.dom) ? `<span><i class="esc-chip dom-chip"></i><b>Domingo</b></span>` : ""}${
-    temIntervalo ? `<span class="esc-dica-aviso nao-imprimir">Passe o mouse no horário para ver o intervalo</span>` : ""
+    .map((t) => `<span><i class="esc-chip t-${t}"></i><b>${rotulo(t)}</b>${entra(t)}</span>`)
+    .join("")}${dias.some((d) => d.dom) ? `<span><i class="esc-chip dom-chip"></i><b>${T.domingo}</b></span>` : ""}${
+    temIntervalo ? `<span class="esc-dica-aviso nao-imprimir">${T.dicaIntervalo}</span>` : ""
   }</div>`;
   return html + `</div>`;
 }
@@ -275,7 +267,8 @@ function renderChecks(body: string[]) {
 //   CÓDIGO | Título | Descrição | arquivo (sem .pdf) | 4 págs. | interno|restrito
 // ---------------------------------------------------------------------
 const BASE_ARQ = /^\/api\/arquivo\/[0-9a-f-]{36}\/[a-z0-9_-]+$/;
-function renderArquivos(body: string[]) {
+function renderArquivos(body: string[], idioma: Idioma = "pt") {
+  const T = TEXTOS[idioma];
   let base = "";
   let estilo = "capas";
   const itens: string[] = [];
@@ -292,7 +285,7 @@ function renderArquivos(body: string[]) {
     if (!BASE_ARQ.test(base) || !/^[a-z0-9][a-z0-9_-]*$/.test(arq ?? "")) continue;
     const pdf = `${base}/${arq}.pdf`;
     const restrito = /restrit/i.test(classe ?? "");
-    const tag = `<span class="arq-tag${restrito ? " restrito" : ""}">${restrito ? "Restrito" : "Uso interno"}</span>`;
+    const tag = `<span class="arq-tag${restrito ? " restrito" : ""}">${restrito ? T.restrito : T.interno}</span>`;
     const meta = `<span class="arq-meta">${paginas ? `<span>${esc(paginas)}</span>` : ""}${tag}</span>`;
     const capa =
       estilo === "lista"
@@ -304,7 +297,7 @@ function renderArquivos(body: string[]) {
         `<span class="arq-info"><span class="arq-cod">${esc(codigo ?? "")}</span><b>${inline(titulo ?? "")}</b>` +
         (desc ? `<span class="arq-desc">${inline(desc)}</span>` : "") +
         meta +
-        `</span><span class="arq-abrir" aria-hidden="true">Abrir</span></button>`
+        `</span><span class="arq-abrir" aria-hidden="true">${T.abrir}</span></button>`
     );
   }
   return `<div class="arqs arqs-${estilo === "lista" ? "lista" : "capas"}">${itens.join("")}</div>`;
@@ -332,9 +325,9 @@ export function renderMarkdown(md: string, opts: Opts = {}): string {
       i++; // fecha :::
       if (kind === "capa") out.push(renderCapa(body));
       else if (kind === "cards") out.push(renderCards(body));
-      else if (kind === "escala") out.push(renderEscala(body));
+      else if (kind === "escala") out.push(renderEscala(body, opts.idioma));
       else if (kind === "checks") out.push(renderChecks(body));
-      else if (kind === "arquivos") out.push(renderArquivos(body));
+      else if (kind === "arquivos") out.push(renderArquivos(body, opts.idioma));
       else if (kind === "colunas") out.push(`<div class="colunas">${renderMarkdown(body.join("\n"), { colunas: true })}</div>`);
       else out.push(renderMarkdown(body.join("\n"), opts));
       first = false;

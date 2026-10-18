@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { TEXTOS, type Idioma } from "@/lib/idioma";
 
 type Dica = { x: number; y: number; acima: boolean; quem: string; dia: string; h: string; t: string; i: string };
 
 // Balão das escalas (:::escala): mostra o horário e o intervalo do quadradinho
 // sob o mouse — ou tocado, no celular.
-export default function EscalaDica() {
+export default function EscalaDica({ idioma = "pt" }: { idioma?: Idioma }) {
   const [dica, setDica] = useState<Dica | null>(null);
   const ativo = useRef<HTMLElement | null>(null);
 
@@ -77,7 +78,7 @@ export default function EscalaDica() {
       </div>
       {dica.i && (
         <div className="esc-dica-i">
-          <span>Intervalo</span>
+          <span>{TEXTOS[idioma].intervalo}</span>
           <b>{dica.i}</b>
         </div>
       )}

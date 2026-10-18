@@ -5,6 +5,7 @@
 // Tudo passa por uma lista de permissões: nada de script, iframe,
 // formulário, eventos (onclick…) ou links javascript:.
 // =====================================================================
+import type { Idioma } from "./idioma";
 import { renderMarkdown } from "./markdown";
 
 const TAGS = new Set(
@@ -87,10 +88,10 @@ export function cssDoProjeto(css: string | null | undefined, escopo: string): st
 }
 
 /** Markdown com os blocos do Brasico + blocos :::html livres. */
-export function renderConteudo(md: string): string {
+export function renderConteudo(md: string, idioma: Idioma = "pt"): string {
   const partes = md.replace(/\r/g, "").split(/^:::html[^\n]*\n([\s\S]*?)^:::[ \t]*$/m);
   // split com grupo: [md, html, md, html, md...]
   return partes
-    .map((p, i) => (i % 2 === 1 ? `<div class="bloco-livre">${limparHtml(p)}</div>` : p.trim() ? renderMarkdown(p) : ""))
+    .map((p, i) => (i % 2 === 1 ? `<div class="bloco-livre">${limparHtml(p)}</div>` : p.trim() ? renderMarkdown(p, { idioma }) : ""))
     .join("");
 }

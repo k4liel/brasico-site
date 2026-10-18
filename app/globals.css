@@ -242,6 +242,7 @@ section.folha[id], section.secao[id] { scroll-margin-top: 72px; }
 .alternar button { background: transparent; color: var(--muted); padding: 5px 14px; font-size: 13px; border-radius: 7px; }
 .alternar button:hover { filter: none; color: var(--strong); }
 .alternar button.on { background: var(--seg-on); color: var(--strong); font-weight: 600; box-shadow: 0 1px 2px var(--shadow); }
+.alternar-idioma button { padding: 5px 11px; font-size: 12px; letter-spacing: .06em; }
 
 /* Interruptor claro/escuro: sol que vira lua, céu que vira noite */
 .tema-switch {
