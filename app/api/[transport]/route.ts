@@ -217,80 +217,77 @@ function buildHandler(token: string) {
         async ({ id }) => call("mcp_arquivar_capitulo", { p_id: id, p_remover: false })
       );
 
-      // ---------- Brainstorm (ideias e tarefas da equipe, fora dos projetos) ----------
-      const STATUS = z.enum(["entrada", "conversa", "decidido", "fazendo", "feito", "estacionado"]);
+      // ---------- Brainstorm: listas com caixinhas (tarefas, ideias, checklists) ----------
+      const DATA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
       server.tool(
         "guia_brainstorm",
-        "Mostra como trabalhar na área Brainstorm: anotar e organizar ideias, conduzir um brainstorm (uma pergunta por vez, 2–3 caminhos, decisão registrada) e fazer a revisão da semana. Leia antes de conduzir um brainstorm ou uma revisão.",
+        "Mostra como trabalhar na área Brainstorm (listas com caixinhas): anotar, fazer checklists, conduzir um brainstorm e a revisão da semana. Leia antes de conduzir um brainstorm ou uma revisão.",
         {},
         async () => text(GUIA_BRAINSTORM)
       );
 
       server.tool(
-        "listar_ideias",
-        "Lista as ideias e tarefas do Brainstorm da equipe (todas as colunas, exceto arquivadas), com status, projeto, responsável, prazo e data de hoje. Filtre por status ou por texto.",
-        { status: STATUS.optional(), busca: z.string().optional() },
-        async ({ status, busca }) => call("mcp_listar_ideias", { p_status: status ?? null, p_busca: busca ?? null })
+        "listar_listas",
+        "Lista as listas do Brainstorm da equipe (ex.: Tarefas, Ideias, checklists) com quantos itens abertos e feitos cada uma tem.",
+        {},
+        async () => call("mcp_listar_listas")
       );
 
       server.tool(
-        "ler_ideia",
-        "Lê uma ideia do Brainstorm com todos os comentários.",
-        { id: z.string().uuid() },
-        async ({ id }) => call("mcp_ler_ideia", { p_id: id })
+        "ver_lista",
+        "Mostra os itens de uma lista (pelo nome ou id) ou de todas, com quem faz, prazo e a data de hoje. Por padrão só os abertos.",
+        { lista: z.string().optional(), incluir_feitos: z.boolean().optional() },
+        async ({ lista, incluir_feitos }) => call("mcp_ver_lista", { p_lista: lista ?? null, p_incluir_feitos: incluir_feitos ?? false })
       );
 
       server.tool(
-        "anotar_ideia",
-        "Anota uma ideia ou tarefa nova no Brainstorm (entra em 'entrada', a não ser que indique outro status). Título curto; o que a pessoa disse vai na descrição. Pode ligar a um projeto (id de listar_projetos).",
+        "criar_lista",
+        "Cria uma lista nova no Brainstorm (ex.: um checklist \"Abertura Natal\").",
+        { nome: z.string().min(1).max(80) },
+        async ({ nome }) => call("mcp_criar_lista", { p_nome: nome })
+      );
+
+      server.tool(
+        "adicionar_item",
+        "Adiciona um item com caixinha numa lista do Brainstorm (pelo nome da lista, ex.: \"Tarefas\" ou \"Ideias\"). Opcional: quem faz (nome ou e-mail de alguém da equipe), prazo (AAAA-MM-DD) e nota com detalhes.",
         {
-          titulo: z.string().min(1).max(200),
-          descricao: z.string().optional(),
-          status: STATUS.optional(),
-          projeto_id: z.string().uuid().optional(),
+          lista: z.string().min(1),
+          texto: z.string().min(1).max(300),
+          responsavel: z.string().optional(),
+          prazo: DATA.optional(),
+          nota: z.string().optional(),
         },
-        async ({ titulo, descricao, status, projeto_id }) =>
-          call("mcp_anotar_ideia", { p_titulo: titulo, p_descricao: descricao ?? null, p_status: status ?? "entrada", p_projeto: projeto_id ?? null })
+        async ({ lista, texto, responsavel, prazo, nota }) =>
+          call("mcp_adicionar_item", { p_lista: lista, p_texto: texto, p_responsavel: responsavel ?? null, p_prazo: prazo ?? null, p_nota: nota ?? null })
       );
 
       server.tool(
-        "atualizar_ideia",
-        "Atualiza uma ideia do Brainstorm: título, descrição, status (mover de coluna), projeto, responsável (nome ou e-mail de alguém da equipe; vazio tira), prazo e rever_em (AAAA-MM-DD), decisão tomada, ou arquivar (tira do quadro sem apagar).",
+        "atualizar_item",
+        "Atualiza um item do Brainstorm: marcar feito (true/false), texto, quem faz (vazio tira), prazo, sem_prazo, nota, mudar de lista, ou arquivar (tira da lista sem apagar).",
         {
           id: z.string().uuid(),
-          titulo: z.string().optional(),
-          descricao: z.string().optional(),
-          status: STATUS.optional(),
-          projeto_id: z.string().uuid().optional(),
-          sem_projeto: z.boolean().optional().describe("true para desligar a ideia do projeto"),
+          feito: z.boolean().optional(),
+          texto: z.string().optional(),
           responsavel: z.string().optional(),
-          prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-          rever_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-          decisao: z.string().optional(),
+          prazo: DATA.optional(),
+          sem_prazo: z.boolean().optional(),
+          nota: z.string().optional(),
+          lista: z.string().optional(),
           arquivar: z.boolean().optional(),
         },
         async (a) =>
-          call("mcp_atualizar_ideia", {
+          call("mcp_atualizar_item", {
             p_id: a.id,
-            p_titulo: a.titulo ?? null,
-            p_descricao: a.descricao ?? null,
-            p_status: a.status ?? null,
-            p_projeto: a.projeto_id ?? null,
-            p_sem_projeto: a.sem_projeto ?? false,
+            p_texto: a.texto ?? null,
+            p_feito: a.feito ?? null,
             p_responsavel: a.responsavel ?? null,
             p_prazo: a.prazo ?? null,
-            p_rever_em: a.rever_em ?? null,
-            p_decisao: a.decisao ?? null,
+            p_sem_prazo: a.sem_prazo ?? false,
+            p_nota: a.nota ?? null,
+            p_lista: a.lista ?? null,
             p_arquivar: a.arquivar ?? false,
           })
-      );
-
-      server.tool(
-        "comentar_ideia",
-        "Comenta numa ideia do Brainstorm (raciocínio, prós e contras, o que falta decidir). O comentário aparece com o seu nome e 'via Claude'.",
-        { id: z.string().uuid(), texto: z.string().min(1).max(4000) },
-        async ({ id, texto }) => call("mcp_comentar_ideia", { p_id: id, p_texto: texto })
       );
 
       // ---------- Atividade ----------
@@ -311,7 +308,7 @@ function buildHandler(token: string) {
         "4. Errou? Toda mudança guarda a versão anterior: versoes_capitulo, ler_versao e restaurar_versao.\n" +
         "5. Idiomas: o português é o original. Cada capítulo pode ter versão em inglês e em polonês (atualizar_nota com idioma \"en\" ou \"pl\"); o site mostra o seletor PT | EN | PL com os idiomas que têm tradução. Ao mudar o português de um capítulo que já tem tradução, atualize as traduções também.\n" +
         "6. Arquivos de clientes (PDFs, planilhas, documentos) ficam só no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/, nunca no GitHub.\n" +
-        "7. Brainstorm: ideias e tarefas soltas da equipe ficam na área Brainstorm (listar_ideias, anotar_ideia, atualizar_ideia, comentar_ideia). Quando o usuário soltar uma ideia, anote. Para conduzir um brainstorm ou a revisão da semana, leia antes guia_brainstorm.",
+        "7. Brainstorm: tarefas, ideias e checklists da equipe ficam em listas com caixinhas (listar_listas, ver_lista, adicionar_item, atualizar_item, criar_lista). Quando o usuário soltar uma tarefa ou ideia, anote. Para conduzir um brainstorm ou a revisão da semana, leia antes guia_brainstorm.",
     },
     { basePath: "/api", maxDuration: 60 }
   );

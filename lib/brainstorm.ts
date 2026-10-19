@@ -1,44 +1,37 @@
-// Métodos da área Brainstorm, entregues ao Claude pela ferramenta guia_brainstorm.
-// Base: skill "brainstorming" do Superpowers (obra/superpowers), revisão semanal do GTD
-// e Agora/Depois/Talvez — adaptados para dois sócios não programadores.
+// Método da área Brainstorm, entregue ao Claude pela ferramenta guia_brainstorm.
+// Base: skill "brainstorming" do Superpowers (obra/superpowers) e a revisão semanal do GTD,
+// simplificados para listas com caixinhas e dois sócios não programadores.
 export const GUIA_BRAINSTORM = `
 BRAINSTORM DO BRASICO — COMO TRABALHAR
 
-A área Brainstorm (no menu do site) guarda as ideias e tarefas soltas da equipe, fora dos documentos dos projetos.
-Cada ideia anda por estas colunas:
-- entrada: caiu na cabeça, foi anotada. Ainda não foi pensada.
-- conversa: estamos discutindo. Falta decidir.
-- decidido: vamos fazer. Deve ter responsável e, se possível, prazo.
-- fazendo: alguém já está tocando.
-- feito: pronto. Registre a decisão/resultado em "decisao".
-- estacionado: boa ideia, mas não agora. Sempre com rever_em (data para olhar de novo).
-Uma ideia pode ser ligada a um projeto do Brasico (projeto_id) ou ficar solta.
+A área Brainstorm (no menu do site) são listas com caixinhas, como o app Lembretes:
+- Cada lista tem itens com caixinha (feito ou não), e opcionalmente quem faz, prazo e uma nota.
+- Já existem as listas "Tarefas" e "Ideias". Crie outras quando fizer sentido (ex.: "Abertura Natal", "Compras Sempre Vivo").
+- As listas são da equipe: os dois sócios veem tudo.
 
-1) ANOTAR E ORGANIZAR
-- Quando o usuário soltar uma ideia ("anota aí…", "tive uma ideia…"), use anotar_ideia: título curto (até ~8 palavras, começando por verbo ou substantivo claro) e a descrição com o que ele disse. Não peça permissão para anotar; anote e confirme em uma linha.
-- Antes de criar, veja com listar_ideias (busca) se já existe algo parecido; se existir, comente nela em vez de duplicar.
-- Mover, definir responsável, prazo ou projeto: atualizar_ideia. Responsável = nome ou e-mail de alguém da equipe.
-- Para registrar raciocínio, prós e contras ou o que a outra pessoa disse: comentar_ideia.
-- Nunca apague: para tirar do quadro, use arquivar.
+1) ANOTAR
+- "Anota aí…", "lembra de…", "tenho que…": adicionar_item na lista certa ("Tarefas" para coisas a fazer, "Ideias" para ideias, ou a lista do assunto). Texto curto e claro, começando por verbo nas tarefas ("Contratar contador"). Detalhes vão na nota.
+- Não peça permissão para anotar: anote e confirme em uma linha.
+- Antes, veja com ver_lista se já existe algo igual.
+- Marcar como feito, mudar quem faz, prazo ou lista: atualizar_item. Nunca apague: use arquivar.
 
-2) CONDUZIR UM BRAINSTORM (quando pedirem "vamos pensar em…", "me ajuda a decidir…")
-Siga esta ordem, sem pular etapas:
-a. Entenda o porquê. Faça UMA pergunta por mensagem, aberta e concreta ("o que aconteceu que te fez pensar nisso?"). Cubra: objetivo, como saber que deu certo, o que NÃO queremos, o que já tentamos, restrições (dinheiro, prazo, pessoas). Ofereça pular as perguntas se a pessoa preferir.
-b. Devolva o entendimento em um parágrafo curto, marcando o que é suposição, e pergunte o que está errado ou faltando.
-c. Proponha 2 ou 3 caminhos, cada um com custo, esforço e risco em uma linha, e diga qual você recomenda e por quê.
-d. Quando a pessoa escolher, registre: atualize a ideia (status decidido ou estacionado, decisao com o caminho escolhido e o motivo) e, se houver próximos passos, crie uma ideia por passo com responsável e prazo.
-e. Nada é "decidido" sem a pessoa dizer que concorda. Se o assunto envolve os dois sócios, deixe em "conversa" e comente o que falta o outro opinar.
-Dica: quando as ideias empacam, use uma destas lentes, uma por vez: inverter ("como faríamos isso dar errado?"), o cliente ("o que o cliente perceberia?"), o mínimo ("qual a versão de 1 semana?"), o dinheiro ("quanto custa não fazer?").
+2) CHECKLIST
+- "Faz um checklist para…": crie uma lista com o nome do assunto (criar_lista) e adicione um item por passo, na ordem em que acontecem. Mostre a lista e pergunte se falta algo.
 
-3) REVISÃO DA SEMANA (quando pedirem "revisão", "o que temos pra semana", ou numa segunda-feira)
-Use listar_ideias e entregue, nesta ordem:
-- Caixa de entrada: cada ideia nova com uma sugestão (conversar, decidir, estacionar, arquivar).
-- Atrasadas: decididas/fazendo com prazo vencido (compare com o campo "hoje").
-- Paradas: em conversa há mais de 14 dias sem novidade.
-- Estacionadas cuja data rever_em chegou.
-- Feitas desde a última revisão (para comemorar e registrar).
-- Proposta de foco: no máximo 3 prioridades da semana para cada sócio, com o motivo.
-Não mova nada sozinho na revisão: proponha e aplique só o que a pessoa aprovar.
+3) BRAINSTORM ("vamos pensar em…", "me ajuda a decidir…")
+a. Faça UMA pergunta por mensagem até entender o porquê: o objetivo, como saber que deu certo, o que não queremos, limites de dinheiro e prazo. Ofereça pular as perguntas.
+b. Resuma o que entendeu em poucas linhas e pergunte se está certo.
+c. Proponha 2 ou 3 caminhos (custo, esforço e risco em uma linha cada) e diga qual recomenda.
+d. Quando a pessoa escolher, transforme em itens: os próximos passos vão para "Tarefas" (com quem faz e prazo, se ela disser) e as ideias guardadas vão para "Ideias". A decisão e o motivo vão na nota do item principal.
+e. Se o assunto depende do outro sócio, anote "Conversar com <nome> sobre…" em Tarefas.
 
-Tom: português simples, frases curtas, sem jargão. Os dois sócios não são programadores.
+4) REVISÃO DA SEMANA ("revisão", "o que temos pra semana")
+Use listar_listas e ver_lista (sem filtro) e mostre, curto:
+- Atrasados (prazo antes de "hoje").
+- Para esta semana.
+- Sem dono.
+- Feitos desde a última semana (ver_lista com incluir_feitos).
+Sugira até 3 prioridades por sócio. Só altere itens que a pessoa aprovar.
+
+Tom: português simples, frases curtas, sem jargão.
 `.trim();
