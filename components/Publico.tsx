@@ -68,7 +68,10 @@ export default function Publico({ slug }: { slug: string }) {
   // Baixar PDF: mostra o documento inteiro em folhas A4 e abre a janela de impressão (Salvar como PDF)
   function baixarPdf() {
     setModo("pdf");
-    setTimeout(() => window.print(), 400);
+    setTimeout(() => {
+      if (doc) document.title = doc.nome;
+      window.print();
+    }, 500);
   }
   function abrirAba(i: number) {
     setAba(i);

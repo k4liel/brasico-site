@@ -201,7 +201,7 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
 
   // Link público (só leitura, sem login)
   const [compartilhando, setCompartilhando] = useState(false);
-  const [copiado, setCopiado] = useState<"pagina" | "pdf" | null>(null);
+  const [copiado, setCopiado] = useState(false);
   const linkPublico = info?.is_public && info.public_slug ? `${typeof window !== "undefined" ? window.location.origin : ""}/p/${info.public_slug}` : null;
   async function compartilhar(ativo: boolean, novo = false) {
     if (!info || compartilhando) return;
@@ -216,16 +216,32 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
     if (error) return alert(error.message);
     const slug = String((data as { caminho: string }).caminho).replace("/p/", "");
     setInfo((i) => (i ? { ...i, is_public: ativo, public_slug: slug } : i));
-    setCopiado(null);
+    setCopiado(false);
   }
-  async function copiarLink(link: string, qual: "pagina" | "pdf") {
+  async function copiarLink(link: string) {
     try {
       await navigator.clipboard.writeText(link);
-      setCopiado(qual);
-      setTimeout(() => setCopiado(null), 2500);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2500);
     } catch {
       window.prompt("Copie o link:", link);
     }
+  }
+
+  // Baixar PDF: mostra as folhas A4 e abre "Salvar como PDF"; o arquivo sai com o nome do projeto
+  function baixarPdf() {
+    if (!info) return;
+    setModo("pdf");
+    const antes = document.title;
+    const voltar = () => {
+      document.title = antes;
+      window.removeEventListener("afterprint", voltar);
+    };
+    window.addEventListener("afterprint", voltar);
+    setTimeout(() => {
+      document.title = info.name;
+      window.print();
+    }, 500);
   }
 
   async function restaurar() {
@@ -327,6 +343,12 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
             <button className={modo === "pagina" ? "on" : ""} onClick={() => trocarModo("pagina")}>Página</button>
             <button className={modo === "pdf" ? "on" : ""} onClick={() => trocarModo("pdf")}>PDF</button>
           </div>
+          {capitulos.length > 0 && (
+            <button className="acao" onClick={baixarPdf} title="Gerar o arquivo PDF do documento para enviar">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+              Baixar PDF
+            </button>
+          )}
           {!info.removido_em && (
             <button className="acao acao-icone acao-excluir" onClick={excluir} title="Mandar para a Lixeira" aria-label="Excluir projeto">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /></svg>
@@ -439,19 +461,12 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
             <>
               <p className="estado ok">Link ativo</p>
               <p className="muted small">Quem tiver este link vê o documento deste projeto, sem login, em PT, EN e PL. Não vê outros projetos, a equipe, as mudanças nem os arquivos anexados.</p>
-              <span className="lado-titulo">Página</span>
               <input className="link-publico" readOnly value={linkPublico} onFocus={(e) => e.currentTarget.select()} aria-label="Link da página" />
               <div className="compartilhar-acoes">
-                <button onClick={() => copiarLink(linkPublico, "pagina")}>{copiado === "pagina" ? "Copiado ✓" : "Copiar link"}</button>
+                <button onClick={() => copiarLink(linkPublico)}>{copiado ? "Copiado ✓" : "Copiar link"}</button>
                 <a className="acao" href={linkPublico} target="_blank" rel="noopener noreferrer">Abrir</a>
               </div>
-              <span className="lado-titulo">PDF</span>
-              <input className="link-publico" readOnly value={`${linkPublico}?ver=pdf`} onFocus={(e) => e.currentTarget.select()} aria-label="Link do PDF" />
-              <div className="compartilhar-acoes">
-                <button onClick={() => copiarLink(`${linkPublico}?ver=pdf`, "pdf")}>{copiado === "pdf" ? "Copiado ✓" : "Copiar link do PDF"}</button>
-                <a className="acao" href={`${linkPublico}?ver=pdf`} target="_blank" rel="noopener noreferrer">Abrir</a>
-              </div>
-              <p className="muted small">O link do PDF abre o documento em folhas A4, com o botão Baixar PDF.</p>
+              <p className="muted small">Para mandar o PDF, use o botão Baixar PDF no topo do projeto e envie o arquivo.</p>
               <div className="compartilhar-acoes">
                 <button className="botao-painel" disabled={compartilhando} onClick={() => compartilhar(true, true)}>Gerar novo link</button>
                 <button className="botao-painel perigo" disabled={compartilhando} onClick={() => compartilhar(false)}>Desativar link</button>
