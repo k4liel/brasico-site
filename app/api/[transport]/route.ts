@@ -205,7 +205,7 @@ function buildHandler(token: string) {
 
       server.tool(
         "compartilhar_projeto",
-        "Gera, troca ou desativa o link público do projeto ativo (só leitura, sem login). Quem tem o link vê apenas o documento deste projeto, em PT/EN/PL; não vê outros projetos, equipe, mudanças nem arquivos. Antes de ativar, confirme com o usuário. novo=true troca o código e o link antigo para de funcionar. O link completo é https://brasico.vercel.app + caminho.",
+        "Gera, troca ou desativa o link público do projeto ativo (só leitura, sem login). Quem tem o link vê apenas o documento deste projeto, em PT/EN/PL; vê também os documentos (PDFs) do projeto; não vê outros projetos, equipe nem mudanças. Antes de ativar, confirme com o usuário. novo=true troca o código e o link antigo para de funcionar. O link completo é https://brasico.vercel.app + caminho.",
         { ativar: z.boolean(), novo: z.boolean().optional() },
         async ({ ativar, novo }) => call("mcp_compartilhar", { p_publico: ativar, p_novo: novo ?? false })
       );

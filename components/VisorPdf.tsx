@@ -16,7 +16,7 @@ export default function VisorPdf() {
     const abrir = (e: MouseEvent) => {
       const alvo = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-pdf]");
       const url = alvo?.dataset.pdf;
-      if (!alvo || !url || !url.startsWith("/api/arquivo/")) return;
+      if (!alvo || !url || !(url.startsWith("/api/arquivo/") || url.startsWith("/api/publico/"))) return;
       e.preventDefault();
       setDoc({ url, titulo: alvo.dataset.titulo ?? "", codigo: alvo.dataset.codigo ?? "" });
     };

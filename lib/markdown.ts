@@ -266,7 +266,7 @@ function renderChecks(body: string[]) {
 //   estilo: capas | lista
 //   CÓDIGO | Título | Descrição | arquivo (sem .pdf) | 4 págs. | interno|restrito
 // ---------------------------------------------------------------------
-const BASE_ARQ = /^\/api\/arquivo\/[0-9a-f-]{36}\/[a-z0-9_-]+$/;
+const BASE_ARQ = /^\/api\/(arquivo|publico\/[0-9a-f]{32})\/[0-9a-f-]{36}\/[a-z0-9_-]+$/;
 function renderArquivos(body: string[], idioma: Idioma = "pt") {
   const T = TEXTOS[idioma];
   let base = "";

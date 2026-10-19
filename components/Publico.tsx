@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cssDoProjeto } from "@/lib/livre";
 import DocView from "./DocView";
 import Bandeira from "./Bandeira";
+import VisorPdf from "./VisorPdf";
 import { IDIOMAS, TEXTOS, type Idioma } from "@/lib/idioma";
 
 type Cap = { titulo: string; conteudo: string; titulo_en: string | null; conteudo_en: string | null; titulo_pl: string | null; conteudo_pl: string | null };
@@ -15,8 +16,8 @@ type Doc = { nome: string; rodape: string | null; rodape_en: string | null; roda
 
 const semNumero = (t: string) => t.replace(/^\s*\d+\s*[·.\-–—]\s*/, "");
 const numeroDe = (t: string) => t.match(/^\s*(\d+)\s*[·.\-–—]/)?.[1] ?? null;
-// Arquivos anexados ficam no espaço privado: no link público o bloco não aparece.
-const semArquivos = (md: string) => md.replace(/^:::arquivos[^\n]*\n[\s\S]*?^:::[ \t]*$/gm, "");
+// Documentos do projeto: no link público abrem pela rota /api/publico/<código>/..., que confere o código
+const comLinkPublico = (md: string, slug: string) => md.replace(/^(\s*base:\s*)\/api\/arquivo\//gm, `$1/api/publico/${slug}/`);
 
 const PAGINA = { pt: "Página", en: "Page", pl: "Strona" } as const;
 const BAIXAR = { pt: "Baixar PDF", en: "Download PDF", pl: "Pobierz PDF" } as const;
@@ -85,9 +86,9 @@ export default function Publico({ slug }: { slug: string }) {
     () =>
       (doc?.capitulos ?? []).map((c, i) => {
         const t = idioma === "en" ? [c.titulo_en, c.conteudo_en] : idioma === "pl" ? [c.titulo_pl, c.conteudo_pl] : [null, null];
-        return { id: String(i + 1), titulo: t[0]?.trim() || c.titulo, conteudo: semArquivos(t[1]?.trim() || c.conteudo) };
+        return { id: String(i + 1), titulo: t[0]?.trim() || c.titulo, conteudo: comLinkPublico(t[1]?.trim() || c.conteudo, slug) };
       }),
-    [doc, idioma]
+    [doc, idioma, slug]
   );
 
   if (doc === undefined) return <main className="center muted">…</main>;
@@ -168,6 +169,7 @@ export default function Publico({ slug }: { slug: string }) {
           <DocView capitulos={capitulos} rodape={rodape} modo={modo} idioma={idioma} />
         )}
       </main>
+      <VisorPdf />
     </div>
   );
 }

@@ -460,7 +460,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
           {linkPublico ? (
             <>
               <p className="estado ok">Link ativo</p>
-              <p className="muted small">Quem tiver este link vê o documento deste projeto, sem login, em PT, EN e PL. Não vê outros projetos, a equipe, as mudanças nem os arquivos anexados.</p>
+              <p className="muted small">Quem tiver este link vê o documento deste projeto, sem login, em PT, EN e PL. Vê também os documentos (PDFs) do projeto. Não vê outros projetos, a equipe nem as mudanças.</p>
               <input className="link-publico" readOnly value={linkPublico} onFocus={(e) => e.currentTarget.select()} aria-label="Link da página" />
               <div className="compartilhar-acoes">
                 <button onClick={() => copiarLink(linkPublico)}>{copiado ? "Copiado ✓" : "Copiar link"}</button>
