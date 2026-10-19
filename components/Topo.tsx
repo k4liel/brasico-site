@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
 export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "conectar" }) {
-  const [tema, setTema] = useState<"light" | "dark">("light");
+  const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
   }, []);
@@ -13,7 +13,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   function trocarTema(e: React.MouseEvent<HTMLButtonElement>) {
     const t = tema === "dark" ? "light" : "dark";
     try {
-      localStorage.setItem("brasico-tema", t);
+      localStorage.setItem("brasico-tema-v2", t);
     } catch {}
     const aplicar = () => {
       document.documentElement.dataset.theme = t;

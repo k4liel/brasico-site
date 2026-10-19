@@ -23,7 +23,7 @@
   --shadow: rgba(20, 30, 50, 0.12);
   color-scheme: light;
 }
-/* Modo escuro (botão no topo; padrão = o do sistema) */
+/* Modo escuro (padrão do site; o botão do menu troca para o claro) */
 :root[data-theme="dark"] {
   --bg: #11141a;
   --panel: #191d25;
@@ -200,7 +200,7 @@ button.danger { color: var(--danger); }
 .bloco-topo { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 .bloco-topo h2 { margin: 0; }
 .estado { font-size: 12px; padding: 1px 9px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
-.estado.ok { background: #e8f4ec; color: var(--ok); border-color: #b9dfc4; }
+.estado.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
 .link-caixa { display: flex; gap: 8px; align-items: stretch; margin: 0 0 14px; }
 .link-caixa code {
   flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
