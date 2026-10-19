@@ -2,6 +2,7 @@ import { createMcpHandler } from "mcp-handler";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { GUIA_FORMATACAO } from "@/lib/guia";
+import { GUIA_BRAINSTORM } from "@/lib/brainstorm";
 
 export const maxDuration = 60;
 
@@ -216,6 +217,82 @@ function buildHandler(token: string) {
         async ({ id }) => call("mcp_arquivar_capitulo", { p_id: id, p_remover: false })
       );
 
+      // ---------- Brainstorm (ideias e tarefas da equipe, fora dos projetos) ----------
+      const STATUS = z.enum(["entrada", "conversa", "decidido", "fazendo", "feito", "estacionado"]);
+
+      server.tool(
+        "guia_brainstorm",
+        "Mostra como trabalhar na área Brainstorm: anotar e organizar ideias, conduzir um brainstorm (uma pergunta por vez, 2–3 caminhos, decisão registrada) e fazer a revisão da semana. Leia antes de conduzir um brainstorm ou uma revisão.",
+        {},
+        async () => text(GUIA_BRAINSTORM)
+      );
+
+      server.tool(
+        "listar_ideias",
+        "Lista as ideias e tarefas do Brainstorm da equipe (todas as colunas, exceto arquivadas), com status, projeto, responsável, prazo e data de hoje. Filtre por status ou por texto.",
+        { status: STATUS.optional(), busca: z.string().optional() },
+        async ({ status, busca }) => call("mcp_listar_ideias", { p_status: status ?? null, p_busca: busca ?? null })
+      );
+
+      server.tool(
+        "ler_ideia",
+        "Lê uma ideia do Brainstorm com todos os comentários.",
+        { id: z.string().uuid() },
+        async ({ id }) => call("mcp_ler_ideia", { p_id: id })
+      );
+
+      server.tool(
+        "anotar_ideia",
+        "Anota uma ideia ou tarefa nova no Brainstorm (entra em 'entrada', a não ser que indique outro status). Título curto; o que a pessoa disse vai na descrição. Pode ligar a um projeto (id de listar_projetos).",
+        {
+          titulo: z.string().min(1).max(200),
+          descricao: z.string().optional(),
+          status: STATUS.optional(),
+          projeto_id: z.string().uuid().optional(),
+        },
+        async ({ titulo, descricao, status, projeto_id }) =>
+          call("mcp_anotar_ideia", { p_titulo: titulo, p_descricao: descricao ?? null, p_status: status ?? "entrada", p_projeto: projeto_id ?? null })
+      );
+
+      server.tool(
+        "atualizar_ideia",
+        "Atualiza uma ideia do Brainstorm: título, descrição, status (mover de coluna), projeto, responsável (nome ou e-mail de alguém da equipe; vazio tira), prazo e rever_em (AAAA-MM-DD), decisão tomada, ou arquivar (tira do quadro sem apagar).",
+        {
+          id: z.string().uuid(),
+          titulo: z.string().optional(),
+          descricao: z.string().optional(),
+          status: STATUS.optional(),
+          projeto_id: z.string().uuid().optional(),
+          sem_projeto: z.boolean().optional().describe("true para desligar a ideia do projeto"),
+          responsavel: z.string().optional(),
+          prazo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          rever_em: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+          decisao: z.string().optional(),
+          arquivar: z.boolean().optional(),
+        },
+        async (a) =>
+          call("mcp_atualizar_ideia", {
+            p_id: a.id,
+            p_titulo: a.titulo ?? null,
+            p_descricao: a.descricao ?? null,
+            p_status: a.status ?? null,
+            p_projeto: a.projeto_id ?? null,
+            p_sem_projeto: a.sem_projeto ?? false,
+            p_responsavel: a.responsavel ?? null,
+            p_prazo: a.prazo ?? null,
+            p_rever_em: a.rever_em ?? null,
+            p_decisao: a.decisao ?? null,
+            p_arquivar: a.arquivar ?? false,
+          })
+      );
+
+      server.tool(
+        "comentar_ideia",
+        "Comenta numa ideia do Brainstorm (raciocínio, prós e contras, o que falta decidir). O comentário aparece com o seu nome e 'via Claude'.",
+        { id: z.string().uuid(), texto: z.string().min(1).max(4000) },
+        async ({ id, texto }) => call("mcp_comentar_ideia", { p_id: id, p_texto: texto })
+      );
+
       // ---------- Atividade ----------
       server.tool(
         "ver_atividade",
@@ -233,7 +310,8 @@ function buildHandler(token: string) {
         "3. Antes de reestruturar um projeto (renomear, reordenar, remover ou reescrever vários capítulos, trocar o CSS), mostre o plano ao usuário e espere a confirmação.\n" +
         "4. Errou? Toda mudança guarda a versão anterior: versoes_capitulo, ler_versao e restaurar_versao.\n" +
         "5. Idiomas: o português é o original. Cada capítulo pode ter versão em inglês e em polonês (atualizar_nota com idioma \"en\" ou \"pl\"); o site mostra o seletor PT | EN | PL com os idiomas que têm tradução. Ao mudar o português de um capítulo que já tem tradução, atualize as traduções também.\n" +
-        "6. Arquivos de clientes (PDFs, planilhas, documentos) ficam só no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/, nunca no GitHub.",
+        "6. Arquivos de clientes (PDFs, planilhas, documentos) ficam só no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/, nunca no GitHub.\n" +
+        "7. Brainstorm: ideias e tarefas soltas da equipe ficam na área Brainstorm (listar_ideias, anotar_ideia, atualizar_ideia, comentar_ideia). Quando o usuário soltar uma ideia, anote. Para conduzir um brainstorm ou a revisão da semana, leia antes guia_brainstorm.",
     },
     { basePath: "/api", maxDuration: 60 }
   );

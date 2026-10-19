@@ -27,6 +27,11 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - **Exclusões são bloqueadas no banco** (DELETE, TRUNCATE e DROP nas tabelas do Brasico). Nunca apague dados sem pedido explícito do dono. Só nesse caso use `set local brasico.permitir_exclusao = 'sim';` na mesma transação.
 - Toda mudança em capítulo ou no CSS do projeto guarda a versão anterior em `versoes`. Para desfazer, use as ferramentas `versoes_capitulo` / `ler_versao` / `restaurar_versao`.
 
+## Brainstorm (ideias e tarefas da equipe)
+- Área geral do site (Menu → Brainstorm), fora dos projetos. Tabelas `ideias` e `ideia_comentarios` (supabase/ideias.sql).
+- Quadro: entrada → conversa → decidido → fazendo → feito, mais estacionado. Nada se apaga: arquive.
+- Pelo conector: `listar_ideias`, `ler_ideia`, `anotar_ideia`, `atualizar_ideia`, `comentar_ideia` e o método em `guia_brainstorm` (lib/brainstorm.ts; skill em .claude/skills/brainstorm).
+
 ## Trabalhando nos projetos pelo conector
 - Leia o capítulo antes de alterar e envie a `versao` lida em `atualizar_nota`. Se a gravação for recusada porque o capítulo mudou, leia de novo e junte as mudanças. Nunca descarte o trabalho do outro.
 - Antes de uma mudança grande, olhe `ver_atividade` (o painel Mudanças do site).
