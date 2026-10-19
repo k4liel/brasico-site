@@ -1,14 +1,15 @@
 ---
 name: brainstorm
-description: Conduz um brainstorm ou a revisão da semana na área Brainstorm do Brasico (ideias e tarefas da equipe). Use quando o usuário quiser pensar numa ideia, decidir entre caminhos, organizar pendências ou revisar a semana.
+description: Organiza tarefas, ideias e checklists na área Brainstorm do Brasico (listas com caixinhas), conduz um brainstorm ou a revisão da semana. Use quando o usuário quiser anotar algo, montar um checklist, pensar numa ideia, decidir entre caminhos ou revisar a semana.
 ---
 
 # Brainstorm do Brasico
 
 O método completo está em `lib/brainstorm.ts` (o mesmo texto que o conector entrega pela ferramenta `guia_brainstorm`). Resumo:
 
-1. **Anotar**: ideia solta vira cartão na Caixa de entrada (`anotar_ideia`). Antes, procure duplicata com `listar_ideias`.
-2. **Brainstorm**: uma pergunta por mensagem até entender o porquê; devolva o entendimento; proponha 2–3 caminhos com recomendação; registre a decisão só depois que a pessoa concordar.
-3. **Revisão da semana**: caixa de entrada, atrasadas, paradas há 14+ dias, estacionadas para rever, feitas; proponha até 3 prioridades por sócio. Não mova nada sem aprovação.
+1. **Anotar**: tarefa ou ideia vira item numa lista (`adicionar_item` em "Tarefas", "Ideias" ou na lista do assunto). Veja antes com `ver_lista` se já existe.
+2. **Checklist**: crie uma lista com o nome do assunto (`criar_lista`) e um item por passo.
+3. **Brainstorm**: uma pergunta por mensagem até entender o porquê; resuma; proponha 2–3 caminhos com recomendação; quando a pessoa escolher, os próximos passos viram itens em "Tarefas".
+4. **Revisão da semana**: atrasados, para esta semana, sem dono e feitos; sugira até 3 prioridades por sócio. Só altere o que a pessoa aprovar.
 
-Colunas: entrada → conversa → decidido → fazendo → feito, mais estacionado (sempre com data para rever). Nunca apague: arquive.
+Nunca apague: arquive.
