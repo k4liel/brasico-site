@@ -568,3 +568,14 @@ textarea:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--gold)
   .item-editor { margin-left: 0; }
   .item-campos { grid-template-columns: 1fr; }
 }
+
+/* Compartilhar: link público do projeto */
+.compartilhar { display: grid; gap: 10px; padding: 14px 16px; align-content: start; }
+.compartilhar p { margin: 0; }
+.compartilhar .estado { justify-self: start; }
+.link-publico { width: 100%; font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.compartilhar-acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.compartilhar-acoes .acao { text-decoration: none; }
+.botao-painel.perigo { color: var(--danger); }
+.acao-publico { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+.publico .proj-barra h1 { font-size: 18px; }

@@ -12,7 +12,7 @@ import VisorPdf from "./VisorPdf";
 import Bandeira from "./Bandeira";
 import { IDIOMAS, TEXTOS, type Idioma } from "@/lib/idioma";
 
-type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null };
+type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null; is_public: boolean | null; public_slug: string | null };
 type Nota = { id: string; title: string; content: string; title_en: string | null; content_en: string | null; title_pl: string | null; content_pl: string | null; archived_at: string | null };
 type Log = { id: string; user_id: string | null; action: string; entity: string; entity_id: string | null; details: string | null; source: string; created_at: string };
 type Perfil = { id: string; email: string | null; display_name: string | null };
@@ -45,7 +45,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   const [info, setInfo] = useState<Info | null | undefined>(undefined);
   const [perfis, setPerfis] = useState<Record<string, Perfil>>({});
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
-  const [painel, setPainel] = useState<"sumario" | "mudancas" | null>(null);
+  const [painel, setPainel] = useState<"sumario" | "mudancas" | "compartilhar" | null>(null);
   const [idioma, setIdioma] = useState<Idioma>("pt");
 
   // Fecha o painel com Esc
@@ -84,7 +84,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   useEffect(() => {
     (async () => {
       await supabase.rpc("accept_invites");
-      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_rodape_pl,doc_css,doc_abas,removido_em").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_rodape_pl,doc_css,doc_abas,removido_em,is_public,public_slug").eq("id", projectId).maybeSingle();
       setInfo((data as Info) ?? null);
       const { data: m } = await supabase.from("workspace_members").select("user_id").eq("workspace_id", projectId);
       const ids = (m ?? []).map((x: { user_id: string }) => x.user_id);
@@ -199,6 +199,35 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
     window.location.href = "/";
   }
 
+  // Link público (só leitura, sem login)
+  const [compartilhando, setCompartilhando] = useState(false);
+  const [copiado, setCopiado] = useState<"pagina" | "pdf" | null>(null);
+  const linkPublico = info?.is_public && info.public_slug ? `${typeof window !== "undefined" ? window.location.origin : ""}/p/${info.public_slug}` : null;
+  async function compartilhar(ativo: boolean, novo = false) {
+    if (!info || compartilhando) return;
+    if (ativo && !info.is_public && !window.confirm(`Gerar um link público de "${info.name}"?
+
+Quem tiver o link vê o documento deste projeto, sem login. Não vê outros projetos nem nada do Brasico. Você pode desativar o link quando quiser.`)) return;
+    if (novo && !window.confirm("Gerar um link novo? O link atual para de funcionar na hora.")) return;
+    if (!ativo && !window.confirm("Desativar o link? Quem tiver o link não consegue mais abrir o projeto.")) return;
+    setCompartilhando(true);
+    const { data, error } = await supabase.rpc("compartilhar_projeto", { p_projeto: projectId, p_ativo: ativo, p_novo: novo });
+    setCompartilhando(false);
+    if (error) return alert(error.message);
+    const slug = String((data as { caminho: string }).caminho).replace("/p/", "");
+    setInfo((i) => (i ? { ...i, is_public: ativo, public_slug: slug } : i));
+    setCopiado(null);
+  }
+  async function copiarLink(link: string, qual: "pagina" | "pdf") {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiado(qual);
+      setTimeout(() => setCopiado(null), 2500);
+    } catch {
+      window.prompt("Copie o link:", link);
+    }
+  }
+
   async function restaurar() {
     const { error } = await supabase.rpc("restaurar_projeto", { p_projeto: projectId });
     if (error) return alert(error.message);
@@ -268,6 +297,14 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
             Mudanças{ultimaMudanca ? <span className="acao-quando"> · {haQuanto(ultimaMudanca)}</span> : null}
+          </button>
+          <button
+            className={painel === "compartilhar" ? "acao on" : info.is_public ? "acao acao-publico" : "acao"}
+            onClick={() => setPainel(painel === "compartilhar" ? null : "compartilhar")}
+            title="Link para mostrar o projeto a alguém"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" /><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" /></svg>
+            Compartilhar{info.is_public ? <span className="acao-quando"> · ativo</span> : null}
           </button>
           {capitulos.length > 0 && (
             <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
@@ -390,6 +427,45 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
             </li>
           ))}
         </ol>
+      </aside>
+
+      <aside className={painel === "compartilhar" ? "painel painel-dir aberto" : "painel painel-dir"} aria-hidden={painel !== "compartilhar"}>
+        <div className="painel-topo">
+          <span className="lado-titulo">Compartilhar</span>
+          <button className="fechar" onClick={() => setPainel(null)} aria-label="Fechar">×</button>
+        </div>
+        <div className="compartilhar">
+          {linkPublico ? (
+            <>
+              <p className="estado ok">Link ativo</p>
+              <p className="muted small">Quem tiver este link vê o documento deste projeto, sem login, em PT, EN e PL. Não vê outros projetos, a equipe, as mudanças nem os arquivos anexados.</p>
+              <span className="lado-titulo">Página</span>
+              <input className="link-publico" readOnly value={linkPublico} onFocus={(e) => e.currentTarget.select()} aria-label="Link da página" />
+              <div className="compartilhar-acoes">
+                <button onClick={() => copiarLink(linkPublico, "pagina")}>{copiado === "pagina" ? "Copiado ✓" : "Copiar link"}</button>
+                <a className="acao" href={linkPublico} target="_blank" rel="noopener noreferrer">Abrir</a>
+              </div>
+              <span className="lado-titulo">PDF</span>
+              <input className="link-publico" readOnly value={`${linkPublico}?ver=pdf`} onFocus={(e) => e.currentTarget.select()} aria-label="Link do PDF" />
+              <div className="compartilhar-acoes">
+                <button onClick={() => copiarLink(`${linkPublico}?ver=pdf`, "pdf")}>{copiado === "pdf" ? "Copiado ✓" : "Copiar link do PDF"}</button>
+                <a className="acao" href={`${linkPublico}?ver=pdf`} target="_blank" rel="noopener noreferrer">Abrir</a>
+              </div>
+              <p className="muted small">O link do PDF abre o documento em folhas A4, com o botão Baixar PDF.</p>
+              <div className="compartilhar-acoes">
+                <button className="botao-painel" disabled={compartilhando} onClick={() => compartilhar(true, true)}>Gerar novo link</button>
+                <button className="botao-painel perigo" disabled={compartilhando} onClick={() => compartilhar(false)}>Desativar link</button>
+              </div>
+              <p className="muted small">Gerar um novo link desliga o atual. Desativar tira o acesso na hora.</p>
+            </>
+          ) : (
+            <>
+              <p className="muted small">Gere um link para mostrar este projeto a alguém de fora. A pessoa abre sem login e vê só o documento deste projeto, sem acesso a mais nada do Brasico.</p>
+              <button disabled={compartilhando || !!info.removido_em} onClick={() => compartilhar(true)}>{compartilhando ? "Gerando…" : "Gerar link"}</button>
+              {info.removido_em && <p className="muted small">Projeto na Lixeira não pode ser compartilhado.</p>}
+            </>
+          )}
+        </div>
       </aside>
 
       <aside className={painel === "mudancas" ? "painel painel-dir aberto" : "painel painel-dir"} aria-hidden={painel !== "mudancas"}>

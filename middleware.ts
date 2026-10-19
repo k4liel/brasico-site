@@ -38,6 +38,8 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+  // /p/<código>: link público de um projeto (só leitura, sem login)
+  if (path.startsWith("/p/")) return response;
   const isPublic = path.startsWith("/login") || path.startsWith("/auth");
 
   if (!user && !isPublic) {

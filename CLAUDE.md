@@ -38,3 +38,4 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Antes de reestruturar um projeto, mostre o plano e espere a confirmação.
 - Excluir projeto pelo conector (`remover_projeto`) só manda para a Lixeira; confirme o nome com o usuário antes. Excluir para sempre só existe no site, na Lixeira, digitando o nome do projeto.
 - Antes de qualquer ação difícil de desfazer (excluir, reescrever histórico do git, deixar algo público), mostre o plano e espere a confirmação.
+- Link público (botão Compartilhar no projeto, ou `compartilhar_projeto` no conector): abre `/p/<código>` sem login e mostra só o documento daquele projeto (página ou `?ver=pdf`). Só ative com confirmação do dono; "Gerar novo link" derruba o anterior. Funções em supabase/link_publico.sql.
