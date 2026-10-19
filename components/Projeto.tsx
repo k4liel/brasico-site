@@ -112,9 +112,8 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
 
   // Traduções: cada idioma só aparece no seletor quando algum capítulo tem versão nele.
   // Capítulo sem tradução continua em português.
-  const idiomas = IDIOMAS.filter(
-    (l) => l.id === "pt" || notas.some((n) => !n.archived_at && (l.id === "en" ? n.content_en : n.content_pl)?.trim())
-  );
+  // Todos os projetos oferecem PT | EN | PL; capítulo ainda sem tradução aparece em português.
+  const idiomas = IDIOMAS;
   const lingua: Idioma = idiomas.some((l) => l.id === idioma) ? idioma : "pt";
   const capitulos = useMemo(
     () =>
@@ -270,7 +269,7 @@ Ele some da lista da equipe, mas fica guardado e pode ser restaurado na página 
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
             Mudanças{ultimaMudanca ? <span className="acao-quando"> · {haQuanto(ultimaMudanca)}</span> : null}
           </button>
-          {idiomas.length > 1 && (
+          {capitulos.length > 0 && (
             <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
               {idiomas.map((l) => (
                 <button
