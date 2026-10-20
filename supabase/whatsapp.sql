@@ -1,0 +1,239 @@
+-- =====================================================================
+-- WhatsApp: o número da Brasico participa dos grupos da companhia.
+-- A Evolution API (VPS, pasta whatsapp/) manda cada mensagem para a
+-- Edge Function whatsapp-webhook, que grava aqui. Todo dia a função
+-- whatsapp-resumo pede ao Claude um resumo por grupo (wa_resumos).
+-- Quem vê: só quem está em wa_acesso (os sócios), no site e no conector.
+-- =====================================================================
+
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+-- Quem pode ver os grupos e resumos. Os membros são inseridos direto no
+-- banco (não guarde e-mails ou ids neste arquivo, o repositório é público):
+--   insert into public.wa_acesso (user_id) values ('<uuid do usuário>');
+create table if not exists public.wa_acesso (
+  user_id uuid primary key references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.wa_grupos (
+  id text primary key,                     -- JID do grupo (…@g.us)
+  nome text not null default '',
+  descricao text not null default '',
+  ativo boolean not null default true,     -- false: para de gravar e de resumir
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.wa_mensagens (
+  grupo_id text not null references public.wa_grupos(id),
+  id text not null,                        -- id da mensagem no WhatsApp
+  autor_jid text not null default '',
+  autor_nome text not null default '',
+  de_nos boolean not null default false,   -- enviada pelo número da Brasico
+  tipo text not null default 'texto',
+  texto text not null default '',
+  enviada_em timestamptz not null,
+  recebida_em timestamptz not null default now(),
+  primary key (grupo_id, id)
+);
+create index if not exists wa_mensagens_dia_idx on public.wa_mensagens (grupo_id, enviada_em);
+create index if not exists wa_mensagens_quando_idx on public.wa_mensagens (enviada_em);
+
+create table if not exists public.wa_resumos (
+  id uuid primary key default gen_random_uuid(),
+  grupo_id text not null references public.wa_grupos(id),
+  dia date not null,
+  resumo text not null,                    -- Markdown
+  total_mensagens int not null default 0,
+  modelo text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (grupo_id, dia)
+);
+create index if not exists wa_resumos_dia_idx on public.wa_resumos (dia desc);
+
+-- Exclusões bloqueadas, como no resto do Brasico
+do $$
+declare t text;
+begin
+  foreach t in array array['wa_acesso', 'wa_grupos', 'wa_mensagens', 'wa_resumos'] loop
+    execute format('drop trigger if exists %I on public.%I', t || '_sem_exclusao', t);
+    execute format('create trigger %I before delete on public.%I for each row execute function public.bloquear_exclusao()',
+                   t || '_sem_exclusao', t);
+    execute format('drop trigger if exists %I on public.%I', t || '_sem_truncate', t);
+    execute format('create trigger %I before truncate on public.%I for each statement execute function public.bloquear_exclusao()',
+                   t || '_sem_truncate', t);
+  end loop;
+end $$;
+
+create or replace function public.wa_tocar()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  new.updated_at := now();
+  return new;
+end $$;
+drop trigger if exists wa_grupos_tocar on public.wa_grupos;
+create trigger wa_grupos_tocar before update on public.wa_grupos for each row execute function public.wa_tocar();
+drop trigger if exists wa_resumos_tocar on public.wa_resumos;
+create trigger wa_resumos_tocar before update on public.wa_resumos for each row execute function public.wa_tocar();
+
+create or replace function public.wa_pode_ver(p_user uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.wa_acesso where user_id = p_user)
+$$;
+revoke execute on function public.wa_pode_ver(uuid) from public, anon;
+grant execute on function public.wa_pode_ver(uuid) to authenticated;
+
+alter table public.wa_acesso enable row level security;
+alter table public.wa_grupos enable row level security;
+alter table public.wa_mensagens enable row level security;
+alter table public.wa_resumos enable row level security;
+
+drop policy if exists "ver acesso" on public.wa_acesso;
+create policy "ver acesso" on public.wa_acesso for select using (user_id = auth.uid());
+drop policy if exists "ver grupos" on public.wa_grupos;
+create policy "ver grupos" on public.wa_grupos for select using (public.wa_pode_ver(auth.uid()));
+drop policy if exists "editar grupos" on public.wa_grupos;
+create policy "editar grupos" on public.wa_grupos for update using (public.wa_pode_ver(auth.uid())) with check (public.wa_pode_ver(auth.uid()));
+drop policy if exists "ver mensagens" on public.wa_mensagens;
+create policy "ver mensagens" on public.wa_mensagens for select using (public.wa_pode_ver(auth.uid()));
+drop policy if exists "ver resumos" on public.wa_resumos;
+create policy "ver resumos" on public.wa_resumos for select using (public.wa_pode_ver(auth.uid()));
+
+revoke all on public.wa_acesso, public.wa_grupos, public.wa_mensagens, public.wa_resumos from anon;
+grant select on public.wa_acesso, public.wa_grupos, public.wa_mensagens, public.wa_resumos to authenticated;
+grant update (ativo) on public.wa_grupos to authenticated;
+
+do $$ begin alter publication supabase_realtime add table public.wa_resumos; exception when duplicate_object then null; end $$;
+
+-- ---------------------------------------------------------------------
+-- Segredo das Edge Functions (webhook da Evolution e agendamento).
+-- Fica no Vault; as funções conferem por aqui, sem variável de ambiente.
+-- É gerado ao acaso aqui (o valor nunca aparece no repositório).
+-- ---------------------------------------------------------------------
+select vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'wa_segredo')
+where not exists (select 1 from vault.secrets where name = 'wa_segredo');
+
+create or replace function public.wa_conferir_segredo(p_segredo text)
+returns boolean language sql stable security definer set search_path = public, vault as $$
+  select coalesce(p_segredo, '') <> ''
+     and exists (select 1 from vault.decrypted_secrets where name = 'wa_segredo' and decrypted_secret = p_segredo)
+$$;
+revoke execute on function public.wa_conferir_segredo(text) from public, anon, authenticated;
+grant execute on function public.wa_conferir_segredo(text) to service_role;
+
+-- Resumo diário às 07:00 de Brasília (10:00 UTC), do dia anterior
+select cron.unschedule('whatsapp-resumo-diario') where exists (select 1 from cron.job where jobname = 'whatsapp-resumo-diario');
+select cron.schedule('whatsapp-resumo-diario', '0 10 * * *', $job$
+  select net.http_post(
+    url := 'https://doajznzouxxqbqkvsclv.supabase.co/functions/v1/whatsapp-resumo',
+    headers := jsonb_build_object('Content-Type', 'application/json',
+      'x-segredo', (select decrypted_secret from vault.decrypted_secrets where name = 'wa_segredo')),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 300000)
+$job$);
+
+-- ---------------------------------------------------------------------
+-- Conector (ferramentas whatsapp_* do Claude)
+-- ---------------------------------------------------------------------
+create or replace function public.mcp_wa_auth(p_token text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare a record;
+begin
+  select * into a from public.mcp_auth(p_token);
+  if not public.wa_pode_ver(a.o_user) then
+    raise exception 'Sem acesso aos grupos de WhatsApp' using errcode = '42501';
+  end if;
+  return a.o_user;
+end $$;
+revoke execute on function public.mcp_wa_auth(text) from public, anon, authenticated;
+
+-- Acha o grupo pelo JID ou por parte do nome
+create or replace function public.wa_achar_grupo(p_grupo text)
+returns text language plpgsql stable security definer set search_path = public as $$
+declare v text; n int;
+begin
+  select id into v from public.wa_grupos where id = trim(p_grupo);
+  if v is not null then return v; end if;
+  select count(*), min(id) into n, v from public.wa_grupos where nome ilike '%' || trim(p_grupo) || '%';
+  if n = 0 then raise exception 'Grupo "%" não encontrado. Veja os nomes em whatsapp_grupos.', p_grupo; end if;
+  if n > 1 then raise exception 'Mais de um grupo com "%" no nome. Use o id de whatsapp_grupos.', p_grupo; end if;
+  return v;
+end $$;
+revoke execute on function public.wa_achar_grupo(text) from public, anon, authenticated;
+
+create or replace function public.mcp_wa_grupos(p_token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  perform public.mcp_wa_auth(p_token);
+  return jsonb_build_object('hoje', (now() at time zone 'America/Sao_Paulo')::date, 'grupos', coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', g.id, 'nome', g.nome, 'ativo', g.ativo,
+      'mensagens_7_dias', (select count(*) from public.wa_mensagens m where m.grupo_id = g.id and m.enviada_em > now() - interval '7 days'),
+      'ultima_mensagem', (select max(enviada_em) from public.wa_mensagens m where m.grupo_id = g.id),
+      'ultimo_resumo', (select max(dia) from public.wa_resumos r where r.grupo_id = g.id)
+    ) order by g.ativo desc, g.nome)
+    from public.wa_grupos g), '[]'::jsonb));
+end $$;
+
+create or replace function public.mcp_wa_mensagens(p_token text, p_grupo text default null, p_de date default null,
+  p_ate date default null, p_busca text default null, p_limite int default 300)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_grupo text; v_de date; v_ate date;
+begin
+  perform public.mcp_wa_auth(p_token);
+  if p_grupo is not null then v_grupo := public.wa_achar_grupo(p_grupo); end if;
+  v_ate := coalesce(p_ate, (now() at time zone 'America/Sao_Paulo')::date);
+  v_de := coalesce(p_de, v_ate);
+  return jsonb_build_object('de', v_de, 'ate', v_ate, 'mensagens', coalesce((
+    select jsonb_agg(x.j order by x.enviada_em) from (
+      select m.enviada_em, jsonb_build_object(
+        'grupo', g.nome,
+        'quando', to_char(m.enviada_em at time zone 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI'),
+        'autor', coalesce(nullif(m.autor_nome, ''), split_part(m.autor_jid, '@', 1)),
+        'tipo', m.tipo, 'texto', m.texto) j
+      from public.wa_mensagens m join public.wa_grupos g on g.id = m.grupo_id
+      where (v_grupo is null or m.grupo_id = v_grupo)
+        and m.enviada_em >= (v_de::timestamp at time zone 'America/Sao_Paulo')
+        and m.enviada_em < ((v_ate + 1)::timestamp at time zone 'America/Sao_Paulo')
+        and (p_busca is null or m.texto ilike '%' || p_busca || '%' or m.autor_nome ilike '%' || p_busca || '%')
+      order by m.enviada_em desc
+      limit least(greatest(coalesce(p_limite, 300), 1), 2000)
+    ) x), '[]'::jsonb));
+end $$;
+
+create or replace function public.mcp_wa_resumos(p_token text, p_grupo text default null, p_de date default null, p_ate date default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_grupo text; v_de date; v_ate date;
+begin
+  perform public.mcp_wa_auth(p_token);
+  if p_grupo is not null then v_grupo := public.wa_achar_grupo(p_grupo); end if;
+  v_ate := coalesce(p_ate, (now() at time zone 'America/Sao_Paulo')::date);
+  v_de := coalesce(p_de, v_ate - 1);
+  return jsonb_build_object('de', v_de, 'ate', v_ate, 'resumos', coalesce((
+    select jsonb_agg(jsonb_build_object('dia', r.dia, 'grupo', g.nome, 'grupo_id', g.id,
+      'mensagens', r.total_mensagens, 'resumo', r.resumo) order by r.dia desc, g.nome)
+    from public.wa_resumos r join public.wa_grupos g on g.id = r.grupo_id
+    where r.dia between v_de and v_ate and (v_grupo is null or r.grupo_id = v_grupo)), '[]'::jsonb));
+end $$;
+
+create or replace function public.mcp_wa_monitorar(p_token text, p_grupo text, p_ativo boolean)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_user uuid; v_grupo text; g public.wa_grupos;
+begin
+  v_user := public.mcp_wa_auth(p_token);
+  v_grupo := public.wa_achar_grupo(p_grupo);
+  update public.wa_grupos set ativo = p_ativo where id = v_grupo returning * into g;
+  return jsonb_build_object('id', g.id, 'nome', g.nome, 'ativo', g.ativo);
+end $$;
+
+revoke execute on function public.mcp_wa_grupos(text) from public, authenticated;
+revoke execute on function public.mcp_wa_mensagens(text, text, date, date, text, int) from public, authenticated;
+revoke execute on function public.mcp_wa_resumos(text, text, date, date) from public, authenticated;
+revoke execute on function public.mcp_wa_monitorar(text, text, boolean) from public, authenticated;
+grant execute on function public.mcp_wa_grupos(text) to anon;
+grant execute on function public.mcp_wa_mensagens(text, text, date, date, text, int) to anon;
+grant execute on function public.mcp_wa_resumos(text, text, date, date) to anon;
+grant execute on function public.mcp_wa_monitorar(text, text, boolean) to anon;

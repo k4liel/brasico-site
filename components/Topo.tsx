@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "conectar" }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "conectar" }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -86,6 +86,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           <a className={ativo === "brainstorm" ? "ativo" : ""} href="/brainstorm" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3Z" /></svg>
             Brainstorm
+          </a>
+          <a className={ativo === "whatsapp" ? "ativo" : ""} href="/whatsapp" tabIndex={aberto ? 0 : -1}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4.1A8 8 0 1 1 20 11.5Z" /></svg>
+            WhatsApp
           </a>
           <a className={ativo === "conectar" ? "ativo" : ""} href="/conectar" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 4.5a3 3 0 0 1 0 6M17.5 14.2A5 5 0 0 1 20.5 19" /></svg>

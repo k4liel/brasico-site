@@ -569,6 +569,20 @@ textarea:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--gold)
   .item-campos { grid-template-columns: 1fr; }
 }
 
+/* WhatsApp: resumos diários dos grupos */
+.wa-cartao { border: 1px solid var(--border); border-radius: 14px; background: var(--panel); padding: 16px 18px; margin-bottom: 14px; }
+.wa-cartao > header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 6px; }
+.wa-cartao h2 { margin: 0; font-size: 17px; flex: 1; min-width: 0; }
+.wa-resumo { font-size: 14.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.wa-resumo h3 { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 14px 0 4px; }
+.wa-resumo p { margin: 0 0 6px; }
+.wa-resumo ul { margin: 0 0 6px; padding-left: 20px; }
+.wa-resumo li { margin: 2px 0; }
+.wa-grupos { list-style: none; margin: 0; padding: 0; }
+.wa-grupos li { border-bottom: 1px solid var(--border); }
+.wa-grupos label { display: flex; align-items: center; gap: 12px; padding: 10px 2px; cursor: pointer; }
+.wa-grupos input { width: 18px; height: 18px; flex: none; }
+
 /* Compartilhar: link público do projeto */
 .compartilhar { display: grid; gap: 10px; padding: 14px 16px; align-content: start; }
 .compartilhar p { margin: 0; }
