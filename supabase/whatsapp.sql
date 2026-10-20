@@ -152,16 +152,9 @@ $$;
 revoke execute on function public.wa_conferir_segredo(text) from public, anon, authenticated;
 grant execute on function public.wa_conferir_segredo(text) to service_role;
 
--- Resumo diário às 07:00 de Brasília (10:00 UTC), do dia anterior
+-- Sem resumo automático: os sócios pedem o resumo direto ao Claude (conector: whatsapp_mensagens).
+-- A Edge Function whatsapp-resumo continua publicada e pode ser chamada à mão (veja whatsapp/LEIA-ME.md).
 select cron.unschedule('whatsapp-resumo-diario') where exists (select 1 from cron.job where jobname = 'whatsapp-resumo-diario');
-select cron.schedule('whatsapp-resumo-diario', '0 10 * * *', $job$
-  select net.http_post(
-    url := 'https://doajznzouxxqbqkvsclv.supabase.co/functions/v1/whatsapp-resumo',
-    headers := jsonb_build_object('Content-Type', 'application/json',
-      'x-segredo', (select decrypted_secret from vault.decrypted_secrets where name = 'wa_segredo')),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 300000)
-$job$);
 
 -- ---------------------------------------------------------------------
 -- Conector (ferramentas whatsapp_* do Claude)

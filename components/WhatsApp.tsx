@@ -551,7 +551,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                     </button>
                   ))
                 ) : (
-                  <p className="wa-vazio">Os resumos saem todo dia às 7h, com o que aconteceu nos grupos no dia anterior.</p>
+                  <p className="wa-vazio">Para um resumo, peça ao Claude: “resuma o dia no grupo …”. Ele lê as mensagens pelo conector Brasico.</p>
                 )
               ) : lista.length ? (
                 lista.map((c) => {

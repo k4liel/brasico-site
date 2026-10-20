@@ -1,10 +1,10 @@
 # WhatsApp da Brasico
 
-O número da Brasico entra nos grupos da companhia, grava as mensagens no Supabase e, todo dia às 7h (Brasília), o Claude escreve um resumo de cada grupo do dia anterior. Os resumos aparecem no site (Menu → WhatsApp) e no conector (`whatsapp_grupos`, `whatsapp_resumos`, `whatsapp_mensagens`).
+O número da Brasico entra nos grupos da companhia e grava as mensagens no Supabase. Para um resumo, peça ao Claude ("resuma o dia no grupo X"): ele lê as mensagens pelo conector (`whatsapp_grupos`, `whatsapp_mensagens`). Não há resumo automático. As mensagens aparecem no site (Menu → WhatsApp).
 
 ```
 Grupos ─► número da Brasico ─► Evolution API (VPS) ─► Edge Function whatsapp-webhook ─► Supabase (wa_mensagens)
-                                                                   pg_cron 7h ─► Edge Function whatsapp-resumo ─► Claude ─► wa_resumos
+                                                         resumo: pedido ao Claude, que lê wa_mensagens pelo conector
 ```
 
 - Banco: `supabase/whatsapp.sql` (já aplicado).
