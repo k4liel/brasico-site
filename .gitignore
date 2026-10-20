@@ -14,3 +14,9 @@ privado/
 *.pdf
 supabase/seed_*.sql
 .playwright-mcp/
+
+# Planilhas e fichas técnicas de clientes (nunca no GitHub)
+*.xlsx
+*.xls
+*.csv
+Ficha tecnica/
