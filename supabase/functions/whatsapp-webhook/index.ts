@@ -1,6 +1,7 @@
 // Recebe os eventos da Evolution API e grava as conversas do número da Brasico.
 // URL configurada na instância da Evolution (Events → Webhook):
-//   https://<projeto>.supabase.co/functions/v1/whatsapp-webhook?segredo=<wa_segredo do Vault>
+//   https://<projeto>.supabase.co/functions/v1/whatsapp-webhook
+// com o cabeçalho x-segredo = <wa_segredo do Vault>. (Na URL, ?segredo= também vale, mas aparece nos registros.)
 // Grava grupos (@g.us) e conversas individuais (@s.whatsapp.net / @lid). Status, canais e listas são ignorados.
 // "messages.set" é o histórico que o WhatsApp manda quando o aparelho é conectado.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -166,15 +167,25 @@ async function gravarGrupos(itens: Json[]) {
   }
 }
 
-// Fotos e nomes de contatos (contacts.upsert / contacts.update) e de conversas (chats.upsert)
+// Fotos e nomes de contatos (contacts.upsert / contacts.update) e de conversas (chats.upsert).
+// Só atualiza quem já tem conversa gravada (a agenda inteira chega aqui, com milhares de contatos).
 async function gravarContatos(itens: Json[]) {
+  const porJid = new Map<string, Json>();
   for (const c of itens) {
     const jid = c.remoteJid ?? c.id;
-    if (!ehConversa(jid)) continue;
-    const foto = c.profilePicUrl ?? c.profilePictureUrl;
-    if (typeof foto === "string" && foto) await supabase.from("wa_grupos").update({ foto }).eq("id", jid);
-    if (!ehGrupo(jid) && c.pushName)
-      await supabase.from("wa_grupos").update({ nome: c.pushName }).eq("id", jid).eq("nome", "");
+    if (ehConversa(jid)) porJid.set(jid, c);
+  }
+  const ids = [...porJid.keys()];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabase.from("wa_grupos").select("id,nome,foto").in("id", ids.slice(i, i + 200));
+    for (const atual of (data ?? []) as { id: string; nome: string; foto: string }[]) {
+      const c = porJid.get(atual.id)!;
+      const mudar: Json = {};
+      const foto = c.profilePicUrl ?? c.profilePictureUrl;
+      if (typeof foto === "string" && foto && foto !== atual.foto) mudar.foto = foto;
+      if (!ehGrupo(atual.id) && !atual.nome && c.pushName) mudar.nome = c.pushName;
+      if (Object.keys(mudar).length) await supabase.from("wa_grupos").update(mudar).eq("id", atual.id);
+    }
   }
 }
 
