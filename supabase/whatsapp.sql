@@ -107,6 +107,20 @@ grant select on public.wa_acesso, public.wa_grupos, public.wa_mensagens, public.
 grant update (ativo) on public.wa_grupos to authenticated;
 
 do $$ begin alter publication supabase_realtime add table public.wa_resumos; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.wa_mensagens; exception when duplicate_object then null; end $$;
+do $$ begin alter publication supabase_realtime add table public.wa_grupos; exception when duplicate_object then null; end $$;
+
+-- Site: lista de grupos com total de mensagens e a última (respeita o RLS de quem chama)
+create or replace function public.wa_painel_grupos()
+returns table (id text, nome text, ativo boolean, total bigint, ultima timestamptz)
+language sql stable security invoker set search_path = public as $$
+  select g.id, g.nome, g.ativo, count(m.id), max(m.enviada_em)
+  from public.wa_grupos g left join public.wa_mensagens m on m.grupo_id = g.id
+  group by g.id
+  order by max(m.enviada_em) desc nulls last, g.nome
+$$;
+revoke execute on function public.wa_painel_grupos() from public, anon;
+grant execute on function public.wa_painel_grupos() to authenticated;
 
 -- ---------------------------------------------------------------------
 -- Segredo das Edge Functions (webhook da Evolution e agendamento).

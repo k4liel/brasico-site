@@ -1,17 +1,60 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 
-type Grupo = { id: string; nome: string; ativo: boolean };
+type Grupo = { id: string; nome: string; ativo: boolean; total: number; ultima: string | null };
 type Resumo = { id: string; grupo_id: string; dia: string; resumo: string; total_mensagens: number; updated_at: string };
+type Mensagem = {
+  grupo_id: string;
+  id: string;
+  autor_jid: string;
+  autor_nome: string;
+  de_nos: boolean;
+  tipo: string;
+  texto: string;
+  enviada_em: string;
+};
+// O que está aberto à direita: mensagens (de um grupo ou de todos), o resumo de um dia ou a lista para gerenciar
+type Vista = { tipo: "mensagens"; grupo: string | null } | { tipo: "resumo"; dia: string } | { tipo: "gerenciar" };
 
+const LIMITE = 500;
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 const nomeDia = (d: string) => {
   const [a, m, dia] = d.split("-").map((n) => parseInt(n, 10));
   return `${SEMANA[new Date(Date.UTC(a, m - 1, dia)).getUTCDay()]}, ${dia} ${MES[m - 1]}`;
+};
+
+// Datas sempre no horário de Brasília
+const fmtDia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" });
+const fmtHora = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+const diaDe = (iso: string) => fmtDia.format(new Date(iso));
+const horaDe = (iso: string) => fmtHora.format(new Date(iso));
+
+// "558487836518@s.whatsapp.net" -> "+55 84 8783-6518"
+function telefone(jid: string) {
+  const n = jid.split("@")[0].split(":")[0];
+  if (!jid.endsWith("@s.whatsapp.net") || !/^\d+$/.test(n)) return "";
+  if (n.startsWith("55") && (n.length === 12 || n.length === 13)) {
+    const ddd = n.slice(2, 4);
+    const resto = n.slice(4);
+    return `+55 ${ddd} ${resto.slice(0, -4)}-${resto.slice(-4)}`;
+  }
+  return "+" + n;
+}
+const autor = (m: Mensagem) => (m.de_nos ? "Brasico" : m.autor_nome || telefone(m.autor_jid) || "Participante");
+
+const ROTULO_TIPO: Record<string, string> = {
+  imagem: "📷 Foto",
+  video: "🎥 Vídeo",
+  audio: "🎤 Áudio",
+  documento: "📄 Documento",
+  figurinha: "Figurinha",
+  local: "📍 Localização",
+  contato: "👤 Contato",
+  enquete: "📊 Enquete",
 };
 
 // O resumo vem do Claude a partir de mensagens de terceiros: mostrado como texto,
@@ -47,41 +90,88 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
   const [acesso, setAcesso] = useState<boolean | null>(null);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [resumos, setResumos] = useState<Resumo[]>([]);
-  const [dia, setDia] = useState<string | null>(null);
-  const [verGrupos, setVerGrupos] = useState(false);
+  const [vista, setVista] = useState<Vista>({ tipo: "mensagens", grupo: null });
+  const [mensagens, setMensagens] = useState<Mensagem[] | null>(null);
+  const [busca, setBusca] = useState("");
+  const [buscaAtiva, setBuscaAtiva] = useState("");
 
   const carregar = useCallback(async () => {
     const [{ data: a }, { data: g }, { data: r }] = await Promise.all([
       supabase.from("wa_acesso").select("user_id").eq("user_id", userId),
-      supabase.from("wa_grupos").select("id,nome,ativo").order("nome"),
+      supabase.rpc("wa_painel_grupos"),
       supabase.from("wa_resumos").select("id,grupo_id,dia,resumo,total_mensagens,updated_at").order("dia", { ascending: false }).limit(600),
     ]);
     setAcesso(!!a?.length);
-    setGrupos((g as Grupo[]) ?? []);
+    setGrupos(((g as Grupo[]) ?? []).map((x) => ({ ...x, total: Number(x.total) })));
     setResumos((r as Resumo[]) ?? []);
   }, [supabase, userId]);
 
+  const grupoAberto = vista.tipo === "mensagens" ? vista.grupo : null;
+  const vendoMensagens = vista.tipo === "mensagens";
+
+  const carregarMensagens = useCallback(async () => {
+    let q = supabase
+      .from("wa_mensagens")
+      .select("grupo_id,id,autor_jid,autor_nome,de_nos,tipo,texto,enviada_em")
+      .order("enviada_em", { ascending: false })
+      .limit(LIMITE);
+    if (grupoAberto) q = q.eq("grupo_id", grupoAberto);
+    const b = buscaAtiva.replace(/[%,()*]/g, " ").trim();
+    if (b) q = q.or(`texto.ilike.%${b}%,autor_nome.ilike.%${b}%`);
+    const { data } = await q;
+    setMensagens((data as Mensagem[]) ?? []);
+  }, [supabase, grupoAberto, buscaAtiva]);
+
+  // Recarrega quando chega mensagem nova, sem disparar várias vezes seguidas
+  const espera = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recarregarTudo = useRef<() => void>(() => {});
+  recarregarTudo.current = () => {
+    carregar();
+    if (vendoMensagens) carregarMensagens();
+  };
+
   useEffect(() => {
     carregar();
+    const avisar = () => {
+      if (espera.current) clearTimeout(espera.current);
+      espera.current = setTimeout(() => recarregarTudo.current(), 800);
+    };
     const ch = supabase
-      .channel("whatsapp-resumos")
-      .on("postgres_changes", { event: "*", schema: "public", table: "wa_resumos" }, () => carregar())
+      .channel("whatsapp")
+      .on("postgres_changes", { event: "*", schema: "public", table: "wa_resumos" }, avisar)
+      .on("postgres_changes", { event: "*", schema: "public", table: "wa_grupos" }, avisar)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_mensagens" }, avisar)
       .subscribe();
     return () => {
+      if (espera.current) clearTimeout(espera.current);
       supabase.removeChannel(ch);
     };
   }, [supabase, carregar]);
+
+  useEffect(() => {
+    if (!vendoMensagens || !acesso) return;
+    setMensagens(null);
+    carregarMensagens();
+  }, [vendoMensagens, acesso, carregarMensagens]);
 
   const dias = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of resumos) m.set(r.dia, (m.get(r.dia) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
   }, [resumos]);
-  const atual = verGrupos ? null : dia ?? dias[0]?.[0] ?? null;
   const nomeGrupo = (id: string) => grupos.find((g) => g.id === id)?.nome || "Grupo sem nome";
-  const doDia = resumos
-    .filter((r) => r.dia === atual)
-    .sort((a, b) => b.total_mensagens - a.total_mensagens);
+  const totalGeral = grupos.reduce((s, g) => s + g.total, 0);
+
+  // Mensagens separadas por dia (o mais recente primeiro)
+  const porDia = useMemo(() => {
+    const blocos: { dia: string; itens: Mensagem[] }[] = [];
+    for (const m of mensagens ?? []) {
+      const d = diaDe(m.enviada_em);
+      if (blocos[blocos.length - 1]?.dia !== d) blocos.push({ dia: d, itens: [] });
+      blocos[blocos.length - 1].itens.push(m);
+    }
+    return blocos;
+  }, [mensagens]);
 
   async function alternar(g: Grupo) {
     if (g.ativo && !confirm(`Parar de acompanhar "${g.nome || g.id}"? O número continua no grupo, mas nada novo é gravado nem resumido.`)) return;
@@ -93,21 +183,47 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
     }
   }
 
+  function abrir(v: Vista) {
+    setVista(v);
+    setBusca("");
+    setBuscaAtiva("");
+  }
+
+  const ativos = grupos.filter((g) => g.ativo);
+  const doDia = vista.tipo === "resumo" ? resumos.filter((r) => r.dia === vista.dia).sort((a, b) => b.total_mensagens - a.total_mensagens) : [];
+
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="whatsapp" />
       <main className="listas">
-        <nav className="listas-lado" aria-label="Dias">
-          <span className="listas-rotulo">Resumos</span>
+        <nav className="listas-lado" aria-label="Grupos e resumos">
+          <span className="listas-rotulo">Mensagens</span>
+          <button className={vendoMensagens && !grupoAberto ? "lista on" : "lista"} onClick={() => abrir({ tipo: "mensagens", grupo: null })}>
+            <span>Todos os grupos</span>
+            <span className="lista-n">{totalGeral || ""}</span>
+          </button>
+          {ativos.map((g) => (
+            <button
+              key={g.id}
+              className={grupoAberto === g.id ? "lista on" : "lista"}
+              onClick={() => abrir({ tipo: "mensagens", grupo: g.id })}
+              title={g.nome || g.id}
+            >
+              <span>{g.nome || "Grupo sem nome"}</span>
+              <span className="lista-n">{g.total || ""}</span>
+            </button>
+          ))}
+
+          {dias.length > 0 && <span className="listas-rotulo wa-rotulo">Resumos</span>}
           {dias.map(([d, n]) => (
-            <button key={d} className={atual === d ? "lista on" : "lista"} onClick={() => { setDia(d); setVerGrupos(false); }}>
+            <button key={d} className={vista.tipo === "resumo" && vista.dia === d ? "lista on" : "lista"} onClick={() => abrir({ tipo: "resumo", dia: d })}>
               <span>{nomeDia(d)}</span>
               <span className="lista-n">{n}</span>
             </button>
           ))}
-          <button className={verGrupos ? "lista on lista-nova" : "lista lista-nova"} onClick={() => setVerGrupos(true)}>
-            <span>Grupos</span>
-            <span className="lista-n">{grupos.filter((g) => g.ativo).length || ""}</span>
+
+          <button className={vista.tipo === "gerenciar" ? "lista on lista-nova" : "lista lista-nova"} onClick={() => abrir({ tipo: "gerenciar" })}>
+            <span>Gerenciar grupos</span>
           </button>
         </nav>
 
@@ -116,7 +232,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
             <p className="muted">Carregando…</p>
           ) : !acesso ? (
             <p className="vazio muted">Você ainda não tem acesso aos grupos de WhatsApp.</p>
-          ) : verGrupos ? (
+          ) : vista.tipo === "gerenciar" ? (
             <>
               <header className="lista-cabeca">
                 <h1>Grupos</h1>
@@ -129,20 +245,19 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                       <label>
                         <input type="checkbox" checked={g.ativo} onChange={() => alternar(g)} />
                         <span>{g.nome || g.id}</span>
+                        <span className="muted small wa-grupo-n">{g.total} mensagens</span>
                       </label>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="vazio muted">Nenhum grupo ainda. Eles aparecem aqui quando o número da Brasico recebe a primeira mensagem de cada um.</p>
+                <p className="vazio muted">Nenhum grupo ainda.</p>
               )}
             </>
-          ) : !atual ? (
-            <p className="vazio muted">Nenhum resumo ainda. O primeiro sai às 7h do dia seguinte à primeira mensagem nos grupos.</p>
-          ) : (
+          ) : vista.tipo === "resumo" ? (
             <>
               <header className="lista-cabeca">
-                <h1>{nomeDia(atual)}</h1>
+                <h1>{nomeDia(vista.dia)}</h1>
                 <span className="muted small">
                   {doDia.length} grupo{doDia.length > 1 ? "s" : ""} · {doDia.reduce((s, r) => s + r.total_mensagens, 0)} mensagens
                 </span>
@@ -156,6 +271,64 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                   <Resumo md={r.resumo} />
                 </article>
               ))}
+            </>
+          ) : (
+            <>
+              <header className="lista-cabeca">
+                <h1>{grupoAberto ? nomeGrupo(grupoAberto) : "Todos os grupos"}</h1>
+                <span className="muted small">
+                  {mensagens === null
+                    ? ""
+                    : mensagens.length >= LIMITE
+                      ? `últimas ${LIMITE} mensagens`
+                      : `${mensagens.length} mensage${mensagens.length === 1 ? "m" : "ns"}`}
+                </span>
+              </header>
+              <form
+                className="wa-busca"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setBuscaAtiva(busca);
+                }}
+              >
+                <input type="search" placeholder="Buscar por texto ou nome de quem mandou" value={busca} onChange={(e) => setBusca(e.target.value)} />
+                {buscaAtiva && (
+                  <button type="button" className="acao" onClick={() => { setBusca(""); setBuscaAtiva(""); }}>
+                    Limpar
+                  </button>
+                )}
+              </form>
+              {mensagens === null ? (
+                <p className="muted">Carregando…</p>
+              ) : !mensagens.length ? (
+                <p className="vazio muted">
+                  {buscaAtiva ? "Nada encontrado." : "Nenhuma mensagem ainda. As mensagens novas dos grupos aparecem aqui na hora."}
+                </p>
+              ) : (
+                porDia.map((b) => (
+                  <section key={b.dia} className="wa-dia">
+                    <h2 className="wa-dia-titulo">{nomeDia(b.dia)}</h2>
+                    <ul className="wa-msgs">
+                      {b.itens.map((m) => (
+                        <li key={m.grupo_id + m.id} className={m.de_nos ? "wa-msg wa-nos" : "wa-msg"}>
+                          <div className="wa-msg-topo">
+                            <strong>{autor(m)}</strong>
+                            {m.autor_nome && telefone(m.autor_jid) && <span className="muted small">{telefone(m.autor_jid)}</span>}
+                            {!grupoAberto && (
+                              <button className="wa-msg-grupo" onClick={() => abrir({ tipo: "mensagens", grupo: m.grupo_id })}>
+                                {nomeGrupo(m.grupo_id)}
+                              </button>
+                            )}
+                            <span className="muted small wa-msg-hora">{horaDe(m.enviada_em)}</span>
+                          </div>
+                          {ROTULO_TIPO[m.tipo] && <span className="wa-msg-tipo">{ROTULO_TIPO[m.tipo]}</span>}
+                          {m.texto && <p className="wa-msg-texto">{m.texto}</p>}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))
+              )}
             </>
           )}
         </section>
