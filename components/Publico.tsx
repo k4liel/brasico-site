@@ -9,22 +9,23 @@ import { cssDoProjeto } from "@/lib/livre";
 import DocView from "./DocView";
 import Bandeira from "./Bandeira";
 import VisorPdf from "./VisorPdf";
-import { IDIOMAS, TEXTOS, type Idioma } from "@/lib/idioma";
+import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
 
-type Cap = { titulo: string; conteudo: string; titulo_en: string | null; conteudo_en: string | null; titulo_pl: string | null; conteudo_pl: string | null };
-type Doc = { nome: string; rodape: string | null; rodape_en: string | null; rodape_pl: string | null; css: string | null; abas: boolean; capitulos: Cap[] };
+type Cap = { titulo: string; conteudo: string; titulo_en: string | null; conteudo_en: string | null; titulo_pl: string | null; conteudo_pl: string | null; titulo_fr: string | null; conteudo_fr: string | null };
+type Doc = { nome: string; rodape: string | null; rodape_en: string | null; rodape_pl: string | null; rodape_fr: string | null; css: string | null; abas: boolean; capitulos: Cap[] };
 
 const semNumero = (t: string) => t.replace(/^\s*\d+\s*[·.\-–—]\s*/, "");
 const numeroDe = (t: string) => t.match(/^\s*(\d+)\s*[·.\-–—]/)?.[1] ?? null;
 // Documentos do projeto: no link público abrem pela rota /api/publico/<código>/..., que confere o código
 const comLinkPublico = (md: string, slug: string) => md.replace(/^(\s*base:\s*)\/api\/arquivo\//gm, `$1/api/publico/${slug}/`);
 
-const PAGINA = { pt: "Página", en: "Page", pl: "Strona" } as const;
-const BAIXAR = { pt: "Baixar PDF", en: "Download PDF", pl: "Pobierz PDF" } as const;
+const PAGINA = { pt: "Página", en: "Page", pl: "Strona", fr: "Page" } as const;
+const BAIXAR = { pt: "Baixar PDF", en: "Download PDF", pl: "Pobierz PDF", fr: "Télécharger le PDF" } as const;
 const AVISO = {
   pt: ["Link indisponível", "Este link não existe ou foi desativado. Peça um novo link a quem compartilhou."],
   en: ["Link unavailable", "This link does not exist or has been turned off. Ask the person who shared it for a new link."],
   pl: ["Link niedostępny", "Ten link nie istnieje lub został wyłączony. Poproś osobę, która go udostępniła, o nowy link."],
+  fr: ["Lien indisponible", "Ce lien n'existe pas ou a été désactivé. Demandez un nouveau lien à la personne qui l'a partagé."],
 } as const;
 
 export default function Publico({ slug }: { slug: string }) {
@@ -45,7 +46,7 @@ export default function Publico({ slug }: { slug: string }) {
       const q = new URLSearchParams(window.location.search);
       if (q.get("ver") === "pdf") setModo("pdf");
       const l = q.get("lang") ?? localStorage.getItem("brasico-idioma");
-      if (l === "pt" || l === "en" || l === "pl") setIdioma(l);
+      if (ehIdioma(l)) setIdioma(l);
     } catch {}
     const ler = () => {
       const m = window.location.hash.match(/^#cap-(\d+)$/);
@@ -85,7 +86,7 @@ export default function Publico({ slug }: { slug: string }) {
   const capitulos = useMemo(
     () =>
       (doc?.capitulos ?? []).map((c, i) => {
-        const t = idioma === "en" ? [c.titulo_en, c.conteudo_en] : idioma === "pl" ? [c.titulo_pl, c.conteudo_pl] : [null, null];
+        const t = idioma === "en" ? [c.titulo_en, c.conteudo_en] : idioma === "pl" ? [c.titulo_pl, c.conteudo_pl] : idioma === "fr" ? [c.titulo_fr, c.conteudo_fr] : [null, null];
         return { id: String(i + 1), titulo: t[0]?.trim() || c.titulo, conteudo: comLinkPublico(t[1]?.trim() || c.conteudo, slug) };
       }),
     [doc, idioma, slug]
@@ -102,7 +103,7 @@ export default function Publico({ slug }: { slug: string }) {
       </main>
     );
 
-  const rodape = (idioma === "en" ? doc.rodape_en?.trim() : idioma === "pl" ? doc.rodape_pl?.trim() : null) || doc.rodape || null;
+  const rodape = (idioma === "en" ? doc.rodape_en?.trim() : idioma === "pl" ? doc.rodape_pl?.trim() : idioma === "fr" ? doc.rodape_fr?.trim() : null) || doc.rodape || null;
   const emAbas = modo === "pagina" && doc.abas && capitulos.length > 1;
   const i = Math.min(Math.max(aba, 0), Math.max(capitulos.length - 1, 0));
   const atual = capitulos[i];

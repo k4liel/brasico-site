@@ -32,6 +32,13 @@ export default function Bandeira({ idioma }: { idioma: Idioma }) {
           <rect y="7" width="20" height="7" fill="#dc143c" />
         </svg>
       )}
+      {idioma === "fr" && (
+        <svg viewBox="0 0 21 14" preserveAspectRatio="xMidYMid slice">
+          <rect width="7" height="14" fill="#002654" />
+          <rect x="7" width="7" height="14" fill="#fff" />
+          <rect x="14" width="7" height="14" fill="#ce1126" />
+        </svg>
+      )}
     </span>
   );
 }

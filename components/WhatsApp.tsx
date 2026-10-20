@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { IDIOMAS, LANG, type Idioma } from "@/lib/idioma";
+import { IDIOMAS, LANG, ehIdioma, type Idioma } from "@/lib/idioma";
 import { TEXTOS_WHATSAPP, type TextosWhatsApp } from "@/lib/whatsapp-textos";
 import Topo from "./Topo";
 import Bandeira from "./Bandeira";
@@ -334,7 +334,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
   useEffect(() => {
     try {
       const v = new URLSearchParams(window.location.search).get("lang") ?? localStorage.getItem("brasico-idioma");
-      if (v === "pt" || v === "en" || v === "pl") setIdioma(v);
+      if (ehIdioma(v)) setIdioma(v);
     } catch {}
   }, []);
   function trocarIdioma(v: Idioma) {

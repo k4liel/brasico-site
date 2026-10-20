@@ -156,7 +156,7 @@ function renderEscala(body: string[], idioma: Idioma = "pt") {
     if (kv && kv[1].toLowerCase() === "dias") {
       dias = kv[2].split("|").map((d) => {
         const [nome, ...resto] = d.trim().split(/\s+/);
-        return { nome, num: resto.join(" "), dom: /^(dom|sun|nd|niedz)/i.test(nome) };
+        return { nome, num: resto.join(" "), dom: /^(dom|sun|nd|niedz|dim)/i.test(nome) };
       });
       continue;
     }

@@ -1,4 +1,4 @@
-// Textos da tela do WhatsApp (Menu → WhatsApp) em português, inglês e polonês.
+// Textos da tela do WhatsApp (Menu → WhatsApp) em português, inglês, polonês e francês.
 // O conteúdo das mensagens não é traduzido: aparece como as pessoas escreveram.
 import type { Idioma } from "./idioma";
 
@@ -226,4 +226,73 @@ const pl: TextosWhatsApp = {
   boasNota: "🔒 Te rozmowy widzą tylko wspólnicy.",
 };
 
-export const TEXTOS_WHATSAPP: Record<Idioma, TextosWhatsApp> = { pt, en, pl };
+const fr: TextosWhatsApp = {
+  carregando: "Chargement…",
+  semAcesso: "Vous n'avez pas encore accès aux conversations WhatsApp.",
+  conectado: "Brasico connecté",
+  idioma: "Langue",
+  enviarPeloSite: "Envoyer depuis le site",
+  enviarDica: "Autoriser ou non les associés à envoyer des messages depuis le site",
+  enviarLigado: "Activé : vous pouvez répondre dans les conversations",
+  enviarDesligado: "Désactivé : lecture seule",
+  confirmarLigar:
+    "Activer l'envoi de messages depuis le site ?\n\nTout associé pourra envoyer des messages avec le numéro de Brasico. À utiliser avec modération : WhatsApp peut bloquer les numéros qui envoient beaucoup de messages par des systèmes non officiels.",
+  naoSalvou: "Impossible d'enregistrer : ",
+  naoEnviou: "Impossible d'envoyer le message.",
+  mensagemPara: (nome: string) => `Message pour ${nome}`,
+  enviar: "Envoyer",
+  somenteLeitura: "🔒 Lecture seule · activez « Envoyer depuis le site » dans la liste à côté pour répondre ici",
+  pesquisar: "Rechercher une conversation ou un numéro",
+  filtro: "Filtre",
+  abas: { todas: "Toutes", grupos: "Groupes", contatos: "Contacts", resumos: "Résumés" },
+  voce: "Vous",
+  pausada: "En pause",
+  semMensagens: "Pas encore de messages",
+  nenhumaEncontrada: "Aucune conversation trouvée.",
+  nenhumaConversa: "Aucune conversation pour l'instant.",
+  resumoDe: (n: number) => `Résumé de ${n} groupe${n > 1 ? "s" : ""} par Claude`,
+  semResumos: "Pour un résumé, demandez à Claude : « résume la journée dans le groupe … ». Il lit les messages via le connecteur Brasico.",
+  resumoTitulo: (dia: string) => `Résumé · ${dia}`,
+  resumoEscrito: "Rédigé par Claude à partir des messages des groupes",
+  voltar: "Retour",
+  grupo: "Groupe",
+  grupoSemNome: "Groupe sans nom",
+  contato: "Contact",
+  participante: "Participant",
+  conversaIndividual: "Conversation individuelle",
+  mensagens: (n: number, lang: string) => `${n.toLocaleString(lang)} ${n <= 1 ? "message" : "messages"}`,
+  pesquisarNaConversa: "Rechercher dans la conversation",
+  acompanhando: "Suivie",
+  acompanharDica: "Enregistrer ou non les nouveaux messages de cette conversation",
+  pararDeAcompanhar: (nome: string) => `Arrêter de suivre « ${nome} » ? Plus rien de cette conversation ne sera enregistré.`,
+  buscarMensagens: "Rechercher des messages par texte ou auteur",
+  limpar: "Effacer",
+  nadaEncontrado: "Aucun résultat.",
+  nenhumaGravada: "Aucun message enregistré pour l'instant.",
+  carregarAnteriores: "Charger les messages précédents",
+  resultadosPara: (b: string) => `Résultats pour « ${b} »`,
+  hoje: "Aujourd'hui",
+  ontem: "Hier",
+  midia: {
+    imagem: "Photo",
+    video: "Vidéo",
+    audio: "Audio",
+    documento: "Document",
+    figurinha: "Autocollant",
+    local: "Position",
+    contato: "Contact",
+    enquete: "Sondage",
+  },
+  ampliarFoto: "Agrandir la photo",
+  baixar: "Télécharger",
+  arquivoNaoGuardado: "Fichier non enregistré",
+  fotoAmpliada: "Photo agrandie",
+  abrirOriginal: "Ouvrir l'original",
+  fechar: "Fermer",
+  boasTitulo: "Conversations de Brasico",
+  boasTexto: (g: number, c: number) =>
+    `${g} ${g <= 1 ? "groupe" : "groupes"} et ${c} ${c <= 1 ? "conversation individuelle" : "conversations individuelles"}. Choisissez une conversation à côté pour lire les messages.`,
+  boasNota: "🔒 Seuls les associés voient ces conversations.",
+};
+
+export const TEXTOS_WHATSAPP: Record<Idioma, TextosWhatsApp> = { pt, en, pl, fr };

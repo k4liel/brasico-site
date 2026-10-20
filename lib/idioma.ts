@@ -1,13 +1,16 @@
-// Idioma do documento. O português é o original; inglês e polonês são opcionais, por capítulo
-// (notes.title_en / content_en, title_pl / content_pl) e no rodapé (workspaces.doc_rodape_en / _pl).
-export type Idioma = "pt" | "en" | "pl";
+// Idioma do documento. O português é o original; inglês, polonês e francês são opcionais, por capítulo
+// (notes.title_en / content_en, title_pl / content_pl, title_fr / content_fr) e no rodapé (workspaces.doc_rodape_en / _pl / _fr).
+export type Idioma = "pt" | "en" | "pl" | "fr";
 
 export const IDIOMAS: { id: Idioma; sigla: string; nome: string; lang: string }[] = [
   { id: "pt", sigla: "PT", nome: "Português", lang: "pt-BR" },
   { id: "en", sigla: "EN", nome: "English", lang: "en" },
   { id: "pl", sigla: "PL", nome: "Polski", lang: "pl" },
+  { id: "fr", sigla: "FR", nome: "Français", lang: "fr" },
 ];
-export const LANG: Record<Idioma, string> = { pt: "pt-BR", en: "en", pl: "pl" };
+export const LANG: Record<Idioma, string> = { pt: "pt-BR", en: "en", pl: "pl", fr: "fr" };
+
+export const ehIdioma = (v: unknown): v is Idioma => v === "pt" || v === "en" || v === "pl" || v === "fr";
 
 // Textos fixos que aparecem dentro do documento (não os do site).
 export const TEXTOS = {
@@ -99,6 +102,36 @@ export const TEXTOS = {
       plantao: "Dyżur 12x36",
       folga: "Wolne",
       descanso: "Odpoczynek 12x36",
+    },
+  },
+  fr: {
+    equipe: "Équipe",
+    dias: "Jours",
+    domFolga: "Dim. repos",
+    trabalhando: "Personnes au travail",
+    domingo: "Dimanche",
+    entra: "début",
+    ou: "ou",
+    dicaIntervalo: "Survolez l'horaire pour voir la pause",
+    intervalo: "Pause",
+    intervaloAria: "pause",
+    restrito: "Confidentiel",
+    interno: "Usage interne",
+    abrir: "Ouvrir",
+    pagina: (n: number, total: number) => `p. ${n} sur ${total}`,
+    anterior: "← Précédent",
+    proximo: "Suivant →",
+    turnos: {
+      abertura: "Ouverture",
+      manha: "Matin",
+      inter: "Intermédiaire",
+      tarde: "Après-midi",
+      noite: "Soir",
+      dia: "Service",
+      partido: "Service coupé",
+      plantao: "Garde 12x36",
+      folga: "Repos",
+      descanso: "Repos 12x36",
     },
   },
 } as const;
