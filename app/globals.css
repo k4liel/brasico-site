@@ -309,6 +309,9 @@ section.folha[id], section.secao[id] { scroll-margin-top: 72px; }
 .bandeira { display: block; width: 18px; height: 12px; border-radius: 2px; overflow: hidden; box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); filter: saturate(.35); opacity: .6; transition: filter .2s, opacity .2s; }
 .bandeira svg { display: block; width: 100%; height: 100%; }
 .alternar-idioma button:hover .bandeira, .alternar-idioma button.on .bandeira { filter: none; opacity: 1; }
+/* Só a bandeira escolhida aparece; as outras abrem ao passar o mouse (ou ao tocar, no celular) */
+.alternar-idioma button:not(.on) { max-width: 0; padding: 0; opacity: 0; overflow: hidden; transition: max-width .2s, padding .2s, opacity .2s; }
+.alternar-idioma:hover button:not(.on), .alternar-idioma:focus-within button:not(.on) { max-width: 40px; padding: 0 6px; opacity: 1; }
 
 /* Interruptor claro/escuro: sol que vira lua, céu que vira noite */
 .tema-switch {
