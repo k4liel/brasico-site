@@ -607,8 +607,10 @@ textarea:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--gold)
 
 /* Lista de conversas */
 .wa-lado { display: flex; flex-direction: column; min-height: 0; background: var(--wa-lado); border-right: 1px solid var(--wa-linha); color: var(--wa-texto); }
-.wa-lado-topo { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 18px 18px 10px; }
-.wa-lado-topo h1 { margin: 0; font-size: 24px; color: var(--wa-texto); }
+.wa-lado-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 16px 10px 18px; }
+.wa-lado-titulo { min-width: 0; display: grid; gap: 2px; }
+.wa-lado-topo h1 { margin: 0; font-size: 24px; line-height: 1.15; color: var(--wa-texto); }
+.wa-lado-topo .alternar { flex: none; }
 .wa-conta { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wa-suave); }
 .wa-ponto { width: 8px; height: 8px; border-radius: 50%; background: var(--wa-verde); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wa-verde) 22%, transparent); }
 .wa-filtro { padding: 0 14px 8px; }
