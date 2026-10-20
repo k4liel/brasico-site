@@ -85,12 +85,14 @@ function formatarTelefone(n: string) {
 }
 const telefoneDoJid = (jid: string) => (jid.endsWith("@s.whatsapp.net") ? formatarTelefone(jid.split("@")[0].split(":")[0]) : "");
 const telefoneDoAutor = (m: Mensagem) => formatarTelefone(m.autor_telefone) || telefoneDoJid(m.autor_jid);
-const autor = (m: Mensagem) => (m.de_nos ? "Você" : m.autor_nome || telefoneDoAutor(m) || "Participante");
+// Número no lugar do nome (código interno do WhatsApp) não conta como nome
+const nomeValido = (s: string) => (s.trim() && !/^[0-9 +().-]+$/.test(s.trim()) ? s.trim() : "");
+const autor = (m: Mensagem) => (m.de_nos ? "Você" : nomeValido(m.autor_nome) || telefoneDoAutor(m) || "Participante");
 const tamanho = (b: number) =>
   b >= 1048576 ? `${(b / 1048576).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1024))} KB` : "";
 const duracao = (s: number) => (s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "");
 const nomeConversa = (c: Conversa | undefined) =>
-  c ? c.nome || formatarTelefone(c.telefone) || (c.tipo === "grupo" ? "Grupo sem nome" : "Contato") : "";
+  c ? nomeValido(c.nome) || formatarTelefone(c.telefone) || (c.tipo === "grupo" ? "Grupo sem nome" : "Contato") : "";
 
 // Cor fixa por pessoa (como o WhatsApp faz nos grupos)
 const CORES = ["#e17076", "#7bc862", "#e5a64e", "#65aadd", "#a695e7", "#ee7aae", "#6ec9cb", "#faa774", "#d4a017", "#5fb98a"];
@@ -256,7 +258,7 @@ function Balao({
         {grupo && !m.de_nos && primeiraDoAutor && (
           <div className="wa-balao-autor">
             <span style={{ color: corDe(m.autor_jid || nome) }}>{nome}</span>
-            {m.autor_nome && tel && <span className="wa-balao-tel">{tel}</span>}
+            {nomeValido(m.autor_nome) && tel && <span className="wa-balao-tel">{tel}</span>}
           </div>
         )}
         {m.citacao && <div className="wa-citacao">{m.citacao}</div>}

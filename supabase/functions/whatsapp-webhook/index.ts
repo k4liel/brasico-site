@@ -26,6 +26,8 @@ const ehConversa = (jid: unknown): jid is string =>
   typeof jid === "string" && (jid.endsWith("@g.us") || jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid"));
 const numero = (jid: unknown) =>
   typeof jid === "string" && jid.endsWith("@s.whatsapp.net") ? jid.split("@")[0].split(":")[0] : "";
+// Sem o nome do perfil, a Evolution manda o código interno (@lid) ou o número no lugar: isso não é nome
+const nomeDoPerfil = (v: unknown) => (typeof v === "string" && v.trim() && !/^[0-9 +().-]+$/.test(v.trim()) ? v.trim() : "");
 
 // A miniatura chega como base64, como Buffer serializado ({type, data}) ou como objeto de bytes
 function paraBase64(v: unknown): string {
@@ -159,7 +161,7 @@ async function gravarMensagens(instancia: string, itens: Json[]) {
     lidas.push({ jid, d, msg });
     const atual = conversas.get(jid) ?? { nome: "", telefone: "" };
     if (!ehGrupo(jid) && !d.key.fromMe) {
-      atual.nome ||= d.pushName ?? "";
+      atual.nome ||= nomeDoPerfil(d.pushName);
       atual.telefone ||= numero(jid) || numero(d.key.remoteJidAlt) || numero(d.key.senderPn);
     }
     conversas.set(jid, atual);
@@ -182,7 +184,7 @@ async function gravarMensagens(instancia: string, itens: Json[]) {
       grupo_id: jid,
       id: d.key.id,
       autor_jid: ehGrupo(jid) ? (d.key.participant ?? d.participant ?? "") : d.key.fromMe ? "" : jid,
-      autor_nome: d.key.fromMe ? "" : (d.pushName ?? ""),
+      autor_nome: d.key.fromMe ? "" : nomeDoPerfil(d.pushName),
       autor_telefone: telefone,
       de_nos: !!d.key.fromMe,
       tipo: msg.tipo,
@@ -213,6 +215,16 @@ async function gravarMensagens(instancia: string, itens: Json[]) {
       .upsert(linhas.slice(i, i + 500), { onConflict: "grupo_id,id", ignoreDuplicates: true, defaultToNull: false });
     if (error) throw error;
   }
+  // Agenda aprende o nome do perfil (e o telefone) de quem mandou mensagem
+  const aprendidos = new Map<string, Json>();
+  for (const l of linhas)
+    if (!l.de_nos && l.autor_jid && l.autor_nome)
+      aprendidos.set(l.autor_jid, { id: l.autor_jid, nome: l.autor_nome, telefone: l.autor_telefone, updated_at: new Date().toISOString() });
+  const comTel = [...aprendidos.values()].filter((c) => c.telefone);
+  const semTel = [...aprendidos.values()].filter((c) => !c.telefone).map(({ telefone: _t, ...c }) => c);
+  for (const lote of [comTel, semTel])
+    if (lote.length) await supabase.from("wa_contatos").upsert(lote, { onConflict: "id", defaultToNull: false });
+
   // Mensagens que já existiam ganham o telefone do autor e a mídia, sem perder o resto
   for (let i = 0; i < completar.length; i += 500) {
     const { error } = await supabase.rpc("wa_completar_mensagens", { p: completar.slice(i, i + 500) });
@@ -245,7 +257,7 @@ async function gravarContatos(itens: Json[]) {
     const linha: Json = { id: jid, updated_at: new Date().toISOString() };
     const tel = numero(jid) || numero(c.phoneNumber) || numero(c.jid) || numero(c.remoteJidAlt);
     if (tel) linha.telefone = tel;
-    if (c.pushName) linha.nome = c.pushName;
+    if (nomeDoPerfil(c.pushName)) linha.nome = nomeDoPerfil(c.pushName);
     const foto = c.profilePicUrl ?? c.profilePictureUrl;
     if (typeof foto === "string" && foto) linha.foto = foto;
     return linha;
@@ -269,7 +281,7 @@ async function gravarContatos(itens: Json[]) {
       const mudar: Json = {};
       const foto = c.profilePicUrl ?? c.profilePictureUrl;
       if (typeof foto === "string" && foto && foto !== atual.foto) mudar.foto = foto;
-      if (!atual.nome && c.pushName) mudar.nome = c.pushName;
+      if (!nomeDoPerfil(atual.nome) && nomeDoPerfil(c.pushName)) mudar.nome = nomeDoPerfil(c.pushName);
       if (!atual.telefone && numero(atual.id)) mudar.telefone = numero(atual.id);
       if (Object.keys(mudar).length) await supabase.from("wa_grupos").update(mudar).eq("id", atual.id);
     }

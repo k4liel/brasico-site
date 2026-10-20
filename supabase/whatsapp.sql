@@ -430,3 +430,64 @@ returns table (url text, chave text) language sql stable security definer set se
 $$;
 revoke execute on function public.wa_evolution() from public, anon, authenticated;
 grant execute on function public.wa_evolution() to service_role;
+
+-- ---------------------------------------------------------------------
+-- Nome do perfil: quando o WhatsApp não manda o nome, a Evolution põe o código interno (@lid)
+-- ou o número no lugar. "Nome" que é só número não vale: usa o nome do perfil que está na agenda.
+-- ---------------------------------------------------------------------
+create or replace function public.wa_nome_valido(p text)
+returns boolean language sql immutable as $$
+  select coalesce(trim(p), '') <> '' and trim(p) !~ '^[0-9 +().-]+$'
+$$;
+
+create or replace function public.wa_completar_autor()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v text;
+begin
+  if new.autor_telefone = '' and new.autor_jid <> '' then
+    select c.telefone into v from public.wa_contatos c where c.id = new.autor_jid and c.telefone <> '';
+    new.autor_telefone := coalesce(v, '');
+  end if;
+  if not new.de_nos and not public.wa_nome_valido(new.autor_nome) and new.autor_jid <> '' then
+    v := null;
+    select c.nome into v from public.wa_contatos c where c.id = new.autor_jid and public.wa_nome_valido(c.nome);
+    if v is null and new.autor_telefone <> '' then
+      select c.nome into v from public.wa_contatos c
+      where c.id = new.autor_telefone || '@s.whatsapp.net' and public.wa_nome_valido(c.nome);
+    end if;
+    new.autor_nome := coalesce(v, '');
+  end if;
+  return new;
+end $$;
+drop trigger if exists wa_mensagens_autor on public.wa_mensagens;
+create trigger wa_mensagens_autor before insert or update of autor_telefone, autor_nome on public.wa_mensagens
+  for each row execute function public.wa_completar_autor();
+
+-- A agenda nunca guarda número como nome
+create or replace function public.wa_contatos_limpar()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if not public.wa_nome_valido(new.nome) then
+    new.nome := case when tg_op = 'UPDATE' and public.wa_nome_valido(old.nome) then old.nome else '' end;
+  end if;
+  return new;
+end $$;
+drop trigger if exists wa_contatos_limpar on public.wa_contatos;
+create trigger wa_contatos_limpar before insert or update on public.wa_contatos
+  for each row execute function public.wa_contatos_limpar();
+
+-- Quando a agenda ganha o nome de alguém, as mensagens e conversas dessa pessoa passam a mostrar o nome
+create or replace function public.wa_contatos_propagar()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if public.wa_nome_valido(new.nome) then
+    update public.wa_mensagens set autor_nome = new.nome
+      where autor_jid = new.id and not de_nos and not public.wa_nome_valido(autor_nome);
+    update public.wa_grupos set nome = new.nome
+      where id = new.id and tipo = 'contato' and not public.wa_nome_valido(nome);
+  end if;
+  return new;
+end $$;
+drop trigger if exists wa_contatos_propagar on public.wa_contatos;
+create trigger wa_contatos_propagar after insert or update of nome on public.wa_contatos
+  for each row execute function public.wa_contatos_propagar();
