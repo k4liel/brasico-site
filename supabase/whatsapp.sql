@@ -110,14 +110,28 @@ do $$ begin alter publication supabase_realtime add table public.wa_resumos; exc
 do $$ begin alter publication supabase_realtime add table public.wa_mensagens; exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.wa_grupos; exception when duplicate_object then null; end $$;
 
--- Site: lista de grupos com total de mensagens e a última (respeita o RLS de quem chama)
+-- wa_grupos guarda todas as conversas do número: grupos e individuais
+alter table public.wa_grupos add column if not exists tipo text not null default 'grupo';   -- 'grupo' ou 'contato'
+alter table public.wa_grupos add column if not exists foto text not null default '';        -- URL da foto no WhatsApp (expira; o site cai nas iniciais)
+alter table public.wa_grupos add column if not exists telefone text not null default '';    -- só contatos
+alter table public.wa_mensagens add column if not exists miniatura text not null default '';  -- JPEG pequeno em base64 (fotos e vídeos)
+alter table public.wa_mensagens add column if not exists citacao text not null default '';    -- texto da mensagem respondida
+
+-- Site: lista de conversas com total de mensagens e a última (respeita o RLS de quem chama)
+drop function if exists public.wa_painel_grupos();
 create or replace function public.wa_painel_grupos()
-returns table (id text, nome text, ativo boolean, total bigint, ultima timestamptz)
+returns table (id text, nome text, tipo text, foto text, telefone text, ativo boolean, total bigint, ultima timestamptz,
+               ultima_autor text, ultima_texto text, ultima_tipo text, ultima_de_nos boolean)
 language sql stable security invoker set search_path = public as $$
-  select g.id, g.nome, g.ativo, count(m.id), max(m.enviada_em)
-  from public.wa_grupos g left join public.wa_mensagens m on m.grupo_id = g.id
-  group by g.id
-  order by max(m.enviada_em) desc nulls last, g.nome
+  select g.id, g.nome, g.tipo, g.foto, g.telefone, g.ativo,
+         (select count(*) from public.wa_mensagens m where m.grupo_id = g.id),
+         u.enviada_em, u.autor_nome, u.texto, u.tipo, u.de_nos
+  from public.wa_grupos g
+  left join lateral (
+    select m.enviada_em, m.autor_nome, m.texto, m.tipo, m.de_nos from public.wa_mensagens m
+    where m.grupo_id = g.id order by m.enviada_em desc limit 1
+  ) u on true
+  order by u.enviada_em desc nulls last, g.nome
 $$;
 revoke execute on function public.wa_painel_grupos() from public, anon;
 grant execute on function public.wa_painel_grupos() to authenticated;

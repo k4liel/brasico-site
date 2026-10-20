@@ -114,7 +114,8 @@ Deno.serve(async (req) => {
   const corpo = await req.json().catch(() => ({}));
   const dia: string = /^\d{4}-\d{2}-\d{2}$/.test(corpo.dia ?? "") ? corpo.dia : ontemEmBrasilia();
 
-  let consulta = supabase.from("wa_grupos").select("id,nome").eq("ativo", true);
+  // Só grupos: as conversas individuais aparecem no site, mas não entram no resumo
+  let consulta = supabase.from("wa_grupos").select("id,nome").eq("ativo", true).eq("tipo", "grupo");
   if (corpo.grupo) consulta = consulta.eq("id", corpo.grupo);
   const { data: grupos, error } = await consulta;
   if (error) return new Response(error.message, { status: 500 });
