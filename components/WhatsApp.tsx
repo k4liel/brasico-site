@@ -29,12 +29,19 @@ type Mensagem = {
   texto: string;
   miniatura: string;
   citacao: string;
+  midia: string;
+  midia_mime: string;
+  midia_nome: string;
+  midia_bytes: number;
+  midia_segundos: number;
+  autor_telefone: string;
   enviada_em: string;
 };
 type Aba = "todas" | "grupos" | "contatos" | "resumos";
 
 const POR_VEZ = 300;
-const CAMPOS = "grupo_id,id,autor_jid,autor_nome,de_nos,tipo,texto,miniatura,citacao,enviada_em";
+const CAMPOS =
+  "grupo_id,id,autor_jid,autor_nome,autor_telefone,de_nos,tipo,texto,miniatura,citacao,midia,midia_mime,midia_nome,midia_bytes,midia_segundos,enviada_em";
 
 // ---------- Datas (sempre no horário de Brasília) ----------
 const TZ = "America/Sao_Paulo";
@@ -77,7 +84,11 @@ function formatarTelefone(n: string) {
   return "+" + n;
 }
 const telefoneDoJid = (jid: string) => (jid.endsWith("@s.whatsapp.net") ? formatarTelefone(jid.split("@")[0].split(":")[0]) : "");
-const autor = (m: Mensagem) => (m.de_nos ? "Você" : m.autor_nome || telefoneDoJid(m.autor_jid) || "Participante");
+const telefoneDoAutor = (m: Mensagem) => formatarTelefone(m.autor_telefone) || telefoneDoJid(m.autor_jid);
+const autor = (m: Mensagem) => (m.de_nos ? "Você" : m.autor_nome || telefoneDoAutor(m) || "Participante");
+const tamanho = (b: number) =>
+  b >= 1048576 ? `${(b / 1048576).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1024))} KB` : "";
+const duracao = (s: number) => (s > 0 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "");
 const nomeConversa = (c: Conversa | undefined) =>
   c ? c.nome || formatarTelefone(c.telefone) || (c.tipo === "grupo" ? "Grupo sem nome" : "Contato") : "";
 
@@ -167,28 +178,89 @@ function comLinks(t: string) {
   );
 }
 
-function Balao({ m, grupo, primeiraDoAutor }: { m: Mensagem; grupo: boolean; primeiraDoAutor: boolean }) {
-  const midia = MIDIA[m.tipo];
+// Mídia guardada no bucket privado: foto, vídeo, áudio, figurinha ou documento
+function Midia({ m, url, ampliar }: { m: Mensagem; url: string | undefined; ampliar: (url: string) => void }) {
+  const info = MIDIA[m.tipo];
+  const miniatura = m.miniatura ? `data:image/jpeg;base64,${m.miniatura}` : undefined;
+  if (m.tipo === "imagem" || m.tipo === "figurinha") {
+    const src = url ?? miniatura;
+    if (!src) return <div className="wa-midia">{info?.icone} {info?.rotulo}</div>;
+    return (
+      <button className={`wa-foto ${m.tipo === "figurinha" ? "wa-figurinha" : ""} ${url ? "" : "wa-carregando"}`} onClick={() => url && ampliar(url)} aria-label="Ampliar foto">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={m.texto || info?.rotulo || "Foto"} loading="lazy" />
+      </button>
+    );
+  }
+  if (m.tipo === "video")
+    return url ? (
+      <video className="wa-video" src={url} poster={miniatura} controls preload="metadata" playsInline />
+    ) : (
+      <div className="wa-midia">🎥 Vídeo {duracao(m.midia_segundos)}</div>
+    );
+  if (m.tipo === "audio")
+    return url ? (
+      <div className="wa-audio">
+        <audio src={url} controls preload="metadata" />
+        {m.midia_segundos > 0 && <span>{duracao(m.midia_segundos)}</span>}
+      </div>
+    ) : (
+      <div className="wa-midia">🎤 Áudio {duracao(m.midia_segundos)}</div>
+    );
+  if (m.tipo === "documento") {
+    const nome = m.midia_nome || "Documento";
+    const ext = (nome.split(".").pop() || "").slice(0, 4).toUpperCase();
+    const corpo = (
+      <>
+        <span className="wa-doc-icone">{ext || "DOC"}</span>
+        <span className="wa-doc-meio">
+          <strong>{nome}</strong>
+          <span>{[tamanho(m.midia_bytes), url ? "Baixar" : "Arquivo não guardado"].filter(Boolean).join(" · ")}</span>
+        </span>
+      </>
+    );
+    return url ? (
+      <a className="wa-doc" href={url} target="_blank" rel="noopener noreferrer" download={nome}>
+        {corpo}
+      </a>
+    ) : (
+      <div className="wa-doc">{corpo}</div>
+    );
+  }
+  return info ? (
+    <div className="wa-midia">
+      <span aria-hidden>{info.icone}</span> {info.rotulo}
+    </div>
+  ) : null;
+}
+
+function Balao({
+  m,
+  grupo,
+  primeiraDoAutor,
+  url,
+  ampliar,
+}: {
+  m: Mensagem;
+  grupo: boolean;
+  primeiraDoAutor: boolean;
+  url: string | undefined;
+  ampliar: (url: string) => void;
+}) {
   const nome = autor(m);
+  const tel = telefoneDoAutor(m);
+  const soMidia = (m.tipo === "imagem" || m.tipo === "video" || m.tipo === "figurinha") && !m.texto;
   return (
     <div className={`wa-linha ${m.de_nos ? "wa-saida" : "wa-entrada"} ${primeiraDoAutor ? "wa-primeira" : ""}`}>
-      <div className="wa-balao">
+      <div className={`wa-balao ${soMidia ? "wa-balao-midia" : ""} ${m.tipo === "figurinha" ? "wa-balao-figurinha" : ""}`}>
         {grupo && !m.de_nos && primeiraDoAutor && (
-          <div className="wa-balao-autor" style={{ color: corDe(m.autor_jid || nome) }}>
-            {nome}
-            {m.autor_nome && telefoneDoJid(m.autor_jid) && <span className="wa-balao-tel">{telefoneDoJid(m.autor_jid)}</span>}
+          <div className="wa-balao-autor">
+            <span style={{ color: corDe(m.autor_jid || nome) }}>{nome}</span>
+            {m.autor_nome && tel && <span className="wa-balao-tel">{tel}</span>}
           </div>
         )}
         {m.citacao && <div className="wa-citacao">{m.citacao}</div>}
-        {m.miniatura && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="wa-miniatura" src={`data:image/jpeg;base64,${m.miniatura}`} alt={midia?.rotulo ?? "Mídia"} />
-        )}
-        {midia && !m.miniatura && (
-          <div className="wa-midia">
-            <span aria-hidden>{midia.icone}</span> {m.tipo === "documento" && m.texto ? "" : midia.rotulo}
-          </div>
-        )}
+        <Midia m={m} url={url} ampliar={ampliar} />
         {m.texto && <span className="wa-texto">{comLinks(m.texto)}</span>}
         <span className="wa-hora">{horaDe(m.enviada_em)}</span>
       </div>
@@ -212,16 +284,24 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
   const [busca, setBusca] = useState("");
   const [buscaAtiva, setBuscaAtiva] = useState("");
   const [vendoBusca, setVendoBusca] = useState(false);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [ampliada, setAmpliada] = useState<string | null>(null);
+  const [envioAtivo, setEnvioAtivo] = useState(false);
+  const [rascunho, setRascunho] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState("");
   const corpo = useRef<HTMLDivElement>(null);
   const descer = useRef(true);
 
   const carregar = useCallback(async () => {
-    const [{ data: a }, { data: g }, { data: r }] = await Promise.all([
+    const [{ data: a }, { data: g }, { data: r }, { data: aj }] = await Promise.all([
       supabase.from("wa_acesso").select("user_id").eq("user_id", userId),
       supabase.rpc("wa_painel_grupos"),
       supabase.from("wa_resumos").select("id,grupo_id,dia,resumo,total_mensagens").order("dia", { ascending: false }).limit(600),
+      supabase.from("wa_ajustes").select("envio_ativo").eq("id", 1).maybeSingle(),
     ]);
     setAcesso(!!a?.length);
+    setEnvioAtivo(!!aj?.envio_ativo);
     setConversas(((g as Conversa[]) ?? []).map((x) => ({ ...x, total: Number(x.total) })));
     setResumos((r as Resumo[]) ?? []);
   }, [supabase, userId]);
@@ -230,7 +310,13 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
   const carregarMensagens = useCallback(
     async (antesDe?: string) => {
       if (!aberta) return;
-      let q = supabase.from("wa_mensagens").select(CAMPOS).eq("grupo_id", aberta).order("enviada_em", { ascending: false }).limit(POR_VEZ);
+      let q = supabase
+        .from("wa_mensagens")
+        .select(CAMPOS)
+        .eq("grupo_id", aberta)
+        .neq("tipo", "sistema")
+        .order("enviada_em", { ascending: false })
+        .limit(POR_VEZ);
       if (antesDe) q = q.lt("enviada_em", antesDe);
       const b = buscaAtiva.replace(/[%,()*]/g, " ").trim();
       if (b) q = q.or(`texto.ilike.%${b}%,autor_nome.ilike.%${b}%`);
@@ -265,6 +351,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
       .channel("whatsapp")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_mensagens" }, (p) => {
         const m = p.new as Mensagem;
+        if (m.tipo === "sistema") return;
         if (m.grupo_id === abertaRef.current && !buscaRef.current) {
           const el = corpo.current;
           descer.current = !el || el.scrollHeight - el.scrollTop - el.clientHeight < 160;
@@ -272,6 +359,14 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
         }
         atualizarLista();
       })
+      // Mídia e telefone podem chegar depois, numa atualização da mesma mensagem
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wa_mensagens" }, (p) => {
+        const m = p.new as Mensagem;
+        setMensagens((atual) => (atual ? atual.map((x) => (x.grupo_id === m.grupo_id && x.id === m.id ? m : x)) : atual));
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wa_ajustes" }, (p) =>
+        setEnvioAtivo(!!(p.new as { envio_ativo: boolean }).envio_ativo),
+      )
       .on("postgres_changes", { event: "*", schema: "public", table: "wa_grupos" }, atualizarLista)
       .on("postgres_changes", { event: "*", schema: "public", table: "wa_resumos" }, atualizarLista)
       .subscribe();
@@ -280,6 +375,64 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
       supabase.removeChannel(ch);
     };
   }, [supabase, carregar]);
+
+  // Links temporários (1 hora) para as mídias do bucket privado, só das mensagens carregadas
+  useEffect(() => {
+    const faltam = [...new Set((mensagens ?? []).map((m) => m.midia).filter((c) => c && !urls[c]))];
+    if (!faltam.length) return;
+    supabase.storage
+      .from("whatsapp")
+      .createSignedUrls(faltam, 3600)
+      .then(({ data }) => {
+        const novos: Record<string, string> = {};
+        for (const d of data ?? []) if (d.signedUrl && d.path) novos[d.path] = d.signedUrl;
+        if (Object.keys(novos).length) setUrls((u) => ({ ...u, ...novos }));
+      });
+  }, [mensagens, urls, supabase]);
+
+  useEffect(() => {
+    if (!ampliada) return;
+    const fechar = (e: KeyboardEvent) => e.key === "Escape" && setAmpliada(null);
+    window.addEventListener("keydown", fechar);
+    return () => window.removeEventListener("keydown", fechar);
+  }, [ampliada]);
+
+  async function alternarEnvio() {
+    const ligar = !envioAtivo;
+    if (
+      ligar &&
+      !confirm(
+        "Ligar o envio de mensagens pelo site?\n\nQualquer sócio poderá mandar mensagens pelo número da Brasico. Use com moderação: o WhatsApp pode bloquear números que enviam muitas mensagens por sistemas não oficiais.",
+      )
+    )
+      return;
+    setEnvioAtivo(ligar);
+    const { error } = await supabase.from("wa_ajustes").update({ envio_ativo: ligar }).eq("id", 1);
+    if (error) {
+      alert("Não foi possível salvar: " + error.message);
+      setEnvioAtivo(!ligar);
+    }
+  }
+
+  async function enviar() {
+    const texto = rascunho.trim();
+    if (!texto || !aberta || enviando) return;
+    setEnviando(true);
+    setErroEnvio("");
+    const { data, error } = await supabase.functions.invoke("whatsapp-enviar", { body: { conversa: aberta, texto } });
+    setEnviando(false);
+    if (error || !data?.ok) {
+      let msg = "Não foi possível enviar.";
+      try {
+        const corpoErro = await (error as { context?: Response })?.context?.json();
+        if (corpoErro?.erro) msg = corpoErro.erro;
+      } catch {}
+      setErroEnvio(msg);
+      return;
+    }
+    setRascunho("");
+    descer.current = true;
+  }
 
   // Desce até a última mensagem ao abrir a conversa (e quando chega uma nova, se já estava no fim)
   useEffect(() => {
@@ -361,6 +514,14 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                 <span className="wa-ponto" aria-hidden /> Brasico conectado
               </span>
             </header>
+            <label className="wa-chave" title="Permitir ou não que os sócios mandem mensagens pelo site">
+              <span>
+                <strong>Enviar pelo site</strong>
+                <small>{envioAtivo ? "Ligado: dá para responder pelas conversas" : "Desligado: só leitura"}</small>
+              </span>
+              <input type="checkbox" role="switch" checked={envioAtivo} onChange={alternarEnvio} />
+              <span className="wa-chave-trilho" aria-hidden />
+            </label>
             <div className="wa-filtro">
               <input type="search" placeholder="Pesquisar conversa ou número" value={filtro} onChange={(e) => setFiltro(e.target.value)} />
             </div>
@@ -514,14 +675,44 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                         return (
                           <Fragment key={m.grupo_id + m.id}>
                             {novoDia && <p className="wa-chip wa-chip-dia">{rotuloDia(diaDe(m.enviada_em))}</p>}
-                            <Balao m={m} grupo={ehGrupo} primeiraDoAutor={primeira} />
+                            <Balao m={m} grupo={ehGrupo} primeiraDoAutor={primeira} url={m.midia ? urls[m.midia] : undefined} ampliar={setAmpliada} />
                           </Fragment>
                         );
                       })}
                     </>
                   )}
                 </div>
-                <footer className="wa-rodape">🔒 Somente leitura · o número da Brasico não responde por aqui</footer>
+                {envioAtivo ? (
+                  <form
+                    className="wa-escrever"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      enviar();
+                    }}
+                  >
+                    {erroEnvio && <p className="wa-erro">{erroEnvio}</p>}
+                    <textarea
+                      rows={1}
+                      placeholder={`Mensagem para ${nomeConversa(conversa)}`}
+                      value={rascunho}
+                      onChange={(e) => setRascunho(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          enviar();
+                        }
+                      }}
+                      disabled={enviando}
+                    />
+                    <button type="submit" className="wa-enviar" disabled={enviando || !rascunho.trim()} aria-label="Enviar">
+                      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden>
+                        <path fill="currentColor" d="M1.1 21.8 23 12 1.1 2.2 1 9.8l15.6 2.2L1 14.2z" />
+                      </svg>
+                    </button>
+                  </form>
+                ) : (
+                  <footer className="wa-rodape">🔒 Somente leitura · ligue “Enviar pelo site” na lista ao lado para responder por aqui</footer>
+                )}
               </>
             ) : (
               <div className="wa-boas-vindas">
@@ -540,6 +731,18 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
             )}
           </section>
         </main>
+      )}
+      {ampliada && (
+        <div className="wa-ampliada" onClick={() => setAmpliada(null)} role="dialog" aria-label="Foto ampliada">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={ampliada} alt="" onClick={(e) => e.stopPropagation()} />
+          <div className="wa-ampliada-acoes" onClick={(e) => e.stopPropagation()}>
+            <a href={ampliada} target="_blank" rel="noopener noreferrer">
+              Abrir original
+            </a>
+            <button onClick={() => setAmpliada(null)}>Fechar</button>
+          </div>
+        </div>
       )}
     </div>
   );

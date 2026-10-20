@@ -265,3 +265,168 @@ grant execute on function public.mcp_wa_grupos(text) to anon;
 grant execute on function public.mcp_wa_mensagens(text, text, date, date, text, int) to anon;
 grant execute on function public.mcp_wa_resumos(text, text, date, date) to anon;
 grant execute on function public.mcp_wa_monitorar(text, text, boolean) to anon;
+
+-- ---------------------------------------------------------------------
+-- Mídias completas, telefone do autor e agenda de contatos
+-- ---------------------------------------------------------------------
+alter table public.wa_mensagens add column if not exists midia text not null default '';          -- caminho no bucket whatsapp
+alter table public.wa_mensagens add column if not exists midia_mime text not null default '';
+alter table public.wa_mensagens add column if not exists midia_nome text not null default '';     -- nome do arquivo (documentos)
+alter table public.wa_mensagens add column if not exists midia_bytes bigint not null default 0;
+alter table public.wa_mensagens add column if not exists midia_segundos int not null default 0;   -- duração de áudio e vídeo
+alter table public.wa_mensagens add column if not exists autor_telefone text not null default '';
+
+-- Edições e votos de enquete chegam criptografados (secretEncryptedMessage): não são mensagens novas
+update public.wa_mensagens set tipo = 'sistema' where tipo in ('messageContextInfo', 'secretEncryptedMessage');
+
+-- Agenda: nome (o que a pessoa colocou no WhatsApp) e telefone de cada contato do número
+create table if not exists public.wa_contatos (
+  id text primary key,                     -- JID (…@s.whatsapp.net ou …@lid)
+  nome text not null default '',
+  telefone text not null default '',
+  foto text not null default '',
+  updated_at timestamptz not null default now()
+);
+alter table public.wa_contatos enable row level security;
+drop policy if exists "ver contatos" on public.wa_contatos;
+create policy "ver contatos" on public.wa_contatos for select using (public.wa_pode_ver(auth.uid()));
+revoke all on public.wa_contatos from anon;
+grant select on public.wa_contatos to authenticated;
+drop trigger if exists wa_contatos_sem_exclusao on public.wa_contatos;
+create trigger wa_contatos_sem_exclusao before delete on public.wa_contatos for each row execute function public.bloquear_exclusao();
+drop trigger if exists wa_contatos_sem_truncate on public.wa_contatos;
+create trigger wa_contatos_sem_truncate before truncate on public.wa_contatos for each statement execute function public.bloquear_exclusao();
+
+-- Completa dados de mensagens já gravadas (telefone do autor e mídia), sem apagar o que existe
+create or replace function public.wa_completar_mensagens(p jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  update public.wa_mensagens m set
+    autor_telefone = case when m.autor_telefone = '' then coalesce(x->>'autor_telefone', '') else m.autor_telefone end,
+    midia          = case when coalesce(x->>'midia', '') <> '' then x->>'midia' else m.midia end,
+    midia_mime     = case when coalesce(x->>'midia', '') <> '' then coalesce(x->>'midia_mime', '') else m.midia_mime end,
+    midia_nome     = case when m.midia_nome = '' then coalesce(x->>'midia_nome', '') else m.midia_nome end,
+    midia_bytes    = case when coalesce((x->>'midia_bytes')::bigint, 0) > 0 then (x->>'midia_bytes')::bigint else m.midia_bytes end,
+    midia_segundos = case when coalesce((x->>'midia_segundos')::int, 0) > 0 then (x->>'midia_segundos')::int else m.midia_segundos end
+  from jsonb_array_elements(p) x
+  where m.grupo_id = x->>'grupo_id' and m.id = x->>'id';
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function public.wa_completar_mensagens(jsonb) from public, anon, authenticated;
+grant execute on function public.wa_completar_mensagens(jsonb) to service_role;
+
+-- Bucket privado das mídias: só quem está em wa_acesso lê; só o webhook (service_role) grava
+insert into storage.buckets (id, name, public) values ('whatsapp', 'whatsapp', false) on conflict (id) do nothing;
+drop policy if exists "socios leem midias do whatsapp" on storage.objects;
+create policy "socios leem midias do whatsapp" on storage.objects for select to authenticated
+  using (bucket_id = 'whatsapp' and public.wa_pode_ver(auth.uid()));
+
+-- Lista de conversas: ignora as mensagens de sistema e completa o nome do contato pela agenda
+drop function if exists public.wa_painel_grupos();
+create or replace function public.wa_painel_grupos()
+returns table (id text, nome text, tipo text, foto text, telefone text, ativo boolean, total bigint, ultima timestamptz,
+               ultima_autor text, ultima_texto text, ultima_tipo text, ultima_de_nos boolean)
+language sql stable security invoker set search_path = public as $$
+  select g.id,
+         coalesce(nullif(g.nome, ''), c.nome, ''),
+         g.tipo,
+         coalesce(nullif(g.foto, ''), c.foto, ''),
+         coalesce(nullif(g.telefone, ''), c.telefone, ''),
+         g.ativo,
+         (select count(*) from public.wa_mensagens m where m.grupo_id = g.id and m.tipo <> 'sistema'),
+         u.enviada_em, u.autor_nome, u.texto, u.tipo, u.de_nos
+  from public.wa_grupos g
+  left join public.wa_contatos c on c.id = g.id
+  left join lateral (
+    select m.enviada_em, m.autor_nome, m.texto, m.tipo, m.de_nos from public.wa_mensagens m
+    where m.grupo_id = g.id and m.tipo <> 'sistema' order by m.enviada_em desc limit 1
+  ) u on true
+  order by u.enviada_em desc nulls last, g.nome
+$$;
+revoke execute on function public.wa_painel_grupos() from public, anon;
+grant execute on function public.wa_painel_grupos() to authenticated;
+
+-- Mensagem sem telefone do autor: completa pela agenda (o participante vem como @lid)
+create or replace function public.wa_completar_autor()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.autor_telefone = '' and new.autor_jid <> '' then
+    select c.telefone into new.autor_telefone from public.wa_contatos c where c.id = new.autor_jid and c.telefone <> '';
+    new.autor_telefone := coalesce(new.autor_telefone, '');
+  end if;
+  if new.autor_nome = '' and new.autor_jid <> '' and not new.de_nos then
+    select c.nome into new.autor_nome from public.wa_contatos c where c.id = new.autor_jid and c.nome <> '';
+    new.autor_nome := coalesce(new.autor_nome, '');
+  end if;
+  return new;
+end $$;
+drop trigger if exists wa_mensagens_autor on public.wa_mensagens;
+create trigger wa_mensagens_autor before insert or update of autor_telefone on public.wa_mensagens
+  for each row execute function public.wa_completar_autor();
+
+-- ---------------------------------------------------------------------
+-- Envio de mensagens pelo site (Edge Function whatsapp-enviar)
+-- Desligado por padrão; os sócios ligam e desligam no próprio site.
+-- O endereço e a chave da Evolution ficam no Vault, criados à mão (nunca neste arquivo):
+--   select vault.create_secret('<url da Evolution>', 'wa_evolution_url');
+--   select vault.create_secret('<AUTHENTICATION_API_KEY>', 'wa_evolution_chave');
+-- ---------------------------------------------------------------------
+create table if not exists public.wa_ajustes (
+  id int primary key default 1 check (id = 1),
+  envio_ativo boolean not null default false,
+  alterado_por uuid references auth.users(id),
+  updated_at timestamptz not null default now()
+);
+insert into public.wa_ajustes (id) values (1) on conflict (id) do nothing;
+alter table public.wa_ajustes enable row level security;
+drop policy if exists "ver ajustes" on public.wa_ajustes;
+create policy "ver ajustes" on public.wa_ajustes for select using (public.wa_pode_ver(auth.uid()));
+drop policy if exists "mudar ajustes" on public.wa_ajustes;
+create policy "mudar ajustes" on public.wa_ajustes for update using (public.wa_pode_ver(auth.uid())) with check (public.wa_pode_ver(auth.uid()));
+revoke all on public.wa_ajustes from anon;
+grant select on public.wa_ajustes to authenticated;
+grant update (envio_ativo) on public.wa_ajustes to authenticated;
+drop trigger if exists wa_ajustes_sem_exclusao on public.wa_ajustes;
+create trigger wa_ajustes_sem_exclusao before delete on public.wa_ajustes for each row execute function public.bloquear_exclusao();
+
+-- Quem ligou/desligou e quando
+create or replace function public.wa_ajustes_tocar()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  new.updated_at := now();
+  new.alterado_por := auth.uid();
+  return new;
+end $$;
+drop trigger if exists wa_ajustes_tocar on public.wa_ajustes;
+create trigger wa_ajustes_tocar before update on public.wa_ajustes for each row execute function public.wa_ajustes_tocar();
+
+-- Registro de cada mensagem enviada pelo site (quem mandou, para onde, o quê)
+create table if not exists public.wa_envios (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id),
+  conversa_id text not null references public.wa_grupos(id),
+  texto text not null,
+  ok boolean not null default false,
+  erro text not null default '',
+  mensagem_id text not null default '',
+  created_at timestamptz not null default now()
+);
+alter table public.wa_envios enable row level security;
+drop policy if exists "ver envios" on public.wa_envios;
+create policy "ver envios" on public.wa_envios for select using (public.wa_pode_ver(auth.uid()));
+revoke all on public.wa_envios from anon;
+grant select on public.wa_envios to authenticated;
+drop trigger if exists wa_envios_sem_exclusao on public.wa_envios;
+create trigger wa_envios_sem_exclusao before delete on public.wa_envios for each row execute function public.bloquear_exclusao();
+
+do $$ begin alter publication supabase_realtime add table public.wa_ajustes; exception when duplicate_object then null; end $$;
+
+create or replace function public.wa_evolution()
+returns table (url text, chave text) language sql stable security definer set search_path = public, vault as $$
+  select (select decrypted_secret from vault.decrypted_secrets where name = 'wa_evolution_url'),
+         (select decrypted_secret from vault.decrypted_secrets where name = 'wa_evolution_chave')
+$$;
+revoke execute on function public.wa_evolution() from public, anon, authenticated;
+grant execute on function public.wa_evolution() to service_role;
