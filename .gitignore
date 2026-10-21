@@ -20,3 +20,7 @@ supabase/seed_*.sql
 *.xls
 *.csv
 Ficha tecnica/
+
+# Pesquisas e relatórios locais (não vão para o GitHub)
+research_notes/
+reports/

@@ -839,3 +839,25 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
   .tv-cartoes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tv-cartao-valor { font-size: 18px; }
 }
+
+/* eSocial */
+.es .tv-tabela th:nth-last-child(-n+2), .es .tv-tabela td:nth-last-child(-n+2) { text-align: left; white-space: normal; }
+.es .tv-tabela td { vertical-align: top; }
+.es-empresa { display: grid; gap: 10px; padding: 14px 16px; margin-bottom: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.es-linha { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.es-nome { font-size: 17px; color: var(--strong); }
+.es-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.es-chave, .es-campo { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.es-campo input, .es-campo select { padding: 4px 8px; }
+.es-nota { font-size: 12.5px; margin: 0; }
+.es-aviso { padding: 10px 14px; border-radius: 10px; border: 1px solid var(--soft-line, var(--border)); background: var(--soft, var(--panel)); }
+.es-ferramentas { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; }
+.es-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; }
+.es-form textarea { flex: 1 1 280px; min-height: 44px; }
+.es-form input:not([type="file"]):not([type="checkbox"]) { padding: 6px 10px; }
+.es-certificado .es-form { padding: 0; }
+.es-certificado p { margin: 0; font-size: 14px; }
+.es-rodape { margin-top: 18px; }
+@media (max-width: 640px) {
+  .es-form > * { flex: 1 1 100%; }
+}
