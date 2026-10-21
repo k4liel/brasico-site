@@ -40,6 +40,14 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Antes de qualquer ação difícil de desfazer (excluir, reescrever histórico do git, deixar algo público), mostre o plano e espere a confirmação.
 - Link público (botão Compartilhar no projeto, ou `compartilhar_projeto` no conector): abre `/p/<código>` sem login e mostra só o documento daquele projeto e os seus PDFs (rota `/api/publico/<código>/...`, que confere o código); o PDF do documento é baixado no botão Baixar PDF e enviado como arquivo. Só ative com confirmação do dono; "Gerar novo link" derruba o anterior. Funções em supabase/link_publico.sql e link_publico_arquivos.sql.
 
+## Vendas TOTVS (Chef Web)
+- A Edge Function `totvs-extrair` puxa da TOTVS Chef Web API as vendas, sangrias e fechamentos de um dia (data de movimento) de uma unidade e grava um resumo em `totvs_dias` (uma linha por unidade e dia; puxar de novo substitui, sem duplicar). Cada pedido fica em `totvs_execucoes`.
+- Agenda `totvs-diario` (pg_cron) às 6h de Fortaleza puxa o dia anterior de cada unidade e repete dias que falharam na semana.
+- Unidades em `totvs_unidades` (loja e chave TOTVS). Unidade sem loja não é extraída: nunca usa a loja de outra.
+- Usuário, senha e seriais ficam só no Vault (`totvs_usuario`, `totvs_senha`, `totvs_serial_<unidade>`). Nunca no GitHub nem no chat. O documento técnico está em `privado/`.
+- Quem vê: só quem está em `totvs_acesso`. Site: Menu → Vendas TOTVS. Conector: `totvs_unidades`, `totvs_vendas`, `totvs_extrair`. Esquema em supabase/totvs.sql.
+- Conferências que não batem deixam o dia como "revisar"; nunca ajuste números em silêncio. Notas fiscais/CMV ainda não estão integradas.
+
 ## WhatsApp (grupos da companhia)
 - O número da Brasico está nos grupos e, por padrão, só lê. Os sócios podem ligar "Enviar pelo site" (tabela `wa_ajustes`); aí a Edge Function `whatsapp-enviar` manda texto pela Evolution (endereço e chave no Vault: `wa_evolution_url`, `wa_evolution_chave`) e registra cada envio em `wa_envios`.
 - Mídias (foto, vídeo, áudio, documento, figurinha) ficam inteiras no bucket privado `whatsapp` (coluna `midia` de `wa_mensagens`); a Evolution manda o arquivo no webhook ("Webhook base64" ligado). A agenda `wa_contatos` liga cada pessoa (inclusive o código `@lid` dos grupos) ao nome e ao telefone. A Evolution API roda numa VPS (pasta `whatsapp/`, passo a passo em [whatsapp/LEIA-ME.md](whatsapp/LEIA-ME.md)) e manda cada mensagem para a Edge Function `whatsapp-webhook`, que grava em `wa_grupos` e `wa_mensagens`.
