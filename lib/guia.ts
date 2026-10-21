@@ -35,7 +35,7 @@ Não pode (é removido): script, iframe, form/input, eventos (onclick...), links
 3) CSS DO PROJETO (mudar o visual e a estrutura da página)
 Use ver_estilo e definir_estilo. O CSS vale só dentro do documento deste projeto, nos dois modos.
 
-Abas de capítulos (por projeto): definir_abas liga ou desliga. Ligado, o modo Página mostra um capítulo por vez, com abas numeradas pelo número no início do título e botões de anterior/próximo. Bom para projetos longos. O PDF sempre mostra tudo.
+Abas de capítulos (por projeto): definir_abas liga ou desliga. Ligado, o modo Página mostra um capítulo por vez, com abas numeradas pelo número no início do título e botões de anterior/próximo. Bom para projetos longos. Com grupos=true, capítulos seguidos com o mesmo nome antes do " · " (ex.: "15 · Sempre Vivo · Seg 28/12", "16 · Sempre Vivo · Ter 29/12") viram uma aba só na faixa de cima (Sempre Vivo), com uma segunda faixa para cada capítulo; use para separar por local ou assunto. O PDF sempre mostra tudo.
 
 Arquivos (:::arquivos): biblioteca de PDFs privados do projeto. Os arquivos ficam no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/ (capas em <projeto>/<pasta>/capas/<arquivo>.jpg), e só abrem para quem é da equipe. Nunca coloque arquivos de clientes no GitHub. Linhas: base: /api/arquivo/<projeto>/<pasta> · estilo: capas | lista · depois CÓDIGO | Título | Descrição | arquivo (sem .pdf) | 4 páginas | interno ou restrito. Clicar abre o PDF numa janela por cima da página.
 Classes úteis:

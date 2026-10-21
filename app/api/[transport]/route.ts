@@ -199,9 +199,9 @@ function buildHandler(token: string) {
 
       server.tool(
         "definir_abas",
-        "Liga ou desliga as abas de capítulos no projeto ativo. Com abas, o modo Página mostra um capítulo por vez, com uma faixa de abas numeradas e botões de anterior/próximo; sem abas, o documento corre inteiro. Vale só para este projeto. O PDF continua sempre com o documento inteiro.",
-        { ativar: z.boolean() },
-        async ({ ativar }) => call("mcp_definir_abas", { p_ativar: ativar })
+        "Liga ou desliga as abas de capítulos no projeto ativo. Com abas, o modo Página mostra um capítulo por vez, com uma faixa de abas numeradas e botões de anterior/próximo; sem abas, o documento corre inteiro. grupos=true junta numa aba só os capítulos seguidos com o mesmo nome antes do \" · \" (ex.: \"15 · Sempre Vivo · Seg 28/12\" e \"16 · Sempre Vivo · Ter 29/12\" viram a aba Sempre Vivo, com uma segunda faixa Seg 28/12 | Ter 29/12); sem enviar grupos, fica como estava. Vale só para este projeto. O PDF continua sempre com o documento inteiro.",
+        { ativar: z.boolean(), grupos: z.boolean().optional() },
+        async ({ ativar, grupos }) => call("mcp_definir_abas", { p_ativar: ativar, p_grupos: grupos ?? null })
       );
 
       server.tool(

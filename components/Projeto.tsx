@@ -10,9 +10,10 @@ import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
 import Bandeira from "./Bandeira";
+import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
 
-type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_rodape_fr: string | null; doc_css: string | null; doc_abas: boolean | null; removido_em: string | null; is_public: boolean | null; public_slug: string | null };
+type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_rodape_fr: string | null; doc_css: string | null; doc_abas: boolean | null; doc_abas_grupos: boolean | null; removido_em: string | null; is_public: boolean | null; public_slug: string | null };
 type Nota = { id: string; title: string; content: string; title_en: string | null; content_en: string | null; title_pl: string | null; content_pl: string | null; title_fr: string | null; content_fr: string | null; archived_at: string | null };
 type Log = { id: string; user_id: string | null; action: string; entity: string; entity_id: string | null; details: string | null; source: string; created_at: string };
 type Perfil = { id: string; email: string | null; display_name: string | null };
@@ -35,10 +36,6 @@ const COISA: Record<string, string> = {
   workspaces: "o projeto",
 };
 
-// "03 · Cardápio do Buffet" -> "Cardápio do Buffet"
-const semNumero = (t: string) => t.replace(/^\s*\d+\s*[·.\-–—]\s*/, "");
-// "03 · Cardápio do Buffet" -> "03"
-const numeroDe = (t: string) => t.match(/^\s*(\d+)\s*[·.\-–—]/)?.[1] ?? null;
 
 export default function Projeto({ projectId, userId, userEmail }: { projectId: string; userId: string; userEmail: string }) {
   const supabase = createClient();
@@ -84,7 +81,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   useEffect(() => {
     (async () => {
       await supabase.rpc("accept_invites");
-      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_rodape_pl,doc_rodape_fr,doc_css,doc_abas,removido_em,is_public,public_slug").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_rodape_pl,doc_rodape_fr,doc_css,doc_abas,doc_abas_grupos,removido_em,is_public,public_slug").eq("id", projectId).maybeSingle();
       setInfo((data as Info) ?? null);
       const { data: m } = await supabase.from("workspace_members").select("user_id").eq("workspace_id", projectId);
       const ids = (m ?? []).map((x: { user_id: string }) => x.user_id);
@@ -154,10 +151,11 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   }
   // Mantém a aba ativa visível na faixa rolável (celular)
   useEffect(() => {
-    const nav = document.querySelector<HTMLElement>(".abas");
-    const on = nav?.querySelector<HTMLElement>(".aba.on");
-    if (nav && on && nav.scrollWidth > nav.clientWidth)
-      nav.scrollTo({ left: on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2, behavior: "smooth" });
+    document.querySelectorAll<HTMLElement>(".abas").forEach((nav) => {
+      const on = nav.querySelector<HTMLElement>(".aba.on");
+      if (on && nav.scrollWidth > nav.clientWidth)
+        nav.scrollTo({ left: on.offsetLeft - (nav.clientWidth - on.offsetWidth) / 2, behavior: "smooth" });
+    });
   }, [abaAtual?.id, emAbas]);
 
   const nomeDe = (id: string | null) => {
@@ -380,24 +378,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
         ) : (
           emAbas && abaAtual ? (
             <>
-              <nav className="abas" aria-label="Capítulos">
-                {capitulos.map((c) => {
-                  const num = numeroDe(c.titulo);
-                  const on = c.id === abaAtual.id;
-                  return (
-                    <button
-                      key={c.id}
-                      className={on ? "aba on" : "aba"}
-                      aria-current={on ? "page" : undefined}
-                      title={semNumero(c.titulo)}
-                      onClick={() => abrirAba(c.id)}
-                    >
-                      {num && <span className="aba-num">{num}</span>}
-                      <span className="aba-nome">{semNumero(c.titulo)}</span>
-                    </button>
-                  );
-                })}
-              </nav>
+              <Abas capitulos={capitulos} atual={abaAtual.id} grupos={!!info.doc_abas_grupos} abrir={abrirAba} />
               <DocView key={`${abaAtual.id}-${lingua}`} capitulos={[abaAtual]} modo="pagina" idioma={lingua} />
               <div className="abas-passo">
                 {idxAtual > 0 ? (

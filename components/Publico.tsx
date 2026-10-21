@@ -8,14 +8,13 @@ import { createClient } from "@/lib/supabase/client";
 import { cssDoProjeto } from "@/lib/livre";
 import DocView from "./DocView";
 import Bandeira from "./Bandeira";
+import Abas, { semNumero } from "./Abas";
 import VisorPdf from "./VisorPdf";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
 
 type Cap = { titulo: string; conteudo: string; titulo_en: string | null; conteudo_en: string | null; titulo_pl: string | null; conteudo_pl: string | null; titulo_fr: string | null; conteudo_fr: string | null };
-type Doc = { nome: string; rodape: string | null; rodape_en: string | null; rodape_pl: string | null; rodape_fr: string | null; css: string | null; abas: boolean; capitulos: Cap[] };
+type Doc = { nome: string; rodape: string | null; rodape_en: string | null; rodape_pl: string | null; rodape_fr: string | null; css: string | null; abas: boolean; abas_grupos?: boolean; capitulos: Cap[] };
 
-const semNumero = (t: string) => t.replace(/^\s*\d+\s*[·.\-–—]\s*/, "");
-const numeroDe = (t: string) => t.match(/^\s*(\d+)\s*[·.\-–—]/)?.[1] ?? null;
 // Documentos do projeto: no link público abrem pela rota /api/publico/<código>/..., que confere o código
 const comLinkPublico = (md: string, slug: string) => md.replace(/^(\s*base:\s*)\/api\/arquivo\//gm, `$1/api/publico/${slug}/`);
 
@@ -138,17 +137,7 @@ export default function Publico({ slug }: { slug: string }) {
           <p className="muted">…</p>
         ) : emAbas && atual ? (
           <>
-            <nav className="abas" aria-label="Capítulos">
-              {capitulos.map((c, n) => {
-                const num = numeroDe(c.titulo);
-                return (
-                  <button key={c.id} className={n === i ? "aba on" : "aba"} aria-current={n === i ? "page" : undefined} title={semNumero(c.titulo)} onClick={() => abrirAba(n)}>
-                    {num && <span className="aba-num">{num}</span>}
-                    <span className="aba-nome">{semNumero(c.titulo)}</span>
-                  </button>
-                );
-              })}
-            </nav>
+            <Abas capitulos={capitulos} atual={atual.id} grupos={!!doc.abas_grupos} abrir={(id) => abrirAba(Number(id) - 1)} />
             <DocView key={`${atual.id}-${idioma}`} capitulos={[atual]} modo="pagina" idioma={idioma} />
             <div className="abas-passo">
               {i > 0 ? (

@@ -419,6 +419,12 @@ section.folha[id], section.secao[id] { scroll-margin-top: 72px; }
 .aba-nome { overflow: hidden; text-overflow: ellipsis; }
 .aba.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .aba.on .aba-num { background: var(--gold); color: #fff; }
+.aba-qtd { flex: none; font-size: 11px; font-weight: 700; opacity: .6; }
+/* Abas em grupos: segunda faixa com os capítulos do grupo aberto */
+.abas-sub { padding-top: 10px; background: var(--beige); }
+.abas-sub .aba { padding: 5px 12px; font-size: 12.5px; background: var(--panel); }
+.abas-sub .aba.on { background: var(--gold); border-color: var(--gold); color: #fff; }
+.abas-duplas + .bloco-livre, .abas-duplas { margin: 0; }
 .sumario a.on { background: var(--beige); color: var(--strong); font-weight: 600; }
 
 .abas-passo {
@@ -440,11 +446,13 @@ section.folha[id], section.secao[id] { scroll-margin-top: 72px; }
     position: sticky; top: 56px; z-index: 5; padding: 10px 12px;
   }
   .abas::-webkit-scrollbar { display: none; }
+  .abas-duplas { position: sticky; top: 56px; z-index: 5; }
+  .abas-duplas .abas { position: static; }
   .aba { flex: none; max-width: 200px; }
   .abas-passo { grid-template-columns: 1fr; padding: 16px 12px 4px; }
   .passo, .passo-prox { text-align: left; }
 }
-@media print { .abas, .abas-passo { display: none !important; } }
+@media print { .abas, .abas-duplas, .abas-passo { display: none !important; } }
 
 /* Visor de PDF (janela por cima da página) */
 .visor-fundo {
