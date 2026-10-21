@@ -213,6 +213,11 @@ export function montarAlertas(empresas: EmpresaRH[], pessoas: Pessoa[], folhas: 
     }
     if (!e.leitura_automatica) a.push({ nivel: "info", empresa_id: e.id, acao: "leitura",
       texto: `A leitura automática da ${e.nome} está desligada`, detalhe: "Ligue para os dados chegarem sozinhos todo dia." });
+    // 407: o governo não aceita este certificado para ler os eventos dos funcionários (perfil/procuração)
+    const trab = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo === "identificadores_trabalhador").slice(0, 2);
+    if (trab.length >= 1 && trab.every((x) => x.cd_resposta === 407)) a.push({ nivel: "erro", empresa_id: e.id, acao: "tecnico",
+      texto: `O eSocial não deixa a ${e.nome} ler os dados dos funcionários com este certificado`,
+      detalhe: "Resposta do governo: código 407, 'sem perfil de procuração ou não consta como representante legal'. Confira com o contador se o certificado é da mesma empresa que transmite o eSocial; pode ser preciso uma procuração eletrônica no e-CAC." });
     const ultimas = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao").slice(0, 4);
     if (ultimas.length >= 4 && ultimas.every((x) => x.status === "falha")) a.push({ nivel: "atencao", empresa_id: e.id, acao: "tecnico",
       texto: `As últimas leituras da ${e.nome} falharam`, detalhe: `Última resposta: ${ultimas[0].erro || ultimas[0].desc_resposta}`.slice(0, 160) });

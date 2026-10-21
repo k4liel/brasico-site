@@ -418,7 +418,12 @@ begin
         jsonb_build_object('tpEvt', 'S-1005', 'chEvt', 'tpInsc=1;nrInsc=' || e.cnpj), 'agenda', null);
     end if;
 
-    -- 4. Trabalhador lido há mais tempo (janela de até 30 dias, terminando 65 minutos antes de agora)
+    -- 4. Trabalhador lido há mais tempo (janela de até 30 dias, terminando 65 minutos antes de agora).
+    --    Para por 3 dias se as 2 últimas consultas voltaram 407 (o governo não aceita o certificado para
+    --    ler os eventos dos trabalhadores: aconteceu com o e-CNPJ de uma filial; use o da matriz).
+    if (select count(*) from (select cd_resposta from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+          and tipo = 'identificadores_trabalhador' and created_at > now() - interval '3 days' order by created_at desc limit 2) u
+        where u.cd_resposta = 407) >= 2 then return null; end if;
     select * into w from public.esocial_trabalhadores
     where empresa_id = e.id and ativo
       and coalesce(consultado_ate, e.historico_desde::timestamp at time zone 'America/Sao_Paulo') < now() - interval '1 day'
