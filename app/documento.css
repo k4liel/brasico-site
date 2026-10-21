@@ -604,7 +604,7 @@
 @media print { .esc-dica { display: none; } }
 
 /* Tabelas editáveis (:::editavel): a célula mostra que pode ser editada */
-.doc .tab-editavel th.ed-col::after { content: " ✎"; color: var(--doc-gold); font-weight: 400; }
+.doc .tab-editavel:has(td[contenteditable]) th.ed-col::after { content: " ✎"; color: var(--doc-gold); font-weight: 400; }
 .doc .tab-editavel td.ed[contenteditable] { cursor: text; background: color-mix(in srgb, var(--doc-gold) 7%, transparent); border-bottom: 1px dashed color-mix(in srgb, var(--doc-gold) 55%, transparent); transition: background .15s, box-shadow .15s; }
 .doc .tab-editavel td.ed[contenteditable]:hover { background: color-mix(in srgb, var(--doc-gold) 14%, transparent); }
 .doc .tab-editavel td.ed[contenteditable]:focus { outline: none; background: var(--doc-paper); box-shadow: inset 0 0 0 2px var(--doc-gold); }
