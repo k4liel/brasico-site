@@ -14,8 +14,8 @@ import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
 
-type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_rodape_fr: string | null; doc_css: string | null; doc_abas: boolean | null; doc_abas_grupos: boolean | null; removido_em: string | null; is_public: boolean | null; public_slug: string | null };
-type Nota = { id: string; title: string; content: string; title_en: string | null; content_en: string | null; title_pl: string | null; content_pl: string | null; title_fr: string | null; content_fr: string | null; archived_at: string | null };
+type Info = { id: string; name: string; doc_rodape: string | null; doc_rodape_en: string | null; doc_rodape_pl: string | null; doc_rodape_fr: string | null; doc_rodape_de: string | null; doc_css: string | null; doc_abas: boolean | null; doc_abas_grupos: boolean | null; removido_em: string | null; is_public: boolean | null; public_slug: string | null };
+type Nota = { id: string; title: string; content: string; title_en: string | null; content_en: string | null; title_pl: string | null; content_pl: string | null; title_fr: string | null; content_fr: string | null; title_de: string | null; content_de: string | null; archived_at: string | null };
 type Log = { id: string; user_id: string | null; action: string; entity: string; entity_id: string | null; details: string | null; source: string; created_at: string };
 type Perfil = { id: string; email: string | null; display_name: string | null };
 
@@ -84,7 +84,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   useEffect(() => {
     (async () => {
       await supabase.rpc("accept_invites");
-      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_rodape_pl,doc_rodape_fr,doc_css,doc_abas,doc_abas_grupos,removido_em,is_public,public_slug").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("workspaces").select("id,name,doc_rodape,doc_rodape_en,doc_rodape_pl,doc_rodape_fr,doc_rodape_de,doc_css,doc_abas,doc_abas_grupos,removido_em,is_public,public_slug").eq("id", projectId).maybeSingle();
       setInfo((data as Info) ?? null);
       const { data: m } = await supabase.from("workspace_members").select("user_id").eq("workspace_id", projectId);
       const ids = (m ?? []).map((x: { user_id: string }) => x.user_id);
@@ -156,7 +156,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
 
   // Traduções: cada idioma só aparece no seletor quando algum capítulo tem versão nele.
   // Capítulo sem tradução continua em português.
-  // Todos os projetos oferecem PT | EN | PL | FR; capítulo ainda sem tradução aparece em português.
+  // Todos os projetos oferecem PT | EN | PL | FR | DE; capítulo ainda sem tradução aparece em português.
   const idiomas = IDIOMAS;
   const lingua: Idioma = idiomas.some((l) => l.id === idioma) ? idioma : "pt";
   const capitulos = useMemo(
@@ -164,13 +164,13 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
       notas
         .filter((n) => !n.archived_at)
         .map((n) => {
-          const t = lingua === "en" ? [n.title_en, n.content_en] : lingua === "pl" ? [n.title_pl, n.content_pl] : lingua === "fr" ? [n.title_fr, n.content_fr] : [null, null];
+          const t = lingua === "en" ? [n.title_en, n.content_en] : lingua === "pl" ? [n.title_pl, n.content_pl] : lingua === "fr" ? [n.title_fr, n.content_fr] : lingua === "de" ? [n.title_de, n.content_de] : [null, null];
           return { id: n.id, titulo: t[0]?.trim() || n.title, conteudo: t[1]?.trim() || n.content };
         }),
     [notas, lingua]
   );
   const rodape =
-    (lingua === "en" ? info?.doc_rodape_en?.trim() : lingua === "pl" ? info?.doc_rodape_pl?.trim() : lingua === "fr" ? info?.doc_rodape_fr?.trim() : null) || info?.doc_rodape || null;
+    (lingua === "en" ? info?.doc_rodape_en?.trim() : lingua === "pl" ? info?.doc_rodape_pl?.trim() : lingua === "fr" ? info?.doc_rodape_fr?.trim() : lingua === "de" ? info?.doc_rodape_de?.trim() : null) || info?.doc_rodape || null;
   const ultimaMudanca = log[0]?.created_at;
 
   // Abas: no modo página cada capítulo abre sozinho. A aba fica no endereço (#cap-…).

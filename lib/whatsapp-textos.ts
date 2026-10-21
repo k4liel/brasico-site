@@ -1,4 +1,4 @@
-// Textos da tela do WhatsApp (Menu → WhatsApp) em português, inglês, polonês e francês.
+// Textos da tela do WhatsApp (Menu → WhatsApp) em português, inglês, polonês, francês e alemão.
 // O conteúdo das mensagens não é traduzido: aparece como as pessoas escreveram.
 import type { Idioma } from "./idioma";
 
@@ -295,4 +295,73 @@ const fr: TextosWhatsApp = {
   boasNota: "🔒 Seuls les associés voient ces conversations.",
 };
 
-export const TEXTOS_WHATSAPP: Record<Idioma, TextosWhatsApp> = { pt, en, pl, fr };
+const de: TextosWhatsApp = {
+  carregando: "Wird geladen…",
+  semAcesso: "Sie haben noch keinen Zugriff auf die WhatsApp-Unterhaltungen.",
+  conectado: "Brasico verbunden",
+  idioma: "Sprache",
+  enviarPeloSite: "Über die Website senden",
+  enviarDica: "Erlauben oder sperren, dass die Partner über die Website Nachrichten senden",
+  enviarLigado: "Ein: Sie können in den Unterhaltungen antworten",
+  enviarDesligado: "Aus: nur lesen",
+  confirmarLigar:
+    "Senden von Nachrichten über die Website einschalten?\n\nJeder Partner kann dann Nachrichten mit der Nummer von Brasico senden. Sparsam verwenden: WhatsApp kann Nummern sperren, die viele Nachrichten über inoffizielle Systeme senden.",
+  naoSalvou: "Speichern nicht möglich: ",
+  naoEnviou: "Die Nachricht konnte nicht gesendet werden.",
+  mensagemPara: (nome: string) => `Nachricht an ${nome}`,
+  enviar: "Senden",
+  somenteLeitura: "🔒 Nur lesen · schalten Sie „Über die Website senden“ in der Liste daneben ein, um hier zu antworten",
+  pesquisar: "Unterhaltung oder Nummer suchen",
+  filtro: "Filter",
+  abas: { todas: "Alle", grupos: "Gruppen", contatos: "Kontakte", resumos: "Zusammenfassungen" },
+  voce: "Sie",
+  pausada: "Pausiert",
+  semMensagens: "Noch keine Nachrichten",
+  nenhumaEncontrada: "Keine Unterhaltung gefunden.",
+  nenhumaConversa: "Noch keine Unterhaltungen.",
+  resumoDe: (n: number) => `Zusammenfassung von ${n} ${n === 1 ? "Gruppe" : "Gruppen"} durch Claude`,
+  semResumos: "Für eine Zusammenfassung bitten Sie Claude: „fasse das WhatsApp zusammen“. Claude liest die Nachrichten über den Brasico-Connector und speichert hier eine Zusammenfassung aller Gruppen.",
+  resumoTitulo: (dia: string) => `Zusammenfassung · ${dia}`,
+  resumoEscrito: "Von Claude aus den Gruppennachrichten geschrieben",
+  voltar: "Zurück",
+  grupo: "Gruppe",
+  grupoSemNome: "Gruppe ohne Namen",
+  contato: "Kontakt",
+  participante: "Teilnehmer",
+  conversaIndividual: "Einzelunterhaltung",
+  mensagens: (n: number, lang: string) => `${n.toLocaleString(lang)} ${n === 1 ? "Nachricht" : "Nachrichten"}`,
+  pesquisarNaConversa: "In der Unterhaltung suchen",
+  acompanhando: "Verfolgt",
+  acompanharDica: "Neue Nachrichten dieser Unterhaltung speichern oder nicht",
+  pararDeAcompanhar: (nome: string) => `„${nome}“ nicht mehr verfolgen? Aus dieser Unterhaltung wird nichts Neues mehr gespeichert.`,
+  buscarMensagens: "Nachrichten nach Text oder Absender suchen",
+  limpar: "Leeren",
+  nadaEncontrado: "Nichts gefunden.",
+  nenhumaGravada: "Noch keine Nachrichten gespeichert.",
+  carregarAnteriores: "Frühere Nachrichten laden",
+  resultadosPara: (b: string) => `Ergebnisse für „${b}“`,
+  hoje: "Heute",
+  ontem: "Gestern",
+  midia: {
+    imagem: "Foto",
+    video: "Video",
+    audio: "Audio",
+    documento: "Dokument",
+    figurinha: "Sticker",
+    local: "Standort",
+    contato: "Kontakt",
+    enquete: "Umfrage",
+  },
+  ampliarFoto: "Foto vergrößern",
+  baixar: "Herunterladen",
+  arquivoNaoGuardado: "Datei nicht gespeichert",
+  fotoAmpliada: "Vergrößertes Foto",
+  abrirOriginal: "Original öffnen",
+  fechar: "Schließen",
+  boasTitulo: "Unterhaltungen von Brasico",
+  boasTexto: (g: number, c: number) =>
+    `${g} ${g === 1 ? "Gruppe" : "Gruppen"} und ${c} ${c === 1 ? "Einzelunterhaltung" : "Einzelunterhaltungen"}. Wählen Sie daneben eine Unterhaltung, um die Nachrichten zu lesen.`,
+  boasNota: "🔒 Nur die Partner sehen diese Unterhaltungen.",
+};
+
+export const TEXTOS_WHATSAPP: Record<Idioma, TextosWhatsApp> = { pt, en, pl, fr, de };

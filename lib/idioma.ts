@@ -1,16 +1,17 @@
-// Idioma do documento. O português é o original; inglês, polonês e francês são opcionais, por capítulo
-// (notes.title_en / content_en, title_pl / content_pl, title_fr / content_fr) e no rodapé (workspaces.doc_rodape_en / _pl / _fr).
-export type Idioma = "pt" | "en" | "pl" | "fr";
+// Idioma do documento. O português é o original; inglês, polonês, francês e alemão são opcionais, por capítulo
+// (notes.title_en / content_en, _pl, _fr, _de) e no rodapé (workspaces.doc_rodape_en / _pl / _fr / _de).
+export type Idioma = "pt" | "en" | "pl" | "fr" | "de";
 
 export const IDIOMAS: { id: Idioma; sigla: string; nome: string; lang: string }[] = [
   { id: "pt", sigla: "PT", nome: "Português", lang: "pt-BR" },
   { id: "en", sigla: "EN", nome: "English", lang: "en" },
   { id: "pl", sigla: "PL", nome: "Polski", lang: "pl" },
   { id: "fr", sigla: "FR", nome: "Français", lang: "fr" },
+  { id: "de", sigla: "DE", nome: "Deutsch", lang: "de" },
 ];
-export const LANG: Record<Idioma, string> = { pt: "pt-BR", en: "en", pl: "pl", fr: "fr" };
+export const LANG: Record<Idioma, string> = { pt: "pt-BR", en: "en", pl: "pl", fr: "fr", de: "de" };
 
-export const ehIdioma = (v: unknown): v is Idioma => v === "pt" || v === "en" || v === "pl" || v === "fr";
+export const ehIdioma = (v: unknown): v is Idioma => v === "pt" || v === "en" || v === "pl" || v === "fr" || v === "de";
 
 // Textos fixos que aparecem dentro do documento (não os do site).
 export const TEXTOS = {
@@ -136,6 +137,37 @@ export const TEXTOS = {
       plantao: "Garde 12x36",
       folga: "Repos",
       descanso: "Repos 12x36",
+    },
+  },
+  de: {
+    equipe: "Team",
+    dias: "Tage",
+    domFolga: "So. frei",
+    trabalhando: "Personen im Dienst",
+    domingo: "Sonntag",
+    entra: "Beginn",
+    ou: "oder",
+    dicaIntervalo: "Fahren Sie mit der Maus über die Uhrzeit, um die Pause zu sehen",
+    intervalo: "Pause",
+    intervaloAria: "Pause",
+    restrito: "Vertraulich",
+    interno: "Interner Gebrauch",
+    abrir: "Öffnen",
+    pagina: (n: number, total: number) => `S. ${n} von ${total}`,
+    anterior: "← Zurück",
+    proximo: "Weiter →",
+    escrever: "zum Schreiben klicken",
+    turnos: {
+      abertura: "Öffnung",
+      manha: "Morgen",
+      inter: "Zwischenschicht",
+      tarde: "Nachmittag",
+      noite: "Abend",
+      dia: "Schicht",
+      partido: "Geteilte Schicht",
+      plantao: "Dienst 12x36",
+      folga: "Frei",
+      descanso: "Ruhe 12x36",
     },
   },
 } as const;
