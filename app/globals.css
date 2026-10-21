@@ -832,6 +832,31 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tv-tabela th:nth-last-child(-n+2), .tv-tabela td:nth-last-child(-n+2) { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tv-tabela tfoot td { font-weight: 600; color: var(--strong); border-bottom: 0; border-top: 1px solid var(--border); }
 .tv-nada { padding: 14px 12px; margin: 0; }
+
+/* TOTVS: fluxograma da integração e unidades */
+.tt h1 { margin-bottom: 22px; }
+.tt-fluxo { display: flex; flex-direction: column; align-items: center; max-width: 720px; margin: 0 auto 36px; }
+.tt-caixa { position: relative; width: 100%; display: grid; gap: 4px; padding: 16px 18px 16px 54px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; font-size: 14px; line-height: 1.45; }
+.tt-caixa b { color: var(--strong); font-size: 15.5px; }
+.tt-origem, .tt-destino { border-color: var(--gold); background: var(--soft); }
+.tt-passo { position: absolute; left: 16px; top: 15px; width: 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; background: var(--gold); color: #fff; font-size: 13px; font-weight: 700; }
+.tt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tt-chip { padding: 3px 11px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--strong); font-size: 13px; font-weight: 500; }
+.tt-seta { color: var(--gold); padding: 4px 0; line-height: 0; }
+.tt-linha { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 10px; }
+.tt-ou { align-self: center; color: var(--muted); font-size: 13px; font-style: italic; }
+.tt-unidades { max-width: 720px; margin: 0 auto; }
+.tt-unidades ul { list-style: none; margin: 10px 0 12px; padding: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.tt-unidades li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 12px 16px; border-top: 1px solid var(--border); font-size: 14px; }
+.tt-unidades li:first-child { border-top: 0; }
+.tt-unidades li b { color: var(--strong); }
+.tt-ponto { width: 9px; height: 9px; border-radius: 999px; background: var(--border); flex: none; }
+.tt-ponto.on { background: var(--ok); }
+.tt-nota { font-size: 13px; }
+@media (max-width: 560px) {
+  .tt-linha { grid-template-columns: 1fr; }
+  .tt-ou { justify-self: center; }
+}
 @media (max-width: 640px) {
   .tv-barra { align-items: stretch; }
   .tv-dia { width: 100%; }
