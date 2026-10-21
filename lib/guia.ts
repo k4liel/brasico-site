@@ -52,6 +52,8 @@ Exemplo:
 Se uma regra não pegar, use um seletor mais específico (ex.: .doc-pagina .secao h1) ou !important.
 O modo escuro troca as variáveis só no modo Página; prefira usar as variáveis em vez de cores fixas para funcionar nos dois temas.
 
+Tabelas editáveis no site: o bloco :::editavel (linha "id: nome-unico", linha "editaveis: 1, 5" com as colunas editáveis contando da 1ª, e depois uma tabela Markdown) mostra a tabela com as colunas indicadas editáveis pelos sócios no site. O Markdown traz os valores iniciais; o que for digitado fica no banco por linha e coluna e aparece no lugar (veja com ver_celulas). Use o mesmo id nos 4 idiomas, não reordene nem insira linhas no meio (acrescente no fim) e não troque o id, senão o que foi digitado vai para a linha errada.
+
 4) VERSÕES EM INGLÊS E POLONÊS
 O português é o original. Cada capítulo pode ter também versão em inglês, em polonês e em francês: atualizar_nota com idioma "en", "pl" ou "fr" (title = título traduzido, content = Markdown completo traduzido). O rodapé traduzido sai de definir_rodape com idioma "en", "pl" ou "fr". Todo projeto mostra o seletor PT | EN | PL | FR, e todo capítulo deve ter as quatro versões: ao criar ou alterar o português, grave também o inglês, o polonês e o francês; capítulo sem tradução aparece em português. Os textos fixos dos blocos (legenda da escala, "pág. X de Y", balão do intervalo) mudam sozinhos. Na tradução, mantenha a mesma estrutura de blocos, números e nomes de pessoas; em :::escala, traduza titulo:, dias: (Mon 01 | Tue 02 | … em inglês; Pn 02 | Wt 03 | Śr | Cz | Pt | Sb | Nd em polonês; Lun 02 | Mar 03 | Mer | Jeu | Ven | Sam | Dim em francês) e os ## grupos, sem mexer nas linhas das pessoas.
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FocusEvent, type KeyboardEvent as KeyboardEventReact } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useTable } from "@/lib/useTable";
 import { haQuanto } from "@/lib/tempo";
 import { cssDoProjeto } from "@/lib/livre";
 import { semDuplicatas } from "@/lib/historico";
 import DocView from "./DocView";
+import { chaveCelula } from "@/lib/markdown";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
 import Bandeira from "./Bandeira";
@@ -44,6 +45,8 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
   const [painel, setPainel] = useState<"sumario" | "mudancas" | "compartilhar" | null>(null);
   const [idioma, setIdioma] = useState<Idioma>("pt");
+  // Tabelas editáveis (:::editavel): o que os sócios digitam no site
+  const [celulas, setCelulas] = useState<Record<string, string>>({});
 
   // Fecha o painel com Esc
   useEffect(() => {
@@ -93,6 +96,50 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("celulas_editaveis").select("bloco,linha,coluna,valor").eq("workspace_id", projectId);
+      const map: Record<string, string> = {};
+      (data ?? []).forEach((c: { bloco: string; linha: number; coluna: number; valor: string }) => (map[chaveCelula(c.bloco, c.linha, c.coluna)] = c.valor));
+      setCelulas(map);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // Salva a célula ao sair dela (Enter também salva; Esc desfaz)
+  async function salvarCelula(e: FocusEvent<HTMLElement>) {
+    const td = e.target as HTMLElement;
+    const pos = td?.dataset?.ed;
+    const bloco = td?.closest<HTMLElement>("[data-editavel]")?.dataset.editavel;
+    if (!pos || !bloco) return;
+    const [linha, coluna] = pos.split(":").map(Number);
+    const valor = (td.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+    if (td.innerText !== valor) td.innerText = valor;
+    if (valor === (td.dataset.atual ?? "")) return;
+    const { error } = await supabase.from("celulas_editaveis").upsert(
+      { workspace_id: projectId, bloco, linha, coluna, valor, atualizado_por: userId },
+      { onConflict: "workspace_id,bloco,linha,coluna" }
+    );
+    if (error) {
+      alert("Não foi possível salvar: " + error.message);
+      td.innerText = td.dataset.atual ?? "";
+      return;
+    }
+    td.dataset.atual = valor;
+    setCelulas((c) => ({ ...c, [chaveCelula(bloco, linha, coluna)]: valor }));
+  }
+  function teclaCelula(e: KeyboardEventReact<HTMLElement>) {
+    const td = e.target as HTMLElement;
+    if (!td?.dataset?.ed) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      td.blur();
+    } else if (e.key === "Escape") {
+      td.innerText = td.dataset.atual ?? "";
+      td.blur();
+    }
+  }
 
   // O nome do projeto também atualiza ao vivo quando o Claude renomeia
   useEffect(() => {
@@ -365,7 +412,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
       {info.doc_css && (
         <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(info.doc_css, ".doc-escopo") }} />
       )}
-      <main className="proj-doc doc-escopo">
+      <main className="proj-doc doc-escopo" onBlur={salvarCelula} onKeyDown={teclaCelula}>
         {loading ? (
           <p className="muted">Carregando…</p>
         ) : capitulos.length === 0 ? (
@@ -379,7 +426,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
           emAbas && abaAtual ? (
             <>
               <Abas capitulos={capitulos} atual={abaAtual.id} grupos={!!info.doc_abas_grupos} abrir={abrirAba} />
-              <DocView key={`${abaAtual.id}-${lingua}`} capitulos={[abaAtual]} modo="pagina" idioma={lingua} />
+              <DocView key={`${abaAtual.id}-${lingua}`} capitulos={[abaAtual]} modo="pagina" idioma={lingua} celulas={celulas} editavel />
               <div className="abas-passo">
                 {idxAtual > 0 ? (
                   <button className="passo" onClick={() => abrirAba(capitulos[idxAtual - 1].id)}>
@@ -397,7 +444,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
               {rodape && <footer className="doc-pagina-rodape">{rodape}</footer>}
             </>
           ) : (
-            <DocView capitulos={capitulos} rodape={rodape} modo={modo} idioma={lingua} />
+            <DocView capitulos={capitulos} rodape={rodape} modo={modo} idioma={lingua} celulas={celulas} editavel={modo === "pagina"} />
           )
         )}
       </main>

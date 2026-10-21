@@ -28,13 +28,18 @@ export default function DocView({
   acoes,
   modo = "pdf",
   idioma = "pt",
+  celulas,
+  editavel = false,
 }: {
   capitulos: Capitulo[];
   rodape?: string | null;
   acoes?: (cap: Capitulo, idx: number) => ReactNode;
   modo?: "pdf" | "pagina";
   idioma?: Idioma;
+  celulas?: Record<string, string>;
+  editavel?: boolean;
 }) {
+  const extra = { celulas, editavel };
   // Modo página: o documento corre livre, como um site, sem folhas A4.
   if (modo === "pagina") {
     return (
@@ -48,7 +53,7 @@ export default function DocView({
               className={f.capa ? "secao secao-capa" : "secao"}
             >
               {acoes && primeira && <div className="folha-acoes nao-imprimir">{acoes(f.cap, f.idx)}</div>}
-              <div dangerouslySetInnerHTML={{ __html: renderConteudo(f.md, idioma) }} />
+              <div dangerouslySetInnerHTML={{ __html: renderConteudo(f.md, idioma, extra) }} />
             </section>
           );
         })}
@@ -83,7 +88,7 @@ export default function DocView({
             className={f.capa ? "folha folha-capa" : "folha"}
           >
             {acoes && primeiraDoCap && <div className="folha-acoes nao-imprimir">{acoes(f.cap, f.idx)}</div>}
-            <div className="folha-corpo" dangerouslySetInnerHTML={{ __html: renderConteudo(f.md, idioma) }} />
+            <div className="folha-corpo" dangerouslySetInnerHTML={{ __html: renderConteudo(f.md, idioma, extra) }} />
             {!f.capa && (
               <div className="folha-rodape">
                 <span>{rodape ?? ""}</span>

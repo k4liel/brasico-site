@@ -17,6 +17,12 @@
 //                Nome | F | 08-17 | F | 09-13/17-21 | 19-07 | - | ...
 //                (2ª coluna = sexo F/M, opcional; célula F = folga, - = descanso 12x36)
 //   :::checks    checagens: status | título | detalhe (status ok ou alerta)
+//   :::editavel  tabela com colunas que os sócios editam no site:
+//                id: bragard-sempre-vivo          (único no projeto; o mesmo nos 4 idiomas)
+//                editaveis: 1, 5                   (colunas editáveis, contando da 1ª)
+//                | Pessoa | Tamanho | Bordado |    (tabela Markdown normal: os valores são o ponto de partida)
+//                O que é digitado no site fica em celulas_editaveis (por linha e coluna):
+//                não reordene nem insira linhas no meio; acrescente no fim.
 //   :::          fecha o bloco
 //
 // Convenções:
@@ -56,7 +62,7 @@ const isNumeric = (c: string) => {
   return t !== "" && t !== "—" && /^(≈\s*|~\s*)?(R\$\s*)?[\d.,]+(\s*(%|×|x|kg|L|un))?(\s*\/\s*R\$\s*[\d.,]+)?$/.test(t);
 };
 
-type Opts = { colunas?: boolean; idioma?: Idioma };
+type Opts = { colunas?: boolean; idioma?: Idioma; celulas?: Record<string, string>; editavel?: boolean };
 
 function renderCapa(body: string[]) {
   const kv: Record<string, string[]> = {};
@@ -303,6 +309,47 @@ function renderArquivos(body: string[], idioma: Idioma = "pt") {
   return `<div class="arqs arqs-${estilo === "lista" ? "lista" : "capas"}">${itens.join("")}</div>`;
 }
 
+// ---------------------------------------------------------------------
+// :::editavel — tabela com colunas editáveis no site (valores em celulas_editaveis)
+// ---------------------------------------------------------------------
+export const chaveCelula = (bloco: string, linha: number, coluna: number) => `${bloco}|${linha}|${coluna}`;
+
+function renderEditavel(body: string[], opts: Opts) {
+  let id = "";
+  let editaveis = new Set<number>();
+  const linhas: string[] = [];
+  for (const l of body) {
+    const t = l.trim();
+    if (!t) continue;
+    const kv = t.match(/^(id|editaveis)\s*:\s*(.*)$/i);
+    if (kv && kv[1].toLowerCase() === "id") { id = kv[2].trim().toLowerCase(); continue; }
+    if (kv) { editaveis = new Set(kv[2].split(/[,\s]+/).map((n) => parseInt(n, 10) - 1).filter((n) => n >= 0)); continue; }
+    if (isTable(t)) linhas.push(t);
+  }
+  if (!/^[a-z0-9-]{1,60}$/.test(id) || linhas.length < 2 || !isSep(linhas[1])) return renderMarkdown(linhas.join("\n"), opts);
+  const head = cells(linhas[0]);
+  const corpo = linhas.slice(2).map(cells);
+  const vazio = opts.editavel ? TEXTOS[opts.idioma ?? "pt"].escrever : "";
+  let html = `<div class="table-wrap"><table class="tab-editavel" data-editavel="${esc(id)}"><thead><tr>`;
+  html += head.map((c, k) => `<th${editaveis.has(k) ? ' class="ed-col"' : ""}>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
+  corpo.forEach((r, linha) => {
+    const total = /^\*\*.+\*\*$/.test(r[0] ?? "");
+    html += `<tr${total ? ' class="total"' : ""}>`;
+    head.forEach((_, k) => {
+      const original = r[k] ?? "";
+      if (!total && editaveis.has(k)) {
+        const valor = opts.celulas?.[chaveCelula(id, linha, k)] ?? original.replace(/\*/g, "");
+        const ed = opts.editavel ? ` contenteditable="plaintext-only" spellcheck="false" data-vazio="${esc(vazio)}"` : "";
+        html += `<td class="ed" data-ed="${linha}:${k}" data-atual="${esc(valor)}"${ed}>${esc(valor)}</td>`;
+      } else {
+        html += `<td${isNumeric(original) && k > 0 ? ' class="num"' : ""}>${inline(original)}</td>`;
+      }
+    });
+    html += "</tr>";
+  });
+  return html + "</tbody></table></div>";
+}
+
 export function renderMarkdown(md: string, opts: Opts = {}): string {
   const lines = md.replace(/\r/g, "").split("\n");
   const out: string[] = [];
@@ -328,7 +375,8 @@ export function renderMarkdown(md: string, opts: Opts = {}): string {
       else if (kind === "escala") out.push(renderEscala(body, opts.idioma));
       else if (kind === "checks") out.push(renderChecks(body));
       else if (kind === "arquivos") out.push(renderArquivos(body, opts.idioma));
-      else if (kind === "colunas") out.push(`<div class="colunas">${renderMarkdown(body.join("\n"), { colunas: true })}</div>`);
+      else if (kind === "editavel") out.push(renderEditavel(body, opts));
+      else if (kind === "colunas") out.push(`<div class="colunas">${renderMarkdown(body.join("\n"), { ...opts, colunas: true })}</div>`);
       else out.push(renderMarkdown(body.join("\n"), opts));
       first = false;
       continue;

@@ -31,6 +31,7 @@ export const TEXTOS = {
     pagina: (n: number, total: number) => `pág. ${n} de ${total}`,
     anterior: "← Anterior",
     proximo: "Próximo →",
+    escrever: "clique para escrever",
     turnos: {
       abertura: "Abertura",
       manha: "Manhã",
@@ -61,6 +62,7 @@ export const TEXTOS = {
     pagina: (n: number, total: number) => `page ${n} of ${total}`,
     anterior: "← Previous",
     proximo: "Next →",
+    escrever: "click to write",
     turnos: {
       abertura: "Opening",
       manha: "Morning",
@@ -91,6 +93,7 @@ export const TEXTOS = {
     pagina: (n: number, total: number) => `str. ${n} z ${total}`,
     anterior: "← Poprzedni",
     proximo: "Następny →",
+    escrever: "kliknij, aby wpisać",
     turnos: {
       abertura: "Otwarcie",
       manha: "Rano",
@@ -121,6 +124,7 @@ export const TEXTOS = {
     pagina: (n: number, total: number) => `p. ${n} sur ${total}`,
     anterior: "← Précédent",
     proximo: "Suivant →",
+    escrever: "cliquez pour écrire",
     turnos: {
       abertura: "Ouverture",
       manha: "Matin",

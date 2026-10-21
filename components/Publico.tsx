@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cssDoProjeto } from "@/lib/livre";
 import DocView from "./DocView";
+import { chaveCelula } from "@/lib/markdown";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import VisorPdf from "./VisorPdf";
@@ -32,11 +33,16 @@ export default function Publico({ slug }: { slug: string }) {
   const [idioma, setIdioma] = useState<Idioma>("pt");
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
   const [aba, setAba] = useState(0);
+  const [celulas, setCelulas] = useState<Record<string, string>>({});
 
   useEffect(() => {
     (async () => {
       const { data, error } = await createClient().rpc("documento_publico", { p_slug: slug });
       setDoc(error || !data ? null : (data as Doc));
+      const { data: cs } = await createClient().rpc("celulas_publicas", { p_slug: slug });
+      const map: Record<string, string> = {};
+      ((cs ?? []) as { bloco: string; linha: number; coluna: number; valor: string }[]).forEach((c) => (map[chaveCelula(c.bloco, c.linha, c.coluna)] = c.valor));
+      setCelulas(map);
     })();
   }, [slug]);
 
@@ -138,7 +144,7 @@ export default function Publico({ slug }: { slug: string }) {
         ) : emAbas && atual ? (
           <>
             <Abas capitulos={capitulos} atual={atual.id} grupos={!!doc.abas_grupos} abrir={(id) => abrirAba(Number(id) - 1)} />
-            <DocView key={`${atual.id}-${idioma}`} capitulos={[atual]} modo="pagina" idioma={idioma} />
+            <DocView key={`${atual.id}-${idioma}`} capitulos={[atual]} modo="pagina" idioma={idioma} celulas={celulas} />
             <div className="abas-passo">
               {i > 0 ? (
                 <button className="passo" onClick={() => abrirAba(i - 1)}>
@@ -156,7 +162,7 @@ export default function Publico({ slug }: { slug: string }) {
             {rodape && <footer className="doc-pagina-rodape">{rodape}</footer>}
           </>
         ) : (
-          <DocView capitulos={capitulos} rodape={rodape} modo={modo} idioma={idioma} />
+          <DocView capitulos={capitulos} rodape={rodape} modo={modo} idioma={idioma} celulas={celulas} />
         )}
       </main>
       <VisorPdf />

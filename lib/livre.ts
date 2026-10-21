@@ -88,10 +88,10 @@ export function cssDoProjeto(css: string | null | undefined, escopo: string): st
 }
 
 /** Markdown com os blocos do Brasico + blocos :::html livres. */
-export function renderConteudo(md: string, idioma: Idioma = "pt"): string {
+export function renderConteudo(md: string, idioma: Idioma = "pt", extra: { celulas?: Record<string, string>; editavel?: boolean } = {}): string {
   const partes = md.replace(/\r/g, "").split(/^:::html[^\n]*\n([\s\S]*?)^:::[ \t]*$/m);
   // split com grupo: [md, html, md, html, md...]
   return partes
-    .map((p, i) => (i % 2 === 1 ? `<div class="bloco-livre">${limparHtml(p)}</div>` : p.trim() ? renderMarkdown(p, { idioma }) : ""))
+    .map((p, i) => (i % 2 === 1 ? `<div class="bloco-livre">${limparHtml(p)}</div>` : p.trim() ? renderMarkdown(p, { idioma, ...extra }) : ""))
     .join("");
 }
