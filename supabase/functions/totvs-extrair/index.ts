@@ -100,7 +100,7 @@ const json = (corpo: unknown): RequestInit => ({
 // ---------------------------------------------------------------------
 // Normalização
 // ---------------------------------------------------------------------
-const TAXA_SERVICO = /TAXA\s*(DE\s*)?SERV|^SERVI[CÇ]O\b|GORJETA|COUVERT ART/i;
+const TAXA_SERVICO = /TAXA\s*(DE\s*)?SERV|\bTX\.?\s*(DE\s*)?SERV|^SERVI[CÇ]O\b|GORJETA|COUVERT ART/i;
 
 function categoria(grupo: string) {
   const g = grupo.toUpperCase();
@@ -126,9 +126,10 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
   const produtos = new Map<string, J>();
   const pagamentos = new Map<string, J>();
   const garcons = new Map<string, J>();
+  const porVenda: J[] = [];
   const s = {
     vendas_recebidas: todas.length, vendas_ativas: ativas.length, vendas_canceladas: canceladas.length,
-    pessoas: 0, subtotal: 0, servico: 0, acrescimos: 0, descontos: 0, taxa_entrega: 0, total: 0, troco: 0,
+    pessoas: 0, subtotal: 0, servico: 0, acrescimos: 0, descontos: 0, taxa_entrega: 0, total: 0, total_totvs: 0, troco: 0, troco_nos_pagamentos: 0,
     valor_produtos: 0, comida: 0, bebida: 0, outros: 0, itens_taxa_servico: 0,
     pagamentos_caixa: 0, assinadas: 0, cortesias: 0, pagamentos_total: 0,
     itens_cancelados: 0, sangrias: 0, fechamento_sistema: 0, fechamento_recebido: 0,
@@ -140,12 +141,19 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     s.subtotal += n(t.ValorSubTotal);
     s.servico += n(t.ValorTotalServico);
     s.acrescimos += n(t.ValorTotalAcrescimo);
-    s.descontos += n(t.ValorTotalDescontoFiscal) + n(t.ValorTotalDescontoSistema);
+    // O mesmo desconto costuma vir nos dois campos (fiscal e sistema)
+    s.descontos += Math.max(n(t.ValorTotalDescontoFiscal), n(t.ValorTotalDescontoSistema));
     s.taxa_entrega += n(t.ValorTotalTaxaEntrega);
-    s.total += n(t.ValorTotal);
+    s.total_totvs += n(t.ValorTotal);
     s.troco += n(t.ValorTroco);
 
     const atendentesDaVenda = new Set<string>();
+    const pv = {
+      cupom: v.NumeroCupom ?? null, caixa: v.Caixa?.Numero ?? null, pessoas: n(v.QuantidadePessoas),
+      subtotal: n(t.ValorSubTotal), servico: n(t.ValorTotalServico), descontos: Math.max(n(t.ValorTotalDescontoFiscal), n(t.ValorTotalDescontoSistema)),
+      acrescimos: n(t.ValorTotalAcrescimo), total_totvs: n(t.ValorTotal), troco: n(t.ValorTroco),
+      itens: 0, taxa_item: 0, valor: 0, pagamentos: 0, troco_nos_pagamentos: 0, sem_atendente: [] as string[],
+    };
     for (const it of Array.isArray(v.Itens) ? v.Itens : []) {
       if (it?.Status !== 1) continue;
       const p = it.Produto ?? {};
@@ -154,11 +162,13 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
       const valor = n(it.ValorTotal);
       if (TAXA_SERVICO.test(nome) || TAXA_SERVICO.test(grupo)) {
         s.itens_taxa_servico += valor;
+        pv.taxa_item += valor;
         continue;
       }
       const cat = categoria(grupo);
       s.valor_produtos += valor;
       s[cat] += valor;
+      pv.itens += valor;
       const chave = p.Codigo != null ? String(p.Codigo) : nome;
       const atual = produtos.get(chave) ?? {
         codigo: p.Codigo ?? null, nome, grupo, subgrupo: txt(p.SubGrupo), unidade: txt(p.Unidade), categoria: cat, quantidade: 0, valor: 0,
@@ -169,6 +179,7 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
 
       const codAt = it.CodigoAtendenteVenda ?? it.CodigoAgenteVenda;
       const nomeAt = txt(it.AtendenteVenda || it.NomeAgenteVenda) || "Sem atendente";
+      if (nomeAt === "Sem atendente") pv.sem_atendente.push(`${nome} ${valor}`);
       const chaveAt = codAt != null && codAt !== 0 ? String(codAt) : nomeAt;
       const g = garcons.get(chaveAt) ?? { codigo: codAt ?? null, nome: nomeAt, itens: 0, valor: 0, vendas: 0 };
       g.itens += n(it.Quantidade);
@@ -178,19 +189,40 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     }
     for (const a of atendentesDaVenda) garcons.get(a)!.vendas += 1;
 
-    for (const pg of Array.isArray(v.Pagamentos) ? v.Pagamentos : []) {
-      const descricao = txt(pg.Descricao) || "Não identificado";
+    // Valor da venda: itens (já com desconto) + taxa de serviço + acréscimos + entrega.
+    // O ValorTotal da TOTVS às vezes vem com o troco subtraído; fica guardado em total_totvs.
+    pv.valor = pv.itens + (pv.taxa_item || pv.servico) + pv.acrescimos + n(t.ValorTotalTaxaEntrega);
+    s.total += pv.valor;
+
+    const pags = (Array.isArray(v.Pagamentos) ? v.Pagamentos : []).map((pg: J) => ({
+      descricao: txt(pg.Descricao) || "Não identificado",
+      codigo: pg.TipoFormaPagamento ?? null,
+      valor: pg.ValorEfetivo != null ? n(pg.ValorEfetivo) : n(pg.ValorRecebido),
+    }));
+    // Troco embutido: pagamentos passam do valor da venda exatamente pelo troco. Sai do dinheiro (ou do último pagamento).
+    const excesso = r2(pags.reduce((a: number, x: J) => a + x.valor, 0) - pv.valor);
+    if (excesso > 0.009 && pv.troco > 0 && Math.abs(excesso - pv.troco) <= 0.01) {
+      const alvo = pags.find((x: J) => /DINHEIRO/i.test(x.descricao) && x.valor >= excesso) ?? pags[pags.length - 1];
+      alvo.valor -= excesso;
+      pv.troco_nos_pagamentos = excesso;
+      s.troco_nos_pagamentos += excesso;
+    }
+
+    for (const pg of pags) {
+      const descricao = pg.descricao;
       const tipo = tipoPagamento(descricao);
-      const valor = pg.ValorEfetivo != null ? n(pg.ValorEfetivo) : n(pg.ValorRecebido);
-      const p = pagamentos.get(descricao) ?? { forma: descricao, tipo, codigo_tipo: pg.TipoFormaPagamento ?? null, vezes: 0, valor: 0 };
+      const valor = pg.valor;
+      const p = pagamentos.get(descricao) ?? { forma: descricao, tipo, codigo_tipo: pg.codigo, vezes: 0, valor: 0 };
       p.vezes += 1;
       p.valor += valor;
       pagamentos.set(descricao, p);
       s.pagamentos_total += valor;
+      pv.pagamentos += valor;
       if (tipo === "assinada") s.assinadas += valor;
       else if (tipo === "cortesia") s.cortesias += valor;
       else s.pagamentos_caixa += valor;
     }
+    porVenda.push(Object.fromEntries(Object.entries(pv).map(([k, x]) => [k, typeof x === "number" ? r2(x) : x])));
   }
 
   const cancelados = [
@@ -238,8 +270,11 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     if (Math.abs(dif) > TOLERANCIA) divergencias.push({ conferencia: nome, a: r2(a), b: r2(b), diferenca: dif });
   };
   conferir("Total das vendas × soma dos pagamentos", s.total, s.pagamentos_total);
-  conferir("Produtos + serviço + acréscimos + entrega − descontos × total das vendas",
-    s.valor_produtos + Math.max(s.itens_taxa_servico, s.servico) + s.acrescimos + s.taxa_entrega - s.descontos, s.total);
+  if (s.itens_taxa_servico && s.servico) conferir("Taxa de serviço nos itens × no totalizador da TOTVS", s.itens_taxa_servico, s.servico);
+  // Vendas cujo total na TOTVS não se explica pelos itens nem pelo troco
+  const estranhas = porVenda.filter((x) => Math.abs(x.valor - x.total_totvs) > 0.01 && Math.abs(x.valor - x.total_totvs - x.troco) > 0.01);
+  if (estranhas.length) divergencias.push({ conferencia: "Vendas com total da TOTVS diferente dos itens", vendas: estranhas.map((x) => x.cupom),
+    valor: r2(estranhas.reduce((a, x) => a + x.valor - x.total_totvs, 0)) });
   if (fechamentos.length) conferir("Fechamento de caixa (sistema) × pagamentos do caixa", s.fechamento_sistema, s.pagamentos_caixa);
   const semAtendente = [...garcons.values()].find((g) => g.nome === "Sem atendente");
   if (semAtendente) divergencias.push({ conferencia: "Itens sem atendente no ranking", valor: r2(semAtendente.valor) });
@@ -257,6 +292,7 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     fechamentos,
     cancelados,
     divergencias,
+    vendas: porVenda,
   };
 }
 
@@ -301,7 +337,7 @@ async function processar(execucaoId: string) {
       vendas: d.resumo.vendas_ativas, pessoas: d.resumo.pessoas, total: d.resumo.total,
       resumo: d.resumo, produtos: d.produtos, pagamentos: d.pagamentos, garcons: d.garcons,
       sangrias: d.sangrias, fechamentos: d.fechamentos, cancelados: d.cancelados, divergencias: d.divergencias,
-      execucao_id: ex.id, atualizado_em: new Date().toISOString(),
+      vendas_detalhe: d.vendas, execucao_id: ex.id, atualizado_em: new Date().toISOString(),
     }, { onConflict: "unidade_id,dia" });
     if (error) throw new Error(`gravação: ${error.message}`);
     await fim(status);

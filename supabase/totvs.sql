@@ -294,3 +294,6 @@ revoke execute on function public.mcp_totvs_extrair(text, text, date) from publi
 grant execute on function public.mcp_totvs_unidades(text) to anon;
 grant execute on function public.mcp_totvs_vendas(text, text, date, date, boolean) to anon;
 grant execute on function public.mcp_totvs_extrair(text, text, date) to anon;
+
+-- Resumo de cada venda (cupom, itens, serviço, descontos, total, pagamentos): evidência quando a conferência não bate
+alter table public.totvs_dias add column if not exists vendas_detalhe jsonb not null default '[]';
