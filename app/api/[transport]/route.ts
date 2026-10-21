@@ -405,6 +405,13 @@ function buildHandler(token: string) {
       );
 
       server.tool(
+        "esocial_equipe",
+        "Equipe cadastrada no RH (nome, cargo, unidade/restaurante, data de admissão, matrícula) por empresa. Vem do cadastro do contador e é completada pelos eventos lidos do governo. Cada consulta fica registrada (LGPD). Dados pessoais: use só para o que o usuário pediu.",
+        { empresa: z.string().optional().describe("raiz do CNPJ (8 posições); vazio = todas") },
+        async ({ empresa }) => call("mcp_esocial_equipe", { p_empresa: empresa ?? null })
+      );
+
+      server.tool(
         "esocial_eventos",
         "Eventos do eSocial já lidos do governo (produção): tipo (S-2200 admissão, S-2299 desligamento, S-1200 remuneração, S-1299 fechamento, S-5011/S-5013 totais de INSS e FGTS etc.), competência, CPF e um resumo (nome, datas, cargo). Dados pessoais de funcionários: use só para o que o usuário pediu.",
         {

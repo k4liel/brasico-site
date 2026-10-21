@@ -12,7 +12,8 @@ export type EventoRH = {
   nr_recibo: string | null; resumo: Record<string, string>; descoberto_em: string; baixado_em: string | null;
 };
 export type TrabalhadorRH = {
-  empresa_id: string; cpf: string; nome: string; matricula: string; origem: string; ativo: boolean; consultado_ate: string | null;
+  empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; admissao: string | null; unidade: string;
+  origem: string; ativo: boolean; consultado_ate: string | null;
 };
 export type ExecucaoRH = {
   id: string; empresa_id: string; ambiente: number; tipo: string; parametros: Record<string, unknown>; origem: string; status: string;
@@ -22,7 +23,7 @@ export type ExecucaoRH = {
 export type Situacao = "trabalhando" | "experiencia" | "afastado" | "ferias" | "saiu" | "aguardando";
 
 export type Pessoa = {
-  chave: string; empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; vinculo: string;
+  chave: string; empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; unidade: string; vinculo: string;
   dtAdm: string | null; dtDeslig: string | null; motivoSaida: string | null; fimContrato: string | null;
   afastamento: { desde: string; motivo: string; saude: boolean } | null;
   salario: string | null; situacao: Situacao; eventos: EventoRH[]; alertas: Alerta[];
@@ -123,18 +124,19 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
       if (r.dtTermAfast && afastamento && r.dtTermAfast >= afastamento.desde && r.dtTermAfast < agora) afastamento = null;
     }
 
-    const dtAdm = adm?.resumo.dtAdm || adm?.resumo.dtInicio || null;
+    // Sem evento de admissão ainda, vale o cadastro da planilha (nome, cargo, admissão, unidade)
+    const dtAdm = adm?.resumo.dtAdm || adm?.resumo.dtInicio || t?.admissao || null;
     const fimContrato = adm?.resumo.dtTerm || null;
     const saiu = !!saida && !(reintegrado && dataDoFato(reintegrado) > dataDoFato(saida));
     let situacao: Situacao = "aguardando";
     if (saiu) situacao = "saiu";
     else if (afastamento) situacao = afastamento.motivo === "15" ? "ferias" : "afastado";
     else if (fimContrato && fimContrato >= agora) situacao = "experiencia";
-    else if (adm) situacao = "trabalhando";
+    else if (adm || t?.admissao) situacao = "trabalhando";
 
     const p: Pessoa = {
       chave, empresa_id, cpf, nome, matricula: adm?.resumo.matricula || t?.matricula || "",
-      cargo: comCargo?.resumo.nmCargo ?? "", vinculo: nomeVinculo(adm?.resumo.codCateg),
+      cargo: comCargo?.resumo.nmCargo || t?.cargo || "", unidade: t?.unidade ?? "", vinculo: nomeVinculo(adm?.resumo.codCateg),
       dtAdm, dtDeslig: saiu ? saida!.resumo.dtDeslig || saida!.resumo.dtTerm || null : null,
       motivoSaida: saiu ? MOTIVO_SAIDA[saida!.resumo.mtvDeslig ?? ""] ?? (saida!.resumo.mtvDeslig ? `motivo ${saida!.resumo.mtvDeslig}` : null) : null,
       fimContrato, afastamento, salario: comSalario?.resumo.vrSalFx ?? null, situacao, eventos: evs, alertas: [],
@@ -325,6 +327,35 @@ export function montarPassos(empresas: EmpresaRH[], trabalhadores: TrabalhadorRH
     { id: "historico", texto: "Escolha desde quando ler o histórico (sugestão: a admissão do funcionário mais antigo)",
       feito: empresas.length > 0 && empresas.every((e) => e.historico_desde <= seisMeses), acao: "Escolher data" },
   ];
+}
+
+// ---------------------------------------------------------------------
+// Calendário do mês (obrigações do empregador; datas do MOS S-1.3, DCTFWeb e FGTS Digital)
+// ---------------------------------------------------------------------
+export type ItemCalendario = { dia: number; data: string; titulo: string; detalhe: string; estado: "feito" | "pendente" | "atrasado" | "futuro" | "info"; quem: "contador" | "governo" | "empresa" };
+
+export function montarCalendario(folhas: Folha[], empresas: EmpresaRH[], base = hoje()): ItemCalendario[] {
+  const mes = base.slice(0, 7);
+  const diaHoje = Number(base.slice(8, 10));
+  const comp = mesAnterior(base);
+  const doMes = folhas.filter((f) => f.competencia === comp);
+  const fechadas = doMes.filter((f) => f.fechada != null).length;
+  const consultadas = doMes.filter((f) => f.consultada).length;
+  const nomes = (lista: Folha[]) => lista.map((f) => empresas.find((e) => e.id === f.empresa_id)?.nome ?? f.empresa_id).join(", ");
+  const estadoPrazo = (dia: number, ok: boolean, sabe: boolean): ItemCalendario["estado"] =>
+    ok ? "feito" : diaHoje < dia ? (sabe ? "pendente" : "futuro") : sabe ? "atrasado" : "futuro";
+  const d = (n: number) => `${mes}-${String(n).padStart(2, "0")}`;
+  const faltando = doMes.filter((f) => f.fechada == null);
+  const itens: ItemCalendario[] = [
+    { dia: 5, data: d(5), quem: "empresa", titulo: "Pagamento dos salários", detalhe: "Até o 5º dia útil do mês (CLT, art. 459). Confira no extrato.", estado: diaHoje <= 7 ? "pendente" : "info" },
+    { dia: 7, data: d(7), quem: "governo", titulo: "Leitura do eSocial liberada", detalhe: "Do dia 1 ao 7 o governo não aceita consultas. A leitura automática volta no dia 8.", estado: diaHoje <= 7 ? "pendente" : "feito" },
+    { dia: 15, data: d(15), quem: "contador", titulo: `Fechar a folha de ${nomeMes(comp)} no eSocial`,
+      detalhe: doMes.length ? (fechadas === doMes.length ? `Fechada nas ${doMes.length === 1 ? "empresa" : `${doMes.length} empresas`}.` : faltando.length && consultadas ? `Falta: ${nomes(faltando)}.` : "Ainda não lemos o fechamento.") : "Sem empresas.",
+      estado: estadoPrazo(15, doMes.length > 0 && fechadas === doMes.length, consultadas > 0) },
+    { dia: 15, data: d(15), quem: "contador", titulo: "DCTFWeb (declaração do INSS)", detalhe: "Gerada depois do fechamento da folha. Confirme com o contador o prazo em vigor.", estado: "info" },
+    { dia: 20, data: d(20), quem: "empresa", titulo: "Pagar INSS (DARF) e FGTS Digital", detalhe: "As guias saem do fechamento da folha. O FGTS declarado é cobrado automaticamente se não for pago.", estado: diaHoje <= 20 ? "pendente" : "info" },
+  ];
+  return itens.sort((a, b) => a.dia - b.dia);
 }
 
 export const ROTULO_SITUACAO: Record<Situacao, string> = {

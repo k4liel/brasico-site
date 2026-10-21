@@ -5,11 +5,13 @@ import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
   cpfVisivel, dataBR, diasEntre, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
-  montarPessoas, nomeMes, ROTULO_SITUACAO, tempoDeCasa,
+  montarCalendario, montarPessoas, nomeMes, ROTULO_SITUACAO, tempoDeCasa,
   type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
+
+type Consulta = { id: string; user_id: string | null; origem: string; ferramenta: string; parametros: Record<string, unknown>; quantidade: number; created_at: string };
 
 const ABAS = ["Eventos", "Trabalhadores", "Pedidos"] as const;
 type Aba = (typeof ABAS)[number];
@@ -41,6 +43,8 @@ const cnpjMask = (c: string | null) => (c ? `${c.slice(0, 2)}.${c.slice(2, 5)}.$
 const diasAte = (iso: string) => Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);
 const diaDoMes = () => Number(hoje().slice(8, 10));
 const reais = (v: string | null) => (v ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "");
+// "AUXILIAR DE COZINHA" → "Auxiliar de cozinha"
+const titulo = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "");
 const nomeCurto = (nome: string) => nome.replace(/\s+(LTDA|EIRELI|ME|EPP|S\/?A)\.?$/i, "").replace(/\b(EMPREENDIMENTOS TURISTICOS)\b/i, "").trim();
 
 function lerLocal(chave: string) {
@@ -63,6 +67,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [trabalhadores, setTrabalhadores] = useState<Trabalhador[]>([]);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
+  const [consultas, setConsultas] = useState<Consulta[]>([]);
   const [carregado, setCarregado] = useState(false);
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtro, setFiltro] = useState<Filtro>("Trabalhando");
@@ -88,7 +93,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
         .order("ordem").order("nome"),
       supabase.from("esocial_eventos").select("id_evento,empresa_id,tipo,cpf_trab,per_apur,situacao,nr_recibo,resumo,descoberto_em,baixado_em")
         .eq("ambiente", 1).order("descoberto_em", { ascending: false }).limit(5000),
-      supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,matricula,origem,ativo,consultado_ate").order("nome"),
+      supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,matricula,cargo,admissao,unidade,origem,ativo,consultado_ate").order("nome"),
       supabase.from("esocial_execucoes").select("id,empresa_id,ambiente,tipo,parametros,origem,status,cd_resposta,desc_resposta,resultado,erro,created_at")
         .order("created_at", { ascending: false }).limit(300),
     ]);
@@ -96,6 +101,9 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     setEventos((ev.data ?? []) as Evento[]);
     setTrabalhadores((tr.data ?? []) as Trabalhador[]);
     setExecucoes((ex.data ?? []) as Execucao[]);
+    const { data: cs } = await supabase.from("esocial_consultas").select("id,user_id,origem,ferramenta,parametros,quantidade,created_at")
+      .order("created_at", { ascending: false }).limit(60);
+    setConsultas((cs ?? []) as Consulta[]);
     setCarregado(true);
   }, [supabase]);
 
@@ -158,6 +166,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const pessoasVistas = daEmpresa(pessoas);
   const competencias = [mesAnterior(), mesAnterior(hoje(), 2)];
   const folhas = montarFolhas(empresasVistas, eventos, execucoes, competencias);
+  const calendario = montarCalendario(folhas, empresasVistas);
   const alertas = montarAlertas(empresasVistas, pessoasVistas, folhas, daEmpresa(execucoes));
   const numeros = montarNumeros(pessoasVistas, empresasVistas);
   const passos = montarPassos(empresas, trabalhadores, execucoes);
@@ -373,6 +382,27 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
               <p className="muted es-nota">Lembretes: folha no eSocial até o dia 15 · guias de INSS e FGTS até o dia 20.</p>
             </section>
 
+            {/* 3b. Calendário do mês */}
+            <section className="es-bloco">
+              <div className="es-bloco-cabeca">
+                <h2>Calendário de {nomeMes(hoje().slice(0, 7))}</h2>
+                <Ajuda texto="As datas fixas do mês para o empregador: pagamento, prazo do contador no eSocial, declaração do INSS e guias. O que já aconteceu fica marcado com ✓." />
+              </div>
+              <ol className="es-calendario">
+                {calendario.map((c, i) => (
+                  <li key={i} className={`es-cal-item ${c.estado}`}>
+                    <span className="es-cal-dia"><b>{c.dia}</b><small>{nomeMes(c.data.slice(0, 7)).slice(0, 3)}</small></span>
+                    <div>
+                      <strong>{c.titulo}</strong>
+                      <span className="muted">{c.detalhe}</span>
+                    </div>
+                    <span className={`es-cal-quem ${c.quem}`}>{c.quem === "contador" ? "Contador" : c.quem === "governo" ? "Governo" : "Empresa"}</span>
+                    <span className="es-cal-estado" aria-label={c.estado}>{c.estado === "feito" ? "✓" : c.estado === "atrasado" ? "!" : c.estado === "pendente" ? "•" : ""}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
             {/* 4. Equipe */}
             <section className="es-bloco" id="es-equipe">
               <div className="es-bloco-cabeca">
@@ -410,7 +440,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                         <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
                         <span className="es-pessoa-nome">
                           <strong>{p.nome || "Nome ainda não lido"}</strong>
-                          <span className="muted">{[p.cargo, filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}</span>
+                          <span className="muted">{[titulo(p.cargo), p.unidade || (filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : ""), cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}</span>
                         </span>
                         <span className="es-pessoa-desde muted">{p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}</span>
                         <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
@@ -433,6 +463,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                   ocupado={ocupado} emAndamento={emAndamento} bloqueado={bloqueado} rodar={rodar} supabase={supabase}
                   onCertificado={() => setPainel("certificado")} />
               )}
+              {tecnicoAberto && <RegistroConsultas consultas={consultas} meuId={userId} />}
             </details>
 
             <Glossario />
@@ -596,6 +627,30 @@ function PainelHistorico({ empresas, ocupado, onSalvar, onFechar }: {
   );
 }
 
+// Registro de cada leitura de dados de funcionários feita pelo Claude (LGPD, art. 37)
+function RegistroConsultas({ consultas, meuId }: { consultas: Consulta[]; meuId: string }) {
+  const FERRAMENTA: Record<string, string> = { esocial_situacao: "situação geral", esocial_equipe: "equipe", esocial_eventos: "eventos" };
+  return (
+    <section className="es-registro">
+      <h3>Quem consultou os dados pelo Claude</h3>
+      <p className="muted">Toda leitura de dados de funcionários feita pelo conector fica registrada aqui, com quem pediu e quantos registros saíram.</p>
+      {consultas.length === 0 ? (
+        <p className="muted tv-nada">Nenhuma consulta registrada ainda.</p>
+      ) : (
+        <ul className="es-registro-lista">
+          {consultas.map((c) => (
+            <li key={c.id}>
+              <span className="muted">{hora(c.created_at)}</span>
+              <span>{c.user_id === meuId ? "Você" : "Sócio"} · leu <strong>{FERRAMENTA[c.ferramenta] ?? c.ferramenta}</strong>
+                {c.quantidade ? ` (${c.quantidade} registros)` : ""}{c.parametros && Object.keys(c.parametros).length ? ` · ${Object.entries(c.parametros).map(([k, v]) => `${k}: ${String(v)}`).join(", ")}` : ""}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Glossario() {
   const termos: [string, string][] = [
     ["eSocial", "Sistema do governo onde a empresa (pelo contador) informa tudo sobre os funcionários: admissão, salário, férias, afastamentos e saída."],
@@ -750,8 +805,8 @@ function AreaTecnica({ empresas, empresaInicial, eventos, trabalhadores, execuco
                 }, "CPFs adicionados. Eles entram na leitura automática.")} />
                 <Tabela
                   vazio="Nenhum CPF ainda. O eSocial só entrega os eventos de cada trabalhador pelo CPF; os que aparecerem nos eventos entram sozinhos."
-                  cab={["CPF", "Nome", "Matrícula", "Origem", "Lido até"]}
-                  linhas={trs.map((t) => [cpf(t.cpf), t.nome, t.matricula, t.origem === "manual" ? "Cadastrado" : "Dos eventos", t.consultado_ate ? dia(t.consultado_ate) : "—"])}
+                  cab={["CPF", "Nome", "Cargo", "Unidade", "Admissão", "Origem", "Lido até"]}
+                  linhas={trs.map((t) => [cpf(t.cpf), t.nome, titulo(t.cargo), t.unidade, dataBR(t.admissao), t.origem === "manual" ? "Cadastro" : "Dos eventos", t.consultado_ate ? dia(t.consultado_ate) : "—"])}
                 />
               </>
             )}

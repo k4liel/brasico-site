@@ -606,3 +606,120 @@ revoke execute on function public.mcp_esocial_situacao(text) from public, authen
 revoke execute on function public.mcp_esocial_eventos(text, text, text, text, text, int) from public, authenticated;
 grant execute on function public.mcp_esocial_situacao(text) to anon;
 grant execute on function public.mcp_esocial_eventos(text, text, text, text, text, int) to anon;
+
+-- ---------------------------------------------------------------------
+-- Cadastro da equipe (planilha do contador) e registro das consultas do conector
+-- ---------------------------------------------------------------------
+-- Dados do cadastro para a equipe aparecer antes dos eventos chegarem
+alter table public.esocial_trabalhadores add column if not exists cargo text not null default '';
+alter table public.esocial_trabalhadores add column if not exists admissao date;
+alter table public.esocial_trabalhadores add column if not exists unidade text not null default '';
+
+-- Registro de cada leitura de dados de funcionários feita pelo conector (Claude). LGPD art. 37.
+create table if not exists public.esocial_consultas (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id),
+  origem text not null check (origem in ('claude', 'site')),
+  ferramenta text not null,
+  parametros jsonb not null default '{}',
+  quantidade int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists esocial_consultas_idx on public.esocial_consultas (created_at desc);
+drop trigger if exists esocial_consultas_sem_exclusao on public.esocial_consultas;
+create trigger esocial_consultas_sem_exclusao before delete on public.esocial_consultas for each row execute function public.bloquear_exclusao();
+drop trigger if exists esocial_consultas_sem_truncate on public.esocial_consultas;
+create trigger esocial_consultas_sem_truncate before truncate on public.esocial_consultas for each statement execute function public.bloquear_exclusao();
+alter table public.esocial_consultas enable row level security;
+drop policy if exists "ver consultas" on public.esocial_consultas;
+create policy "ver consultas" on public.esocial_consultas for select using (public.esocial_pode_ver(auth.uid()));
+revoke all on public.esocial_consultas from anon;
+grant select on public.esocial_consultas to authenticated;
+
+-- mcp_esocial_situacao e mcp_esocial_eventos passam a gravar uma linha em esocial_consultas a cada chamada
+-- (mesmo corpo de antes; só o insert foi acrescentado). Ver a migração esocial_trabalhadores_cadastro_e_registro_consultas.
+create or replace function public.mcp_esocial_situacao(p_token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_user uuid;
+begin
+  v_user := public.mcp_esocial_auth(p_token);
+  insert into public.esocial_consultas (user_id, origem, ferramenta) values (v_user, 'claude', 'esocial_situacao');
+  return jsonb_build_object('agora_brasilia', public.esocial_agora(), 'empresas', coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', e.id, 'nome', e.nome, 'cnpj', e.cnpj, 'certificado_valido_ate', e.cert_validade,
+      'leitura_automatica', e.leitura_automatica, 'limite_diario', e.limite_diario, 'historico_desde', e.historico_desde,
+      'trabalhadores', (select count(*) from public.esocial_trabalhadores t where t.empresa_id = e.id and t.ativo),
+      'eventos', (select coalesce(jsonb_object_agg(coalesce(x.tipo, '?') || ' ' || x.situacao, x.n), '{}'::jsonb)
+                  from (select tipo, situacao, count(*) n from public.esocial_eventos v where v.empresa_id = e.id and v.ambiente = 1
+                        group by 1, 2) x),
+      'ultimas_execucoes', (select coalesce(jsonb_agg(jsonb_build_object('tipo', x.tipo, 'ambiente', x.ambiente, 'status', x.status,
+          'codigo', x.cd_resposta, 'resposta', nullif(x.desc_resposta, ''), 'erro', nullif(x.erro, ''),
+          'quando', to_char(x.created_at at time zone 'America/Sao_Paulo', 'YYYY-MM-DD HH24:MI')) order by x.created_at desc), '[]'::jsonb)
+        from (select * from public.esocial_execucoes z where z.empresa_id = e.id order by z.created_at desc limit 8) x)
+    ) order by e.ordem, e.nome)
+    from public.esocial_empresas e), '[]'::jsonb));
+end $$;
+
+create or replace function public.mcp_esocial_eventos(p_token text, p_empresa text default null, p_tipo text default null,
+  p_cpf text default null, p_per_apur text default null, p_limite int default 100)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_user uuid; v_res jsonb;
+begin
+  v_user := public.mcp_esocial_auth(p_token);
+  v_res := coalesce((select jsonb_agg(jsonb_build_object('empresa', v.empresa_id, 'tipo', v.tipo, 'id', v.id_evento,
+      'recibo', v.nr_recibo, 'cpf', v.cpf_trab, 'competencia', v.per_apur, 'situacao', v.situacao, 'resumo', v.resumo,
+      'baixado_em', v.baixado_em) order by v.per_apur desc nulls last, v.tipo)
+    from (select * from public.esocial_eventos x
+          where x.ambiente = 1 and (p_empresa is null or x.empresa_id = upper(p_empresa))
+            and (p_tipo is null or x.tipo = upper(p_tipo)) and (p_cpf is null or x.cpf_trab = regexp_replace(p_cpf, '\D', '', 'g'))
+            and (p_per_apur is null or x.per_apur = p_per_apur)
+          order by x.descoberto_em desc limit least(greatest(coalesce(p_limite, 100), 1), 500)) v), '[]'::jsonb);
+  insert into public.esocial_consultas (user_id, origem, ferramenta, parametros, quantidade)
+  values (v_user, 'claude', 'esocial_eventos',
+    jsonb_strip_nulls(jsonb_build_object('empresa', p_empresa, 'tipo', p_tipo, 'cpf', case when p_cpf is null then null else 'informado' end, 'competencia', p_per_apur)),
+    jsonb_array_length(v_res));
+  return v_res;
+end $$;
+
+-- Equipe (nome, cargo, admissão e unidade) para o conector, com o mesmo registro
+create or replace function public.mcp_esocial_equipe(p_token text, p_empresa text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_user uuid; v_res jsonb;
+begin
+  v_user := public.mcp_esocial_auth(p_token);
+  v_res := coalesce((select jsonb_agg(jsonb_build_object('empresa', t.empresa_id, 'nome', t.nome, 'cargo', t.cargo, 'unidade', t.unidade,
+      'admissao', t.admissao, 'matricula', t.matricula, 'cpf', t.cpf, 'origem', t.origem, 'lido_ate', t.consultado_ate) order by t.unidade, t.nome)
+    from public.esocial_trabalhadores t where t.ativo and (p_empresa is null or t.empresa_id = upper(p_empresa))), '[]'::jsonb);
+  insert into public.esocial_consultas (user_id, origem, ferramenta, parametros, quantidade)
+  values (v_user, 'claude', 'esocial_equipe', jsonb_strip_nulls(jsonb_build_object('empresa', p_empresa)), jsonb_array_length(v_res));
+  return v_res;
+end $$;
+revoke execute on function public.mcp_esocial_equipe(text, text) from public, authenticated;
+grant execute on function public.mcp_esocial_equipe(text, text) to anon;
+
+-- Cadastro vindo da planilha (site): nome, cargo, admissão e unidade junto com o CPF
+create or replace function public.esocial_cadastrar_equipe(p_empresa text, p_pessoas jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare p jsonb; c text; v_ok int := 0; v_ruins text[] := '{}';
+begin
+  perform public.esocial_checar();
+  if not exists (select 1 from public.esocial_empresas where id = p_empresa) then raise exception 'Empresa não encontrada.'; end if;
+  for p in select * from jsonb_array_elements(coalesce(p_pessoas, '[]')) loop
+    c := regexp_replace(coalesce(p->>'cpf', ''), '\D', '', 'g');
+    if c = '' then continue; end if;
+    if not public.esocial_cpf_valido(c) then v_ruins := v_ruins || coalesce(p->>'nome', c); continue; end if;
+    insert into public.esocial_trabalhadores as w (empresa_id, cpf, nome, matricula, cargo, admissao, unidade, origem)
+    values (p_empresa, c, upper(coalesce(p->>'nome', '')), coalesce(p->>'matricula', ''), upper(coalesce(p->>'cargo', '')),
+      nullif(p->>'admissao', '')::date, coalesce(p->>'unidade', ''), 'manual')
+    on conflict (empresa_id, cpf) do update set ativo = true,
+      nome = case when excluded.nome <> '' then excluded.nome else w.nome end,
+      matricula = case when excluded.matricula <> '' then excluded.matricula else w.matricula end,
+      cargo = case when excluded.cargo <> '' then excluded.cargo else w.cargo end,
+      admissao = coalesce(excluded.admissao, w.admissao),
+      unidade = case when excluded.unidade <> '' then excluded.unidade else w.unidade end;
+    v_ok := v_ok + 1;
+  end loop;
+  return jsonb_build_object('cadastrados', v_ok, 'invalidos', to_jsonb(v_ruins));
+end $$;
+revoke execute on function public.esocial_cadastrar_equipe(text, jsonb) from public, anon;
+grant execute on function public.esocial_cadastrar_equipe(text, jsonb) to authenticated;
