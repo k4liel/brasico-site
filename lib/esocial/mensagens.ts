@@ -66,6 +66,13 @@ function status(raiz: Element, onde = "status"): Status {
 // Resposta HTTP → documento SOAP. Falha clara quando o IIS recusa o certificado (403) ou o SOAP traz Fault.
 function abrirResposta(r: { status: number; corpo: string }) {
   if (r.status === 403) throw new Error("O eSocial recusou o certificado (HTTP 403). Confira se é um e-CNPJ ICP-Brasil válido.");
+  // Página HTML em vez de SOAP (erro do servidor web): guarda o código e o título para o diagnóstico
+  if (/^\s*(<!DOCTYPE html|<html)/i.test(r.corpo)) {
+    const titulo = (r.corpo.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? r.corpo.match(/<h[12][^>]*>([\s\S]*?)<\/h[12]>/i)?.[1] ?? "")
+      .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const detalhe = (r.corpo.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i)?.[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    throw new Error(`O servidor do eSocial devolveu uma página de erro (HTTP ${r.status}): ${[titulo, detalhe].filter(Boolean).join(" · ")}`.slice(0, 500));
+  }
   const doc = lerXml(r.corpo);
   const raiz = doc.documentElement as unknown as Element | null;
   const fault = primeiro(raiz, "Fault");
