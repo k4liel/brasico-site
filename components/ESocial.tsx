@@ -186,7 +186,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
               </button>
               <label className="es-chave">
                 <input type="checkbox" checked={e.leitura_automatica} disabled={ocupado}
-                  onChange={(v) => rodar(() => supabase.rpc("esocial_configurar", { p_empresa: e.id, p_leitura: v.target.checked, p_limite: null, p_historico_desde: null }).then((r) => (carregarEmpresas(), r)), v.target.checked ? "Leitura automática ligada: roda às 8h e às 14h, do dia 8 em diante." : "Leitura automática desligada.")} />
+                  onChange={(v) => rodar(() => supabase.rpc("esocial_configurar", { p_empresa: e.id, p_leitura: v.target.checked, p_limite: null, p_historico_desde: null }).then((r) => (carregarEmpresas(), r)), v.target.checked ? "Leitura automática ligada: um passo a cada 15 minutos, das 8h às 20h, do dia 8 em diante." : "Leitura automática desligada.")} />
                 Leitura automática
               </label>
               <label className="es-campo">

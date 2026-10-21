@@ -348,11 +348,6 @@ begin
     update public.esocial_trabalhadores set consultado_ate = greatest(coalesce(consultado_ate, v_cursor), v_cursor)
     where empresa_id = x.empresa_id and cpf = x.parametros->>'cpf';
   end if;
-
-  -- Leitura automática: segue para o próximo passo do dia
-  if x.origem = 'agenda' and x.ambiente = 1 then
-    perform public.esocial_proximo(x.empresa_id);
-  end if;
 end $$;
 revoke execute on function public.esocial_worker_concluir(text, uuid, text, int, text, jsonb, text, jsonb) from public, authenticated;
 grant execute on function public.esocial_worker_concluir(text, uuid, text, int, text, jsonb, text, jsonb) to anon;
@@ -411,14 +406,16 @@ begin
       end loop;
     end loop;
 
-    -- 3. Estabelecimentos (uma vez por mês)
-    if not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+    -- 3. Estabelecimento da matriz (uma vez por mês). O S-1005 só é consultado com a chave
+    --    "tpInsc=1;nrInsc=<CNPJ>" (sem ela o eSocial responde 402).
+    if e.cnpj is not null and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
         and tipo = 'identificadores_tabela' and status in ('ok', 'sem_dados') and parametros->>'tpEvt' = 'S-1005'
         and created_at > now() - interval '30 days')
       and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
         and tipo = 'identificadores_tabela' and status = 'falha' and parametros->>'tpEvt' = 'S-1005'
-        and created_at > now() - interval '3 days') then
-      return public.esocial_pedir(e.id, 1, 'identificadores_tabela', jsonb_build_object('tpEvt', 'S-1005'), 'agenda', null);
+        and parametros ? 'chEvt' and created_at > now() - interval '3 days') then
+      return public.esocial_pedir(e.id, 1, 'identificadores_tabela',
+        jsonb_build_object('tpEvt', 'S-1005', 'chEvt', 'tpInsc=1;nrInsc=' || e.cnpj), 'agenda', null);
     end if;
 
     -- 4. Trabalhador lido há mais tempo (janela de até 30 dias, terminando 65 minutos antes de agora)
@@ -453,9 +450,11 @@ begin
 end $$;
 revoke execute on function public.esocial_agenda() from public, anon, authenticated;
 
--- 8h em Brasília (UTC-3) = 11h UTC. Se um passo cair (site fora do ar), o seguinte de hoje roda às 14h.
+-- Um passo por empresa a cada 15 minutos, das 8h às 20h de Brasília (11h às 23h UTC).
+-- Espaçado de propósito: o download do eSocial anda instável (erro 500 intermitente, Serpro, ago/2026)
+-- e chamadas seguidas falham mais. O limite diário de cada empresa continua valendo.
 select cron.unschedule('esocial-diario') where exists (select 1 from cron.job where jobname = 'esocial-diario');
-select cron.schedule('esocial-diario', '0 11,17 * * *', $job$ select public.esocial_agenda() $job$);
+select cron.schedule('esocial-diario', '*/15 11-22 * * *', $job$ select public.esocial_agenda() $job$);
 
 -- Pedido que travou (site não respondeu): vira falha depois de 15 minutos
 create or replace function public.esocial_destravar()
