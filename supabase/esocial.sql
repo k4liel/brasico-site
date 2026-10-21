@@ -386,7 +386,9 @@ begin
     select jsonb_agg(id_evento) into v_ids from (
       select id_evento from public.esocial_eventos where empresa_id = e.id and ambiente = 1 and situacao = 'pendente'
       order by descoberto_em limit 50) p;
-    if v_ids is not null then
+    -- (se o último download falhou hoje, segue para as consultas e tenta baixar amanhã)
+    if v_ids is not null and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+        and tipo = 'download_id' and status = 'falha' and created_at > now() - interval '20 hours') then
       return public.esocial_pedir(e.id, 1, 'download_id', jsonb_build_object('ids', v_ids), 'agenda', null);
     end if;
 
@@ -400,6 +402,10 @@ begin
         if v_ini > v_fim then continue; end if;                    -- lido depois do prazo do mês: pronto
         if v_ini is not null and v_agora <= v_fim then continue; end if; -- lido; relê depois do dia 20
         if v_agora < v_mes + interval '1 month' + interval '7 days' then continue; end if;
+        -- falhou há pouco (ex.: erro do servidor do governo): espera 3 dias para não gastar o limite
+        if exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+            and tipo = 'identificadores_empregador' and status = 'falha' and created_at > now() - interval '3 days'
+            and parametros->>'tpEvt' = v_tp and parametros->>'perApur' = to_char(v_mes, 'YYYY-MM')) then continue; end if;
         return public.esocial_pedir(e.id, 1, 'identificadores_empregador',
           jsonb_build_object('tpEvt', v_tp, 'perApur', to_char(v_mes, 'YYYY-MM')), 'agenda', null);
       end loop;
@@ -408,7 +414,10 @@ begin
     -- 3. Estabelecimentos (uma vez por mês)
     if not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
         and tipo = 'identificadores_tabela' and status in ('ok', 'sem_dados') and parametros->>'tpEvt' = 'S-1005'
-        and created_at > now() - interval '30 days') then
+        and created_at > now() - interval '30 days')
+      and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+        and tipo = 'identificadores_tabela' and status = 'falha' and parametros->>'tpEvt' = 'S-1005'
+        and created_at > now() - interval '3 days') then
       return public.esocial_pedir(e.id, 1, 'identificadores_tabela', jsonb_build_object('tpEvt', 'S-1005'), 'agenda', null);
     end if;
 
@@ -416,6 +425,9 @@ begin
     select * into w from public.esocial_trabalhadores
     where empresa_id = e.id and ativo
       and coalesce(consultado_ate, e.historico_desde::timestamp at time zone 'America/Sao_Paulo') < now() - interval '1 day'
+      and not exists (select 1 from public.esocial_execucoes f where f.empresa_id = e.id and f.ambiente = 1
+        and f.tipo = 'identificadores_trabalhador' and f.status = 'falha' and f.parametros->>'cpf' = cpf
+        and f.created_at > now() - interval '20 hours')
     order by coalesce(consultado_ate, e.historico_desde::timestamp at time zone 'America/Sao_Paulo') limit 1;
     if w.cpf is not null then
       v_ini := coalesce(w.consultado_ate at time zone 'America/Sao_Paulo', e.historico_desde::timestamp);
