@@ -17,6 +17,17 @@ const EVOLUTION_URL = Deno.env.get("EVOLUTION_URL");
 const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY");
 const BUCKET = "whatsapp";
 
+// Conversa nova: pede nome e foto à função whatsapp-fotos, sem atrasar a resposta à Evolution
+function pedirFotos(ids: string[], segredo: string) {
+  if (!ids.length) return;
+  const pedido = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-fotos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-segredo": segredo },
+    body: JSON.stringify({ ids }),
+  }).catch((e) => console.error("fotos", e));
+  (globalThis as unknown as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime?.waitUntil(pedido);
+}
+
 type Json = Record<string, any>;
 type Conversa = { id: string; nome: string; ativo: boolean };
 type Lida = { tipo: string; texto: string; miniatura: string; ctx: Json | undefined; midia: Json | undefined };
@@ -147,10 +158,10 @@ async function garantirConversas(instancia: string, novas: Map<string, { nome: s
     }
   }
   if (criar.length) await supabase.from("wa_grupos").upsert(criar, { onConflict: "id", ignoreDuplicates: true });
-  return existentes;
+  return { existentes, novas: criar.map((c) => c.id as string) };
 }
 
-async function gravarMensagens(instancia: string, itens: Json[]) {
+async function gravarMensagens(instancia: string, itens: Json[], segredo: string) {
   const lidas: { jid: string; d: Json; msg: Lida }[] = [];
   const conversas = new Map<string, { nome: string; telefone: string }>();
   for (const d of itens) {
@@ -168,7 +179,8 @@ async function gravarMensagens(instancia: string, itens: Json[]) {
   }
   if (!lidas.length) return 0;
 
-  const existentes = await garantirConversas(instancia, conversas);
+  const { existentes, novas } = await garantirConversas(instancia, conversas);
+  pedirFotos(novas, segredo);
   const linhas: Json[] = [];
   const completar: Json[] = [];
   for (const { jid, d, msg } of lidas) {
@@ -310,11 +322,13 @@ Deno.serve(async (req) => {
   try {
     if (evento === "messages.upsert" || evento === "messages.set") {
       const lista = evento === "messages.set" && Array.isArray(corpo.data?.messages) ? corpo.data.messages : dados;
-      const n = await gravarMensagens(instancia, lista);
+      const n = await gravarMensagens(instancia, lista, segredo);
       return Response.json({ gravadas: n });
     }
     if (evento === "groups.upsert" || evento === "groups.update" || evento === "group.update") {
       await gravarGrupos(dados);
+      // Grupo novo ou alterado (nome, foto): busca a foto atual
+      pedirFotos(dados.map((g: Json) => g.id).filter((id: unknown) => typeof id === "string" && ehGrupo(id)), segredo);
       return Response.json({ grupos: dados.length });
     }
     if (evento === "contacts.upsert" || evento === "contacts.update" || evento === "chats.upsert") {

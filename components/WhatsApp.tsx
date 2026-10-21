@@ -20,6 +20,7 @@ type Conversa = {
   ultima_texto: string | null;
   ultima_tipo: string | null;
   ultima_de_nos: boolean | null;
+  foto_arquivo: string;
 };
 // Um resumo por pedido, com todos os grupos juntos (escrito pelo Claude pelo conector)
 type Resumo = { id: string; de: string; ate: string; resumo: string; total_mensagens: number; total_grupos: number; created_at: string };
@@ -432,9 +433,10 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
     };
   }, [supabase, carregar]);
 
-  // Links temporários (1 hora) para as mídias do bucket privado, só das mensagens carregadas
+  // Links temporários (1 hora) para o bucket privado: mídias das mensagens carregadas e fotos das conversas
   useEffect(() => {
-    const faltam = [...new Set((mensagens ?? []).map((m) => m.midia).filter((c) => c && !urls[c]))];
+    const caminhos = [...(mensagens ?? []).map((m) => m.midia), ...conversas.map((c) => c.foto_arquivo)];
+    const faltam = [...new Set(caminhos.filter((c) => c && !urls[c]))];
     if (!faltam.length) return;
     supabase.storage
       .from("whatsapp")
@@ -444,7 +446,10 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
         for (const d of data ?? []) if (d.signedUrl && d.path) novos[d.path] = d.signedUrl;
         if (Object.keys(novos).length) setUrls((u) => ({ ...u, ...novos }));
       });
-  }, [mensagens, urls, supabase]);
+  }, [mensagens, conversas, urls, supabase]);
+
+  // Foto guardada no Supabase (não expira); o link do WhatsApp só enquanto não houver a guardada
+  const fotoDe = (c: Conversa | undefined) => (!c ? "" : c.foto_arquivo ? (urls[c.foto_arquivo] ?? "") : c.foto);
 
   useEffect(() => {
     if (!ampliada) return;
@@ -633,7 +638,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                   const quem = c.ultima_de_nos ? l.voce : c.tipo === "grupo" ? (c.ultima_autor || "").split(" ")[0] : "";
                   return (
                     <button key={c.id} className={`wa-item ${aberta === c.id ? "on" : ""} ${c.ativo ? "" : "wa-pausada"}`} onClick={() => abrir(c.id)}>
-                      <Avatar nome={nome} foto={c.foto} grupo={c.tipo === "grupo"} />
+                      <Avatar nome={nome} foto={fotoDe(c)} grupo={c.tipo === "grupo"} />
                       <span className="wa-item-meio">
                         <span className="wa-item-linha">
                           <strong>{nome}</strong>
@@ -691,7 +696,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                   <button className="wa-voltar" onClick={() => setAberta(null)} aria-label={l.voltar}>
                     ‹
                   </button>
-                  <Avatar nome={nomeConversa(conversa, l)} foto={conversa.foto} grupo={ehGrupo} tamanho={40} />
+                  <Avatar nome={nomeConversa(conversa, l)} foto={fotoDe(conversa)} grupo={ehGrupo} tamanho={40} />
                   <div className="wa-painel-titulo">
                     <strong>{nomeConversa(conversa, l)}</strong>
                     <span>

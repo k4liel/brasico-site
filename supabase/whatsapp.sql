@@ -484,3 +484,46 @@ end $$;
 drop trigger if exists wa_contatos_propagar on public.wa_contatos;
 create trigger wa_contatos_propagar after insert or update of nome on public.wa_contatos
   for each row execute function public.wa_contatos_propagar();
+
+-- ---------------------------------------------------------------------
+-- Fotos das conversas guardadas no bucket privado (fotos/<conversa>.jpg): o link do WhatsApp expira.
+-- A Edge Function whatsapp-fotos busca nome e foto na Evolution (credenciais no Vault, wa_evolution()).
+-- Roda quando aparece conversa nova (chamada pelo webhook) e todo dia às 04:00 de Brasília.
+-- ---------------------------------------------------------------------
+alter table public.wa_grupos add column if not exists foto_arquivo text not null default '';   -- caminho no bucket whatsapp
+alter table public.wa_grupos add column if not exists foto_em timestamptz;                       -- última vez que a foto foi buscada
+
+drop function if exists public.wa_painel_grupos();
+create or replace function public.wa_painel_grupos()
+returns table (id text, nome text, tipo text, foto text, telefone text, ativo boolean, total bigint, ultima timestamptz,
+               ultima_autor text, ultima_texto text, ultima_tipo text, ultima_de_nos boolean, foto_arquivo text)
+language sql stable security invoker set search_path = public as $$
+  select g.id,
+         coalesce(nullif(g.nome, ''), c.nome, ''),
+         g.tipo,
+         coalesce(nullif(g.foto, ''), c.foto, ''),
+         coalesce(nullif(g.telefone, ''), c.telefone, ''),
+         g.ativo,
+         (select count(*) from public.wa_mensagens m where m.grupo_id = g.id and m.tipo <> 'sistema'),
+         u.enviada_em, u.autor_nome, u.texto, u.tipo, u.de_nos,
+         g.foto_arquivo
+  from public.wa_grupos g
+  left join public.wa_contatos c on c.id = g.id
+  left join lateral (
+    select m.enviada_em, m.autor_nome, m.texto, m.tipo, m.de_nos from public.wa_mensagens m
+    where m.grupo_id = g.id and m.tipo <> 'sistema' order by m.enviada_em desc limit 1
+  ) u on true
+  order by u.enviada_em desc nulls last, g.nome
+$$;
+revoke execute on function public.wa_painel_grupos() from public, anon;
+grant execute on function public.wa_painel_grupos() to authenticated;
+
+select cron.unschedule('whatsapp-fotos-diario') where exists (select 1 from cron.job where jobname = 'whatsapp-fotos-diario');
+select cron.schedule('whatsapp-fotos-diario', '0 7 * * *', $job$
+  select net.http_post(
+    url := 'https://doajznzouxxqbqkvsclv.supabase.co/functions/v1/whatsapp-fotos',
+    headers := jsonb_build_object('Content-Type', 'application/json',
+      'x-segredo', (select decrypted_secret from vault.decrypted_secrets where name = 'wa_segredo')),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 150000)
+$job$);
