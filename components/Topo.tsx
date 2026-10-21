@@ -97,7 +97,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           </a>
           <a className={ativo === "esocial" ? "ativo" : ""} href="/esocial" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
-            eSocial
+            RH · eSocial
           </a>
           <a className={ativo === "conectar" ? "ativo" : ""} href="/conectar" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 4.5a3 3 0 0 1 0 6M17.5 14.2A5 5 0 0 1 20.5 19" /></svg>

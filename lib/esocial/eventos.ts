@@ -14,7 +14,7 @@ export type EventoLido = {
 const CAMPOS = [
   "cpfTrab", "nmTrab", "matricula", "codCateg", "dtAdm", "dtInicio", "dtDeslig", "dtTerm", "mtvDeslig", "dtIniAfast",
   "codMotAfast", "dtTermAfast", "dtAso", "resAso", "dtAlteracao", "nmCargo", "codCBO", "vrSalFx", "undSalFixo",
-  "perApur", "indApuracao", "tpEvento", "nrRecEvt", "nrRecArqBase", "indRetif", "nrRecibo", "dtAcid", "tpAcid",
+  "perApur", "indApuracao", "tpEvento", "nrRecEvt", "nrRecArqBase", "indRetif", "nrRecibo", "dtAcid", "tpAcid", "tpContr",
 ];
 
 export function lerEvento(xmlEvento: string): EventoLido {

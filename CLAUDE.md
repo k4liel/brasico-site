@@ -56,6 +56,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Os eventos de cada trabalhador só vêm pelo CPF: a lista fica em `esocial_trabalhadores` (cadastrada na tela ou aprendida dos eventos). Eventos em `esocial_eventos` (XML do evento e do recibo guardados).
 - Transmissão (envio de eventos) está preparada (`esocial_lotes`, `enviarLote` em lib/esocial) mas desligada: em produção só com `esocial_empresas.transmissao` ligada, e nada liga isso pelo site. Nunca transmita em paralelo com o contador.
 - Quem vê: só quem está em `esocial_acesso`. São dados pessoais (LGPD). Conector: `esocial_situacao`, `esocial_eventos`. Esquema em supabase/esocial.sql; código em lib/esocial/.
+- A página (Menu → RH · eSocial) é a área de RH para leigos: primeiros passos, "precisa de atenção", números, folha do mês, equipe com ficha e linha do tempo; o técnico fica recolhido em "Configurações e área técnica". Tudo é calculado na tela a partir dos eventos (lib/esocial/rh.ts). CPF aparece com o olhinho (mostrar/esconder), a pedido do dono. Pesquisa em `reports/Área de RH no eSocial.md` (fora do GitHub).
 
 ## WhatsApp (grupos da companhia)
 - O número da Brasico está nos grupos e, por padrão, só lê. Os sócios podem ligar "Enviar pelo site" (tabela `wa_ajustes`); aí a Edge Function `whatsapp-enviar` manda texto pela Evolution (endereço e chave no Vault: `wa_evolution_url`, `wa_evolution_chave`) e registra cada envio em `wa_envios`.
