@@ -280,7 +280,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {proximo && (
               <section className="es-bloco">
                 <div className="es-bloco-cabeca">
-                  <h2>Primeiros passos</h2>
+                  <h2><Icone nome="passos" />Primeiros passos</h2>
                   <span className="muted">{feitos} de {passos.length} feitos</span>
                 </div>
                 <div className="es-barra" aria-hidden="true"><i style={{ width: `${(feitos / passos.length) * 100}%` }} /></div>
@@ -325,7 +325,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 
             {/* 1. Precisa de atenção */}
             <section className="es-bloco">
-              <div className="es-bloco-cabeca"><h2>Precisa de atenção</h2>{alertas.length > 5 && <span className="muted">5 de {alertas.length}</span>}</div>
+              <div className="es-bloco-cabeca"><h2><Icone nome="atencao" />Precisa de atenção</h2>{alertas.length > 5 && <span className="muted">5 de {alertas.length}</span>}</div>
               {alertas.length === 0 ? (
                 <p className="es-tudo-certo">✓ Nada pendente. Olhamos contratos de experiência, afastamentos, prazos de admissão e desligamento, fechamento da folha e certificados.</p>
               ) : (
@@ -360,7 +360,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {/* 3. Folha do mês */}
             <section className="es-bloco">
               <div className="es-bloco-cabeca">
-                <h2>Folha do mês</h2>
+                <h2><Icone nome="folha" />Folha do mês</h2>
                 <Ajuda texto="Todo mês o contador envia a folha ao governo e a 'fecha' até o dia 15. Depois disso saem as guias de INSS (DCTFWeb) e FGTS (FGTS Digital), que vencem no dia 20." />
               </div>
               <ul className="es-folhas">
@@ -385,7 +385,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {/* 3b. Calendário do mês */}
             <section className="es-bloco">
               <div className="es-bloco-cabeca">
-                <h2>Calendário de {nomeMes(hoje().slice(0, 7))}</h2>
+                <h2><Icone nome="calendario" />Calendário de {nomeMes(hoje().slice(0, 7))}</h2>
                 <Ajuda texto="As datas fixas do mês para o empregador: pagamento, prazo do contador no eSocial, declaração do INSS e guias. O que já aconteceu fica marcado com ✓." />
               </div>
               <ol className="es-calendario">
@@ -406,7 +406,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {/* 4. Equipe */}
             <section className="es-bloco" id="es-equipe">
               <div className="es-bloco-cabeca">
-                <h2>Equipe</h2>
+                <h2><Icone nome="equipe" />Equipe</h2>
                 <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
                   <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
                 </button>
@@ -440,7 +440,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                         <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
                         <span className="es-pessoa-nome">
                           <strong>{p.nome || "Nome ainda não lido"}</strong>
-                          <span className="muted">{[titulo(p.cargo), p.unidade || (filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : ""), cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}</span>
+                          <span className="muted">
+                            {p.unidade && <span className="es-unidade">{p.unidade}</span>}
+                            {[titulo(p.cargo), !p.unidade && filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
+                          </span>
                         </span>
                         <span className="es-pessoa-desde muted">{p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}</span>
                         <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
@@ -455,7 +458,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {/* 5. Configurações e área técnica */}
             <details className="es-bloco es-tecnico" id="es-tecnico" open={tecnicoAberto} onToggle={(e) => setTecnicoAberto((e.target as HTMLDetailsElement).open)}>
               <summary>
-                <span><strong>Configurações e área técnica</strong> <span className="muted">· certificado, leitura automática, eventos do jeito que o governo guarda</span></span>
+                <span><Icone nome="tecnico" /><strong>Configurações e área técnica</strong> <span className="muted">· certificado, leitura automática, eventos do jeito que o governo guarda</span></span>
               </summary>
               {tecnicoAberto && (
                 <AreaTecnica empresas={empresas} empresaInicial={filtroEmpresa === "todas" ? empresas[0]?.id ?? null : filtroEmpresa}
@@ -483,6 +486,24 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 // Peças pequenas
 // ---------------------------------------------------------------------
 const iniciais = (nome: string) => (nome ? nome.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() : "?");
+
+// Ícones leves dos blocos (traço fino, no estilo dos painéis de RH)
+const ICONES: Record<string, string> = {
+  passos: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+  atencao: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z",
+  folha: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",
+  calendario: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+  equipe: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+  tecnico: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
+  livro: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z",
+};
+function Icone({ nome }: { nome: keyof typeof ICONES }) {
+  return (
+    <span className="es-icone" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={ICONES[nome]} /></svg>
+    </span>
+  );
+}
 
 function Olho({ aberto }: { aberto: boolean }) {
   return (
@@ -666,7 +687,7 @@ function Glossario() {
   ];
   return (
     <details className="es-bloco es-glossario">
-      <summary><strong>Glossário</strong> <span className="muted">· o que quer dizer cada termo</span></summary>
+      <summary><Icone nome="livro" /><strong>Glossário</strong> <span className="muted">· o que quer dizer cada termo</span></summary>
       <dl>
         {termos.map(([t, d]) => (
           <div key={t}><dt>{t}</dt><dd>{d}</dd></div>
