@@ -45,7 +45,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Agenda `totvs-diario` (pg_cron) às 6h de Fortaleza puxa o dia anterior de cada unidade e repete dias que falharam na semana.
 - Unidades em `totvs_unidades` (loja e chave TOTVS). Unidade sem loja não é extraída: nunca usa a loja de outra.
 - Usuário, senha e seriais ficam só no Vault (`totvs_usuario`, `totvs_senha`, `totvs_serial_<unidade>`). Nunca no GitHub nem no chat. O documento técnico está em `privado/`.
-- Quem vê: só quem está em `totvs_acesso`. Site: Menu → TOTVS (só o fluxograma da integração e as unidades; os números ficam no banco e no conector). Conector: `totvs_unidades`, `totvs_vendas`, `totvs_extrair` e o método em `guia_vendas` (lib/vendas.ts; skill em .claude/skills/vendas-totvs). Esquema em supabase/totvs.sql.
+- Quem vê: só quem está em `totvs_acesso`. Site: Menu → TOTVS (painel das unidades no estilo do dashboard do Cicchetti Management, com o fluxograma da integração recolhido no fim; a API só libera os últimos ~11 dias, dias mais antigos voltam HTTP 403). Conector: `totvs_unidades`, `totvs_vendas`, `totvs_extrair` e o método em `guia_vendas` (lib/vendas.ts; skill em .claude/skills/vendas-totvs). Esquema em supabase/totvs.sql.
 - Conferências que não batem deixam o dia como "revisar"; nunca ajuste números em silêncio. Notas fiscais/CMV ainda não estão integradas.
 
 ## Cicchetti Management (API externa)
