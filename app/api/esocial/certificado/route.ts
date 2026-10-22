@@ -1,5 +1,5 @@
-// Recebe o certificado A1 (.pfx + senha) de um sócio logado, confere e guarda no Vault
-// (função esocial_guardar_certificado, que também cria ou atualiza a empresa pela raiz do CNPJ).
+// Recebe o certificado A1 (.pfx + senha) de um sócio logado, confere e guarda no Vault, um por CNPJ
+// (função esocial_guardar_certificado, supabase/certificados.sql): a matriz é a usada pelo eSocial; filial fica à parte.
 // A senha só é usada para abrir o arquivo; não é guardada nem registrada.
 import { createClient } from "@/lib/supabase/server";
 import { lerPfx } from "@/lib/esocial/certificado";

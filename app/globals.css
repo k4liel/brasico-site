@@ -1284,3 +1284,11 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
   .cert-dados { grid-template-columns: 1fr; gap: 2px; }
   .cert-dados dd { margin-bottom: 6px; }
 }
+.cert-item { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.cert-item strong { font-size: 14.5px; }
+.cert-falta { grid-template-columns: auto 1fr auto; align-items: center; font-size: 14px; border-style: dashed; }
+.cert-tipo { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); }
+.cert-tipo.matriz { color: var(--on-primary); background: var(--primary); border-color: var(--primary); }
+@media (max-width: 560px) {
+  .cert-falta { grid-template-columns: 1fr; }
+}

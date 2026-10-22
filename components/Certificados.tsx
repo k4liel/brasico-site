@@ -4,12 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 
-// Certificados digitais (e-CNPJ A1) das empresas: um por raiz do CNPJ, guardado no Vault
-// (esocial_cert_<raiz>). São usados pelo eSocial e pela Receita Federal.
-type Empresa = {
-  id: string; nome: string; cnpj: string | null; cert_titular: string | null; cert_cnpj: string | null;
-  cert_emissor: string | null; cert_validade: string | null; cert_atualizado_em: string | null; cert_atualizado_por: string | null;
+// Certificados digitais (e-CNPJ A1): um por CNPJ completo (tabela certificados, supabase/certificados.sql).
+// O da matriz (final 0001) é o que o eSocial e a Receita Federal usam; o de uma filial fica guardado
+// à parte e nunca substitui o da matriz.
+type Certificado = {
+  cnpj: string; raiz: string; matriz: boolean; nome: string; titular: string | null; emissor: string | null;
+  validade: string; atualizado_em: string; atualizado_por: string | null;
 };
+type Empresa = { id: string; nome: string };
+type Grupo = { raiz: string; nome: string; certs: Certificado[] };
 
 const dia = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 const dataHora = (iso: string) =>
@@ -17,29 +20,31 @@ const dataHora = (iso: string) =>
 const cnpjMask = (c: string | null) => (c ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : "");
 const diasAte = (iso: string) => Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);
 
-function situacao(e: Empresa): { texto: string; classe: string } {
-  if (!e.cert_validade) return { texto: "Sem certificado", classe: "tv-falha" };
-  const d = diasAte(e.cert_validade);
-  if (d < 0) return { texto: `Venceu em ${dia(e.cert_validade)}`, classe: "tv-falha" };
+function situacao(validade: string): { texto: string; classe: string } {
+  const d = diasAte(validade);
+  if (d < 0) return { texto: `Venceu em ${dia(validade)}`, classe: "tv-falha" };
   if (d <= 30) return { texto: `Vence em ${d} dia${d === 1 ? "" : "s"}`, classe: "tv-revisar" };
-  return { texto: `Válido até ${dia(e.cert_validade)}`, classe: "tv-ok" };
+  return { texto: `Válido até ${dia(validade)}`, classe: "tv-ok" };
 }
 
 export default function Certificados({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [acesso, setAcesso] = useState<boolean | null>(null);
+  const [certs, setCerts] = useState<Certificado[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [nomes, setNomes] = useState<Record<string, string>>({});
   const [carregado, setCarregado] = useState(false);
   const [aviso, setAviso] = useState("");
 
   const carregar = useCallback(async () => {
-    const { data } = await supabase.from("esocial_empresas")
-      .select("id,nome,cnpj,cert_titular,cert_cnpj,cert_emissor,cert_validade,cert_atualizado_em,cert_atualizado_por")
-      .order("ordem").order("nome");
-    const lista = (data ?? []) as Empresa[];
-    setEmpresas(lista);
-    const uids = [...new Set(lista.map((e) => e.cert_atualizado_por).filter(Boolean))] as string[];
+    const [c, e] = await Promise.all([
+      supabase.from("certificados").select("cnpj,raiz,matriz,nome,titular,emissor,validade,atualizado_em,atualizado_por").order("cnpj"),
+      supabase.from("esocial_empresas").select("id,nome").order("ordem").order("nome"),
+    ]);
+    const lista = (c.data ?? []) as Certificado[];
+    setCerts(lista);
+    setEmpresas((e.data ?? []) as Empresa[]);
+    const uids = [...new Set(lista.map((x) => x.atualizado_por).filter(Boolean))] as string[];
     if (uids.length) {
       const { data: perfis } = await supabase.from("profiles").select("id,email,display_name").in("id", uids);
       const r: Record<string, string> = {};
@@ -60,8 +65,22 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
     })();
   }, [supabase, userId, carregar]);
 
-  function pronto(nome: string) {
-    setAviso(`Certificado de ${nome} guardado.`);
+  // Uma caixa por empresa (raiz do CNPJ): matriz primeiro, depois as filiais
+  const grupos = useMemo(() => {
+    const g = new Map<string, Grupo>();
+    for (const e of empresas) g.set(e.id, { raiz: e.id, nome: e.nome, certs: [] });
+    for (const c of certs) {
+      if (!g.has(c.raiz)) g.set(c.raiz, { raiz: c.raiz, nome: c.nome, certs: [] });
+      g.get(c.raiz)!.certs.push(c);
+    }
+    for (const x of g.values()) x.certs.sort((a, b) => Number(b.matriz) - Number(a.matriz) || a.cnpj.localeCompare(b.cnpj));
+    return [...g.values()];
+  }, [certs, empresas]);
+
+  function pronto(r: { nome: string; cnpj?: string; matriz?: boolean }) {
+    setAviso(r.matriz === false
+      ? `Certificado da filial ${cnpjMask(r.cnpj ?? "")} (${r.nome}) guardado. O da matriz continua o mesmo.`
+      : `Certificado da matriz de ${r.nome} guardado.`);
     carregar();
   }
 
@@ -87,56 +106,59 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
         <div className="es-topo">
           <div>
             <h1>Certificados digitais</h1>
-            <p className="muted">O e-CNPJ A1 de cada empresa. É com ele que o Brasico lê o eSocial e a Receita Federal.</p>
+            <p className="muted">Os e-CNPJ A1 da matriz e das filiais. O da matriz é o que o Brasico usa para ler o eSocial e a Receita Federal.</p>
           </div>
         </div>
 
-        {/* Único lugar de envio: a empresa é reconhecida pelo CNPJ do arquivo (nova ou troca) */}
+        {/* Único lugar de envio: o CNPJ do arquivo diz de qual empresa e se é matriz ou filial */}
         <EnviarCertificado onPronto={pronto} />
         {aviso && <p className="es-aviso">{aviso}</p>}
 
         {!carregado ? (
           <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
-        ) : empresas.length === 0 ? (
+        ) : grupos.length === 0 ? (
           <section className="es-bloco">
             <p>Nenhum certificado ainda. Envie o arquivo .pfx de uma empresa para começar.</p>
           </section>
         ) : (
           <div className="cert-lista">
-            {empresas.map((e) => {
-              const s = situacao(e);
-              const filial = !!e.cert_cnpj && e.cert_cnpj.slice(8, 12) !== "0001";
+            {grupos.map((g) => {
+              const temMatriz = g.certs.some((c) => c.matriz);
               return (
-                <section key={e.id} className="es-bloco cert-cartao">
+                <section key={g.raiz} className="es-bloco cert-cartao">
                   <div className="es-linha">
-                    <div>
-                      <strong className="es-nome">{e.nome}</strong>
-                      {e.cnpj && <span className="muted"> · CNPJ {cnpjMask(e.cnpj)}</span>}
+                    <strong className="es-nome">{g.nome}</strong>
+                    <span className="muted">{g.certs.length} certificado{g.certs.length === 1 ? "" : "s"}</span>
+                  </div>
+                  {!temMatriz && (
+                    <div className="cert-item cert-falta">
+                      <span className="cert-tipo">Matriz</span>
+                      <span>Sem o certificado da matriz. Sem ele o eSocial e a Receita Federal não funcionam para esta empresa.</span>
+                      <button className="ghost small" onClick={irParaEnvio}>Enviar</button>
                     </div>
-                    <span className={`estado ${s.classe}`}>{s.texto}</span>
-                  </div>
-                  {e.cert_validade ? (
-                    <dl className="cert-dados">
-                      {e.cert_titular && <><dt>Titular</dt><dd>{e.cert_titular}</dd></>}
-                      {e.cert_cnpj && <><dt>CNPJ do certificado</dt><dd>{cnpjMask(e.cert_cnpj)}{filial ? " (filial)" : " (matriz)"}</dd></>}
-                      {e.cert_emissor && <><dt>Emitido por</dt><dd>{e.cert_emissor}</dd></>}
-                      <dt>Validade</dt><dd>{dia(e.cert_validade)}</dd>
-                      {e.cert_atualizado_em && (
-                        <><dt>Enviado</dt><dd>{dataHora(e.cert_atualizado_em)}{e.cert_atualizado_por && nomes[e.cert_atualizado_por] ? ` · ${nomes[e.cert_atualizado_por]}` : ""}</dd></>
-                      )}
-                      <dt>Usado em</dt><dd>RH · eSocial e Receita Federal</dd>
-                    </dl>
-                  ) : (
-                    <p className="muted">Esta empresa ainda não tem certificado.</p>
                   )}
-                  {filial && (
-                    <p className="es-aviso">Este certificado é de uma filial. O eSocial só libera os dados dos funcionários com o e-CNPJ da matriz (final 0001).</p>
-                  )}
-                  <div className="es-acoes">
-                    <button className="ghost small" onClick={irParaEnvio}>
-                      {e.cert_validade ? "Trocar certificado" : "Enviar certificado"}
-                    </button>
-                  </div>
+                  {g.certs.map((c) => {
+                    const s = situacao(c.validade);
+                    return (
+                      <div key={c.cnpj} className="cert-item">
+                        <div className="es-linha">
+                          <div>
+                            <span className={c.matriz ? "cert-tipo matriz" : "cert-tipo"}>{c.matriz ? "Matriz" : "Filial"}</span>
+                            <strong>CNPJ {cnpjMask(c.cnpj)}</strong>
+                          </div>
+                          <span className={`estado ${s.classe}`}>{s.texto}</span>
+                        </div>
+                        <dl className="cert-dados">
+                          {c.titular && <><dt>Titular</dt><dd>{c.titular}</dd></>}
+                          {c.emissor && <><dt>Emitido por</dt><dd>{c.emissor}</dd></>}
+                          <dt>Enviado</dt>
+                          <dd>{dataHora(c.atualizado_em)}{c.atualizado_por && nomes[c.atualizado_por] ? ` · ${nomes[c.atualizado_por]}` : ""}</dd>
+                          <dt>Usado em</dt>
+                          <dd>{c.matriz ? "RH · eSocial e Receita Federal" : "Guardado (ainda não usado pelo site)"}</dd>
+                        </dl>
+                      </div>
+                    );
+                  })}
                 </section>
               );
             })}
@@ -144,15 +166,15 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
         )}
 
         <p className="muted es-nota">
-          O arquivo fica guardado no cofre do Supabase; a senha só é usada para abrir o arquivo e não é guardada.
-          Um certificado por empresa (raiz do CNPJ). Para renovar, compre o novo na certificadora e envie no quadro acima.
+          Cada CNPJ tem o seu certificado: o de uma filial nunca substitui o da matriz. Enviar de novo o mesmo CNPJ troca só aquele
+          (é assim que se renova). O arquivo fica no cofre do Supabase; a senha só é usada para abrir o arquivo e não é guardada.
         </p>
       </main>
     </div>
   );
 }
 
-function EnviarCertificado({ onPronto }: { onPronto: (nome: string) => void }) {
+function EnviarCertificado({ onPronto }: { onPronto: (r: { nome: string; cnpj?: string; matriz?: boolean }) => void }) {
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [senha, setSenha] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -161,6 +183,7 @@ function EnviarCertificado({ onPronto }: { onPronto: (nome: string) => void }) {
   async function enviar(ev: React.FormEvent) {
     ev.preventDefault();
     if (!arquivo) return;
+    const form = ev.currentTarget as HTMLFormElement;
     setEnviando(true);
     setErro("");
     const fd = new FormData();
@@ -171,15 +194,15 @@ function EnviarCertificado({ onPronto }: { onPronto: (nome: string) => void }) {
     setSenha("");
     if (r.erro) return setErro(r.erro);
     setArquivo(null);
-    (ev.target as HTMLFormElement).reset();
-    onPronto(r.nome ?? "a empresa");
+    form.reset();
+    onPronto({ nome: r.nome ?? "a empresa", cnpj: r.cnpj, matriz: r.matriz });
   }
 
   return (
     <section className="es-bloco es-certificado cert-envio" id="cert-envio">
       <h2>Enviar ou trocar certificado</h2>
-      <p className="muted">Escolha o arquivo .pfx (ou .p12) e digite a senha. A empresa é reconhecida pelo CNPJ do certificado:
-        se ela já tem um, o novo substitui o antigo.</p>
+      <p className="muted">Escolha o arquivo .pfx (ou .p12) e digite a senha. O CNPJ do certificado diz de qual empresa ele é
+        e se é da matriz ou de uma filial; cada um fica guardado separado.</p>
       <form className="es-form" onSubmit={enviar}>
         <input type="file" accept=".pfx,.p12,application/x-pkcs12" onChange={(v) => setArquivo(v.target.files?.[0] ?? null)} aria-label="Arquivo do certificado" />
         <input type="password" value={senha} onChange={(v) => setSenha(v.target.value)} placeholder="Senha do certificado" autoComplete="off" aria-label="Senha do certificado" />
