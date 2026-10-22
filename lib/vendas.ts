@@ -21,21 +21,22 @@ Passo a passo de um pedido
 4. Responda com os números e diga de onde vieram (unidade, dia, status).
 
 O que cada número quer dizer (campo resumo)
-- total: faturamento do dia = itens (já com desconto) + taxa de serviço + acréscimos + entrega. É o número principal.
+- total: faturamento do dia = soma do total de cada venda na TOTVS (subtotal com taxa de serviço − descontos + acréscimos), já sem o troco. É o número principal.
 - vendas (vendas_ativas), pessoas e ticket médio (total ÷ pessoas).
-- valor_produtos: produtos sem a taxa de serviço; comida e bebida vêm do grupo do produto na TOTVS (outros = grupo que não é COMIDA nem BEBIDA).
+- valor_produtos: produtos sem a taxa de serviço, somando os itens; comida e bebida vêm do grupo do produto na TOTVS (outros = grupo que não é COMIDA nem BEBIDA). Descontos grandes (consumo interno) às vezes não chegam inteiros aos itens, então os itens podem passar um pouco do total: use comida × bebida como proporção.
 - itens_taxa_servico (ou servico): a taxa de serviço.
 - descontos: o desconto dado (já está abatido nos itens; não subtraia de novo).
 - pagamentos_caixa: o que entrou no caixa (cartões, PIX, dinheiro). assinadas e cortesias ficam fora do caixa.
 - pagamentos_total = caixa + assinadas + cortesias. Deve bater com o total.
 - troco_nos_pagamentos: troco que a TOTVS somou ao pagamento e foi tirado (o caixa às vezes registra o valor entregue pelo cliente).
-- total_totvs: o "ValorTotal" cru da TOTVS, guardado só para conferência (às vezes vem com o troco subtraído).
+- total_totvs: o "ValorTotal" cru da TOTVS, guardado só para conferência (às vezes vem com o troco tirado ou somado).
 - sangrias, fechamento_sistema e fechamento_recebido: sangrias e fechamento de caixa do dia.
 - vendas_canceladas e itens_cancelados: cancelamentos (a lista está em cancelados).
 
 Status do dia
-- ok: tudo conferido.
-- revisar: alguma conferência não bateu (veja divergencias). Diga isso ao usuário com a diferença em reais. Nunca esconda nem "ajuste" a diferença.
+- ok: o que foi pago bate com o que foi vendido, venda por venda.
+- revisar: o pago não bateu com o vendido (veja divergencias). Diga isso ao usuário com a diferença em reais. Nunca esconda nem "ajuste" a diferença.
+- avisos (no detalhe do dia): diferenças internas da TOTVS que não mudam o faturamento (taxa de serviço arredondada nos itens, desconto fora dos itens, item sem garçom). Não marcam o dia; só mencione se o usuário perguntar por esses detalhes.
 - sem_movimento: a TOTVS não tem vendas nesse dia (loja fechada).
 - falha (na extração): a TOTVS não respondeu ou recusou. Mostre o erro e ofereça tentar de novo com totvs_extrair. Uma falha nunca é "dia sem vendas".
 

@@ -189,9 +189,12 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     }
     for (const a of atendentesDaVenda) garcons.get(a)!.vendas += 1;
 
-    // Valor da venda: itens (já com desconto) + taxa de serviço + acréscimos + entrega.
-    // O ValorTotal da TOTVS às vezes vem com o troco subtraído; fica guardado em total_totvs.
-    pv.valor = pv.itens + (pv.taxa_item || pv.servico) + pv.acrescimos + n(t.ValorTotalTaxaEntrega);
+    // Valor da venda: o ValorTotal da TOTVS. A soma dos itens não serve: descontos grandes (consumo interno,
+    // desconto na conta) nem sempre chegam inteiros aos itens. Quando há troco, a TOTVS às vezes tira ou soma
+    // o troco no ValorTotal; aí vale a conta do totalizador (subtotal − descontos + acréscimos + entrega).
+    const conta = pv.subtotal - pv.descontos + pv.acrescimos + n(t.ValorTotalTaxaEntrega);
+    const trocoNoTotal = pv.troco > 0 && [pv.total_totvs + pv.troco, pv.total_totvs - pv.troco].some((x) => Math.abs(conta - x) <= 0.01);
+    pv.valor = trocoNoTotal ? conta : pv.total_totvs;
     s.total += pv.valor;
 
     const pags = (Array.isArray(v.Pagamentos) ? v.Pagamentos : []).map((pg: J) => ({
@@ -201,7 +204,7 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     }));
     // Troco embutido: pagamentos passam do valor da venda exatamente pelo troco. Sai do dinheiro (ou do último pagamento).
     const excesso = r2(pags.reduce((a: number, x: J) => a + x.valor, 0) - pv.valor);
-    if (excesso > 0.009 && pv.troco > 0 && Math.abs(excesso - pv.troco) <= 0.01) {
+    if (pv.troco > 0 && Math.abs(excesso - pv.troco) <= 0.01) {
       const alvo = pags.find((x: J) => /DINHEIRO/i.test(x.descricao) && x.valor >= excesso) ?? pags[pags.length - 1];
       alvo.valor -= excesso;
       pv.troco_nos_pagamentos = excesso;
@@ -263,21 +266,32 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
 
   for (const k of Object.keys(s) as (keyof typeof s)[]) s[k] = r2(s[k]);
 
-  // Conferências mínimas: divergência vira "revisar", nunca é ajustada em silêncio
+  // Conferências: o que foi vendido tem de bater com o que foi pago. Divergência vira "revisar",
+  // nunca é ajustada em silêncio.
   const divergencias: J[] = [];
   const conferir = (nome: string, a: number, b: number) => {
     const dif = r2(a - b);
     if (Math.abs(dif) > TOLERANCIA) divergencias.push({ conferencia: nome, a: r2(a), b: r2(b), diferenca: dif });
   };
   conferir("Total das vendas × soma dos pagamentos", s.total, s.pagamentos_total);
-  if (s.itens_taxa_servico && s.servico) conferir("Taxa de serviço nos itens × no totalizador da TOTVS", s.itens_taxa_servico, s.servico);
-  // Vendas cujo total na TOTVS não se explica pelos itens nem pelo troco
-  const estranhas = porVenda.filter((x) => Math.abs(x.valor - x.total_totvs) > 0.01 && Math.abs(x.valor - x.total_totvs - x.troco) > 0.01);
-  if (estranhas.length) divergencias.push({ conferencia: "Vendas com total da TOTVS diferente dos itens", vendas: estranhas.map((x) => x.cupom),
-    valor: r2(estranhas.reduce((a, x) => a + x.valor - x.total_totvs, 0)) });
+  const naoPagas = porVenda.filter((x) => Math.abs(x.valor - x.pagamentos) > TOLERANCIA);
+  if (naoPagas.length) divergencias.push({ conferencia: "Vendas em que o pago não bate com o total", vendas: naoPagas.map((x) => x.cupom),
+    valor: r2(naoPagas.reduce((a, x) => a + x.valor - x.pagamentos, 0)) });
   if (fechamentos.length) conferir("Fechamento de caixa (sistema) × pagamentos do caixa", s.fechamento_sistema, s.pagamentos_caixa);
+
+  // Avisos: diferenças internas da TOTVS que não mudam o faturamento. Ficam registradas, mas não marcam o dia.
+  const avisos: J[] = [];
+  const avisar = (nome: string, a: number, b: number) => {
+    const dif = r2(a - b);
+    if (Math.abs(dif) > TOLERANCIA) avisos.push({ aviso: nome, a: r2(a), b: r2(b), diferenca: dif });
+  };
+  if (s.itens_taxa_servico && s.servico) avisar("Taxa de serviço nos itens × no totalizador da TOTVS", s.itens_taxa_servico, s.servico);
+  // Produtos, comida e bebida somam os itens; aqui fica o quanto os itens diferem do total das vendas
+  const itensDiferentes = porVenda.filter((x) => Math.abs(x.itens + (x.taxa_item || x.servico) + x.acrescimos - x.valor) > 0.01);
+  if (itensDiferentes.length) avisos.push({ aviso: "Vendas com itens diferentes do total da TOTVS (desconto fora dos itens)",
+    vendas: itensDiferentes.map((x) => x.cupom), valor: r2(itensDiferentes.reduce((a, x) => a + x.itens + (x.taxa_item || x.servico) + x.acrescimos - x.valor, 0)) });
   const semAtendente = [...garcons.values()].find((g) => g.nome === "Sem atendente");
-  if (semAtendente) divergencias.push({ conferencia: "Itens sem atendente no ranking", valor: r2(semAtendente.valor) });
+  if (semAtendente) avisos.push({ aviso: "Itens sem atendente no ranking", valor: r2(semAtendente.valor) });
 
   const ordenar = (m: Map<string, J>) =>
     [...m.values()].map((x) => ({ ...x, valor: r2(x.valor), ...(x.quantidade != null ? { quantidade: r2(x.quantidade) } : {}) }))
@@ -292,6 +306,7 @@ function normalizar(vendasResp: J, sangriasResp: J, fechResp: J) {
     fechamentos,
     cancelados,
     divergencias,
+    avisos,
     vendas: porVenda,
   };
 }
@@ -336,7 +351,7 @@ async function processar(execucaoId: string) {
       unidade_id: ex.unidade_id, dia: ex.dia, status,
       vendas: d.resumo.vendas_ativas, pessoas: d.resumo.pessoas, total: d.resumo.total,
       resumo: d.resumo, produtos: d.produtos, pagamentos: d.pagamentos, garcons: d.garcons,
-      sangrias: d.sangrias, fechamentos: d.fechamentos, cancelados: d.cancelados, divergencias: d.divergencias,
+      sangrias: d.sangrias, fechamentos: d.fechamentos, cancelados: d.cancelados, divergencias: d.divergencias, avisos: d.avisos,
       vendas_detalhe: d.vendas, execucao_id: ex.id, atualizado_em: new Date().toISOString(),
     }, { onConflict: "unidade_id,dia" });
     if (error) throw new Error(`gravação: ${error.message}`);
