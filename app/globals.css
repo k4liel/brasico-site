@@ -1295,3 +1295,14 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 @media (max-width: 560px) {
   .cert-falta { grid-template-columns: 1fr; }
 }
+
+/* Receita Federal: aviso de fase de teste (dados não reais) */
+.rf-teste { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; margin-bottom: 16px; border-radius: 14px;
+  border: 2px solid #d97706; background: color-mix(in srgb, #f59e0b 16%, var(--panel)); color: var(--strong); }
+.rf-teste strong { display: block; font-size: 17px; letter-spacing: .02em; color: #b45309; }
+.rf-teste p { margin: 6px 0 0; font-size: 14px; line-height: 1.5; }
+.rf-teste-icone { font-size: 28px; line-height: 1; color: #d97706; }
+.rf-selo { display: inline-block; margin-right: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; vertical-align: middle; color: #fff; background: #d97706; }
+.rf-selo-grande { margin: 0 0 0 10px; font-size: 12px; padding: 3px 10px; }
+:root[data-theme="dark"] .rf-teste strong { color: #fbbf24; }
