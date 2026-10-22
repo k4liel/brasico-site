@@ -229,7 +229,6 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const anteriorCompleto = limiteDia > 0 && anteriorAteDia.length >= Math.ceil(limiteDia * 0.9);
   const escala = escalaBonita(maxDia);
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
-  const idxMes = meses.indexOf(mes);
   const anos = Array.from(new Set(meses.map((m) => m.slice(0, 4)))).sort();
   const mix = [
     { nome: "Comida", valor: s.comida, cor: "tp-cor-comida" },
@@ -245,11 +244,6 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           <div>
             <span className="tp-sobre">TOTVS · Chef Web</span>
             <h1>Vendas das unidades</h1>
-          </div>
-          <div className="tp-meses" role="group" aria-label="Mês">
-            <button className="tp-seta" aria-label="Mês anterior" disabled={idxMes < 0 || idxMes >= meses.length - 1} onClick={() => setMes(meses[idxMes + 1])}>‹</button>
-            <span className="tp-mes-atual">{maiuscula(nomeMes(mes))}</span>
-            <button className="tp-seta" aria-label="Próximo mês" disabled={idxMes <= 0} onClick={() => setMes(meses[idxMes - 1])}>›</button>
           </div>
         </header>
 
