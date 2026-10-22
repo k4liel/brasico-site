@@ -358,7 +358,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
               <Numero rotulo="Afastados agora" valor={String(numeros.ferias + numeros.afastados)} detalhe={`${numeros.ferias} de férias · ${numeros.afastados} por outros motivos`}
                 ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => verFiltro("Afastados")} />
               <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
-                detalhe={numeros.rotatividade == null ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Restaurantes: 73% a 78% ao ano"}
+                detalhe={numeros.rotatividade != null ? "Restaurantes: 73% a 78% ao ano" : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
                 ajuda="Quanto da equipe foi trocada no ano: média de entradas e saídas dividida pelo número de pessoas. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
               <Numero rotulo="Saíram antes de 90 dias" valor={String(numeros.cedo)} detalhe={`de ${numeros.saidasAno} saídas no ano · ${numeros.pediram} pediram para sair`}
                 ajuda="Gente que saiu nos primeiros 3 meses. Número alto costuma indicar problema na contratação ou no treinamento." onClick={() => verFiltro("Saíram")} />
