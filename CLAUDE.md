@@ -32,6 +32,12 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Nada se apaga: itens e listas são arquivados.
 - Pelo conector: `listar_listas`, `ver_lista`, `criar_lista`, `adicionar_item`, `atualizar_item` e o método em `guia_brainstorm` (lib/brainstorm.ts; skill em .claude/skills/brainstorm).
 
+## Receita Federal (Integra Contador do SERPRO)
+- API oficial da Receita (o que se faz no e-CAC): caixa postal, situação fiscal e pagamentos; guias e declarações depois. Só CNPJ próprio, sem procuração.
+- Mesmo desenho do eSocial: pedido em `receita_execucoes` → banco chama `/api/receita` → resultado em `receita_mensagens`, `receita_relatorios`, `receita_pagamentos`. Custo de cada chamada em `receita_chamadas` (supabase/receita.sql; código em lib/receita).
+- Usa o certificado A1 do eSocial (Vault `esocial_cert_<raiz>`). Chaves do contrato do SERPRO só no Vault (`receita_serpro_<raiz>`), nunca no site ou no GitHub.
+- Ambiente `demonstracao` (grátis, dados de mentira) e `producao` (cobrado por chamada; só com `receita_empresas.producao_ligada`).
+
 ## Trabalhando nos projetos pelo conector
 - Leia o capítulo antes de alterar e envie a `versao` lida em `atualizar_nota`. Se a gravação for recusada porque o capítulo mudou, leia de novo e junte as mudanças. Nunca descarte o trabalho do outro.
 - Antes de uma mudança grande, olhe `ver_atividade` (o painel Mudanças do site).
