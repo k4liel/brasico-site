@@ -956,9 +956,9 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tp-mix-barra i:first-child { border-radius: 4px 0 0 4px; }
 .tp-mix-barra i:last-child { border-radius: 0 4px 4px 0; }
 .tp-mix-barra i:only-child { border-radius: 4px; }
-.comida { background: var(--tp-ouro); }
-.bebida { background: var(--tp-azul); }
-.outros { background: var(--tp-verde); }
+.tp-cor-comida { background: var(--tp-ouro); }
+.tp-cor-bebida { background: var(--tp-azul); }
+.tp-cor-outros { background: var(--tp-verde); }
 .tp-legenda { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 26px; font-size: 13.5px; color: var(--text); }
 .tp-legenda li { display: flex; align-items: center; gap: 8px; }
 .tp-legenda li > i { width: 10px; height: 10px; border-radius: 3px; }
@@ -980,7 +980,7 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tp-coluna-n { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1; }
 .tp-coluna-n.fds { color: var(--strong); font-weight: 600; }
 .tp-ponto { display: inline-block; width: 5px; height: 5px; border-radius: 999px; background: var(--tp-alerta); }
-.tp-ponto.vazio { background: transparent; }
+.tp-ponto.off { background: transparent; }
 .tp-legenda-dias { margin: 14px 0 0; }
 .tp-legenda-dias .tp-ponto { margin: 0 4px 1px 0; vertical-align: middle; }
 

@@ -231,9 +231,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
   const idxMes = meses.indexOf(mes);
   const mix = [
-    { nome: "Comida", valor: s.comida, cor: "comida" },
-    { nome: "Bebida", valor: s.bebida, cor: "bebida" },
-    { nome: "Outros", valor: s.outros, cor: "outros" },
+    { nome: "Comida", valor: s.comida, cor: "tp-cor-comida" },
+    { nome: "Bebida", valor: s.bebida, cor: "tp-cor-bebida" },
+    { nome: "Outros", valor: s.outros, cor: "tp-cor-outros" },
   ].filter((x) => x.valor > 0);
 
   return (
@@ -311,7 +311,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
             ) : (
               <>
                 <section className="tp-painel tp-kpis">
-                  <Indicador rotulo="Faturamento" valor={reais(s.total)} nota={`${nDias} dia(s) com movimento`} />
+                  <Indicador rotulo="Média por dia" valor={reais(s.total / nDias)} nota={`${nDias} dia(s) com movimento`} />
                   <Indicador rotulo="Pessoas" valor={inteiro(s.pessoas)} nota={`${inteiro(s.pessoas / nDias)} por dia`} />
                   <Indicador rotulo="Ticket por pessoa" valor={s.pessoas ? reais(s.total / s.pessoas) : "—"} />
                   <Indicador rotulo="Cupons" valor={inteiro(s.vendas)} nota={`${inteiro(s.vendas / nDias)} por dia`} />
@@ -382,7 +382,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                               {d ? <i style={{ height: `${Math.max(1.5, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoPossivel ? <i className="falta" /> : null}
                             </span>
                             <span className={`tp-coluna-n${fds ? " fds" : ""}`}>{i + 1}</span>
-                            <span className={d?.status === "revisar" ? "tp-ponto" : "tp-ponto vazio"} />
+                            <span className={d?.status === "revisar" ? "tp-ponto" : "tp-ponto off"} />
                           </div>
                         );
                       })}
