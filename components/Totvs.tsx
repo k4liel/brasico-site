@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 
@@ -381,30 +381,40 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                         : `Média ${reais(s.total / nDias)} · melhor dia ${reais(maxDia)}`}
                     </span>
                   </div>
-                  <div className="tp-grafico">
-                    <div className="tp-eixo" aria-hidden="true">
-                      {[1, 0.5, 0].map((f) => <span key={f}>{f ? reaisCurto(escala * f) : "0"}</span>)}
+                  <div className="tp-grafico" style={{ "--tp-dias": diasNoMes(mes) } as CSSProperties}>
+                    <div className="tp-plot">
+                      {[1, 0.5, 0].map((f) => (
+                        <span key={f} className={f ? "tp-grade" : "tp-grade base"} style={{ bottom: `${f * 100}%` }} aria-hidden="true">
+                          <em>{f ? reaisCurto(escala * f) : "R$ 0"}</em>
+                        </span>
+                      ))}
+                      <span className="tp-media" style={{ bottom: `${(s.total / nDias / escala) * 100}%` }} aria-hidden="true" />
+                      <div className="tp-barras" role="list" onMouseLeave={() => setFoco(null)}>
+                        {Array.from({ length: diasNoMes(mes) }, (_, i) => {
+                          const dia = `${mes}-${String(i + 1).padStart(2, "0")}`;
+                          const d = ds.find((x) => x.dia === dia);
+                          return (
+                            <div key={dia} role="listitem" className={`tp-coluna${foco === dia ? " on" : ""}${d?.status === "revisar" ? " revisar" : ""}`}
+                              onMouseEnter={() => setFoco(dia)} onFocus={() => setFoco(dia)} onBlur={() => setFoco(null)} tabIndex={d ? 0 : -1}
+                              aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}${d.status === "revisar" ? ", para revisar" : ""}` : `${dataBr(dia)}: sem dados`}>
+                              {d ? <i style={{ height: `${Math.max(1, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoPossivel ? <i className="falta" /> : null}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="tp-barras" role="list" onMouseLeave={() => setFoco(null)}>
+                    <div className="tp-dias" aria-hidden="true">
                       {Array.from({ length: diasNoMes(mes) }, (_, i) => {
                         const dia = `${mes}-${String(i + 1).padStart(2, "0")}`;
-                        const d = ds.find((x) => x.dia === dia);
-                        const fds = [0, 6].includes(diaSemana(dia));
-                        return (
-                          <div key={dia} role="listitem" className={`tp-coluna${foco === dia ? " on" : ""}`}
-                            onMouseEnter={() => setFoco(dia)} onFocus={() => setFoco(dia)} onBlur={() => setFoco(null)} tabIndex={d ? 0 : -1}
-                            aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}` : `${dataBr(dia)}: sem dados`}>
-                            <span className="tp-coluna-area">
-                              {d ? <i style={{ height: `${Math.max(1.5, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoPossivel ? <i className="falta" /> : null}
-                            </span>
-                            <span className={`tp-coluna-n${fds ? " fds" : ""}`}>{i + 1}</span>
-                            <span className={d?.status === "revisar" ? "tp-ponto" : "tp-ponto off"} />
-                          </div>
-                        );
+                        const marco = i === 0 || (i + 1) % 5 === 0;
+                        return <span key={dia} className={`${[0, 6].includes(diaSemana(dia)) ? "fds" : ""}${marco ? " marco" : ""}`}>{i + 1}</span>;
                       })}
                     </div>
                   </div>
-                  <p className="tp-nota tp-legenda-dias"><span className="tp-ponto" /> dia para revisar · sábados e domingos em destaque</p>
+                  <p className="tp-nota tp-legenda-dias">
+                    <span className="tp-chave-media" /> média do mês · números em negrito: sábados e domingos
+                    {ds.some((d) => d.status === "revisar") && <> · <span className="tp-chave-revisar" /> dia para revisar</>}
+                  </p>
                 </section>
 
                 <div className="tp-duas">
