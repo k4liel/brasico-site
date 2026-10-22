@@ -7,6 +7,7 @@ import Topo from "./Topo";
 // Página TOTVS: painel das unidades (no estilo do dashboard do Cicchetti Management) com os dados
 // já puxados da TOTVS Chef Web (totvs_dias), e o desenho de como a integração funciona.
 type Unidade = { id: string; nome: string; loja: number | null; ativa: boolean; ordem: number };
+type Historico = { unidade_id: string; cursor: string; parado: boolean; motivo: string };
 type Produto = { nome: string; grupo: string; categoria: string; quantidade: number; valor: number };
 type Pagamento = { tipo: string; forma: string; valor: number; vezes: number };
 type Garcom = { nome: string; itens: number; valor: number; vendas: number };
@@ -32,8 +33,6 @@ const mesAnterior = (mes: string) => {
 };
 const nomeMes = (mes: string) => `${MESES[+mes.slice(5, 7) - 1]} de ${mes.slice(0, 4)}`;
 const r = (d: Dia, k: string) => Number(d.resumo?.[k] ?? 0);
-// A Chef Web API só libera os dias mais recentes (os mais antigos voltam com HTTP 403)
-const JANELA_DIAS = 16;
 
 function somar(dias: Dia[]) {
   const s = { total: 0, pessoas: 0, vendas: 0, servico: 0, comida: 0, bebida: 0, outros: 0, descontos: 0, cortesias: 0, assinadas: 0, sangrias: 0, itensCancelados: 0, cuponsCancelados: 0 };
@@ -79,6 +78,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const [unidade, setUnidade] = useState<string | null>(null);
   const [dias, setDias] = useState<Dia[] | null>(null);
   const [puxando, setPuxando] = useState("");
+  const [historico, setHistorico] = useState<Historico[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -89,13 +89,20 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
       const lista = ((u ?? []) as Unidade[]).filter((x) => x.ativa && x.loja != null);
       setUnidades(lista);
       setUnidade((atual) => atual ?? lista[0]?.id ?? null);
-      const { data: p } = await supabase.from("totvs_dias").select("dia").order("dia", { ascending: true }).limit(1);
-      const primeiro = (p?.[0]?.dia as string | undefined)?.slice(0, 7) ?? hojeFortaleza().slice(0, 7);
-      const ms: string[] = [];
-      for (let m = hojeFortaleza().slice(0, 7); m >= primeiro; m = mesAnterior(m)) ms.push(m);
-      setMeses(ms);
     })();
   }, [supabase, userId]);
+
+  // Meses com dados e andamento da busca do histórico (mudam enquanto o histórico chega)
+  const carregarMeses = useCallback(async () => {
+    if (!acesso) return;
+    const { data: p } = await supabase.from("totvs_dias").select("dia").order("dia", { ascending: true }).limit(1);
+    const primeiro = (p?.[0]?.dia as string | undefined)?.slice(0, 7) ?? hojeFortaleza().slice(0, 7);
+    const ms: string[] = [];
+    for (let m = hojeFortaleza().slice(0, 7); m >= primeiro; m = mesAnterior(m)) ms.push(m);
+    setMeses(ms);
+    const { data: h } = await supabase.from("totvs_historico").select("unidade_id,cursor,parado,motivo");
+    setHistorico((h ?? []) as Historico[]);
+  }, [supabase, acesso]);
 
   const carregar = useCallback(async () => {
     if (!acesso) return;
@@ -112,14 +119,21 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   }, [carregar]);
 
   useEffect(() => {
+    carregarMeses();
+  }, [carregarMeses]);
+
+  useEffect(() => {
     if (!acesso) return;
     const ch = supabase.channel("totvs-painel")
-      .on("postgres_changes", { event: "*", schema: "public", table: "totvs_dias" }, () => carregar())
+      .on("postgres_changes", { event: "*", schema: "public", table: "totvs_dias" }, () => {
+        carregar();
+        carregarMeses();
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [supabase, acesso, carregar]);
+  }, [supabase, acesso, carregar, carregarMeses]);
 
   if (acesso === false)
     return (
@@ -180,8 +194,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     (a, g, dia) => ({ ...g, itens: (a?.itens ?? 0) + Number(g.itens), valor: (a?.valor ?? 0) + Number(g.valor), vendas: (a?.vendas ?? 0) + Number(g.vendas), dias: new Set([...(a?.dias ?? []), dia]) }))
     .sort((a, b) => b.valor - a.valor).slice(0, 8);
 
-  const limiteApi = new Date(Date.parse(`${hoje}T12:00:00Z`) - JANELA_DIAS * 864e5).toISOString().slice(0, 10);
-  const puxaveis = faltam.filter((d) => d >= limiteApi);
+  const puxaveis = faltam;
+  const buscando = historico.filter((h) => !h.parado);
 
   // Um dia por vez: vários pedidos juntos fazem a TOTVS estourar o tempo
   async function puxarFaltantes() {
@@ -215,6 +229,14 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           </select>
         </div>
 
+        {buscando.length > 0 && (
+          <p className="tp-aviso">
+            Buscando o histórico na TOTVS, um dia por vez, de ontem para trás:{" "}
+            {buscando.map((h) => `${unidades.find((u) => u.id === h.unidade_id)?.nome ?? h.unidade_id} em ${dataBr(h.cursor)}/${h.cursor.slice(0, 4)}`).join(" · ")}.
+            Os meses aparecem aqui conforme chegam.
+          </p>
+        )}
+
         {/* Resumo de todas as unidades */}
         <section className="tp-unidades" aria-label="Resumo das unidades">
           {resumoUnidades.map(({ u, s: su, ds: dsu, ultimo, diasEsperados, revisar }) => (
@@ -244,7 +266,6 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
               <div className="tp-aviso">
                 <span>
                   Faltam {faltam.length} dia(s) deste mês{faltam.length <= 6 ? `: ${faltam.map(dataBr).join(", ")}` : ""}.
-                  {faltam.length > puxaveis.length && ` A TOTVS só libera pela API os últimos ${JANELA_DIAS} dias; antes de ${dataBr(limiteApi)} não dá para buscar.`}
                 </span>
                 {puxaveis.length > 0 && (
                   <button className="ghost small" onClick={puxarFaltantes} disabled={!!puxando && puxando.startsWith("Pedindo")}>Puxar {puxaveis.length} dia(s)</button>
