@@ -171,3 +171,6 @@ end $$;
 
 revoke execute on function public.mcp_cicchetti(text, text, text, date, date, text, text, int, uuid) from public, authenticated;
 grant execute on function public.mcp_cicchetti(text, text, text, date, date, text, text, int, uuid) to anon;
+
+-- O conector (papel anon) tem limite de 3 s por consulta; a API pode demorar mais.
+alter function public.mcp_cicchetti(text, text, text, date, date, text, text, int, uuid) set statement_timeout = '30s';
