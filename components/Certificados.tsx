@@ -31,7 +31,6 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [nomes, setNomes] = useState<Record<string, string>>({});
   const [carregado, setCarregado] = useState(false);
-  const [enviar, setEnviar] = useState<string | null>(null); // id da empresa, ou "nova"
   const [aviso, setAviso] = useState("");
 
   const carregar = useCallback(async () => {
@@ -62,9 +61,14 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
   }, [supabase, userId, carregar]);
 
   function pronto(nome: string) {
-    setEnviar(null);
     setAviso(`Certificado de ${nome} guardado.`);
     carregar();
+  }
+
+  function irParaEnvio() {
+    const q = document.getElementById("cert-envio");
+    q?.scrollIntoView({ behavior: "smooth", block: "start" });
+    q?.querySelector("input")?.focus({ preventScroll: true });
   }
 
   if (acesso === false) {
@@ -85,11 +89,11 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
             <h1>Certificados digitais</h1>
             <p className="muted">O e-CNPJ A1 de cada empresa. É com ele que o Brasico lê o eSocial e a Receita Federal.</p>
           </div>
-          <button className="small" onClick={() => setEnviar(enviar === "nova" ? null : "nova")}>Enviar certificado</button>
         </div>
 
+        {/* Único lugar de envio: a empresa é reconhecida pelo CNPJ do arquivo (nova ou troca) */}
+        <EnviarCertificado onPronto={pronto} />
         {aviso && <p className="es-aviso">{aviso}</p>}
-        {enviar === "nova" && <EnviarCertificado onFechar={() => setEnviar(null)} onPronto={pronto} />}
 
         {!carregado ? (
           <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
@@ -129,11 +133,10 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
                     <p className="es-aviso">Este certificado é de uma filial. O eSocial só libera os dados dos funcionários com o e-CNPJ da matriz (final 0001).</p>
                   )}
                   <div className="es-acoes">
-                    <button className="ghost small" onClick={() => setEnviar(enviar === e.id ? null : e.id)}>
+                    <button className="ghost small" onClick={irParaEnvio}>
                       {e.cert_validade ? "Trocar certificado" : "Enviar certificado"}
                     </button>
                   </div>
-                  {enviar === e.id && <EnviarCertificado onFechar={() => setEnviar(null)} onPronto={pronto} />}
                 </section>
               );
             })}
@@ -142,14 +145,14 @@ export default function Certificados({ userId, userEmail }: { userId: string; us
 
         <p className="muted es-nota">
           O arquivo fica guardado no cofre do Supabase; a senha só é usada para abrir o arquivo e não é guardada.
-          A empresa é reconhecida pelo CNPJ do certificado (um por raiz do CNPJ). Para renovar, compre o novo na certificadora e envie aqui.
+          Um certificado por empresa (raiz do CNPJ). Para renovar, compre o novo na certificadora e envie no quadro acima.
         </p>
       </main>
     </div>
   );
 }
 
-function EnviarCertificado({ onFechar, onPronto }: { onFechar: () => void; onPronto: (nome: string) => void }) {
+function EnviarCertificado({ onPronto }: { onPronto: (nome: string) => void }) {
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [senha, setSenha] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -168,17 +171,19 @@ function EnviarCertificado({ onFechar, onPronto }: { onFechar: () => void; onPro
     setSenha("");
     if (r.erro) return setErro(r.erro);
     setArquivo(null);
+    (ev.target as HTMLFormElement).reset();
     onPronto(r.nome ?? "a empresa");
   }
 
   return (
-    <section className="es-certificado cert-envio">
-      <p className="muted">Escolha o arquivo .pfx (ou .p12) e digite a senha do certificado.</p>
+    <section className="es-bloco es-certificado cert-envio" id="cert-envio">
+      <h2>Enviar ou trocar certificado</h2>
+      <p className="muted">Escolha o arquivo .pfx (ou .p12) e digite a senha. A empresa é reconhecida pelo CNPJ do certificado:
+        se ela já tem um, o novo substitui o antigo.</p>
       <form className="es-form" onSubmit={enviar}>
         <input type="file" accept=".pfx,.p12,application/x-pkcs12" onChange={(v) => setArquivo(v.target.files?.[0] ?? null)} aria-label="Arquivo do certificado" />
         <input type="password" value={senha} onChange={(v) => setSenha(v.target.value)} placeholder="Senha do certificado" autoComplete="off" aria-label="Senha do certificado" />
         <button className="small" disabled={!arquivo || enviando}>{enviando ? "Conferindo…" : "Guardar certificado"}</button>
-        <button type="button" className="ghost small" onClick={onFechar}>Cancelar</button>
       </form>
       {erro && <p className="tv-alerta">{erro}</p>}
     </section>

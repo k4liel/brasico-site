@@ -1279,7 +1279,7 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .cert-dados { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 14px; }
 .cert-dados dt { color: var(--muted); }
 .cert-dados dd { margin: 0; overflow-wrap: anywhere; }
-.cert-envio { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.cert-envio { display: grid; gap: 8px; scroll-margin-top: 80px; }
 @media (max-width: 560px) {
   .cert-dados { grid-template-columns: 1fr; gap: 2px; }
   .cert-dados dd { margin-bottom: 6px; }
