@@ -7,7 +7,13 @@ import { semDuplicatas } from "@/lib/historico";
 import Topo from "./Topo";
 
 type Projeto = { id: string; name: string; created_at: string; removido_em: string | null };
-type Info = { capitulos: number; quando: string | null; quem: string | null; claude: boolean };
+// "22/10/2026 às 14:35"
+const dataHora = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("pt-BR")} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+type Info ={ capitulos: number; quando: string | null; quem: string | null; claude: boolean };
 
 export default function Central({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = createClient();
@@ -46,7 +52,7 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     const nomeDe = (id: string) => {
       const p = (perfis ?? []).find((x: { id: string }) => x.id === id) as
         | { email: string | null; display_name: string | null } | undefined;
-      return id === userId ? "você" : p?.display_name || p?.email?.split("@")[0] || "alguém";
+      return p?.display_name || p?.email?.split("@")[0] || "Alguém";
     };
 
     const r: Record<string, Info> = {};
@@ -149,10 +155,17 @@ Para confirmar, digite o nome do projeto:`
                     {i ? `${i.capitulos} capítulo${i.capitulos === 1 ? "" : "s"}` : "…"}
                   </span>
                   {i?.quando && (
-                    <span className="small projeto-mudanca">
-                      Mudou {haQuanto(i.quando)}
-                      {i.quem ? ` · ${i.quem}` : ""}
-                      {i.claude && <span className="via">via Claude</span>}
+                    <span className="projeto-mudanca">
+                      <span className="projeto-avatar" aria-hidden>{(i.quem ?? "?").charAt(0).toUpperCase()}</span>
+                      <span className="projeto-quem">
+                        <span className="projeto-autor">
+                          {i.quem ?? "Alguém"} editou
+                          {i.claude && <span className="via">via Claude</span>}
+                        </span>
+                        <span className="projeto-data" title={haQuanto(i.quando)}>
+                          {dataHora(i.quando)} · {haQuanto(i.quando)}
+                        </span>
+                      </span>
                     </span>
                   )}
                 </a>
