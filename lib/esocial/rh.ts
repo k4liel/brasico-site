@@ -209,7 +209,7 @@ export function montarAlertas(empresas: EmpresaRH[], pessoas: Pessoa[], folhas: 
       const d = diasEntre(agora, e.cert_validade.slice(0, 10));
       if (d <= 30) a.push({ nivel: d <= 7 ? "erro" : "atencao", empresa_id: e.id, acao: "certificado",
         texto: d < 0 ? `O certificado da ${e.nome} venceu` : `O certificado da ${e.nome} vence em ${d} dia${d === 1 ? "" : "s"}`,
-        detalhe: "Sem ele a leitura para. Renove na certificadora e envie o novo arquivo em Configurações." });
+        detalhe: "Sem ele a leitura para. Renove na certificadora e envie o novo arquivo em Menu → Certificados digitais." });
     }
     if (!e.leitura_automatica) a.push({ nivel: "info", empresa_id: e.id, acao: "leitura",
       texto: `A leitura automática da ${e.nome} está desligada`, detalhe: "Ligue para os dados chegarem sozinhos todo dia." });

@@ -40,7 +40,6 @@ const horaCurta = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const dia = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 const cnpjMask = (c: string | null) => (c ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : "");
-const diasAte = (iso: string) => Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);
 const diaDoMes = () => Number(hoje().slice(8, 10));
 const reais = (v: string | null) => (v ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "");
 // "AUXILIAR DE COZINHA" → "Auxiliar de cozinha"; "SUB CHEFE I" → "Sub chefe I"
@@ -80,7 +79,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [aberta, setAberta] = useState<string | null>(null);
   const [verCpf, setVerCpf] = useState(false);
   const [tecnicoAberto, setTecnicoAberto] = useState(false);
-  const [painel, setPainel] = useState<"cpfs" | "historico" | "certificado" | null>(null);
+  const [painel, setPainel] = useState<"cpfs" | "historico" | null>(null);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState(false);
@@ -193,7 +192,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   }
 
   function agirPasso(id: string) {
-    if (id === "certificado") return setPainel("certificado");
+    if (id === "certificado") return (window.location.href = "/certificados");
     if (id === "cpfs") return setPainel("cpfs");
     if (id === "historico") return setPainel("historico");
     if (id === "teste") {
@@ -218,7 +217,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 
   function agirAlerta(a: Alerta) {
     if (a.pessoa) return setAberta(a.pessoa);
-    if (a.acao === "certificado") return setPainel("certificado");
+    if (a.acao === "certificado") return (window.location.href = "/certificados");
     if (a.acao === "leitura") return rodar(() => supabase.rpc("esocial_configurar", { p_empresa: a.empresa_id, p_leitura: true, p_limite: null, p_historico_desde: null }), "Leitura automática ligada.");
     if (a.acao === "tecnico") {
       setTecnicoAberto(true);
@@ -276,10 +275,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             <h2>Bem-vindo à área de RH</h2>
             <p>Aqui você acompanha a equipe das empresas: quem entrou, quem saiu, férias, afastamentos e se a folha foi fechada pelo contador.
               Os dados vêm direto do governo (eSocial). Para começar, envie o certificado digital de uma empresa.</p>
-            <EnviarCertificado aberto onFechar={() => {}} onPronto={(nome) => {
-              setAviso(`Certificado de ${nome} guardado. Agora teste a conexão.`);
-              carregar();
-            }} />
+            <button className="small" onClick={() => (window.location.href = "/certificados")}>Enviar certificado</button>
           </section>
         ) : (
           <>
@@ -321,13 +317,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     }, `Vamos ler desde ${dataBR(data)}. O histórico chega aos poucos (o governo libera 10 leituras por dia).`)} />
                 )}
               </section>
-            )}
-            {painel === "certificado" && (
-              <EnviarCertificado aberto onFechar={() => setPainel(null)} onPronto={(nome) => {
-                setPainel(null);
-                setAviso(`Certificado de ${nome} guardado.`);
-                carregar();
-              }} />
             )}
 
             {/* 1. Precisa de atenção */}
@@ -468,13 +457,12 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {/* 5. Configurações e área técnica */}
             <details className="es-bloco es-tecnico" id="es-tecnico" open={tecnicoAberto} onToggle={(e) => setTecnicoAberto((e.target as HTMLDetailsElement).open)}>
               <summary>
-                <span><Icone nome="tecnico" /><strong>Configurações e área técnica</strong> <span className="muted">· certificado, leitura automática, eventos do jeito que o governo guarda</span></span>
+                <span><Icone nome="tecnico" /><strong>Configurações e área técnica</strong> <span className="muted">· leitura automática, eventos do jeito que o governo guarda</span></span>
               </summary>
               {tecnicoAberto && (
                 <AreaTecnica empresas={empresas} empresaInicial={filtroEmpresa === "todas" ? empresas[0]?.id ?? null : filtroEmpresa}
                   eventos={eventos} trabalhadores={trabalhadores} execucoes={execucoes} verCpf={verCpf} alternarCpf={alternarCpf}
-                  ocupado={ocupado} emAndamento={emAndamento} bloqueado={bloqueado} rodar={rodar} supabase={supabase}
-                  onCertificado={() => setPainel("certificado")} />
+                  ocupado={ocupado} emAndamento={emAndamento} bloqueado={bloqueado} rodar={rodar} supabase={supabase} />
               )}
               {tecnicoAberto && <RegistroConsultas consultas={consultas} meuId={userId} />}
             </details>
@@ -712,10 +700,10 @@ function Glossario() {
 // ---------------------------------------------------------------------
 type Rodar = (fn: () => PromiseLike<{ error: { message: string } | null }>, ok: string) => Promise<void>;
 
-function AreaTecnica({ empresas, empresaInicial, eventos, trabalhadores, execucoes, verCpf, alternarCpf, ocupado, emAndamento, bloqueado, rodar, supabase, onCertificado }: {
+function AreaTecnica({ empresas, empresaInicial, eventos, trabalhadores, execucoes, verCpf, alternarCpf, ocupado, emAndamento, bloqueado, rodar, supabase }: {
   empresas: Empresa[]; empresaInicial: string | null; eventos: Evento[]; trabalhadores: Trabalhador[]; execucoes: Execucao[];
   verCpf: boolean; alternarCpf: () => void; ocupado: boolean; emAndamento: boolean; bloqueado: boolean; rodar: Rodar;
-  supabase: ReturnType<typeof createClient>; onCertificado: () => void;
+  supabase: ReturnType<typeof createClient>;
 }) {
   const [empresa, setEmpresa] = useState(empresaInicial);
   const [aba, setAba] = useState<Aba>("Eventos");
@@ -746,11 +734,6 @@ function AreaTecnica({ empresas, empresaInicial, eventos, trabalhadores, execuco
               <strong className="es-nome">{e.nome}</strong>
               <span className="muted"> · CNPJ {cnpjMask(e.cnpj)}</span>
             </div>
-            {e.cert_validade && (
-              <span className={`estado ${diasAte(e.cert_validade) < 30 ? "tv-falha" : "tv-ok"}`}>
-                Certificado até {dia(e.cert_validade)}{diasAte(e.cert_validade) < 30 ? ` (faltam ${Math.max(0, diasAte(e.cert_validade))} dias)` : ""}
-              </span>
-            )}
           </div>
           <div className="es-acoes">
             <button className="ghost small" disabled={ocupado} onClick={() => rodar(() => supabase.rpc("esocial_consultar", { p_empresa: e.id, p_ambiente: 2, p_tipo: "teste_conexao", p_parametros: {} }), "Teste no ambiente de testes pedido. O resultado aparece em Pedidos.")}>
@@ -776,7 +759,6 @@ function AreaTecnica({ empresas, empresaInicial, eventos, trabalhadores, execuco
               <input type="date" value={e.historico_desde} disabled={ocupado}
                 onChange={(v) => v.target.value && rodar(() => supabase.rpc("esocial_configurar", { p_empresa: e.id, p_leitura: null, p_limite: null, p_historico_desde: v.target.value }), "Início do histórico atualizado.")} />
             </label>
-            <button className="ghost small" onClick={onCertificado}>Enviar ou trocar certificado</button>
           </div>
           <p className="muted es-nota">O governo permite 10 acessos por dia por empresa ao download, somando os do contador. A leitura automática usa só o limite acima.</p>
         </section>
@@ -983,46 +965,5 @@ function ConsultaAvulsa({ ocupado, bloqueado, cnpj, onPedir }: {
       </select>
       <button className="small" disabled={ocupado || bloqueado}>Consultar</button>
     </form>
-  );
-}
-
-function EnviarCertificado({ aberto, onFechar, onPronto }: { aberto: boolean; onFechar: () => void; onPronto: (nome: string) => void }) {
-  const [arquivo, setArquivo] = useState<File | null>(null);
-  const [senha, setSenha] = useState("");
-  const [enviando, setEnviando] = useState(false);
-  const [erro, setErro] = useState("");
-
-  async function enviar(ev: React.FormEvent) {
-    ev.preventDefault();
-    if (!arquivo) return;
-    setEnviando(true);
-    setErro("");
-    const fd = new FormData();
-    fd.append("arquivo", arquivo);
-    fd.append("senha", senha);
-    const r = await fetch("/api/esocial/certificado", { method: "POST", body: fd }).then((x) => x.json()).catch(() => ({ erro: "Falha de conexão com o site." }));
-    setEnviando(false);
-    setSenha("");
-    if (r.erro) return setErro(r.erro);
-    setArquivo(null);
-    onPronto(r.nome ?? "a empresa");
-  }
-
-  if (!aberto) return null;
-  return (
-    <section className="es-bloco es-certificado">
-      <strong>Certificado digital da empresa (e-CNPJ A1)</strong>
-      <p className="muted">
-        Envie o arquivo .pfx (ou .p12) e a senha. A empresa é reconhecida pelo CNPJ do certificado. O certificado fica guardado
-        no cofre do Supabase e só é usado para ler o eSocial; a senha não é guardada. Um certificado por empresa (raiz do CNPJ).
-      </p>
-      <form className="es-form" onSubmit={enviar}>
-        <input type="file" accept=".pfx,.p12,application/x-pkcs12" onChange={(v) => setArquivo(v.target.files?.[0] ?? null)} aria-label="Arquivo do certificado" />
-        <input type="password" value={senha} onChange={(v) => setSenha(v.target.value)} placeholder="Senha do certificado" autoComplete="off" aria-label="Senha do certificado" />
-        <button className="small" disabled={!arquivo || enviando}>{enviando ? "Conferindo…" : "Guardar certificado"}</button>
-        <button type="button" className="ghost small" onClick={onFechar}>Fechar</button>
-      </form>
-      {erro && <p className="tv-alerta">{erro}</p>}
-    </section>
   );
 }
