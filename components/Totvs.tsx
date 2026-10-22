@@ -33,6 +33,14 @@ const mesAnterior = (mes: string) => {
 };
 const nomeMes = (mes: string) => `${MESES[+mes.slice(5, 7) - 1]} de ${mes.slice(0, 4)}`;
 const r = (d: Dia, k: string) => Number(d.resumo?.[k] ?? 0);
+const maiuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+// Nomes da TOTVS vêm em caixa alta; na tela ficam só com as iniciais maiúsculas
+const titulo = (t: string) => t.toLocaleLowerCase("pt-BR").replace(/(^|[\s\-/(])(\p{L})/gu, (_, a: string, b: string) => a + b.toLocaleUpperCase("pt-BR"));
+// Topo do eixo do gráfico: um valor redondo logo acima do maior dia
+function escalaBonita(max: number) {
+  const p = 10 ** Math.floor(Math.log10(max || 1));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((v) => v >= max) ?? 10 * p;
+}
 
 function somar(dias: Dia[]) {
   const s = { total: 0, pessoas: 0, vendas: 0, servico: 0, comida: 0, bebida: 0, outros: 0, descontos: 0, cortesias: 0, assinadas: 0, sangrias: 0, itensCancelados: 0, cuponsCancelados: 0 };
@@ -59,12 +67,12 @@ function Seta() {
   );
 }
 
-function Cartao({ rotulo, valor, nota, destaque }: { rotulo: string; valor: string; nota?: string; destaque?: "ouro" | "verde" }) {
+function Indicador({ rotulo, valor, nota }: { rotulo: string; valor: string; nota?: string }) {
   return (
-    <div className="tp-kpi">
+    <div className="tp-indicador">
       <span className="tp-rotulo">{rotulo}</span>
-      <b className={destaque ? `tp-valor ${destaque}` : "tp-valor"}>{valor}</b>
-      {nota && <span className="muted tp-nota">{nota}</span>}
+      <b className="tp-numero">{valor}</b>
+      {nota && <span className="tp-nota">{nota}</span>}
     </div>
   );
 }
@@ -78,6 +86,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const [unidade, setUnidade] = useState<string | null>(null);
   const [dias, setDias] = useState<Dia[] | null>(null);
   const [puxando, setPuxando] = useState("");
+  const [foco, setFoco] = useState<string | null>(null);
   const [historico, setHistorico] = useState<Historico[]>([]);
 
   useEffect(() => {
@@ -215,147 +224,195 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     setPuxando(falhas ? `Terminei, mas ${falhas} dia(s) não vieram. Tente de novo daqui a pouco.` : "Pronto: todos os dias pedidos chegaram.");
   }
 
+  const totalGeral = resumoUnidades.reduce((a, x) => a + x.s.total, 0);
+  const pessoasGeral = resumoUnidades.reduce((a, x) => a + x.s.pessoas, 0);
+  const anteriorCompleto = limiteDia > 0 && anteriorAteDia.length >= Math.ceil(limiteDia * 0.9);
+  const escala = escalaBonita(maxDia);
+  const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
+  const idxMes = meses.indexOf(mes);
+  const mix = [
+    { nome: "Comida", valor: s.comida, cor: "comida" },
+    { nome: "Bebida", valor: s.bebida, cor: "bebida" },
+    { nome: "Outros", valor: s.outros, cor: "outros" },
+  ].filter((x) => x.valor > 0);
+
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="vendas" />
-      <main className="miolo tt">
-        <div className="tp-cabeca">
+      <main className="miolo tp">
+        <header className="tp-cabeca">
           <div>
-            <h1>TOTVS</h1>
-            <p className="muted">Painel das unidades com os dados do Chef Web, por data de movimento.</p>
+            <span className="tp-sobre">TOTVS · Chef Web</span>
+            <h1>Vendas das unidades</h1>
           </div>
-          <select className="tp-mes" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
-            {(meses.length ? meses : [mes]).map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
-          </select>
-        </div>
+          <div className="tp-meses" role="group" aria-label="Mês">
+            <button className="tp-seta" aria-label="Mês anterior" disabled={idxMes < 0 || idxMes >= meses.length - 1} onClick={() => setMes(meses[idxMes + 1])}>‹</button>
+            <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Escolher mês">
+              {(meses.length ? meses : [mes]).map((m) => <option key={m} value={m}>{maiuscula(nomeMes(m))}</option>)}
+            </select>
+            <button className="tp-seta" aria-label="Próximo mês" disabled={idxMes <= 0} onClick={() => setMes(meses[idxMes - 1])}>›</button>
+          </div>
+        </header>
 
         {buscando.length > 0 && (
-          <p className="tp-aviso">
-            Buscando o histórico na TOTVS, um dia por vez, de ontem para trás:{" "}
-            {buscando.map((h) => `${unidades.find((u) => u.id === h.unidade_id)?.nome ?? h.unidade_id} em ${dataBr(h.cursor)}/${h.cursor.slice(0, 4)}`).join(" · ")}.
-            Os meses aparecem aqui conforme chegam.
+          <p className="tp-sinc">
+            <span className="tp-pulso" aria-hidden="true" />
+            <span>
+              Importando o histórico da TOTVS, do mais recente para o mais antigo. Agora em{" "}
+              {buscando.map((h) => `${unidades.find((u) => u.id === h.unidade_id)?.nome ?? h.unidade_id} ${dataBr(h.cursor)}/${h.cursor.slice(0, 4)}`).join(" · ")}.
+            </span>
           </p>
         )}
 
         {/* Resumo de todas as unidades */}
-        <section className="tp-unidades" aria-label="Resumo das unidades">
-          {resumoUnidades.map(({ u, s: su, ds: dsu, ultimo, diasEsperados, revisar }) => (
-            <button key={u.id} className={u.id === unidade ? "tp-unidade on" : "tp-unidade"} onClick={() => setUnidade(u.id)}>
-              <span className="tp-rotulo">{u.nome}</span>
-              <b className="tp-valor ouro">{dias === null ? "…" : reais(su.total)}</b>
-              <span className="muted tp-nota">
-                {dsu.length} de {diasEsperados} dias · {su.pessoas ? `${reais(su.total / su.pessoas)} por pessoa` : "sem pessoas"}
-              </span>
-              <span className="tp-nota">
-                {ultimo ? `Último dia ${dataBr(ultimo.dia)}: ${reais(Number(ultimo.total))}` : "Sem dados neste mês"}
-                {revisar > 0 && <span className="tp-tag revisar">{revisar} para revisar</span>}
-              </span>
-            </button>
-          ))}
+        <section className="tp-painel tp-geral" aria-label="Resumo das unidades">
+          <div className="tp-geral-total">
+            <span className="tp-rotulo">Todas as unidades</span>
+            <b className="tp-numero tp-numero-xl">{dias === null ? "—" : reais(totalGeral)}</b>
+            <span className="tp-nota">{maiuscula(nomeMes(mes))}{pessoasGeral ? ` · ${inteiro(pessoasGeral)} pessoas · ${reais(totalGeral / pessoasGeral)} por pessoa` : ""}</span>
+          </div>
+          <div className="tp-geral-unidades">
+            {resumoUnidades.map(({ u, s: su, ds: dsu, ultimo, diasEsperados, revisar }) => (
+              <button key={u.id} className={u.id === unidade ? "tp-unidade on" : "tp-unidade"} onClick={() => setUnidade(u.id)} aria-pressed={u.id === unidade}>
+                <span className="tp-unidade-nome">{u.nome}</span>
+                <b className="tp-numero">{dias === null ? "—" : reais(su.total)}</b>
+                <span className="tp-participa" aria-hidden="true"><i style={{ width: `${totalGeral ? (su.total / totalGeral) * 100 : 0}%` }} /></span>
+                <span className="tp-nota">
+                  {totalGeral ? `${pct(su.total / totalGeral)} do total · ` : ""}{dsu.length}/{diasEsperados} dias
+                  {ultimo ? ` · até ${dataBr(ultimo.dia)}` : ""}
+                </span>
+                {revisar > 0 && <span className="tp-selo">{revisar} para revisar</span>}
+              </button>
+            ))}
+          </div>
         </section>
 
-        {sel && (
+        {dias === null && <div className="tp-carregando" aria-label="Carregando"><i /><i /><i /></div>}
+
+        {sel && dias !== null && (
           <>
             <div className="tp-titulo">
               <h2>{sel.u.nome}</h2>
-              <span className="tp-tag">{nomeMes(mes)}</span>
-              {ultimoDia && <span className="muted">atualizado até {dataBr(ultimoDia)}</span>}
+              <span className="tp-nota">{maiuscula(nomeMes(mes))}{ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}</span>
             </div>
 
-            {faltam.length > 0 && (
-              <div className="tp-aviso">
+            {faltam.length > 0 && buscando.length === 0 && (
+              <div className="tp-faltam">
                 <span>
-                  Faltam {faltam.length} dia(s) deste mês{faltam.length <= 6 ? `: ${faltam.map(dataBr).join(", ")}` : ""}.
+                  Faltam {faltam.length} dia(s) neste mês{faltam.length <= 6 ? `: ${faltam.map(dataBr).join(", ")}` : ""}.
                 </span>
-                {puxaveis.length > 0 && (
-                  <button className="ghost small" onClick={puxarFaltantes} disabled={!!puxando && puxando.startsWith("Pedindo")}>Puxar {puxaveis.length} dia(s)</button>
-                )}
+                <button className="ghost small" onClick={puxarFaltantes} disabled={!!puxando && puxando.startsWith("Pedindo")}>Buscar na TOTVS</button>
                 {puxando && <span className="muted">{puxando}</span>}
               </div>
             )}
 
             {nDias === 0 ? (
-              <p className="vazio muted">Nenhum dia deste mês foi puxado ainda para esta unidade.</p>
+              <p className="tp-vazio">Ainda não há dias deste mês para {sel.u.nome}.</p>
             ) : (
               <>
-                <section className="tp-grade">
-                  <Cartao rotulo="Total físico" valor={reais(s.total)} nota={`${nDias} dia(s) lançados`} destaque="ouro" />
-                  <Cartao rotulo="Pessoas" valor={inteiro(s.pessoas)} nota="clientes no período" />
-                  <Cartao rotulo="Cupons" valor={inteiro(s.vendas)} nota="vendas fechadas" />
-                  <Cartao rotulo="Ticket por pessoa" valor={s.pessoas ? reais(s.total / s.pessoas) : "—"} destaque="verde" />
-                  <Cartao rotulo="Ticket por cupom" valor={s.vendas ? reais(s.total / s.vendas) : "—"} />
-                  <Cartao rotulo="Serviço" valor={reais(s.servico)} nota={produtosValor ? `${pct(s.servico / produtosValor)} sobre produtos` : undefined} />
+                <section className="tp-painel tp-kpis">
+                  <Indicador rotulo="Faturamento" valor={reais(s.total)} nota={`${nDias} dia(s) com movimento`} />
+                  <Indicador rotulo="Pessoas" valor={inteiro(s.pessoas)} nota={`${inteiro(s.pessoas / nDias)} por dia`} />
+                  <Indicador rotulo="Ticket por pessoa" valor={s.pessoas ? reais(s.total / s.pessoas) : "—"} />
+                  <Indicador rotulo="Cupons" valor={inteiro(s.vendas)} nota={`${inteiro(s.vendas / nDias)} por dia`} />
+                  <Indicador rotulo="Ticket por cupom" valor={s.vendas ? reais(s.total / s.vendas) : "—"} />
+                  <Indicador rotulo="Taxa de serviço" valor={reais(s.servico)} nota={produtosValor ? `${pct(s.servico / produtosValor)} dos produtos` : undefined} />
                 </section>
 
-                <section className="tp-bloco tp-ritmo">
-                  <span className="tp-rotulo">Ritmo comercial</span>
-                  <div className="tp-ritmo-linha">
-                    <div>
-                      <span className="muted tp-nota">{projecao ? "Projeção pelo ritmo atual" : "Realizado no mês"}</span>
-                      <b className="tp-grande">{reais(projecao ?? s.total)}</b>
-                      {projecao && <div className="tp-barra"><i style={{ width: `${Math.min(100, (s.total / projecao) * 100)}%` }} /></div>}
-                      <span className="muted tp-nota">
-                        {projecao ? `${nDias} dia(s) lançados de ${diasNoMes(mes)}; realizado ${reais(s.total)}.` : `${nDias} dia(s) lançados.`}
-                      </span>
-                    </div>
-                    <div className="tp-compara">
-                      <span className="muted tp-nota">Contra {MESES[+mesAnterior(mes).slice(5, 7) - 1]} até o mesmo dia</span>
-                      <b className={variacao == null ? "" : variacao >= 0 ? "tp-sobe" : "tp-desce"}>
-                        {variacao == null ? "sem dados" : `${variacao >= 0 ? "+" : ""}${pct(variacao)}`}
-                      </b>
-                      {variacao != null && <span className="muted tp-nota">{reais(totalAnterior)} no mês anterior</span>}
-                    </div>
+                <section className="tp-painel tp-ritmo">
+                  <div className="tp-ritmo-principal">
+                    <span className="tp-rotulo">{projecao ? "Projeção para o mês" : "Realizado no mês"}</span>
+                    <b className="tp-numero tp-numero-xl">{reais(projecao ?? s.total)}</b>
+                    {projecao && (
+                      <>
+                        <span className="tp-progresso" aria-hidden="true"><i style={{ width: `${Math.min(100, (s.total / projecao) * 100)}%` }} /></span>
+                        <span className="tp-nota">{reais(s.total)} realizados em {nDias} de {diasNoMes(mes)} dias, pelo ritmo atual.</span>
+                      </>
+                    )}
                   </div>
-                  <div className="tp-mix">
-                    <span>Comida <b>{produtosValor ? pct(s.comida / produtosValor) : "—"}</b> · {reais(s.comida)}</span>
-                    <span>Bebida <b>{produtosValor ? pct(s.bebida / produtosValor) : "—"}</b> · {reais(s.bebida)}</span>
-                    {s.outros > 0 && <span>Outros <b>{pct(s.outros / produtosValor)}</b> · {reais(s.outros)}</span>}
+                  <div className="tp-ritmo-compara">
+                    <span className="tp-rotulo">Contra {MESES[+mesAnterior(mes).slice(5, 7) - 1]}, até o dia {limiteDia}</span>
+                    {anteriorCompleto && variacao != null ? (
+                      <>
+                        <b className={`tp-numero ${variacao >= 0 ? "tp-sobe" : "tp-desce"}`}>{variacao >= 0 ? "▲" : "▼"} {pct(Math.abs(variacao))}</b>
+                        <span className="tp-nota">{reais(totalAnterior)} no mesmo período</span>
+                      </>
+                    ) : (
+                      <span className="tp-nota">O mês anterior ainda não está completo no Brasico.</span>
+                    )}
                   </div>
+                  {mix.length > 0 && (
+                    <div className="tp-mix">
+                      <span className="tp-rotulo">Mix de vendas</span>
+                      <div className="tp-mix-barra" role="img" aria-label={mix.map((m) => `${m.nome} ${pct(m.valor / produtosValor)}`).join(", ")}>
+                        {mix.map((m) => <i key={m.nome} className={m.cor} style={{ flexGrow: m.valor }} title={`${m.nome}: ${reais(m.valor)}`} />)}
+                      </div>
+                      <ul className="tp-legenda">
+                        {mix.map((m) => (
+                          <li key={m.nome}><i className={m.cor} />{m.nome} <b>{pct(m.valor / produtosValor)}</b> <span>{reais(m.valor)}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </section>
 
-                <section className="tp-bloco">
-                  <span className="tp-rotulo">Evolução diária do mês</span>
-                  <div className="tp-dias" role="list">
-                    {Array.from({ length: diasNoMes(mes) }, (_, i) => {
-                      const dia = `${mes}-${String(i + 1).padStart(2, "0")}`;
-                      const d = ds.find((x) => x.dia === dia);
-                      return (
-                        <div key={dia} className="tp-dia" role="listitem" title={d ? `${dataBr(dia)} · ${reais(Number(d.total))} · ${d.pessoas} pessoas${d.status === "revisar" ? " · para revisar" : ""}` : `${dataBr(dia)} · sem dados`}>
-                          <span className="tp-dia-barra"><i className={d ? d.status : "vazio"} style={{ height: d ? `${Math.max(4, (Number(d.total) / maxDia) * 100)}%` : "3px" }} /></span>
-                          <span className="tp-dia-n">{i + 1}</span>
-                        </div>
-                      );
-                    })}
+                <section className="tp-painel">
+                  <div className="tp-painel-topo">
+                    <h3>Faturamento por dia</h3>
+                    <span className="tp-nota" aria-live="polite">
+                      {diaFoco
+                        ? `${SEMANA[diaSemana(diaFoco.dia)]}, ${dataBr(diaFoco.dia)} · ${reais(Number(diaFoco.total))} · ${inteiro(diaFoco.pessoas)} pessoas${diaFoco.status === "revisar" ? " · para revisar" : ""}`
+                        : `Média ${reais(s.total / nDias)} · melhor dia ${reais(maxDia)}`}
+                    </span>
                   </div>
-                  <div className="tp-mix muted">
-                    <span>Média <b>{reais(s.total / nDias)}</b></span>
-                    <span>Pico <b>{reais(maxDia)}</b></span>
-                    {ultimoDia && <span>Último <b>{reais(Number(ds[ds.length - 1].total))}</b></span>}
+                  <div className="tp-grafico">
+                    <div className="tp-eixo" aria-hidden="true">
+                      {[1, 0.5, 0].map((f) => <span key={f}>{f ? reaisCurto(escala * f) : "0"}</span>)}
+                    </div>
+                    <div className="tp-barras" role="list" onMouseLeave={() => setFoco(null)}>
+                      {Array.from({ length: diasNoMes(mes) }, (_, i) => {
+                        const dia = `${mes}-${String(i + 1).padStart(2, "0")}`;
+                        const d = ds.find((x) => x.dia === dia);
+                        const fds = [0, 6].includes(diaSemana(dia));
+                        return (
+                          <div key={dia} role="listitem" className={`tp-coluna${foco === dia ? " on" : ""}`}
+                            onMouseEnter={() => setFoco(dia)} onFocus={() => setFoco(dia)} onBlur={() => setFoco(null)} tabIndex={d ? 0 : -1}
+                            aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}` : `${dataBr(dia)}: sem dados`}>
+                            <span className="tp-coluna-area">
+                              {d ? <i style={{ height: `${Math.max(1.5, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoPossivel ? <i className="falta" /> : null}
+                            </span>
+                            <span className={`tp-coluna-n${fds ? " fds" : ""}`}>{i + 1}</span>
+                            <span className={d?.status === "revisar" ? "tp-ponto" : "tp-ponto vazio"} />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
+                  <p className="tp-nota tp-legenda-dias"><span className="tp-ponto" /> dia para revisar · sábados e domingos em destaque</p>
                 </section>
 
                 <div className="tp-duas">
-                  <section className="tp-bloco">
-                    <span className="tp-rotulo">Desempenho por dia da semana</span>
+                  <section className="tp-painel">
+                    <div className="tp-painel-topo"><h3>Média por dia da semana</h3></div>
                     <ul className="tp-lista">
                       {porSemana.map((x) => (
                         <li key={x.nome}>
-                          <span>{x.nome} <span className="muted">· {x.n} dia(s)</span></span>
-                          <span className="tp-linha-barra"><i style={{ width: `${(x.media / maxSemana) * 100}%` }} /></span>
-                          <b>{x.n ? reaisCurto(x.media) : "—"}</b>
+                          <span>{x.nome}<small>{x.n} dia(s)</small></span>
+                          <span className="tp-linha"><i style={{ width: `${(x.media / maxSemana) * 100}%` }} /></span>
+                          <b>{x.n ? reais(x.media) : "—"}</b>
                         </li>
                       ))}
                     </ul>
                   </section>
 
-                  <section className="tp-bloco">
-                    <span className="tp-rotulo">Como entrou no caixa</span>
+                  <section className="tp-painel">
+                    <div className="tp-painel-topo"><h3>Formas de pagamento</h3></div>
                     <ul className="tp-lista">
-                      {pagamentos.slice(0, 8).map((p) => (
+                      {pagamentos.slice(0, 7).map((p) => (
                         <li key={`${p.tipo}${p.forma}`}>
-                          <span>{p.forma}{p.tipo !== "caixa" ? <span className="muted"> · {p.tipo}</span> : null}</span>
-                          <span className="tp-linha-barra"><i style={{ width: `${(p.valor / totalPag) * 100}%` }} /></span>
-                          <b>{reais(p.valor)} <span className="muted">{pct(p.valor / totalPag)}</span></b>
+                          <span title={p.forma}>{titulo(p.forma)}{p.tipo !== "caixa" && <small>{p.tipo}</small>}</span>
+                          <span className="tp-linha"><i style={{ width: `${(p.valor / totalPag) * 100}%` }} /></span>
+                          <b>{reais(p.valor)}<small>{pct(p.valor / totalPag)}</small></b>
                         </li>
                       ))}
                     </ul>
@@ -363,58 +420,63 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                 </div>
 
                 <div className="tp-duas">
-                  <section className="tp-bloco">
-                    <span className="tp-rotulo">Produtos que puxam o faturamento</span>
-                    <ol className="tp-ranking">
-                      {produtos.map((p) => (
-                        <li key={p.nome}>
-                          <span><b>{p.nome}</b><span className="muted"> · {p.grupo} · {inteiro(p.quantidade)} un</span></span>
-                          <b>{reais(p.valor)}</b>
-                        </li>
-                      ))}
-                    </ol>
+                  <section className="tp-painel">
+                    <div className="tp-painel-topo"><h3>Produtos mais vendidos</h3><span className="tp-nota">por faturamento</span></div>
+                    <table className="tp-tabela">
+                      <thead><tr><th>#</th><th>Produto</th><th>Qtd.</th><th>Valor</th></tr></thead>
+                      <tbody>
+                        {produtos.map((p, i) => (
+                          <tr key={p.nome}>
+                            <td>{i + 1}</td>
+                            <td title={p.nome}>{titulo(p.nome)}<small>{titulo(p.grupo ?? "")}</small></td>
+                            <td>{inteiro(p.quantidade)}</td>
+                            <td>{reais(p.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </section>
 
-                  <section className="tp-bloco">
-                    <span className="tp-rotulo">Garçons no mês</span>
-                    <ol className="tp-ranking">
-                      {garcons.map((g) => (
-                        <li key={g.nome}>
-                          <span><b>{g.nome}</b><span className="muted"> · {inteiro(g.itens)} itens · {g.dias.size} dia(s)</span></span>
-                          <b>{reais(g.valor)}</b>
-                        </li>
-                      ))}
-                    </ol>
+                  <section className="tp-painel">
+                    <div className="tp-painel-topo"><h3>Garçons</h3><span className="tp-nota">por valor vendido</span></div>
+                    <table className="tp-tabela">
+                      <thead><tr><th>#</th><th>Nome</th><th>Itens</th><th>Valor</th></tr></thead>
+                      <tbody>
+                        {garcons.map((g, i) => (
+                          <tr key={g.nome}>
+                            <td>{i + 1}</td>
+                            <td title={g.nome}>{titulo(g.nome)}<small>{g.dias.size} dia(s)</small></td>
+                            <td>{inteiro(g.itens)}</td>
+                            <td>{reais(g.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </section>
                 </div>
 
-                <section className="tp-bloco">
-                  <span className="tp-rotulo">Auditoria · perdas e abatimentos</span>
-                  <div className="tp-grade tp-grade-auditoria">
-                    <Cartao rotulo="Descontos" valor={reais(s.descontos)} />
-                    <Cartao rotulo="Cortesias" valor={reais(s.cortesias)} />
-                    <Cartao rotulo="Assinadas" valor={reais(s.assinadas)} />
-                    <Cartao rotulo="Sangrias" valor={reais(s.sangrias)} />
-                    <Cartao rotulo="Cancelamentos" valor={`${inteiro(s.itensCancelados)} itens`} nota={`${inteiro(s.cuponsCancelados)} cupom(ns) cancelado(s)`} />
+                <section className="tp-painel">
+                  <div className="tp-painel-topo"><h3>Abatimentos e perdas</h3></div>
+                  <div className="tp-kpis tp-kpis-5">
+                    <Indicador rotulo="Descontos" valor={reais(s.descontos)} />
+                    <Indicador rotulo="Cortesias" valor={reais(s.cortesias)} />
+                    <Indicador rotulo="Assinadas" valor={reais(s.assinadas)} />
+                    <Indicador rotulo="Sangrias" valor={reais(s.sangrias)} />
+                    <Indicador rotulo="Cancelamentos" valor={`${inteiro(s.itensCancelados)} itens`} nota={`${inteiro(s.cuponsCancelados)} cupom(ns)`} />
                   </div>
                 </section>
 
-                <section className="tp-bloco">
-                  <span className="tp-rotulo">Qualidade dos dados</span>
-                  <div className="tp-mix">
-                    <span>Dias lançados <b>{nDias} de {+ultimoPossivel.slice(8, 10)}</b></span>
-                    <span>Conferidos <b>{ds.filter((d) => d.status === "ok").length}</b></span>
-                    <span>Sem movimento <b>{ds.filter((d) => d.status === "sem_movimento").length}</b></span>
-                    <span>Para revisar <b>{sel.revisar}</b>{sel.revisar > 0 && <span className="muted"> ({ds.filter((d) => d.status === "revisar").map((d) => dataBr(d.dia)).join(", ")})</span>}</span>
-                  </div>
-                  <p className="muted tp-nota">&quot;Para revisar&quot; quer dizer que alguma conferência do dia não bateu na TOTVS; os números aparecem como vieram.</p>
-                </section>
+                <p className="tp-qualidade">
+                  {nDias} de {+ultimoPossivel.slice(8, 10)} dias lançados · {ds.filter((d) => d.status === "ok").length} conferidos
+                  {ds.some((d) => d.status === "sem_movimento") && ` · ${ds.filter((d) => d.status === "sem_movimento").length} sem movimento`}
+                  {sel.revisar > 0 && ` · ${sel.revisar} para revisar (${ds.filter((d) => d.status === "revisar").map((d) => dataBr(d.dia)).join(", ")}): alguma conferência da TOTVS não bateu, e os números aparecem como vieram.`}
+                </p>
               </>
             )}
           </>
         )}
 
-        <details className="tt-como">
+        <details className="tp-como">
           <summary>Como a integração funciona</summary>
           <section className="tt-fluxo" aria-label="Como funciona a integração">
             <div className="tt-caixa tt-origem">
