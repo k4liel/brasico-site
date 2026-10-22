@@ -251,11 +251,12 @@ export function montarNumeros(pessoas: Pessoa[], empresas: EmpresaRH[]) {
   const cedo = saidasAno.filter((p) => p.dtAdm && p.dtDeslig && diasEntre(p.dtAdm, p.dtDeslig) < 90);
   const pediram = cedo.filter((p) => p.motivoSaida === "pediu para sair").length;
 
-  // Rotatividade só com 12 meses de histórico lido
+  // Rotatividade só com 12 meses de eventos lidos do governo (o cadastro da planilha não traz as saídas)
   const desde = empresas.map((e) => e.historico_desde).sort()[0] ?? agora;
   const mesesLidos = Math.max(0, Math.floor(diasEntre(desde, agora) / 30.44));
+  const temSaidasLidas = pessoas.some((p) => p.eventos.some((e) => e.tipo === "S-2299" || e.tipo === "S-2399"));
   let rotatividade: number | null = null;
-  if (mesesLidos >= 12 && ativos.length) {
+  if (mesesLidos >= 12 && ativos.length && temSaidasLidas) {
     const inicio = somarDias(agora, -365);
     const e12 = pessoas.filter((p) => p.dtAdm && p.dtAdm >= inicio).length;
     const s12 = pessoas.filter((p) => p.dtDeslig && p.dtDeslig >= inicio).length;
@@ -350,13 +351,17 @@ export function montarCalendario(folhas: Folha[], empresas: EmpresaRH[], base = 
   const estadoPrazo = (dia: number, ok: boolean, sabe: boolean): ItemCalendario["estado"] =>
     ok ? "feito" : diaHoje < dia ? (sabe ? "pendente" : "futuro") : sabe ? "atrasado" : "futuro";
   const d = (n: number) => `${mes}-${String(n).padStart(2, "0")}`;
-  const faltando = doMes.filter((f) => f.fechada == null);
+  const faltando = doMes.filter((f) => f.fechada == null && f.consultada);   // lidas e sem fechamento
+  const naoLidas = doMes.filter((f) => f.fechada == null && !f.consultada);  // ainda não consultadas no governo
+  const detalheFechamento = !doMes.length ? "Sem empresas."
+    : fechadas === doMes.length ? `Fechada ${doMes.length === 1 ? "na empresa" : `nas ${doMes.length} empresas`}.`
+    : [faltando.length ? `Falta: ${nomes(faltando)}.` : "", naoLidas.length ? `Ainda não lemos: ${nomes(naoLidas)}.` : ""].filter(Boolean).join(" ");
   const itens: ItemCalendario[] = [
     { dia: 5, data: d(5), quem: "empresa", titulo: "Pagamento dos salários", detalhe: "Até o 5º dia útil do mês (CLT, art. 459). Confira no extrato.", estado: diaHoje <= 7 ? "pendente" : "info" },
     { dia: 7, data: d(7), quem: "governo", titulo: "Leitura do eSocial liberada", detalhe: "Do dia 1 ao 7 o governo não aceita consultas. A leitura automática volta no dia 8.", estado: diaHoje <= 7 ? "pendente" : "feito" },
     { dia: 15, data: d(15), quem: "contador", titulo: `Fechar a folha de ${nomeMes(comp)} no eSocial`,
-      detalhe: doMes.length ? (fechadas === doMes.length ? `Fechada nas ${doMes.length === 1 ? "empresa" : `${doMes.length} empresas`}.` : faltando.length && consultadas ? `Falta: ${nomes(faltando)}.` : "Ainda não lemos o fechamento.") : "Sem empresas.",
-      estado: estadoPrazo(15, doMes.length > 0 && fechadas === doMes.length, consultadas > 0) },
+      detalhe: detalheFechamento,
+      estado: faltando.length ? estadoPrazo(15, false, true) : fechadas === doMes.length && doMes.length > 0 ? "feito" : estadoPrazo(15, false, false) },
     { dia: 15, data: d(15), quem: "contador", titulo: "DCTFWeb (declaração do INSS)", detalhe: "Gerada depois do fechamento da folha. Confirme com o contador o prazo em vigor.", estado: "info" },
     { dia: 20, data: d(20), quem: "empresa", titulo: "Pagar INSS (DARF) e FGTS Digital", detalhe: "As guias saem do fechamento da folha. O FGTS declarado é cobrado automaticamente se não for pago.", estado: diaHoje <= 20 ? "pendente" : "info" },
   ];

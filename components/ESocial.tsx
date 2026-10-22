@@ -43,8 +43,12 @@ const cnpjMask = (c: string | null) => (c ? `${c.slice(0, 2)}.${c.slice(2, 5)}.$
 const diasAte = (iso: string) => Math.floor((new Date(iso).getTime() - Date.now()) / 86400000);
 const diaDoMes = () => Number(hoje().slice(8, 10));
 const reais = (v: string | null) => (v ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "");
-// "AUXILIAR DE COZINHA" → "Auxiliar de cozinha"
-const titulo = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "");
+// "AUXILIAR DE COZINHA" → "Auxiliar de cozinha"; "SUB CHEFE I" → "Sub chefe I"
+const titulo = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/\b(i{1,3}|iv)$/, (m) => m.toUpperCase()) : "");
+// "ALCIDES EDUARDO DE LIMA" → "Alcides Eduardo de Lima"
+const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
+const nomeProprio = (s: string) =>
+  s.toLowerCase().split(/\s+/).map((p, i) => (i > 0 && MINUSCULAS.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(" ");
 const nomeCurto = (nome: string) => nome.replace(/\s+(LTDA|EIRELI|ME|EPP|S\/?A)\.?$/i, "").replace(/\b(EMPREENDIMENTOS TURISTICOS)\b/i, "").trim();
 
 function lerLocal(chave: string) {
@@ -72,6 +76,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtro, setFiltro] = useState<Filtro>("Trabalhando");
   const [busca, setBusca] = useState("");
+  const [mostrarTodos, setMostrarTodos] = useState(false);
   const [aberta, setAberta] = useState<string | null>(null);
   const [verCpf, setVerCpf] = useState(false);
   const [tecnicoAberto, setTecnicoAberto] = useState(false);
@@ -179,6 +184,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const termo = busca.trim().toLowerCase();
   const equipe = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao))
     .filter((p) => !termo || p.nome.toLowerCase().includes(termo) || p.cpf.includes(termo.replace(/\D/g, "") || "#") || p.cargo.toLowerCase().includes(termo));
+  // Lista longa: mostra 30 e um botão para ver o resto (a busca mostra tudo)
+  const visiveis = mostrarTodos || termo ? equipe : equipe.slice(0, 30);
 
   function verFiltro(f: Filtro) {
     setFiltro(f);
@@ -434,12 +441,12 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 <p className="muted tv-nada">Ninguém neste filtro.</p>
               ) : (
                 <ul className="es-equipe">
-                  {equipe.map((p) => (
+                  {visiveis.map((p) => (
                     <li key={p.chave}>
                       <button className="es-pessoa" onClick={() => setAberta(p.chave)}>
                         <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
                         <span className="es-pessoa-nome">
-                          <strong>{p.nome || "Nome ainda não lido"}</strong>
+                          <strong>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}</strong>
                           <span className="muted">
                             {p.unidade && <span className="es-unidade">{p.unidade}</span>}
                             {[titulo(p.cargo), !p.unidade && filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
@@ -452,6 +459,9 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     </li>
                   ))}
                 </ul>
+              )}
+              {visiveis.length < equipe.length && (
+                <p className="es-mais"><button className="ghost small" onClick={() => setMostrarTodos(true)}>Mostrar as outras {equipe.length - visiveis.length} pessoas</button></p>
               )}
             </section>
 
@@ -556,8 +566,8 @@ function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFech
         <div className="es-gaveta-cabeca">
           <span className="es-avatar grande" aria-hidden="true">{iniciais(p.nome)}</span>
           <div>
-            <h2>{p.nome || "Nome ainda não lido"}</h2>
-            <p className="muted">{[p.cargo, empresa].filter(Boolean).join(" · ")}</p>
+            <h2>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}</h2>
+            <p className="muted">{[titulo(p.cargo), p.unidade, empresa].filter(Boolean).join(" · ")}</p>
           </div>
           <button className="fechar" onClick={onFechar} aria-label="Fechar ficha">×</button>
         </div>

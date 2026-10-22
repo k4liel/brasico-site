@@ -1069,3 +1069,8 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .es-dados > div { padding: 9px 14px; }
 .es-cal-item { border-radius: 12px; }
 .es-tecnico, .es-glossario { background: var(--bg); box-shadow: none; }
+
+/* RH: ajustes vistos na tela */
+.es-numeros { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.es-cal-quem.contador { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
+.es-mais { margin: 10px 0 0; text-align: center; }
