@@ -204,7 +204,7 @@ begin
 end $$;
 revoke execute on function public.totvs_agenda() from public, anon, authenticated;
 
--- 6h em Fortaleza (UTC-3) = 9h UTC
+-- Substituída por totvs_agenda.sql (4h30, com novas tentativas até 6h30)
 select cron.unschedule('totvs-diario') where exists (select 1 from cron.job where jobname = 'totvs-diario');
 select cron.schedule('totvs-diario', '0 9 * * *', $job$ select public.totvs_agenda() $job$);
 

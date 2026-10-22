@@ -74,6 +74,9 @@ returns void language plpgsql security definer set search_path = public as $$
 declare h public.totvs_historico; e public.totvs_execucoes;
 begin
   for h in select * from public.totvs_historico where not parado order by unidade_id for update skip locked loop
+    -- a unidade já tem um pedido andando (deste histórico, da agenda da manhã ou do site): espera
+    continue when exists (select 1 from public.totvs_execucoes x where x.unidade_id = h.unidade_id
+      and x.status in ('na_fila', 'rodando') and x.created_at > now() - interval '3 minutes');
     -- 1) Resultado do pedido anterior
     if h.execucao is not null then
       select * into e from public.totvs_execucoes where id = h.execucao;

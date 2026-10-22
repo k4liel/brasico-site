@@ -5,7 +5,7 @@ VENDAS TOTVS DO BRASICO — COMO TRABALHAR
 
 De onde vêm os números
 - As vendas das unidades vêm do Chef Web da TOTVS, por DATA DE MOVIMENTO (o dia operacional): um caixa fechado depois da meia-noite conta no dia em que abriu.
-- Todo dia às 6h (Fortaleza) o dia anterior de cada unidade é puxado sozinho. Dias que falharam são tentados de novo nos dias seguintes.
+- Todo dia às 4h30 (Fortaleza) o dia anterior de cada unidade é puxado sozinho. Até as 6h30, a cada 10 minutos, o que faltar da última semana é tentado de novo, um dia por unidade de cada vez.
 - Cada unidade e dia tem um registro só. Puxar de novo substitui, nunca duplica.
 - Os sócios veem tudo também no site: Menu → Vendas TOTVS.
 
