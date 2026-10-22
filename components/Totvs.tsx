@@ -230,6 +230,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const escala = escalaBonita(maxDia);
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
   const idxMes = meses.indexOf(mes);
+  const anos = Array.from(new Set(meses.map((m) => m.slice(0, 4)))).sort();
   const mix = [
     { nome: "Comida", valor: s.comida, cor: "tp-cor-comida" },
     { nome: "Bebida", valor: s.bebida, cor: "tp-cor-bebida" },
@@ -247,12 +248,33 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           </div>
           <div className="tp-meses" role="group" aria-label="Mês">
             <button className="tp-seta" aria-label="Mês anterior" disabled={idxMes < 0 || idxMes >= meses.length - 1} onClick={() => setMes(meses[idxMes + 1])}>‹</button>
-            <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Escolher mês">
-              {(meses.length ? meses : [mes]).map((m) => <option key={m} value={m}>{maiuscula(nomeMes(m))}</option>)}
-            </select>
+            <span className="tp-mes-atual">{maiuscula(nomeMes(mes))}</span>
             <button className="tp-seta" aria-label="Próximo mês" disabled={idxMes <= 0} onClick={() => setMes(meses[idxMes - 1])}>›</button>
           </div>
         </header>
+
+        {/* Período: ano e mês, só os meses que já têm dados ficam ativos */}
+        <nav className="tp-periodo" aria-label="Escolher período">
+          <div className="tp-anos" role="group" aria-label="Ano">
+            {anos.map((a) => (
+              <button key={a} className={a === mes.slice(0, 4) ? "on" : ""} aria-pressed={a === mes.slice(0, 4)}
+                onClick={() => setMes(meses.find((m) => m.startsWith(a) && m.slice(5) === mes.slice(5)) ?? meses.find((m) => m.startsWith(a)) ?? mes)}>
+                {a}
+              </button>
+            ))}
+          </div>
+          <div className="tp-mesesgrade" role="group" aria-label="Mês">
+            {MESES.map((nome, i) => {
+              const m = `${mes.slice(0, 4)}-${String(i + 1).padStart(2, "0")}`;
+              const tem = meses.includes(m);
+              return (
+                <button key={m} className={m === mes ? "on" : ""} disabled={!tem} aria-pressed={m === mes} onClick={() => setMes(m)} title={tem ? maiuscula(nomeMes(m)) : "Sem dados"}>
+                  {maiuscula(nome.slice(0, 3))}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
 
         {buscando.length > 0 && (
           <p className="tp-sinc">

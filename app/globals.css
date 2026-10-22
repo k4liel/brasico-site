@@ -904,8 +904,16 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tp-cabeca h1 { margin: 2px 0 0; font-size: 30px; letter-spacing: -.01em; }
 .tp-sobre { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
 .tp-meses { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); overflow: hidden; }
-.tp-meses select { appearance: none; border: 0; background: transparent; color: var(--strong); font: inherit; font-size: 14px; font-weight: 600; padding: 8px 6px; text-align: center; cursor: pointer; min-width: 150px; }
-.tp-meses select:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.tp-mes-atual { min-width: 150px; padding: 8px 6px; text-align: center; color: var(--strong); font-size: 14px; font-weight: 600; }
+.tp-periodo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: -6px 0 20px; }
+.tp-anos, .tp-mesesgrade { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.tp-mesesgrade { flex: 1; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.tp-periodo button { background: transparent; color: var(--text); border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; }
+.tp-periodo button:hover:not(:disabled) { background: var(--hover-bg); color: var(--strong); filter: none; }
+.tp-periodo button.on { background: var(--gold); color: #15171c; font-weight: 600; }
+.tp-periodo button:disabled { color: var(--muted); opacity: .4; }
+.tp-periodo button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+@media (max-width: 760px) { .tp-mesesgrade { flex-basis: 100%; grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 .tp-seta { background: transparent; color: var(--muted); border-radius: 0; padding: 7px 13px; font-size: 18px; line-height: 1; }
 .tp-seta:hover:not(:disabled) { background: var(--hover-bg); color: var(--strong); filter: none; }
 .tp-seta:disabled { opacity: .3; }
