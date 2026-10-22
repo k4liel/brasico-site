@@ -33,7 +33,7 @@ const mesAnterior = (mes: string) => {
 const nomeMes = (mes: string) => `${MESES[+mes.slice(5, 7) - 1]} de ${mes.slice(0, 4)}`;
 const r = (d: Dia, k: string) => Number(d.resumo?.[k] ?? 0);
 // A Chef Web API só libera os dias mais recentes (os mais antigos voltam com HTTP 403)
-const JANELA_DIAS = 11;
+const JANELA_DIAS = 16;
 
 function somar(dias: Dia[]) {
   const s = { total: 0, pessoas: 0, vendas: 0, servico: 0, comida: 0, bebida: 0, outros: 0, descontos: 0, cortesias: 0, assinadas: 0, sangrias: 0, itensCancelados: 0, cuponsCancelados: 0 };
@@ -183,12 +183,22 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const limiteApi = new Date(Date.parse(`${hoje}T12:00:00Z`) - JANELA_DIAS * 864e5).toISOString().slice(0, 10);
   const puxaveis = faltam.filter((d) => d >= limiteApi);
 
+  // Um dia por vez: vários pedidos juntos fazem a TOTVS estourar o tempo
   async function puxarFaltantes() {
     if (!unidade || !puxaveis.length) return;
-    const lote = puxaveis.slice(0, 10);
-    setPuxando(`Pedindo ${lote.length} dia(s) à TOTVS…`);
-    for (const d of lote) await supabase.rpc("totvs_extrair", { p_unidade: unidade, p_dia: d });
-    setPuxando(`${lote.length} dia(s) pedidos. Cada um leva de segundos a 1 minuto; o painel atualiza sozinho.`);
+    let falhas = 0;
+    for (const [i, d] of puxaveis.entries()) {
+      setPuxando(`Pedindo ${dataBr(d)} à TOTVS (${i + 1} de ${puxaveis.length})…`);
+      const { data: id } = await supabase.rpc("totvs_extrair", { p_unidade: unidade, p_dia: d });
+      let status = "rodando";
+      for (let t = 0; t < 60 && id && (status === "na_fila" || status === "rodando"); t++) {
+        await new Promise((ok) => setTimeout(ok, 2000));
+        const { data: e } = await supabase.from("totvs_execucoes").select("status").eq("id", id).maybeSingle();
+        status = e?.status ?? status;
+      }
+      if (!id || status === "falha" || status === "rodando") falhas++;
+    }
+    setPuxando(falhas ? `Terminei, mas ${falhas} dia(s) não vieram. Tente de novo daqui a pouco.` : "Pronto: todos os dias pedidos chegaram.");
   }
 
   return (
@@ -237,7 +247,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                   {faltam.length > puxaveis.length && ` A TOTVS só libera pela API os últimos ${JANELA_DIAS} dias; antes de ${dataBr(limiteApi)} não dá para buscar.`}
                 </span>
                 {puxaveis.length > 0 && (
-                  <button className="ghost small" onClick={puxarFaltantes} disabled={!!puxando && puxando.startsWith("Pedindo")}>Puxar {Math.min(10, puxaveis.length)} dia(s)</button>
+                  <button className="ghost small" onClick={puxarFaltantes} disabled={!!puxando && puxando.startsWith("Pedindo")}>Puxar {puxaveis.length} dia(s)</button>
                 )}
                 {puxando && <span className="muted">{puxando}</span>}
               </div>
