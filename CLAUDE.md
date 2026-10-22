@@ -48,6 +48,12 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Quem vê: só quem está em `totvs_acesso`. Site: Menu → TOTVS (só o fluxograma da integração e as unidades; os números ficam no banco e no conector). Conector: `totvs_unidades`, `totvs_vendas`, `totvs_extrair` e o método em `guia_vendas` (lib/vendas.ts; skill em .claude/skills/vendas-totvs). Esquema em supabase/totvs.sql.
 - Conferências que não batem deixam o dia como "revisar"; nunca ajuste números em silêncio. Notas fiscais/CMV ainda não estão integradas.
 
+## Cicchetti Management (API externa)
+- API REST somente leitura do sistema de gestão do Cicchetti: `https://www.cicchettimanagement.com/api/integracoes/externas/v1` (OpenAPI em `/openapi.json`). Unidades `midway`, `pipa_centro` e `pipa_producao` (bases independentes); escopos `vendas`, `cmv` e `rh`. Até 120 consultas por minuto por chave.
+- O banco faz a consulta (extensão `http`) na função `mcp_cicchetti`, chamada pelo conector. A chave fica só no Vault (`cicchetti_api_chave`); é criada no Cicchetti Management (Sistema > API externa) e cadastrada por um sócio no SQL Editor do Supabase (comandos em supabase/cicchetti_api.sql). Nunca no GitHub nem no chat.
+- Quem consulta: só quem está em `cicchetti_acesso` (os sócios). Cada consulta fica em `cicchetti_consultas` com o `request_id` da API (nunca a chave).
+- Conector: `guia_cicchetti`, `cicchetti_unidades`, `cicchetti_vendas_resumo`, `cicchetti_vendas_produtos`, `cicchetti_cmv_notas`, `cicchetti_cmv_itens`, `cicchetti_rh_colaboradores` (lib/cicchetti.ts; skill em .claude/skills/cicchetti-api). Mostre as unidades sempre separadas e não exponha CPF, telefone, e-mail, salário, chave fiscal nem XML.
+
 ## eSocial (leitura direta do governo)
 - Só leitura, sem software de terceiros: o Brasico baixa do eSocial os eventos que o contador transmite (webservices oficiais de consulta de identificadores e download, MOD v1.16 seções 7.7 e 7.8). Pesquisa completa em `reports/Integração com o eSocial.md` (fora do GitHub).
 - Certificado e-CNPJ A1 por empresa (raiz do CNPJ): o sócio envia o .pfx e a senha em Menu → eSocial; a rota `/api/esocial/certificado` converte e guarda no Vault (`esocial_cert_<raiz>`). A senha não é guardada. Nunca peça nem cole certificado ou senha no chat.
