@@ -27,6 +27,7 @@ returns jsonb language sql immutable as $$
     'fornecedor', 'Supplier', 'total', 'Total', 'primeiro', 'First', 'barato', 'Cheapest', 'caro', 'Most expensive', 'dif', 'Gap',
     'geral', 'Overall', 'varmes', 'Change in month', 'comparados', 'Items compared', 'faixa', 'Range', 'historico', 'History',
     'nivel', 'Index', 'gasto_total', 'Total spend', 'indice_atual', 'Price index', 'desde', 'since', 'no_mes', 'last month',
+  ) || jsonb_build_object(
     'h_panorama', 'Purchasing overview', 'lead_panorama', 'What the sites bought, how much they paid and where prices are heading.',
     'h_indice', 'Monthly price index', 'lead_indice', 'How much the same basket of items costs from one month to the next. First month of each line = 100.',
     'h_gasto', 'Spend per month and site', 'g_indice', 'Price index · first month = 100', 'g_gasto', 'Spend per month (R$)',
@@ -52,6 +53,7 @@ returns jsonb language sql immutable as $$
     'fornecedor', 'Dostawca', 'total', 'Razem', 'primeiro', 'Pierwsza', 'barato', 'Najtańszy', 'caro', 'Najdroższy', 'dif', 'Różnica',
     'geral', 'Ogółem', 'varmes', 'Zmiana w miesiącu', 'comparados', 'Porównane pozycje', 'faixa', 'Zakres', 'historico', 'Historia',
     'nivel', 'Indeks', 'gasto_total', 'Wydatki łącznie', 'indice_atual', 'Indeks cen', 'desde', 'od', 'no_mes', 'ostatni miesiąc',
+  ) || jsonb_build_object(
     'h_panorama', 'Przegląd zakupów', 'lead_panorama', 'Co kupiły lokale, ile zapłaciły i dokąd zmierzają ceny.',
     'h_indice', 'Miesięczny indeks cen', 'lead_indice', 'Ile kosztuje ten sam koszyk pozycji z miesiąca na miesiąc. Pierwszy miesiąc każdej linii = 100.',
     'h_gasto', 'Wydatki według miesiąca i lokalu', 'g_indice', 'Indeks cen · pierwszy miesiąc = 100', 'g_gasto', 'Wydatki miesięczne (R$)',
@@ -77,6 +79,7 @@ returns jsonb language sql immutable as $$
     'fornecedor', 'Fournisseur', 'total', 'Total', 'primeiro', 'Premier', 'barato', 'Moins cher', 'caro', 'Plus cher', 'dif', 'Écart',
     'geral', 'Global', 'varmes', 'Variation du mois', 'comparados', 'Articles comparés', 'faixa', 'Fourchette', 'historico', 'Historique',
     'nivel', 'Indice', 'gasto_total', 'Dépenses totales', 'indice_atual', 'Indice des prix', 'desde', 'depuis', 'no_mes', 'dernier mois',
+  ) || jsonb_build_object(
     'h_panorama', 'Vue d''ensemble des achats', 'lead_panorama', 'Ce que les sites ont acheté, combien ils ont payé et où vont les prix.',
     'h_indice', 'Indice mensuel des prix', 'lead_indice', 'Combien coûte le même panier d''articles d''un mois à l''autre. Premier mois de chaque courbe = 100.',
     'h_gasto', 'Dépenses par mois et par site', 'g_indice', 'Indice des prix · premier mois = 100', 'g_gasto', 'Dépenses par mois (R$)',
@@ -102,6 +105,7 @@ returns jsonb language sql immutable as $$
     'fornecedor', 'Lieferant', 'total', 'Gesamt', 'primeiro', 'Erster', 'barato', 'Günstigster', 'caro', 'Teuerster', 'dif', 'Abstand',
     'geral', 'Gesamt', 'varmes', 'Änderung im Monat', 'comparados', 'Verglichene Positionen', 'faixa', 'Spanne', 'historico', 'Verlauf',
     'nivel', 'Index', 'gasto_total', 'Gesamtausgaben', 'indice_atual', 'Preisindex', 'desde', 'seit', 'no_mes', 'letzter Monat',
+  ) || jsonb_build_object(
     'h_panorama', 'Einkaufsüberblick', 'lead_panorama', 'Was die Standorte gekauft haben, was sie gezahlt haben und wohin die Preise gehen.',
     'h_indice', 'Monatlicher Preisindex', 'lead_indice', 'Was derselbe Warenkorb von Monat zu Monat kostet. Erster Monat jeder Linie = 100.',
     'h_gasto', 'Ausgaben nach Monat und Standort', 'g_indice', 'Preisindex · erster Monat = 100', 'g_gasto', 'Ausgaben pro Monat (R$)',
@@ -127,6 +131,7 @@ returns jsonb language sql immutable as $$
     'fornecedor', 'Fornecedor', 'total', 'Total', 'primeiro', 'Primeiro', 'barato', 'Mais barato', 'caro', 'Mais caro', 'dif', 'Diferença',
     'geral', 'Geral', 'varmes', 'Variação no mês', 'comparados', 'Itens comparados', 'faixa', 'Faixa', 'historico', 'Histórico',
     'nivel', 'Índice', 'gasto_total', 'Gasto total', 'indice_atual', 'Índice de preços', 'desde', 'desde', 'no_mes', 'no último mês',
+  ) || jsonb_build_object(
     'h_panorama', 'Panorama de compras', 'lead_panorama', 'O que as unidades compraram, quanto pagaram e para onde os preços estão indo.',
     'h_indice', 'Índice mensal de preços', 'lead_indice', 'Quanto custa a mesma cesta de itens de um mês para o outro. Primeiro mês de cada linha = 100.',
     'h_gasto', 'Gasto por mês e unidade', 'g_indice', 'Índice de preços · primeiro mês = 100', 'g_gasto', 'Gasto por mês (R$)',
