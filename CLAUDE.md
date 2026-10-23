@@ -60,6 +60,11 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Quem consulta: só quem está em `cicchetti_acesso` (os sócios). Cada consulta fica em `cicchetti_consultas` com o `request_id` da API (nunca a chave).
 - Conector: `guia_cicchetti`, `cicchetti_unidades`, `cicchetti_vendas_resumo`, `cicchetti_vendas_produtos`, `cicchetti_cmv_notas`, `cicchetti_cmv_itens`, `cicchetti_rh_colaboradores` (lib/cicchetti.ts; skill em .claude/skills/cicchetti-api). Mostre as unidades sempre separadas e não exponha CPF, telefone, e-mail, salário, chave fiscal nem XML.
 
+## Índice de Preços (base de compras)
+- Todos os itens de todas as notas de compra das unidades, copiados do Cicchetti Management para `precos_notas` e `precos_itens` (view `precos_historico`; supabase/indice_precos.sql). A agenda `precos-coleta` (pg_cron, a cada minuto) relê a lista de notas a cada 6 h e lê os itens de até 25 notas por minuto. Nada se apaga.
+- `preco_efetivo` = (total − desconto + frete) / quantidade, na unidade de compra da nota. Compare só itens na mesma unidade de compra.
+- Quem vê: quem está em `cicchetti_acesso`. Conector: `precos_consultar`. O projeto "Índice de Preços" no site é o relatório feito a partir dessa base.
+
 ## eSocial (leitura direta do governo)
 - Só leitura, sem software de terceiros: o Brasico baixa do eSocial os eventos que o contador transmite (webservices oficiais de consulta de identificadores e download, MOD v1.16 seções 7.7 e 7.8). Pesquisa completa em `reports/Integração com o eSocial.md` (fora do GitHub).
 - Certificado e-CNPJ A1 por empresa (raiz do CNPJ): o sócio envia o .pfx e a senha em Menu → Certificados digitais (página própria, components/Certificados.tsx). Um certificado por CNPJ completo (tabela `certificados`, supabase/certificados.sql): o da matriz (final 0001) fica em `esocial_cert_<raiz>` e é o usado pelo eSocial e pela Receita; o de filial fica em `cert_<cnpj>` e nunca substitui a matriz; a rota `/api/esocial/certificado` converte e guarda no Vault (`esocial_cert_<raiz>`). A senha não é guardada. Nunca peça nem cole certificado ou senha no chat.
