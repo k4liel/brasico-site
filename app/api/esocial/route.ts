@@ -64,13 +64,22 @@ async function executar(x: Execucao, empresa: { id: string; cnpj: string | null 
       return {
         status: "ok", cd: r.cdResposta, desc: r.descResposta,
         resultado: { total: r.total, devolvidos: r.ids.length, ultimo: r.ultimo, ...(cursor ? { cursor } : {}) },
-        eventos: r.ids.map((i) => ({ id_evento: i.id, nr_recibo: i.nrRec, tipo, cpf_trab: cpf, per_apur: perApur, situacao: "pendente" })),
+        // Ids de 35 posições (ID11…/ID12…/ID13…) são os totalizadores do governo (S-5011/5012/5013): não baixam por este serviço
+        eventos: r.ids.map((i) => {
+          const tot = i.id.length !== 36 ? ({ ID11: "S-5011", ID12: "S-5012", ID13: "S-5013" } as Record<string, string>)[i.id.slice(0, 4)] ?? tipo : null;
+          return tot
+            ? { id_evento: i.id, nr_recibo: i.nrRec, tipo: tot, cpf_trab: cpf, per_apur: perApur, situacao: "indisponivel" }
+            : { id_evento: i.id, nr_recibo: i.nrRec, tipo, cpf_trab: cpf, per_apur: perApur, situacao: "pendente" };
+        }),
       };
     }
     case "download_id":
     case "download_recibo": {
       const chaves = (Array.isArray(x.parametros.ids) ? x.parametros.ids : x.parametros.recibos) as string[] | undefined;
-      const r = await baixar(x.ambiente, cred, emp, x.tipo === "download_id" ? "id" : "recibo", (chaves ?? []).map(String));
+      // Só ids de evento (36 posições); um id de totalizador no pedido faz o governo recusar tudo (401)
+      const pedidos = (chaves ?? []).map(String).filter((c) => x.tipo !== "download_id" || c.length === 36);
+      if (!pedidos.length) return { status: "sem_dados", cd: null, desc: "", resultado: { pedidos: 0, baixados: 0, indisponiveis: 0 }, eventos: [] };
+      const r = await baixar(x.ambiente, cred, emp, x.tipo === "download_id" ? "id" : "recibo", pedidos);
       if (r.cdResposta !== 201) return { status: "falha", cd: r.cdResposta, desc: r.descResposta, erro: r.descResposta };
       const eventos: Record<string, unknown>[] = [];
       let indisponiveis = 0;
@@ -90,7 +99,7 @@ async function executar(x: Execucao, empresa: { id: string; cnpj: string | null 
       // Pedidos por id que não voltaram (202: não encontrado ou sem perfil) deixam de ser pendentes
       if (x.tipo === "download_id") {
         const vieram = new Set(eventos.map((e) => e.id_evento));
-        for (const id of (chaves ?? []).map(String)) if (!vieram.has(id)) eventos.push({ id_evento: id, situacao: "indisponivel" });
+        for (const id of pedidos) if (!vieram.has(id)) eventos.push({ id_evento: id, situacao: "indisponivel" });
       }
       return { status: eventos.some((e) => e.situacao === "baixado") ? "ok" : "sem_dados", cd: r.cdResposta, desc: r.descResposta,
         resultado: { pedidos: chaves?.length ?? 0, baixados: r.arquivos.length - indisponiveis, indisponiveis }, eventos };
