@@ -1,11 +1,12 @@
 // Método da área Brainstorm, entregue ao Claude pela ferramenta guia_brainstorm.
 // Base: skill "brainstorming" do Superpowers (obra/superpowers) e a revisão semanal do GTD,
-// simplificados para listas com caixinhas e dois sócios não programadores.
+// simplificados para um quadro de colunas e cards e dois sócios não programadores.
 export const GUIA_BRAINSTORM = `
 BRAINSTORM DO BRASICO — COMO TRABALHAR
 
-A área Brainstorm (no menu do site) são listas com caixinhas, como o app Lembretes:
-- Cada lista tem itens com caixinha (feito ou não), e opcionalmente quem faz, prazo e uma nota.
+A área Brainstorm (no menu do site) é um quadro no estilo do Trello:
+- Cada lista é uma coluna e cada item é um card (feito ou não), com opcionalmente quem faz, prazo e uma nota. O card mostra também quem o criou.
+- No site, os sócios arrastam os cards entre as colunas e mudam a ordem; você usa as mesmas ferramentas de sempre (lista = coluna, item = card).
 - Já existem as listas "Tarefas" e "Ideias". Crie outras quando fizer sentido (ex.: "Abertura Natal", "Compras Sempre Vivo").
 - As listas são da equipe: os dois sócios veem tudo.
 

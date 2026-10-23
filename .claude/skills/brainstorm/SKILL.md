@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Organiza tarefas, ideias e checklists na área Brainstorm do Brasico (listas com caixinhas), conduz um brainstorm ou a revisão da semana. Use quando o usuário quiser anotar algo, montar um checklist, pensar numa ideia, decidir entre caminhos ou revisar a semana.
+description: Organiza tarefas, ideias e checklists na área Brainstorm do Brasico (quadro de colunas e cards, como o Trello), conduz um brainstorm ou a revisão da semana. Use quando o usuário quiser anotar algo, montar um checklist, pensar numa ideia, decidir entre caminhos ou revisar a semana.
 ---
 
 # Brainstorm do Brasico

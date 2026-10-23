@@ -28,7 +28,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Toda mudança em capítulo ou no CSS do projeto guarda a versão anterior em `versoes`. Para desfazer, use as ferramentas `versoes_capitulo` / `ler_versao` / `restaurar_versao`.
 
 ## Brainstorm (tarefas, ideias e checklists da equipe)
-- Área geral do site (Menu → Brainstorm), fora dos projetos: listas com caixinhas, como o Lembretes. Tabelas `listas` e `lista_itens` (supabase/listas.sql). As tabelas `ideias` do primeiro desenho ficaram sem uso.
+- Área geral do site (Menu → Brainstorm), fora dos projetos: quadro no estilo do Trello (cada lista é uma coluna, cada item um card; arrasta entre colunas e reordena pela coluna `ordem`; no celular, segura o card antes de arrastar). Tabelas `listas` e `lista_itens` (supabase/listas.sql). As tabelas `ideias` do primeiro desenho ficaram sem uso.
 - Nada se apaga: itens e listas são arquivados.
 - Pelo conector: `listar_listas`, `ver_lista`, `criar_lista`, `adicionar_item`, `atualizar_item` e o método em `guia_brainstorm` (lib/brainstorm.ts; skill em .claude/skills/brainstorm).
 
