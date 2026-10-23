@@ -1558,3 +1558,24 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
   .es-nav-item { flex: none; padding: 7px 12px; }
   .es-nav-item .es-icone { display: none; }
 }
+
+/* RH: menu lateral mais limpo (um cartão só, itens finos, ícone pequeno, faixa dourada no ativo) */
+.es-nav { position: sticky; top: 72px; display: grid; gap: 2px; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 1px 2px var(--shadow); }
+.es-nav-item { all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 12px; border-radius: 9px; font-size: 14px; color: var(--text); border: 0; }
+.es-nav-item:hover { background: var(--hover-bg); color: var(--strong); }
+.es-nav-item.on { background: var(--soft); color: var(--strong); font-weight: 600; box-shadow: none; border: 0; }
+.es-nav-item.on::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 3px; background: var(--gold); }
+.es-nav-item .es-icone { width: 20px; height: 20px; border-radius: 0; background: transparent; color: var(--muted); flex: none; }
+.es-nav-item .es-icone svg { width: 18px; height: 18px; }
+.es-nav-item.on .es-icone, [data-theme="dark"] .es-nav-item.on .es-icone { background: transparent; color: var(--gold); }
+.es-nav-item:hover .es-icone { color: var(--strong); }
+.es-nav-item > span:not(.es-icone) { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.es-nav-n { flex: none; font-size: 11px; min-width: 20px; text-align: center; padding: 1px 6px; border-radius: 999px; background: var(--seg); color: var(--muted); font-weight: 600; }
+.es-nav-item.on .es-nav-n { background: color-mix(in srgb, var(--gold) 22%, transparent); color: var(--strong); }
+.es-nav-n.atencao, .es-nav-item.on .es-nav-n.atencao { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+@media (max-width: 860px) {
+  .es-nav { position: static; display: flex; overflow-x: auto; gap: 4px; padding: 4px; border-radius: 12px; scrollbar-width: none; }
+  .es-nav-item { flex: none; padding: 7px 12px; font-size: 13.5px; }
+  .es-nav-item.on::before { display: none; }
+  .es-nav-item .es-icone { display: none; }
+}
