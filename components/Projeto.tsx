@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useTable } from "@/lib/useTable";
 import { haQuanto } from "@/lib/tempo";
 import { cssDoProjeto } from "@/lib/livre";
-import { semDuplicatas } from "@/lib/historico";
+import { ehTraducao, semDuplicatas } from "@/lib/historico";
 import DocView from "./DocView";
 import { chaveCelula } from "@/lib/markdown";
 import Topo from "./Topo";
@@ -78,8 +78,8 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
   }
 
   const { rows: notas, loading } = useTable<Nota>("notes", projectId, { orderBy: "title", ascending: true, limit: 500 });
-  const { rows: logTodo } = useTable<Log>("activity_log", projectId, { orderBy: "created_at", ascending: false, limit: 40 });
-  const log = semDuplicatas(logTodo).filter((l) => l.entity === "notes" || l.entity === "workspaces").slice(0, 15);
+  const { rows: logTodo } = useTable<Log>("activity_log", projectId, { orderBy: "created_at", ascending: false, limit: 200 });
+  const log = semDuplicatas(logTodo).filter((l) => (l.entity === "notes" || l.entity === "workspaces") && !ehTraducao(l)).slice(0, 15);
 
   useEffect(() => {
     (async () => {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { haQuanto } from "@/lib/tempo";
-import { semDuplicatas } from "@/lib/historico";
+import { ehTraducao, semDuplicatas } from "@/lib/historico";
 import Topo from "./Topo";
 
 type Projeto = { id: string; name: string; created_at: string; removido_em: string | null };
@@ -50,9 +50,7 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
       supabase.from("workspace_members").select("user_id").in("workspace_id", ids),
       ...ultimas,
     ]);
-    // Gravar a tradução de um capítulo ("… (alemão)") não é editar o projeto: conta só o conteúdo original
-    const TRADUCAO = /\((inglês|polonês|francês|alemão)\)$/;
-    const log = logs.flatMap((l) => l.data ?? []).filter((x: { details: string | null }) => !TRADUCAO.test(x.details ?? ""));
+    const log = logs.flatMap((l) => l.data ?? []).filter((x: { details: string | null }) => !ehTraducao(x));
     const uids = Array.from(new Set((membros ?? []).map((m: { user_id: string }) => m.user_id)));
     const { data: perfis } = await supabase.from("profiles").select("id,email,display_name").in("id", uids);
     const nomeDe = (id: string) => {
