@@ -217,7 +217,7 @@ $$;
 create or replace function public.precos_selo(v numeric, p_lang text)
 returns text language sql immutable as $$
   select case when v is null then '<span class="ip-var ip-eq">–</span>'
-    else format('<span class="ip-var %s">%s</span>', case when v >= 0.5 then 'ip-up' when v <= -0.5 then 'ip-down' else 'ip-eq' end,
+    else format('<span class="ip-var %s">%s</span>', case when round(v, 1) > 0 then 'ip-up' when round(v, 1) < 0 then 'ip-down' else 'ip-eq' end,
                 public.precos_pct(v, p_lang)) end
 $$;
 -- Fundo do mapa de calor: distância do preço à média do próprio produto
@@ -227,8 +227,17 @@ returns text language sql immutable as $$
     else format(' style="background:rgba(%s,%s)"', case when p > media then '196,50,38' else '18,140,92' end,
                 round(least(abs(p / media - 1) * 1.8, 0.42) + 0.06, 2)) end
 $$;
+-- Passo redondo para os eixos dos gráficos (1, 2, 2,5 ou 5 × 10^n)
+create or replace function public.precos_passo(v numeric)
+returns numeric language sql immutable as $$
+  select case when coalesce(v, 0) <= 0 then 1 else
+    (case when n <= 1 then 1 when n <= 2 then 2 when n <= 2.5 then 2.5 when n <= 5 then 5 else 10 end) * m end
+  from (select v / power(10::numeric, floor(log(v))) n, power(10::numeric, floor(log(v))) m) x
+$$;
+
 -- Minigráfico (linha) de uma série de preços
-create or replace function public.precos_spark(p numeric[], p_w int default 96, p_h int default 26)
+drop function if exists public.precos_spark(numeric[], int, int);
+create or replace function public.precos_spark(p numeric[], p_w int default 96, p_h int default 26, p_cls text default null)
 returns text language plpgsql immutable as $$
 declare n int := coalesce(array_length(p, 1), 0); vmin numeric; vmax numeric; pts text := ''; i int; x numeric; y numeric; cls text;
 begin
@@ -239,16 +248,17 @@ begin
     y := case when vmax = vmin then p_h / 2.0 else round(p_h - 3 - (p_h - 6) * (p[i] - vmin) / (vmax - vmin), 1) end;
     pts := pts || x || ',' || y || ' ';
   end loop;
-  cls := case when p[n] > p[1] * 1.005 then 'ip-up' when p[n] < p[1] * 0.995 then 'ip-down' else 'ip-eq' end;
+  cls := coalesce(p_cls, case when p[n] > p[1] * 1.005 then 'ip-up' when p[n] < p[1] * 0.995 then 'ip-down' else 'ip-eq' end);
   return format('<svg class="ip-spark %s" viewBox="0 0 %s %s" width="%s" height="%s"><polyline class="ip-spark-l" points="%s"/><circle class="ip-spark-p" cx="%s" cy="%s" r="2.4"/></svg>',
     cls, p_w, p_h, p_w, p_h, trim(pts), x, y);
 end $$;
 
 -- Gráfico de linhas (índice). p_series: [{"c": "geral", "n": "Geral", "v": [100, 99.5, null, ...]}]
-create or replace function public.precos_graf_linhas(p_rot text[], p_series jsonb, p_lang text)
+drop function if exists public.precos_graf_linhas(text[], jsonb, text);
+create or replace function public.precos_graf_linhas(p_rot text[], p_series jsonb, p_lang text, W int default 680, H int default 250)
 returns text language plpgsql immutable as $$
 declare
-  W int := 680; H int := 250; ml int := 40; mr int := 118; mt int := 16; mb int := 30;
+  ml int := 40; mr int := 118; mt int := 16; mb int := 30; nt int; pe numeric;
   n int := coalesce(array_length(p_rot, 1), 0); vmin numeric; vmax numeric; passo numeric;
   s jsonb; i int; k int; x numeric; y numeric; v numeric; pts text; pontos text; out text; lx numeric; ly numeric; ult numeric;
   rot jsonb := '[]'; r record; ant numeric := -100;
@@ -257,14 +267,15 @@ begin
   select min(e::text::numeric), max(e::text::numeric) into vmin, vmax
   from jsonb_array_elements(p_series) s2, jsonb_array_elements(s2->'v') e where jsonb_typeof(e) = 'number';
   if vmin is null then return ''; end if;
-  vmin := floor(vmin - 0.6); vmax := ceil(vmax + 0.6);
-  if vmax - vmin < 4 then vmin := vmin - 1; vmax := vmin + 4; end if;
+  pe := public.precos_passo(greatest((vmax - vmin) * 1.15, 2) / 4);
+  vmin := floor((vmin - pe * 0.2) / pe) * pe; vmax := ceil((vmax + pe * 0.2) / pe) * pe;
+  nt := round((vmax - vmin) / pe)::int;
   passo := (W - ml - mr)::numeric / greatest(n - 1, 1);
   out := format('<svg class="ip-graf-svg" viewBox="0 0 %s %s" role="img">', W, H);
-  for k in 0..4 loop
-    v := vmin + (vmax - vmin) * k / 4.0; y := round(mt + (H - mt - mb) * (1 - k / 4.0), 1);
+  for k in 0..nt loop
+    v := vmin + pe * k; y := round(mt + (H - mt - mb) * (1 - (v - vmin) / (vmax - vmin)), 1);
     out := out || format('<line class="%s" x1="%s" x2="%s" y1="%s" y2="%s"/><text class="ip-eixo" x="%s" y="%s" text-anchor="end">%s</text>',
-      case when k = 0 then 'ip-base' else 'ip-grade' end, ml, W - mr, y, y, ml - 8, y + 3.5, public.precos_num(v, p_lang, 0));
+      case when k = 0 then 'ip-base' else 'ip-grade' end, ml, W - mr, y, y, ml - 8, y + 3.5, public.precos_num(v, p_lang, case when pe < 1 then 1 else 0 end));
   end loop;
   -- linha de referência em 100
   if 100 between vmin and vmax then
@@ -298,10 +309,11 @@ begin
 end $$;
 
 -- Gráfico de barras empilhadas (gasto). p_series: [{"c": "mw", "v": [..]}]
-create or replace function public.precos_graf_barras(p_rot text[], p_series jsonb, p_lang text)
+drop function if exists public.precos_graf_barras(text[], jsonb, text);
+create or replace function public.precos_graf_barras(p_rot text[], p_series jsonb, p_lang text, W int default 680, H int default 250)
 returns text language plpgsql immutable as $$
 declare
-  W int := 680; H int := 250; ml int := 64; mr int := 12; mt int := 22; mb int := 30;
+  ml int := 64; mr int := 12; mt int := 22; mb int := 30; pe numeric; nt int;
   n int := coalesce(array_length(p_rot, 1), 0); vmax numeric := 0; tot numeric; passo numeric; bw numeric;
   i int; k int; x numeric; y numeric; v numeric; base numeric; s jsonb; out text; alt numeric;
 begin
@@ -311,11 +323,11 @@ begin
     vmax := greatest(vmax, tot);
   end loop;
   if vmax = 0 then return ''; end if;
-  vmax := vmax * 1.08;
-  passo := (W - ml - mr)::numeric / n; bw := least(passo * 0.56, 54);
+  pe := public.precos_passo(vmax * 1.05 / 4); nt := ceil(vmax * 1.05 / pe)::int; vmax := pe * nt;
+  passo := (W - ml - mr)::numeric / n; bw := least(passo * 0.56, 64);
   out := format('<svg class="ip-graf-svg" viewBox="0 0 %s %s" role="img">', W, H);
-  for k in 0..4 loop
-    v := vmax * k / 4.0; y := round(mt + (H - mt - mb) * (1 - k / 4.0), 1);
+  for k in 0..nt loop
+    v := pe * k; y := round(mt + (H - mt - mb) * (1 - v / vmax), 1);
     out := out || format('<line class="%s" x1="%s" x2="%s" y1="%s" y2="%s"/><text class="ip-eixo" x="%s" y="%s" text-anchor="end">%s</text>',
       case when k = 0 then 'ip-base' else 'ip-grade' end, ml, W - mr, y, y, ml - 8, y + 3.5, public.precos_curto(v, p_lang));
   end loop;
@@ -403,7 +415,7 @@ declare
   v_meses date[]; v_rot text[]; a_ger numeric[]; a_mw numeric[]; a_pc numeric[]; a_pp numeric[]; a_var numeric[]; a_n int[];
   g_mw numeric[]; g_pc numeric[]; g_pp numeric[]; g_notas int[];
   s text; s2 text; s3 text; c record; n int; k int; v_idx_ult numeric; v_idx_var numeric;
-  graf_ind text; graf_gas text; leg_ind text; leg_gas text; atualiz text;
+  graf_ind text; graf_gas text; graf_ind_l text; graf_gas_l text; leg_ind text; leg_gas text; atualiz text;
   lim int := coalesce(p_max_linhas, 100000);
 begin
   select min(data_emissao), max(data_emissao), count(*) into v_de, v_ate, v_notas from precos_notas where itens_coletados_em is not null;
@@ -459,6 +471,14 @@ begin
   graf_gas := public.precos_graf_barras(v_rot, jsonb_build_array(
     jsonb_build_object('c', 'mw', 'v', to_jsonb(g_mw)), jsonb_build_object('c', 'pc', 'v', to_jsonb(g_pc)),
     jsonb_build_object('c', 'pp', 'v', to_jsonb(g_pp))), L);
+  graf_ind_l := public.precos_graf_linhas(v_rot, jsonb_build_array(
+    jsonb_build_object('c', 'mw', 'n', 'MW', 'v', to_jsonb(a_mw)),
+    jsonb_build_object('c', 'pc', 'n', 'PC', 'v', to_jsonb(a_pc)),
+    jsonb_build_object('c', 'pp', 'n', 'PP', 'v', to_jsonb(a_pp)),
+    jsonb_build_object('c', 'geral', 'n', t->>'geral', 'v', to_jsonb(a_ger))), L, 1120, 300);
+  graf_gas_l := public.precos_graf_barras(v_rot, jsonb_build_array(
+    jsonb_build_object('c', 'mw', 'v', to_jsonb(g_mw)), jsonb_build_object('c', 'pc', 'v', to_jsonb(g_pc)),
+    jsonb_build_object('c', 'pp', 'v', to_jsonb(g_pp))), L, 1120, 300);
   leg_ind := format('<div class="ip-leg"><span><i class="ip-c-geral"></i>%s</span><span><i class="ip-c-mw"></i>Midway Mall</span><span><i class="ip-c-pc"></i>Pipa Centro</span><span><i class="ip-c-pp"></i>Produção Pipa</span></div>', t->>'geral');
   leg_gas := '<div class="ip-leg"><span><i class="ip-c-mw"></i>Midway Mall</span><span><i class="ip-c-pc"></i>Pipa Centro</span><span><i class="ip-c-pp"></i>Produção Pipa</span></div>';
 
@@ -479,19 +499,19 @@ begin
 
   select string_agg(format('<tr><td><b>%s</b><small>%s · %s %s</small></td><td class="ip-sp">%s</td><td class="ip-n">%s</td></tr>',
       public.precos_esc(produto), unidade_compra, t->>'ultimo', public.precos_num(ultimo_preco, L, 2),
-      public.precos_spark(serie, 84, 24), public.precos_selo(var, L)), '' order by o)
+      public.precos_spark(serie, 84, 24, 'ip-up'), public.precos_selo(var, L)), '' order by o)
     into s2
   from (select *, row_number() over (order by var desc) o from _ip_mov where var > 0 and dias >= 4 and gasto >= 500) x where o <= 6;
   select string_agg(format('<tr><td><b>%s</b><small>%s · %s %s</small></td><td class="ip-sp">%s</td><td class="ip-n">%s</td></tr>',
       public.precos_esc(produto), unidade_compra, t->>'ultimo', public.precos_num(ultimo_preco, L, 2),
-      public.precos_spark(serie, 84, 24), public.precos_selo(var, L)), '' order by o)
+      public.precos_spark(serie, 84, 24, 'ip-down'), public.precos_selo(var, L)), '' order by o)
     into s3
   from (select *, row_number() over (order by var asc) o from _ip_mov where var < 0 and dias >= 4 and gasto >= 500) x where o <= 6;
 
   numero := 0; titulo := '00 · ' || (t->>'capa');
   conteudo := concat_ws(E'\n', ':::capa', 'marca: Brasico', 'sobretitulo: ' || (t->>'sobretitulo'), 'titulo: ' || (t->>'titulo'),
     'subtitulo: ' || (t->>'subtitulo'),
-    'info: ' || (t->>'periodo') || ' | ' || public.precos_dt(v_de, L) || ' – ' || public.precos_dt(v_ate, L),
+    'info: ' || (t->>'periodo') || ' | ' || public.precos_dt_curta(v_de, L) || ' – ' || public.precos_dt_curta(v_ate, L),
     'info: ' || (t->>'notas') || ' | ' || public.precos_num(v_notas, L, 0),
     'info: ' || (t->>'itens') || ' | ' || public.precos_num(v_itens, L, 0),
     'info: ' || (t->>'produtos') || ' | ' || public.precos_num(v_prod, L, 0),
@@ -530,10 +550,10 @@ begin
   from generate_subscripts(v_meses, 1) i;
   numero := 1; titulo := '01 · ' || (t->>'indice');
   conteudo := E':::html\n' || public.precos_cab(1, t->>'indice', t->>'h_indice', t->>'lead_indice', atualiz)
-    || format('<figure class="ip-graf ip-graf-largo"><figcaption>%s</figcaption>%s%s</figure>', t->>'g_indice', graf_ind, leg_ind)
+    || format('<figure class="ip-graf ip-graf-largo"><figcaption>%s</figcaption>%s%s</figure>', t->>'g_indice', graf_ind_l, leg_ind)
     || format('<table class="ip-tab"><thead><tr><th>%s</th><th class="ip-n">%s</th><th class="ip-n">%s</th><th class="ip-n">Midway</th><th class="ip-n">Pipa Centro</th><th class="ip-n">Produção Pipa</th><th class="ip-n">%s</th></tr></thead><tbody>%s</tbody></table>',
          t->>'mes', t->>'geral', t->>'varmes', t->>'comparados', coalesce(s, ''))
-    || format('<h2 class="ip-h2">%s</h2><figure class="ip-graf ip-graf-largo"><figcaption>%s</figcaption>%s%s</figure>', t->>'h_gasto', t->>'g_gasto', graf_gas, leg_gas)
+    || format('<h2 class="ip-h2">%s</h2><figure class="ip-graf ip-graf-largo"><figcaption>%s</figcaption>%s%s</figure>', t->>'h_gasto', t->>'g_gasto', graf_gas_l, leg_gas)
     || format('<table class="ip-tab"><thead><tr><th>%s</th><th class="ip-n">Midway</th><th class="ip-n">Pipa Centro</th><th class="ip-n">Produção Pipa</th><th class="ip-n">%s</th><th class="ip-n">%s</th></tr></thead><tbody>%s</tbody></table>',
          t->>'mes', (t->>'total') || ' (R$)', t->>'notas', coalesce(s2, ''))
     || format('<p class="ip-nota">%s</p>', public.precos_esc(t->>'nota_indice')) || E'\n:::';
@@ -547,7 +567,7 @@ begin
         public.precos_esc(produto), public.precos_esc(left(ultimo_fornecedor, 34)), public.precos_chips(unidades), unidade_compra,
         public.precos_num(primeiro_preco, L, 2), public.precos_dt_curta(primeira_compra, L),
         public.precos_num(ultimo_preco, L, 2), public.precos_dt_curta(ultima_compra, L),
-        public.precos_spark(serie[greatest(1, array_length(serie, 1) - 39):], 110, 26), public.precos_selo(var, L), public.precos_num(compras, L, 0)), '' order by o)
+        public.precos_spark(serie[greatest(1, array_length(serie, 1) - 39):], 110, 26, case when var > 0 then 'ip-up' else 'ip-down' end), public.precos_selo(var, L), public.precos_num(compras, L, 0)), '' order by o)
       into s
     from (select *, row_number() over (order by case when k = 1 then -var else var end) o from _ip_mov where case when k = 1 then var > 0 else var < 0 end) x
     where o <= least(30, lim);
@@ -568,7 +588,7 @@ begin
           from unnest(v_meses) m left join pm on pm.produto = top.produto and pm.un = top.unidade_compra and pm.mes = m)
       || '<td class="ip-n">' || coalesce((select public.precos_selo(((array_agg(pm.preco order by pm.mes desc))[1]
            / nullif((array_agg(pm.preco order by pm.mes))[1], 0) - 1) * 100, L)
-         from pm where pm.produto = top.produto and pm.un = top.unidade_compra), '–') || '</td></tr>', '' order by top.gasto desc)
+         from pm where pm.produto = top.produto and pm.un = top.unidade_compra having count(*) > 1), '<span class="ip-mut">–</span>') || '</td></tr>', '' order by top.gasto desc)
     into s
   from top;
   numero := 3; titulo := '03 · ' || (t->>'oscilacao');
@@ -598,7 +618,7 @@ begin
       public.precos_num(p_car, L, 2), public.precos_esc(left(f_car, 32)),
       public.precos_num((p_car / nullif(p_bar, 0) - 1) * 100, L, 1), public.precos_num(compras, L, 0)), '' order by gasto desc)
     into s
-  from (select * from r where p_car / nullif(p_bar, 0) <= 5 and p_car > p_bar order by gasto desc limit least(100, lim)) x;
+  from (select * from r where p_car / nullif(p_bar, 0) <= 5 and p_car > p_bar * 1.005 order by gasto desc limit least(100, lim)) x;
   numero := 4; titulo := '04 · ' || (t->>'comparar');
   conteudo := E':::html\n' || public.precos_cab(4, t->>'comparar', t->>'h_comp', t->>'lead_comp', atualiz)
     || format('<table class="ip-tab"><thead><tr><th>%s</th><th class="ip-n">%s (R$)</th><th class="ip-n">%s (R$)</th><th class="ip-n">%s</th><th class="ip-n">%s</th></tr></thead><tbody>%s</tbody></table>',
