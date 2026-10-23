@@ -89,3 +89,7 @@ update public.totvs_dias t set
   status = case when jsonb_array_length(novo.divergencias) = 0 then 'ok' else 'revisar' end
 from novo where t.unidade_id = novo.unidade_id and t.dia = novo.dia;
 -- Os poucos dias em que o troco saiu de outro pagamento são puxados de novo da TOTVS (pela própria Edge Function).
+
+-- 23/10/2026: os 22 dias em que o troco mudou de forma de pagamento foram puxados de novo da TOTVS,
+-- um por vez, pela agenda temporária totvs-refazer-troco (a cada 45 s; ela se desliga sozinha no fim).
+-- Função usada: public.totvs_refazer_troco() (lista fixa de unidade e dia; chama totvs_pedir com origem 'claude').
