@@ -303,7 +303,7 @@ returns text language plpgsql immutable as $$
 declare
   W int := 680; H int := 250; ml int := 64; mr int := 12; mt int := 22; mb int := 30;
   n int := coalesce(array_length(p_rot, 1), 0); vmax numeric := 0; tot numeric; passo numeric; bw numeric;
-  i int; k int; x numeric; y numeric; v numeric; base numeric; s jsonb; out text; h numeric;
+  i int; k int; x numeric; y numeric; v numeric; base numeric; s jsonb; out text; alt numeric;
 begin
   if n = 0 then return ''; end if;
   for i in 1..n loop
@@ -324,9 +324,9 @@ begin
     for s in select * from jsonb_array_elements(p_series) loop
       v := coalesce(nullif(s->'v'->>(i - 1), '')::numeric, 0);
       continue when v <= 0;
-      h := (H - mt - mb) * v / vmax;
+      alt := (H - mt - mb) * v / vmax;
       y := mt + (H - mt - mb) * (1 - (base + v) / vmax);
-      out := out || format('<rect class="ip-b ip-c-%s" x="%s" y="%s" width="%s" height="%s"/>', s->>'c', round(x - bw / 2, 1), round(y, 1), round(bw, 1), round(h, 1));
+      out := out || format('<rect class="ip-b ip-c-%s" x="%s" y="%s" width="%s" height="%s"/>', s->>'c', round(x - bw / 2, 1), round(y, 1), round(bw, 1), round(alt, 1));
       base := base + v;
     end loop;
     if base > 0 then
