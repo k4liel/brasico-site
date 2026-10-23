@@ -550,7 +550,7 @@ begin
         public.precos_spark(serie[greatest(1, array_length(serie, 1) - 39):], 110, 26), public.precos_selo(var, L), public.precos_num(compras, L, 0)), '' order by o)
       into s
     from (select *, row_number() over (order by case when k = 1 then -var else var end) o from _ip_mov where case when k = 1 then var > 0 else var < 0 end) x
-    where o <= 30;
+    where o <= least(30, lim);
     conteudo := conteudo || format('<h2 class="ip-h2">%s</h2><table class="ip-tab"><thead><tr><th>%s</th><th>%s</th><th class="ip-n">%s (R$)</th><th class="ip-n">%s (R$)</th><th>%s</th><th class="ip-n">%s</th><th class="ip-n">%s</th></tr></thead><tbody>%s</tbody></table>',
       case k when 1 then t->>'sub_altas' else t->>'sub_quedas' end, t->>'produto', t->>'un', t->>'primeiro', t->>'ultimo', t->>'historico', t->>'var', t->>'compras', coalesce(s, ''));
   end loop;
@@ -558,7 +558,7 @@ begin
   return next;
 
   -- ===================== 03 · Oscilação mensal (mapa de calor) =====================
-  with top as (select produto, unidade_compra, gasto, medio from precos_produtos where categoria <> 'Devolução' order by gasto desc limit 40),
+  with top as (select produto, unidade_compra, gasto, medio from precos_produtos where categoria <> 'Devolução' order by gasto desc limit least(40, lim)),
   pm as (select h.produto, coalesce(h.unidade_compra, '') un, date_trunc('month', h.data_emissao)::date mes,
            sum(h.preco_efetivo * h.quantidade) / sum(h.quantidade) preco
          from precos_historico h join top on top.produto = h.produto and top.unidade_compra = coalesce(h.unidade_compra, '')
@@ -598,7 +598,7 @@ begin
       public.precos_num(p_car, L, 2), public.precos_esc(left(f_car, 32)),
       public.precos_num((p_car / nullif(p_bar, 0) - 1) * 100, L, 1), public.precos_num(compras, L, 0)), '' order by gasto desc)
     into s
-  from (select * from r where p_car / nullif(p_bar, 0) <= 5 and p_car > p_bar order by gasto desc limit 100) x;
+  from (select * from r where p_car / nullif(p_bar, 0) <= 5 and p_car > p_bar order by gasto desc limit least(100, lim)) x;
   numero := 4; titulo := '04 · ' || (t->>'comparar');
   conteudo := E':::html\n' || public.precos_cab(4, t->>'comparar', t->>'h_comp', t->>'lead_comp', atualiz)
     || format('<table class="ip-tab"><thead><tr><th>%s</th><th class="ip-n">%s (R$)</th><th class="ip-n">%s (R$)</th><th class="ip-n">%s</th><th class="ip-n">%s</th></tr></thead><tbody>%s</tbody></table>',
