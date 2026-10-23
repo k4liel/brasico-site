@@ -357,3 +357,80 @@
 @media print {
   .ficha { break-inside: avoid; }
 }
+
+/* ---------- Menu de abas: texto com traço embaixo da aba aberta ---------- */
+.abas-duplas, .abas, .abas-passo {
+  --fx-ink: #1d1a16;
+  --fx-mut: #7b7369;
+  --fx-fraco: #a59d92;
+  --fx-linha: #e4ddd2;
+  --fx-suave: #faf7f2;
+  --fx-papel: #ffffff;
+  --fx-acento: #9a3b2a;
+}
+:root[data-theme="dark"] & .abas-duplas, :root[data-theme="dark"] & .abas, :root[data-theme="dark"] & .abas-passo {
+  --fx-ink: #f3ede4;
+  --fx-mut: #a0968a;
+  --fx-fraco: #6f665c;
+  --fx-linha: #3a332b;
+  --fx-suave: #1e1915;
+  --fx-papel: #181411;
+  --fx-acento: #e08a6f;
+}
+.abas {
+  gap: 0 30px;
+  padding: 0 clamp(20px, 6vw, 112px);
+  background: var(--fx-papel);
+  border-bottom: 1px solid var(--fx-linha);
+}
+.abas .aba, .abas .aba:hover {
+  gap: 8px;
+  max-width: none;
+  padding: 18px 0 15px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset 0 -2px 0 transparent;
+  color: var(--fx-mut);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.abas .aba:hover { color: var(--fx-ink); }
+.abas .aba.on { background: none; color: var(--fx-ink); box-shadow: inset 0 -2px 0 var(--fx-acento); }
+.abas .aba-num, .abas .aba.on .aba-num {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  background: none;
+  color: var(--fx-fraco);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.abas .aba.on .aba-num { color: var(--fx-acento); }
+.abas .aba-qtd { opacity: 1; margin-left: -3px; color: var(--fx-fraco); font-size: 9.5px; font-weight: 600; transform: translateY(-5px); }
+
+/* segunda faixa: capítulos do grupo aberto */
+.abas.abas-sub { gap: 0 24px; background: var(--fx-suave); }
+.abas.abas-sub .aba, .abas.abas-sub .aba:hover { padding: 13px 0 11px; font-size: 12.5px; background: none; border: 0; }
+.abas.abas-sub .aba.on { color: var(--fx-acento); background: none; border: 0; box-shadow: inset 0 -1.5px 0 var(--fx-acento); }
+
+/* anterior / próximo no fim do capítulo */
+.abas-passo { gap: 16px; }
+.abas-passo .passo, .abas-passo .passo:hover {
+  gap: 6px;
+  padding: 18px 22px;
+  border: 1px solid var(--fx-linha);
+  border-radius: 4px;
+  background: var(--fx-papel);
+}
+.abas-passo .passo:hover { border-color: var(--fx-acento); }
+.abas-passo .passo span { font-size: 10px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--fx-mut); }
+.abas-passo .passo b { font-family: var(--font-serif), Georgia, serif; font-weight: 500; font-size: 18px; color: var(--fx-ink); }
+
+@media (max-width: 760px) {
+  .abas { gap: 0 22px; padding: 0 16px; }
+  .abas .aba, .abas .aba:hover { padding: 14px 0 12px; }
+  .abas.abas-sub .aba, .abas.abas-sub .aba:hover { padding: 11px 0 9px; }
+}
