@@ -13,7 +13,7 @@ export type EventoRH = {
 };
 export type TrabalhadorRH = {
   empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; admissao: string | null; unidade: string;
-  origem: string; ativo: boolean; consultado_ate: string | null;
+  origem: string; ativo: boolean; consultado_ate: string | null; consultado_desde: string | null;
 };
 export type ExecucaoRH = {
   id: string; empresa_id: string; ambiente: number; tipo: string; parametros: Record<string, unknown>; origem: string; status: string;
@@ -27,6 +27,8 @@ export type Pessoa = {
   dtAdm: string | null; dtDeslig: string | null; motivoSaida: string | null; fimContrato: string | null;
   afastamento: { desde: string; motivo: string; saude: boolean } | null;
   salario: string | null; situacao: Situacao; eventos: EventoRH[]; alertas: Alerta[];
+  // Até onde o governo já foi lido para esta pessoa (datas de recepção dos eventos)
+  leitura: { desde: string | null; ate: string | null; eventos: number };
 };
 
 export type Alerta = { nivel: "erro" | "atencao" | "info"; texto: string; detalhe: string; empresa_id: string; pessoa?: string; acao?: string };
@@ -140,6 +142,7 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
       dtAdm, dtDeslig: saiu ? saida!.resumo.dtDeslig || saida!.resumo.dtTerm || null : null,
       motivoSaida: saiu ? MOTIVO_SAIDA[saida!.resumo.mtvDeslig ?? ""] ?? (saida!.resumo.mtvDeslig ? `motivo ${saida!.resumo.mtvDeslig}` : null) : null,
       fimContrato, afastamento, salario: comSalario?.resumo.vrSalFx ?? null, situacao, eventos: evs, alertas: [],
+      leitura: { desde: t?.consultado_desde?.slice(0, 10) ?? null, ate: t?.consultado_ate?.slice(0, 10) ?? null, eventos: evs.length },
     };
     p.alertas = alertasDaPessoa(p);
     return p;
@@ -321,6 +324,74 @@ export function linhaDoTempo(p: Pessoa): ItemLinha[] {
 // Primeiros passos (marcados sozinhos pelos dados)
 // ---------------------------------------------------------------------
 export type Passo = { id: string; texto: string; feito: boolean; acao: string };
+
+// ---------------------------------------------------------------------
+// Andamento da leitura do governo, por empresa (o que já foi lido, o que falta, acessos de hoje, próxima leitura)
+// ---------------------------------------------------------------------
+export type Leitura = {
+  empresa_id: string; nome: string;
+  pessoas: number; lidas: number; lidoDesde: string | null; lidoAte: string | null; metaDesde: string;
+  esperandoDownload: number; eventosBaixados: number;
+  usadosHoje: number; limite: number; hojeOk: number; hojeErros: number; hojeVazios: number;
+  proxima: string; ligada: boolean; semCertificado: boolean;
+  ultima: { quando: string; texto: string; ok: boolean } | null;
+};
+
+const DESCRICAO_PEDIDO: Record<string, string> = {
+  identificadores_trabalhador: "consulta de um funcionário", identificadores_empregador: "consulta do fechamento da folha",
+  identificadores_tabela: "consulta de estabelecimentos", download_id: "download de eventos", download_recibo: "download de eventos",
+  teste_conexao: "teste de conexão",
+};
+
+export function montarLeitura(empresas: EmpresaRH[], trabalhadores: TrabalhadorRH[], eventos: EventoRH[], execucoes: ExecucaoRH[]): Leitura[] {
+  const agora = new Date();
+  const brt = new Date(agora.getTime() - 3 * 3600 * 1000); // hora de Brasília (UTC-3)
+  const h = brt.getUTCHours(), m = brt.getUTCMinutes(), diaMes = brt.getUTCDate();
+  const hojeStr = brt.toISOString().slice(0, 10);
+  return empresas.map((e) => {
+    const trs = trabalhadores.filter((t) => t.empresa_id === e.id && t.ativo);
+    const exs = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao");
+    const hoje = exs.filter((x) => new Date(new Date(x.created_at).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10) === hojeStr
+      && !(x.status === "falha" && x.cd_resposta == null && x.erro.startsWith("conexão:")));
+    const usados = hoje.length;
+    const sobra = e.limite_diario - usados;
+    let proxima: string;
+    if (!e.leitura_automatica) proxima = "leitura automática desligada";
+    else if (!e.cert_validade) proxima = "sem certificado";
+    else if (diaMes <= 7) proxima = "dia 8 às 8h (o governo não libera do dia 1 ao 7)";
+    else if (sobra <= 0) proxima = "amanhã às 8h (os 10 acessos de hoje acabaram)";
+    else if (h < 8) proxima = "hoje às 8h";
+    else if (h >= 20) proxima = "amanhã às 8h";
+    else {
+      const prox = (Math.floor(m / 15) + 1) * 15;
+      proxima = prox >= 60 ? `hoje às ${String(h + 1).padStart(2, "0")}:00` : `hoje às ${String(h).padStart(2, "0")}:${String(prox).padStart(2, "0")}`;
+    }
+    const ult = exs[0];
+    const desc = ult ? DESCRICAO_PEDIDO[ult.tipo] ?? ult.tipo : "";
+    const ultima = ult ? {
+      quando: ult.created_at,
+      ok: ult.status === "ok" || ult.status === "sem_dados",
+      texto: ult.status === "ok" ? `${desc}: ok${ult.resultado?.total != null ? ` (${ult.resultado.total} encontrados)` : ult.resultado?.baixados != null ? ` (${ult.resultado.baixados} baixados)` : ""}`
+        : ult.status === "sem_dados" ? `${desc}: nada encontrado`
+        : ["na_fila", "rodando"].includes(ult.status) ? `${desc}: em andamento`
+        : `${desc}: falhou (${(ult.erro || ult.desc_resposta || "sem detalhe").replace(/^O servidor do eSocial devolveu uma página de erro \(HTTP 500\).*/, "erro no servidor do governo").slice(0, 90)})`,
+    } : null;
+    return {
+      empresa_id: e.id, nome: e.nome,
+      pessoas: trs.length, lidas: trs.filter((t) => t.consultado_ate).length,
+      lidoDesde: trs.map((t) => t.consultado_desde).filter(Boolean).sort()[0]?.slice(0, 10) ?? null,
+      lidoAte: trs.map((t) => t.consultado_ate).filter(Boolean).sort().reverse()[0]?.slice(0, 10) ?? null,
+      metaDesde: e.historico_desde,
+      esperandoDownload: eventos.filter((v) => v.empresa_id === e.id && v.situacao === "pendente" && v.id_evento.length === 36).length,
+      eventosBaixados: eventos.filter((v) => v.empresa_id === e.id && v.situacao === "baixado").length,
+      usadosHoje: usados, limite: e.limite_diario,
+      hojeOk: hoje.filter((x) => x.status === "ok").length,
+      hojeErros: hoje.filter((x) => x.status === "falha").length,
+      hojeVazios: hoje.filter((x) => x.status === "sem_dados").length,
+      proxima, ligada: e.leitura_automatica, semCertificado: !e.cert_validade, ultima,
+    };
+  });
+}
 
 export function montarPassos(empresas: EmpresaRH[], trabalhadores: TrabalhadorRH[], execucoes: ExecucaoRH[]): Passo[] {
   const seisMeses = somarDias(hoje(), -180);

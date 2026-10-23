@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
   cpfVisivel, dataBR, diasEntre, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
-  montarCalendario, montarPessoas, nomeMes, ROTULO_SITUACAO, tempoDeCasa,
+  montarCalendario, montarLeitura, montarPessoas, nomeMes, ROTULO_SITUACAO, tempoDeCasa,
   type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
@@ -15,16 +15,18 @@ type Consulta = { id: string; user_id: string | null; origem: string; ferramenta
 
 const ABAS = ["Eventos", "Trabalhadores", "Pedidos"] as const;
 type Aba = (typeof ABAS)[number];
-const FILTROS = ["Trabalhando", "Em experiência", "Afastados", "Saíram", "Aguardando leitura", "Todos"] as const;
+const FILTROS = ["Trabalhando", "Em experiência", "Afastados", "Saíram", "Todos"] as const;
 type Filtro = (typeof FILTROS)[number];
 const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
-  Trabalhando: (s) => ["trabalhando", "experiencia", "afastado", "ferias"].includes(s),
+  Trabalhando: (s) => ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"].includes(s),
   "Em experiência": (s) => s === "experiencia",
   Afastados: (s) => s === "afastado" || s === "ferias",
   Saíram: (s) => s === "saiu",
-  "Aguardando leitura": (s) => s === "aguardando",
   Todos: () => true,
 };
+// Segundo filtro: o que o governo já entregou de cada pessoa
+const LEITURAS = ["Todas", "Já lidas", "Ainda não lidas"] as const;
+type FiltroLeitura = (typeof LEITURAS)[number];
 
 const TIPO_PEDIDO: Record<string, string> = {
   teste_conexao: "Teste de conexão", identificadores_tabela: "Consulta de tabela", identificadores_empregador: "Consulta da empresa",
@@ -76,6 +78,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [filtro, setFiltro] = useState<Filtro>("Trabalhando");
   const [busca, setBusca] = useState("");
   const [mostrarTodos, setMostrarTodos] = useState(false);
+  const [filtroLeitura, setFiltroLeitura] = useState<FiltroLeitura>("Todas");
   const [aberta, setAberta] = useState<string | null>(null);
   const [verCpf, setVerCpf] = useState(false);
   const [tecnicoAberto, setTecnicoAberto] = useState(false);
@@ -97,7 +100,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
         .order("ordem").order("nome"),
       supabase.from("esocial_eventos").select("id_evento,empresa_id,tipo,cpf_trab,per_apur,situacao,nr_recibo,resumo,descoberto_em,baixado_em")
         .eq("ambiente", 1).order("descoberto_em", { ascending: false }).limit(5000),
-      supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,matricula,cargo,admissao,unidade,origem,ativo,consultado_ate").order("nome"),
+      supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,matricula,cargo,admissao,unidade,origem,ativo,consultado_ate,consultado_desde").order("nome"),
       supabase.from("esocial_execucoes").select("id,empresa_id,ambiente,tipo,parametros,origem,status,cd_resposta,desc_resposta,resultado,erro,created_at")
         .order("created_at", { ascending: false }).limit(300),
     ]);
@@ -175,13 +178,14 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const numeros = montarNumeros(pessoasVistas, empresasVistas);
   const passos = montarPassos(empresas, trabalhadores, execucoes);
   const ultimaLeitura = execucoes.find((x) => x.ambiente === 1 && ["ok", "sem_dados"].includes(x.status) && x.tipo !== "teste_conexao");
-  const desde = empresasVistas.map((e) => e.historico_desde).sort()[0];
+  const leituras = montarLeitura(empresasVistas, trabalhadores, eventos, execucoes);
   const nomeEmpresa = (id: string) => nomeCurto(empresas.find((e) => e.id === id)?.nome ?? id);
   const pessoaAberta = pessoas.find((p) => p.chave === aberta) ?? null;
   const bloqueado = diaDoMes() <= 7;
 
   const termo = busca.trim().toLowerCase();
   const equipe = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao))
+    .filter((p) => filtroLeitura === "Todas" || (filtroLeitura === "Já lidas") === !!p.leitura.ate)
     .filter((p) => !termo || p.nome.toLowerCase().includes(termo) || p.cpf.includes(termo.replace(/\D/g, "") || "#") || p.cargo.toLowerCase().includes(termo));
   // Lista longa: mostra 30 e um botão para ver o resto (a busca mostra tudo)
   const visiveis = mostrarTodos || termo ? equipe : equipe.slice(0, 30);
@@ -247,8 +251,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
           <div>
             <h1>RH · eSocial</h1>
             <p className="muted">
-              {ultimaLeitura ? `Dados do governo lidos até ${horaCurta(ultimaLeitura.created_at)}` : "Ainda não lemos dados do governo"}
-              {desde ? ` · histórico desde ${dataBR(desde)}` : ""}
+              {ultimaLeitura ? `Última leitura do governo: ${horaCurta(ultimaLeitura.created_at)}` : "Ainda não lemos dados do governo"}
+              {leituras.length === 1 ? ` · próxima: ${leituras[0].proxima}` : ""}
               <Ajuda texto="Os dados vêm do eSocial, o sistema do governo onde o contador informa tudo sobre os funcionários. Aqui só lemos; nada é enviado ao governo." />
             </p>
           </div>
@@ -318,6 +322,41 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 )}
               </section>
             )}
+
+            {/* 0b. Leitura do governo: o que já foi lido, o que falta, acessos de hoje */}
+            <section className="es-bloco">
+              <div className="es-bloco-cabeca">
+                <h2><Icone nome="leitura" />Leitura do governo</h2>
+                <Ajuda texto="O governo libera só 10 acessos por dia por empresa e entrega os dados de cada funcionário um por vez. Por isso a leitura é feita aos poucos: todo dia, das 8h às 20h, uma consulta a cada 15 minutos. Aqui você vê o que já chegou e o que ainda falta." />
+              </div>
+              <div className="es-leituras">
+                {leituras.map((l) => {
+                  const pct = l.pessoas ? Math.round((l.lidas / l.pessoas) * 100) : 0;
+                  return (
+                    <div key={l.empresa_id} className="es-leitura">
+                      <div className="es-leitura-cabeca">
+                        <strong>{nomeCurto(l.nome)}</strong>
+                        <span className={`es-selo ${l.semCertificado ? "" : l.ligada ? "trabalhando" : "experiencia"}`}>
+                          {l.semCertificado ? "Sem certificado" : l.ligada ? "Leitura ligada" : "Leitura desligada"}
+                        </span>
+                      </div>
+                      <div className="es-leitura-linha">
+                        <span>Pessoas com o último mês lido</span>
+                        <strong>{l.lidas} de {l.pessoas}</strong>
+                      </div>
+                      <div className="es-barra" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
+                      <dl className="es-leitura-dados">
+                        <div><dt>Histórico lido</dt><dd>{l.lidoDesde ? `${dataBR(l.lidoDesde)} a ${dataBR(l.lidoAte)}` : "nenhum ainda"} <span className="muted">· pedido desde {dataBR(l.metaDesde)}</span></dd></div>
+                        <div><dt>Eventos guardados</dt><dd>{l.eventosBaixados}{l.esperandoDownload ? <span className="muted"> · {l.esperandoDownload} esperando download</span> : null}</dd></div>
+                        <div><dt>Acessos de hoje</dt><dd>{l.usadosHoje} de {l.limite}{l.usadosHoje ? <span className="muted"> · {l.hojeOk} ok{l.hojeVazios ? `, ${l.hojeVazios} vazios` : ""}{l.hojeErros ? `, ${l.hojeErros} com erro` : ""}</span> : null}</dd></div>
+                        <div><dt>Próxima leitura</dt><dd>{l.proxima}</dd></div>
+                        {l.ultima && <div><dt>Última resposta</dt><dd className={l.ultima.ok ? "" : "es-ruim"}>{horaCurta(l.ultima.quando)} · {l.ultima.texto}</dd></div>}
+                      </dl>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
 
             {/* 1. Precisa de atenção */}
             <section className="es-bloco">
@@ -418,6 +457,16 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     );
                   })}
                 </div>
+                <div className="tv-unidades es-filtro-leitura" role="group" aria-label="Leitura do governo">
+                  {LEITURAS.map((f) => {
+                    const n = f === "Todas" ? pessoasVistas.length : pessoasVistas.filter((p) => (f === "Já lidas") === !!p.leitura.ate).length;
+                    return (
+                      <button key={f} className={f === filtroLeitura ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroLeitura(f)}>
+                        {f} <span className="muted">{n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar na equipe" />
               </div>
               {pessoasVistas.length === 0 ? (
@@ -441,7 +490,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                             {[titulo(p.cargo), !p.unidade && filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
                           </span>
                         </span>
-                        <span className="es-pessoa-desde muted">{p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}</span>
+                        <span className="es-pessoa-desde muted">
+                          {p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}
+                          <small className={p.leitura.ate ? "es-lida" : "es-nao-lida"}>{p.leitura.ate ? `governo lido até ${dataBR(p.leitura.ate)}` : "governo ainda não lido"}</small>
+                        </span>
                         <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
                         {p.alertas.length > 0 && <span className="es-pessoa-alerta" title={p.alertas[0].texto}>!</span>}
                       </button>
@@ -494,6 +546,7 @@ const ICONES: Record<string, string> = {
   equipe: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   tecnico: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
   livro: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z",
+  leitura: "M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6M12 7v5l3 2",
 };
 function Icone({ nome }: { nome: keyof typeof ICONES }) {
   return (
@@ -567,6 +620,7 @@ function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFech
           {p.vinculo && <div><dt>Vínculo</dt><dd>{p.vinculo}</dd></div>}
           <div><dt>CPF</dt><dd>{cpfVisivel(p.cpf, verCpf)} <button className="es-olho-mini" onClick={alternarCpf} aria-label={verCpf ? "Esconder CPF" : "Mostrar CPF"}><Olho aberto={verCpf} /></button></dd></div>
           {p.matricula && <div><dt>Matrícula</dt><dd>{p.matricula}</dd></div>}
+          <div><dt>Leitura do governo</dt><dd>{p.leitura.ate ? `${dataBR(p.leitura.desde)} a ${dataBR(p.leitura.ate)} · ${p.leitura.eventos} evento${p.leitura.eventos === 1 ? "" : "s"}` : "ainda não lida"}</dd></div>
           {p.salario && <div><dt>Salário</dt><dd>{verSalario ? reais(p.salario) : "R$ •••••"} <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder salário" : "Mostrar salário"}><Olho aberto={verSalario} /></button></dd></div>}
           {p.afastamento && <div><dt>Afastado desde</dt><dd>{dataBR(p.afastamento.desde)} ({diasEntre(p.afastamento.desde, agora)} dias)</dd></div>}
         </dl>

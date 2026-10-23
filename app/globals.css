@@ -1503,3 +1503,21 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
   letter-spacing: .04em; vertical-align: middle; color: #fff; background: #d97706; }
 .rf-selo-grande { margin: 0 0 0 10px; font-size: 12px; padding: 3px 10px; }
 :root[data-theme="dark"] .rf-teste strong { color: #fbbf24; }
+
+/* RH: bloco Leitura do governo e estado de leitura por pessoa */
+.es-leituras { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.es-leitura { padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border); display: grid; gap: 8px; }
+.es-leitura-cabeca { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.es-leitura-cabeca strong { font-size: 15px; color: var(--strong); }
+.es-leitura-linha { display: flex; justify-content: space-between; font-size: 13.5px; }
+.es-leitura .es-barra { margin: 0; }
+.es-leitura-dados { margin: 2px 0 0; display: grid; gap: 4px; font-size: 13px; }
+.es-leitura-dados > div { display: flex; justify-content: space-between; gap: 10px; }
+.es-leitura-dados dt { color: var(--muted); white-space: nowrap; }
+.es-leitura-dados dd { margin: 0; text-align: right; }
+.es-pessoa-desde { display: grid; text-align: right; }
+.es-pessoa-desde small { font-size: 11.5px; }
+.es-lida { color: var(--ok); }
+.es-nao-lida { color: var(--muted); }
+.es-filtro-leitura { margin-top: 2px; }
+@media (max-width: 640px) { .es-leitura-dados > div { flex-direction: column; gap: 0; } .es-leitura-dados dd { text-align: left; } }
