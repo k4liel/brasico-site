@@ -3,76 +3,19 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
+import { Evolucao, Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
+import {
+  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, agruparPagamentos, comMovimento, dataBr, diaSemana, diasNoMes,
+  escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses, titulo,
+} from "@/lib/totvs-painel";
 
 // Página TOTVS: painel das unidades (no estilo do dashboard do Cicchetti Management) com os dados
 // já puxados da TOTVS Chef Web (totvs_dias), e o desenho de como a integração funciona.
-type Unidade = { id: string; nome: string; loja: number | null; ativa: boolean; ordem: number };
-type Historico = { unidade_id: string; cursor: string; parado: boolean; motivo: string };
-type Produto = { nome: string; grupo: string; categoria: string; quantidade: number; valor: number };
-type Pagamento = { tipo: string; forma: string; valor: number; vezes: number };
-type Garcom = { nome: string; itens: number; valor: number; vendas: number };
-type Cancelado = { tipo: string };
-type Dia = {
-  unidade_id: string; dia: string; status: string; vendas: number; pessoas: number; total: number;
-  resumo: Record<string, number>; produtos: Produto[]; pagamentos: Pagamento[]; garcons: Garcom[]; cancelados: Cancelado[];
-};
-
-const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-const SEMANA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-const reais = (v: number) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const reaisCurto = (v: number) => (v >= 1000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : reais(v));
-const inteiro = (v: number) => Math.round(v ?? 0).toLocaleString("pt-BR");
-const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
-const hojeFortaleza = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-const diaSemana = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
-const dataBr = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
-const diasNoMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).getUTCDate();
-const mesAnterior = (mes: string) => {
-  const d = new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 2, 1));
-  return d.toISOString().slice(0, 7);
-};
-const nomeMes = (mes: string) => `${MESES[+mes.slice(5, 7) - 1]} de ${mes.slice(0, 4)}`;
-const r = (d: Dia, k: string) => Number(d.resumo?.[k] ?? 0);
-const maiuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
-// Nomes da TOTVS vêm em caixa alta; na tela ficam só com as iniciais maiúsculas
-const titulo = (t: string) => t.toLocaleLowerCase("pt-BR").replace(/(^|[\s\-/(])(\p{L})/gu, (_, a: string, b: string) => a + b.toLocaleUpperCase("pt-BR"));
-// Topo do eixo do gráfico: um valor redondo logo acima do maior dia
-function escalaBonita(max: number) {
-  const p = 10 ** Math.floor(Math.log10(max || 1));
-  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((v) => v >= max) ?? 10 * p;
-}
-
-function somar(dias: Dia[]) {
-  const s = { total: 0, pessoas: 0, vendas: 0, servico: 0, comida: 0, bebida: 0, outros: 0, descontos: 0, cortesias: 0, assinadas: 0, sangrias: 0, itensCancelados: 0, cuponsCancelados: 0 };
-  for (const d of dias) {
-    s.total += Number(d.total); s.pessoas += d.pessoas; s.vendas += d.vendas;
-    s.servico += r(d, "servico"); s.comida += r(d, "comida"); s.bebida += r(d, "bebida"); s.outros += r(d, "outros");
-    s.descontos += r(d, "descontos"); s.cortesias += r(d, "cortesias"); s.assinadas += r(d, "assinadas"); s.sangrias += r(d, "sangrias");
-    s.itensCancelados += r(d, "itens_cancelados"); s.cuponsCancelados += r(d, "vendas_canceladas");
-  }
-  return s;
-}
-
-function agrupar<T>(dias: Dia[], lista: (d: Dia) => T[], chave: (x: T) => string, juntar: (a: T | undefined, x: T, dia: string) => T) {
-  const m = new Map<string, T>();
-  for (const d of dias) for (const x of lista(d) ?? []) m.set(chave(x), juntar(m.get(chave(x)), x, d.dia));
-  return Array.from(m.values());
-}
 
 function Seta() {
   return (
     <div className="tt-seta" aria-hidden="true">
       <svg width="16" height="26" viewBox="0 0 16 26"><path d="M8 0v22M2 16l6 7 6-7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-    </div>
-  );
-}
-
-function Indicador({ rotulo, valor, nota }: { rotulo: string; valor: string; nota?: string }) {
-  return (
-    <div className="tp-indicador">
-      <span className="tp-rotulo">{rotulo}</span>
-      <b className="tp-numero">{valor}</b>
-      {nota && <span className="tp-nota">{nota}</span>}
     </div>
   );
 }
@@ -85,8 +28,10 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const [mes, setMes] = useState(() => hojeFortaleza().slice(0, 7));
   const [unidade, setUnidade] = useState<string | null>(null);
   const [dias, setDias] = useState<Dia[] | null>(null);
+  const [serie, setSerie] = useState<Ponto[] | null>(null);
   const [puxando, setPuxando] = useState("");
   const [foco, setFoco] = useState<string | null>(null);
+  const [aberto, setAberto] = useState<string | null>(null);
   const [historico, setHistorico] = useState<Historico[]>([]);
 
   useEffect(() => {
@@ -113,36 +58,54 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     setHistorico((h ?? []) as Historico[]);
   }, [supabase, acesso]);
 
+  // O mês escolhido e o anterior, com todos os detalhes
   const carregar = useCallback(async () => {
     if (!acesso) return;
     const de = `${mesAnterior(mes)}-01`;
     const ate = `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}`;
     const { data } = await supabase.from("totvs_dias")
-      .select("unidade_id,dia,status,vendas,pessoas,total,resumo,produtos,pagamentos,garcons,cancelados")
+      .select("unidade_id,dia,status,vendas,pessoas,total,resumo,produtos,pagamentos,garcons,cancelados,sangrias,divergencias")
       .gte("dia", de).lte("dia", ate).order("dia");
     setDias((data ?? []) as Dia[]);
   }, [supabase, acesso, mes]);
+
+  // Só os totais dos 24 meses até o escolhido, para a evolução e a comparação com o ano anterior
+  const carregarSerie = useCallback(async () => {
+    if (!acesso || !unidade) return;
+    const { data } = await supabase.from("totvs_dias").select("dia,total,pessoas,status").eq("unidade_id", unidade)
+      .gte("dia", `${somarMeses(mes, -23)}-01`).lte("dia", `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}`).order("dia").limit(1000);
+    setSerie((data ?? []) as Ponto[]);
+  }, [supabase, acesso, unidade, mes]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
   useEffect(() => {
+    carregarSerie();
+  }, [carregarSerie]);
+
+  useEffect(() => {
     carregarMeses();
   }, [carregarMeses]);
+
+  useEffect(() => {
+    setAberto(null);
+  }, [mes, unidade]);
 
   useEffect(() => {
     if (!acesso) return;
     const ch = supabase.channel("totvs-painel")
       .on("postgres_changes", { event: "*", schema: "public", table: "totvs_dias" }, () => {
         carregar();
+        carregarSerie();
         carregarMeses();
       })
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [supabase, acesso, carregar, carregarMeses]);
+  }, [supabase, acesso, carregar, carregarSerie, carregarMeses]);
 
   if (acesso === false)
     return (
@@ -155,6 +118,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const hoje = hojeFortaleza();
   const ontem = new Date(Date.parse(`${hoje}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
   const mesAtual = mes === hoje.slice(0, 7);
+  // Ontem só "falta" depois da agenda das 4h30 (que tenta de novo até as 6h30)
+  const antesDaAgenda = new Date(Date.now() - 3 * 3600 * 1000).getUTCHours() < 7;
   const ultimoPossivel = mesAtual ? ontem : `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}`;
   const doMes = (dias ?? []).filter((d) => d.dia.startsWith(mes));
   const doAnterior = (dias ?? []).filter((d) => d.dia.startsWith(mesAnterior(mes)));
@@ -164,54 +129,54 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     const ds = doMes.filter((d) => d.unidade_id === u.id);
     const s = somar(ds);
     const ultimo = ds[ds.length - 1];
-    const diasEsperados = Math.max(0, +ultimoPossivel.slice(8, 10));
+    const diasEsperados = Math.max(0, +ultimoPossivel.slice(8, 10) - (mesAtual && antesDaAgenda && !ds.some((d) => d.dia === ontem) ? 1 : 0));
     return { u, ds, s, ultimo, diasEsperados, revisar: ds.filter((d) => d.status === "revisar").length };
   });
 
   const sel = resumoUnidades.find((x) => x.u.id === unidade);
   const ds = sel?.ds ?? [];
+  const ativos = ds.filter(comMovimento);
   const s = somar(ds);
   const produtosValor = s.comida + s.bebida + s.outros;
-  const nDias = ds.length;
+  const nDias = ativos.length;
   const ultimoDia = ds[ds.length - 1]?.dia;
-  const projecao = mesAtual && nDias ? (s.total / nDias) * diasNoMes(mes) : null;
   const limiteDia = ultimoDia ? +ultimoDia.slice(8, 10) : 0;
+  // Projeção pelos dias corridos do calendário (dias fechados também contam), não só pelos dias com venda
+  const projecao = mesAtual && limiteDia && limiteDia < diasNoMes(mes) ? (s.total / limiteDia) * diasNoMes(mes) : null;
+
+  // Comparações no mesmo trecho do mês: mês anterior e mesmo mês do ano anterior
   const anteriorAteDia = doAnterior.filter((d) => d.unidade_id === unidade && +d.dia.slice(8, 10) <= limiteDia);
   const totalAnterior = somar(anteriorAteDia).total;
-  const variacao = totalAnterior > 0 ? s.total / totalAnterior - 1 : null;
+  const anteriorCompleto = limiteDia > 0 && anteriorAteDia.length >= Math.ceil(limiteDia * 0.9);
+  const mesAnoAntes = somarMeses(mes, -12);
+  const anoAntes = (serie ?? []).filter((p) => p.dia.startsWith(mesAnoAntes) && +p.dia.slice(8, 10) <= limiteDia);
+  const totalAnoAntes = anoAntes.reduce((a, p) => a + Number(p.total), 0);
+  const anoAntesCompleto = limiteDia > 0 && anoAntes.length >= Math.ceil(limiteDia * 0.9) && totalAnoAntes > 0;
+
   const faltam: string[] = [];
   for (let i = 1; i <= +ultimoPossivel.slice(8, 10); i++) {
     const d = `${mes}-${String(i).padStart(2, "0")}`;
-    if (d <= ultimoPossivel && !ds.some((x) => x.dia === d)) faltam.push(d);
+    if (d <= ultimoPossivel && !ds.some((x) => x.dia === d) && !(d === ontem && antesDaAgenda)) faltam.push(d);
   }
 
   const maxDia = Math.max(...ds.map((d) => Number(d.total)), 1);
+  const melhor = ativos.reduce<Dia | undefined>((m, d) => (!m || Number(d.total) > Number(m.total) ? d : m), undefined);
   const porSemana = SEMANA.map((nome, w) => {
-    const x = ds.filter((d) => diaSemana(d.dia) === w);
+    const x = ativos.filter((d) => diaSemana(d.dia) === w);
     return { nome, n: x.length, media: x.length ? x.reduce((a, d) => a + Number(d.total), 0) / x.length : 0 };
   });
   const maxSemana = Math.max(...porSemana.map((x) => x.media), 1);
-
-  const produtos = agrupar<Produto>(ds, (d) => d.produtos, (p) => p.nome,
-    (a, p) => ({ ...p, quantidade: (a?.quantidade ?? 0) + Number(p.quantidade), valor: (a?.valor ?? 0) + Number(p.valor) }))
-    .sort((a, b) => b.valor - a.valor).slice(0, 10);
-  const pagamentos = agrupar<Pagamento>(ds, (d) => d.pagamentos, (p) => `${p.tipo}|${p.forma}`,
-    (a, p) => ({ ...p, valor: (a?.valor ?? 0) + Number(p.valor), vezes: (a?.vezes ?? 0) + Number(p.vezes) }))
-    .sort((a, b) => b.valor - a.valor);
+  const pagamentos = agruparPagamentos(ds);
   const totalPag = pagamentos.reduce((a, p) => a + p.valor, 0) || 1;
-  const garcons = agrupar<Garcom & { dias: Set<string> }>(ds, (d) => d.garcons as (Garcom & { dias: Set<string> })[], (g) => g.nome,
-    (a, g, dia) => ({ ...g, itens: (a?.itens ?? 0) + Number(g.itens), valor: (a?.valor ?? 0) + Number(g.valor), vendas: (a?.vendas ?? 0) + Number(g.vendas), dias: new Set([...(a?.dias ?? []), dia]) }))
-    .sort((a, b) => b.valor - a.valor).slice(0, 8);
 
-  const puxaveis = faltam;
   const buscando = historico.filter((h) => !h.parado);
 
   // Um dia por vez: vários pedidos juntos fazem a TOTVS estourar o tempo
   async function puxarFaltantes() {
-    if (!unidade || !puxaveis.length) return;
+    if (!unidade || !faltam.length) return;
     let falhas = 0;
-    for (const [i, d] of puxaveis.entries()) {
-      setPuxando(`Pedindo ${dataBr(d)} à TOTVS (${i + 1} de ${puxaveis.length})…`);
+    for (const [i, d] of faltam.entries()) {
+      setPuxando(`Pedindo ${dataBr(d)} à TOTVS (${i + 1} de ${faltam.length})…`);
       const { data: id } = await supabase.rpc("totvs_extrair", { p_unidade: unidade, p_dia: d });
       let status = "rodando";
       for (let t = 0; t < 60 && id && (status === "na_fila" || status === "rodando"); t++) {
@@ -224,17 +189,33 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     setPuxando(falhas ? `Terminei, mas ${falhas} dia(s) não vieram. Tente de novo daqui a pouco.` : "Pronto: todos os dias pedidos chegaram.");
   }
 
+  function baixarPlanilha() {
+    if (!sel) return;
+    const blob = new Blob([planilhaDoMes(sel.u.nome, ds)], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `vendas-${sel.u.id}-${mes}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   const totalGeral = resumoUnidades.reduce((a, x) => a + x.s.total, 0);
   const pessoasGeral = resumoUnidades.reduce((a, x) => a + x.s.pessoas, 0);
-  const anteriorCompleto = limiteDia > 0 && anteriorAteDia.length >= Math.ceil(limiteDia * 0.9);
   const escala = escalaBonita(maxDia);
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
+  const iAberto = aberto ? ds.findIndex((d) => d.dia === aberto) : -1;
+  const diaAberto = iAberto >= 0 ? ds[iAberto] : undefined;
   const anos = Array.from(new Set(meses.map((m) => m.slice(0, 4)))).sort();
   const mix = [
     { nome: "Comida", valor: s.comida, cor: "tp-cor-comida" },
     { nome: "Bebida", valor: s.bebida, cor: "tp-cor-bebida" },
     { nome: "Outros", valor: s.outros, cor: "tp-cor-outros" },
   ].filter((x) => x.valor > 0);
+
+  function abrirDia(dia: string) {
+    setAberto((a) => (a === dia ? null : dia));
+    requestAnimationFrame(() => document.getElementById("tp-dia")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  }
 
   return (
     <div className="pagina">
@@ -308,8 +289,19 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
         {sel && dias !== null && (
           <>
             <div className="tp-titulo">
-              <h2>{sel.u.nome}</h2>
-              <span className="tp-nota">{maiuscula(nomeMes(mes))}{ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}</span>
+              <div>
+                <h2>{sel.u.nome}</h2>
+                <span className="tp-nota">
+                  {maiuscula(nomeMes(mes))}{ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}
+                  {mesAtual && antesDaAgenda && ultimoDia !== ontem ? ` · ${dataBr(ontem)} chega às 4h30` : ""}
+                </span>
+              </div>
+              {ds.length > 0 && (
+                <button type="button" className="ghost small tp-baixar" onClick={baixarPlanilha} title="Planilha com um dia por linha (abre no Excel)">
+                  <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v9M4 6.5 8 10.5l4-4M2 13.5h12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  Baixar planilha
+                </button>
+              )}
             </div>
 
             {faltam.length > 0 && buscando.length === 0 && (
@@ -323,11 +315,11 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
             )}
 
             {nDias === 0 ? (
-              <p className="tp-vazio">Ainda não há dias deste mês para {sel.u.nome}.</p>
+              <p className="tp-vazio">Ainda não há vendas deste mês para {sel.u.nome}.</p>
             ) : (
               <>
                 <section className="tp-painel tp-kpis">
-                  <Indicador rotulo="Média por dia" valor={reais(s.total / nDias)} nota={`${nDias} dia(s) com movimento`} />
+                  <Indicador rotulo="Média por dia" valor={reais(s.total / nDias)} nota={`${plural(nDias, "dia", "dias")} com movimento`} />
                   <Indicador rotulo="Pessoas" valor={inteiro(s.pessoas)} nota={`${inteiro(s.pessoas / nDias)} por dia`} />
                   <Indicador rotulo="Ticket por pessoa" valor={s.pessoas ? reais(s.total / s.pessoas) : "—"} />
                   <Indicador rotulo="Cupons" valor={inteiro(s.vendas)} nota={`${inteiro(s.vendas / nDias)} por dia`} />
@@ -339,23 +331,34 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                   <div className="tp-ritmo-principal">
                     <span className="tp-rotulo">{projecao ? "Projeção para o mês" : "Realizado no mês"}</span>
                     <b className="tp-numero tp-numero-xl">{reais(projecao ?? s.total)}</b>
-                    {projecao && (
+                    {projecao ? (
                       <>
                         <span className="tp-progresso" aria-hidden="true"><i style={{ width: `${Math.min(100, (s.total / projecao) * 100)}%` }} /></span>
-                        <span className="tp-nota">{reais(s.total)} realizados em {nDias} de {diasNoMes(mes)} dias, pelo ritmo atual.</span>
+                        <span className="tp-nota">{reais(s.total)} realizados em {limiteDia} de {diasNoMes(mes)} dias, pelo ritmo atual.</span>
                       </>
+                    ) : (
+                      <span className="tp-nota">{plural(nDias, "dia", "dias")} com movimento{melhor ? ` · melhor dia ${dataBr(melhor.dia)} (${reais(Number(melhor.total))})` : ""}</span>
                     )}
                   </div>
                   <div className="tp-ritmo-compara">
-                    <span className="tp-rotulo">Contra {MESES[+mesAnterior(mes).slice(5, 7) - 1]}, até o dia {limiteDia}</span>
-                    {anteriorCompleto && variacao != null ? (
-                      <>
-                        <b className={`tp-numero ${variacao >= 0 ? "tp-sobe" : "tp-desce"}`}>{variacao >= 0 ? "▲" : "▼"} {pct(Math.abs(variacao))}</b>
-                        <span className="tp-nota">{reais(totalAnterior)} no mesmo período</span>
-                      </>
-                    ) : (
-                      <span className="tp-nota">O mês anterior ainda não está completo no Brasico.</span>
-                    )}
+                    <div>
+                      <span className="tp-rotulo">Contra {MESES[+mesAnterior(mes).slice(5, 7) - 1]}, até o dia {limiteDia}</span>
+                      {anteriorCompleto && totalAnterior > 0 ? (
+                        <>
+                          <b className="tp-numero"><Variacao v={s.total / totalAnterior - 1} /></b>
+                          <span className="tp-nota">{reais(totalAnterior)} no mesmo período</span>
+                        </>
+                      ) : <span className="tp-nota">O mês anterior não está completo no Brasico.</span>}
+                    </div>
+                    <div>
+                      <span className="tp-rotulo">Contra {MESES[+mesAnoAntes.slice(5, 7) - 1]} de {mesAnoAntes.slice(0, 4)}, até o dia {limiteDia}</span>
+                      {serie === null ? <span className="tp-nota">Carregando…</span> : anoAntesCompleto ? (
+                        <>
+                          <b className="tp-numero"><Variacao v={s.total / totalAnoAntes - 1} /></b>
+                          <span className="tp-nota">{reais(totalAnoAntes)} no mesmo período</span>
+                        </>
+                      ) : <span className="tp-nota">Sem vendas desse mês no Brasico para comparar.</span>}
+                    </div>
                   </div>
                   {mix.length > 0 && (
                     <div className="tp-mix">
@@ -378,7 +381,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                     <span className="tp-nota" aria-live="polite">
                       {diaFoco
                         ? `${SEMANA[diaSemana(diaFoco.dia)]}, ${dataBr(diaFoco.dia)} · ${reais(Number(diaFoco.total))} · ${inteiro(diaFoco.pessoas)} pessoas${diaFoco.status === "revisar" ? " · para revisar" : ""}`
-                        : `Média ${reais(s.total / nDias)} · melhor dia ${reais(maxDia)}`}
+                        : `Média ${reais(s.total / nDias)} · clique num dia para ver o detalhe`}
                     </span>
                   </div>
                   <div className="tp-grafico" style={{ "--tp-dias": diasNoMes(mes) } as CSSProperties}>
@@ -394,9 +397,11 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                           const dia = `${mes}-${String(i + 1).padStart(2, "0")}`;
                           const d = ds.find((x) => x.dia === dia);
                           return (
-                            <div key={dia} role="listitem" className={`tp-coluna${foco === dia ? " on" : ""}${d?.status === "revisar" ? " revisar" : ""}`}
+                            <div key={dia} role="listitem"
+                              className={`tp-coluna${foco === dia ? " on" : ""}${aberto === dia ? " escolhido" : ""}${d ? " clicavel" : ""}${d?.status === "revisar" ? " revisar" : ""}`}
                               onMouseEnter={() => setFoco(dia)} onFocus={() => setFoco(dia)} onBlur={() => setFoco(null)} tabIndex={d ? 0 : -1}
-                              aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}${d.status === "revisar" ? ", para revisar" : ""}` : `${dataBr(dia)}: sem dados`}>
+                              onClick={() => d && abrirDia(dia)} onKeyDown={(e) => d && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrirDia(dia))}
+                              aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}${d.status === "revisar" ? ", para revisar" : ""}. Abrir detalhe` : `${dataBr(dia)}: sem dados`}>
                               {d ? <i style={{ height: `${Math.max(1, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoPossivel ? <i className="falta" /> : null}
                             </div>
                           );
@@ -417,13 +422,23 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                   </p>
                 </section>
 
+                {diaAberto && (
+                  <div id="tp-dia">
+                    <PainelDia d={diaAberto} onFechar={() => setAberto(null)}
+                      onAnterior={iAberto > 0 ? () => setAberto(ds[iAberto - 1].dia) : undefined}
+                      onProximo={iAberto < ds.length - 1 ? () => setAberto(ds[iAberto + 1].dia) : undefined} />
+                  </div>
+                )}
+
+                <Evolucao serie={serie} mes={mes} hoje={hoje} meses={meses} onEscolher={setMes} />
+
                 <div className="tp-duas">
                   <section className="tp-painel">
-                    <div className="tp-painel-topo"><h3>Média por dia da semana</h3></div>
+                    <div className="tp-painel-topo"><h3>Média por dia da semana</h3><span className="tp-nota">só dias com movimento</span></div>
                     <ul className="tp-lista">
                       {porSemana.map((x) => (
                         <li key={x.nome}>
-                          <span>{x.nome}<small>{x.n} dia(s)</small></span>
+                          <span>{x.nome}<small>{plural(x.n, "dia", "dias")}</small></span>
                           <span className="tp-linha"><i style={{ width: `${(x.media / maxSemana) * 100}%` }} /></span>
                           <b>{x.n ? reais(x.media) : "—"}</b>
                         </li>
@@ -432,9 +447,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                   </section>
 
                   <section className="tp-painel">
-                    <div className="tp-painel-topo"><h3>Formas de pagamento</h3></div>
+                    <div className="tp-painel-topo"><h3>Formas de pagamento</h3><span className="tp-nota">{reais(totalPag)} recebidos</span></div>
                     <ul className="tp-lista">
-                      {pagamentos.slice(0, 7).map((p) => (
+                      {pagamentos.slice(0, 8).map((p) => (
                         <li key={`${p.tipo}${p.forma}`}>
                           <span title={p.forma}>{titulo(p.forma)}{p.tipo !== "caixa" && <small>{p.tipo}</small>}</span>
                           <span className="tp-linha"><i style={{ width: `${(p.valor / totalPag) * 100}%` }} /></span>
@@ -445,57 +460,14 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                   </section>
                 </div>
 
-                <div className="tp-duas">
-                  <section className="tp-painel">
-                    <div className="tp-painel-topo"><h3>Produtos mais vendidos</h3><span className="tp-nota">por faturamento</span></div>
-                    <table className="tp-tabela">
-                      <thead><tr><th>#</th><th>Produto</th><th>Qtd.</th><th>Valor</th></tr></thead>
-                      <tbody>
-                        {produtos.map((p, i) => (
-                          <tr key={p.nome}>
-                            <td>{i + 1}</td>
-                            <td title={p.nome}>{titulo(p.nome)}<small>{titulo(p.grupo ?? "")}</small></td>
-                            <td>{inteiro(p.quantidade)}</td>
-                            <td>{reais(p.valor)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </section>
-
-                  <section className="tp-painel">
-                    <div className="tp-painel-topo"><h3>Garçons</h3><span className="tp-nota">por valor vendido</span></div>
-                    <table className="tp-tabela">
-                      <thead><tr><th>#</th><th>Nome</th><th>Itens</th><th>Valor</th></tr></thead>
-                      <tbody>
-                        {garcons.map((g, i) => (
-                          <tr key={g.nome}>
-                            <td>{i + 1}</td>
-                            <td title={g.nome}>{titulo(g.nome)}<small>{g.dias.size} dia(s)</small></td>
-                            <td>{inteiro(g.itens)}</td>
-                            <td>{reais(g.valor)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </section>
-                </div>
-
-                <section className="tp-painel">
-                  <div className="tp-painel-topo"><h3>Abatimentos e perdas</h3></div>
-                  <div className="tp-kpis tp-kpis-5">
-                    <Indicador rotulo="Descontos" valor={reais(s.descontos)} />
-                    <Indicador rotulo="Cortesias" valor={reais(s.cortesias)} />
-                    <Indicador rotulo="Assinadas" valor={reais(s.assinadas)} />
-                    <Indicador rotulo="Sangrias" valor={reais(s.sangrias)} />
-                    <Indicador rotulo="Cancelamentos" valor={`${inteiro(s.itensCancelados)} itens`} nota={`${inteiro(s.cuponsCancelados)} cupom(ns)`} />
-                  </div>
-                </section>
+                <Produtos key={`p-${unidade}-${mes}`} dias={ds} />
+                <Garcons key={`g-${unidade}-${mes}`} dias={ds} />
+                <Perdas key={`a-${unidade}-${mes}`} dias={ds} />
 
                 <p className="tp-qualidade">
-                  {nDias} de {+ultimoPossivel.slice(8, 10)} dias lançados · {ds.filter((d) => d.status === "ok").length} conferidos
+                  {ds.length} de {+ultimoPossivel.slice(8, 10)} dias lançados · {ds.filter((d) => d.status === "ok").length} conferidos (o pago bate com o vendido)
                   {ds.some((d) => d.status === "sem_movimento") && ` · ${ds.filter((d) => d.status === "sem_movimento").length} sem movimento`}
-                  {sel.revisar > 0 && ` · ${sel.revisar} para revisar (${ds.filter((d) => d.status === "revisar").map((d) => dataBr(d.dia)).join(", ")}): alguma conferência da TOTVS não bateu, e os números aparecem como vieram.`}
+                  {sel.revisar > 0 && ` · ${sel.revisar} para revisar (${ds.filter((d) => d.status === "revisar").map((d) => dataBr(d.dia)).join(", ")}): o pago não bateu com o vendido, e os números aparecem como vieram.`}
                 </p>
               </>
             )}
@@ -535,7 +507,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
             <div className="tt-caixa">
               <span className="tt-passo">4</span>
               <b>Conferência</b>
-              <span className="muted">Os números são conferidos; o dia que não bate fica marcado para revisar</span>
+              <span className="muted">Cada venda é conferida com o que foi pago; o dia que não bate fica marcado para revisar</span>
             </div>
             <Seta />
             <div className="tt-caixa tt-destino">
