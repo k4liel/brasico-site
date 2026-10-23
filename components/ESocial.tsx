@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
   cpfVisivel, dataBR, diasEntre, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
-  montarCalendario, montarLeitura, montarPessoas, nomeMes, ROTULO_SITUACAO, tempoDeCasa,
+  montarAusencias, montarCalendario, montarLeitura, montarMovimentacoes, montarPessoas, nomeMes, ROTULO_SITUACAO, somarDias, tempoDeCasa,
   type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
@@ -27,6 +27,18 @@ const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
 // Segundo filtro: o que o governo já entregou de cada pessoa
 const LEITURAS = ["Todas", "Já lidas", "Ainda não lidas"] as const;
 type FiltroLeitura = (typeof LEITURAS)[number];
+// Seções do sistema de RH (navegação à esquerda; no celular, em linha)
+const SECOES = [
+  { id: "visao", rotulo: "Visão geral", icone: "inicio" },
+  { id: "pessoas", rotulo: "Pessoas", icone: "equipe" },
+  { id: "ausencias", rotulo: "Férias e afastamentos", icone: "ausencias" },
+  { id: "movimentacoes", rotulo: "Admissões e saídas", icone: "movimentacoes" },
+  { id: "folha", rotulo: "Folha e prazos", icone: "folha" },
+  { id: "integracao", rotulo: "Leitura do governo", icone: "leitura" },
+  { id: "ajuda", rotulo: "Ajuda", icone: "livro" },
+] as const;
+type Secao = (typeof SECOES)[number]["id"];
+const SECAO_PADRAO: Secao = "visao";
 
 const TIPO_PEDIDO: Record<string, string> = {
   teste_conexao: "Teste de conexão", identificadores_tabela: "Consulta de tabela", identificadores_empregador: "Consulta da empresa",
@@ -79,9 +91,25 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [busca, setBusca] = useState("");
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [filtroLeitura, setFiltroLeitura] = useState<FiltroLeitura>("Todas");
+  const [filtroUnidade, setFiltroUnidade] = useState("");
+  const [secao, setSecao] = useState<Secao>(SECAO_PADRAO);
+  // A seção fica no endereço (#pessoas, #folha…) para dar para voltar e compartilhar
+  useEffect(() => {
+    const ler = () => {
+      const h = window.location.hash.replace("#", "");
+      setSecao(SECOES.some((s) => s.id === h) ? (h as Secao) : SECAO_PADRAO);
+    };
+    ler();
+    window.addEventListener("hashchange", ler);
+    return () => window.removeEventListener("hashchange", ler);
+  }, []);
+  function irPara(s: Secao) {
+    setSecao(s);
+    window.history.replaceState(null, "", `#${s}`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
   const [aberta, setAberta] = useState<string | null>(null);
   const [verCpf, setVerCpf] = useState(false);
-  const [tecnicoAberto, setTecnicoAberto] = useState(false);
   const [painel, setPainel] = useState<"cpfs" | "historico" | null>(null);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState("");
@@ -184,16 +212,41 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const bloqueado = diaDoMes() <= 7;
 
   const termo = busca.trim().toLowerCase();
+  const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
   const equipe = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao))
+    .filter((p) => !filtroUnidade || p.unidade === filtroUnidade)
     .filter((p) => filtroLeitura === "Todas" || (filtroLeitura === "Já lidas") === !!p.leitura.ate)
     .filter((p) => !termo || p.nome.toLowerCase().includes(termo) || p.cpf.includes(termo.replace(/\D/g, "") || "#") || p.cargo.toLowerCase().includes(termo));
   // Lista longa: mostra 30 e um botão para ver o resto (a busca mostra tudo)
   const visiveis = mostrarTodos || termo ? equipe : equipe.slice(0, 30);
+  // Listas das outras seções (lib/esocial/rh.ts)
+  const foraAgora = pessoasVistas.filter((p) => p.situacao === "ferias" || p.situacao === "afastado");
+  const emExperiencia = pessoasVistas.filter((p) => p.situacao === "experiencia" && p.fimContrato).sort((a, b) => a.fimContrato!.localeCompare(b.fimContrato!));
+  const movimentacoes6 = montarMovimentacoes(pessoasVistas, 6);
+  const movimentacoes = movimentacoes6.filter((m) => m.quando >= somarDias(hoje(), -92));
+  const ausencias = montarAusencias(pessoasVistas);
 
-  function verFiltro(f: Filtro) {
-    setFiltro(f);
-    document.getElementById("es-equipe")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  // Painéis que aparecem dentro dos "Primeiros passos" e no estado vazio da equipe
+  const painelCpfs = painel === "cpfs" ? (
+    <PainelCpfs empresas={empresas} ocupado={ocupado} onFechar={() => setPainel(null)}
+      onEnviar={(empresa, cpfs) => rodar(async () => {
+        const r = await supabase.rpc("esocial_adicionar_cpfs", { p_empresa: empresa, p_cpfs: cpfs });
+        const inv = (r.data as { invalidos?: string[] } | null)?.invalidos ?? [];
+        if (!r.error && inv.length) return { error: { message: `Adicionados. Estes CPFs estão errados e ficaram de fora: ${inv.join(", ")}` } };
+        return r;
+      }, "CPFs adicionados. A leitura automática vai buscar os dados de cada um.")} />
+  ) : null;
+  const painelHistorico = painel === "historico" ? (
+    <PainelHistorico empresas={empresas} ocupado={ocupado} onFechar={() => setPainel(null)}
+      onSalvar={(data) => rodar(async () => {
+        for (const e of empresas) {
+          const r = await supabase.rpc("esocial_configurar", { p_empresa: e.id, p_leitura: null, p_limite: null, p_historico_desde: data });
+          if (r.error) return r;
+        }
+        setPainel(null);
+        return { error: null };
+      }, `Vamos ler desde ${dataBR(data)}. O histórico chega aos poucos (o governo libera 10 leituras por dia).`)} />
+  ) : null;
 
   function agirPasso(id: string) {
     if (id === "certificado") return (window.location.href = "/certificados");
@@ -223,10 +276,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     if (a.pessoa) return setAberta(a.pessoa);
     if (a.acao === "certificado") return (window.location.href = "/certificados");
     if (a.acao === "leitura") return rodar(() => supabase.rpc("esocial_configurar", { p_empresa: a.empresa_id, p_leitura: true, p_limite: null, p_historico_desde: null }), "Leitura automática ligada.");
-    if (a.acao === "tecnico") {
-      setTecnicoAberto(true);
-      setTimeout(() => document.getElementById("es-tecnico")?.scrollIntoView({ behavior: "smooth" }), 50);
-    }
+    if (a.acao === "tecnico") irPara("integracao");
   }
 
   if (acesso === false) {
@@ -245,13 +295,13 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="esocial" />
-      <main className="miolo tv es">
-        {/* Cabeçalho */}
+      <main className="miolo es es-sistema">
+        {/* Cabeçalho do sistema de RH */}
         <div className="es-topo">
           <div>
-            <h1>RH · eSocial</h1>
+            <h1>RH</h1>
             <p className="muted">
-              {ultimaLeitura ? `Última leitura do governo: ${horaCurta(ultimaLeitura.created_at)}` : "Ainda não lemos dados do governo"}
+              {ultimaLeitura ? `Dados do governo (eSocial) · última leitura ${horaCurta(ultimaLeitura.created_at)}` : "Dados do governo (eSocial) · ainda não lemos"}
               {leituras.length === 1 ? ` · próxima: ${leituras[0].proxima}` : ""}
               <Ajuda texto="Os dados vêm do eSocial, o sistema do governo onde o contador informa tudo sobre os funcionários. Aqui só lemos; nada é enviado ao governo." />
             </p>
@@ -268,7 +318,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
           )}
         </div>
 
-        {bloqueado && <p className="es-aviso">Do dia 1 ao dia 7 o governo não libera a leitura. Voltamos no dia 8; os dados abaixo são da última leitura.</p>}
+        {bloqueado && <p className="es-aviso">Do dia 1 ao dia 7 o governo não libera a leitura. Voltamos no dia 8; os dados são da última leitura.</p>}
         {erro && <p className="tv-alerta">{erro}</p>}
         {aviso && <p className="es-aviso">{aviso}</p>}
 
@@ -282,245 +332,409 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             <button className="small" onClick={() => (window.location.href = "/certificados")}>Enviar certificado</button>
           </section>
         ) : (
-          <>
-            {/* 0. Primeiros passos */}
-            {proximo && (
-              <section className="es-bloco">
-                <div className="es-bloco-cabeca">
-                  <h2><Icone nome="passos" />Primeiros passos</h2>
-                  <span className="muted">{feitos} de {passos.length} feitos</span>
-                </div>
-                <div className="es-barra" aria-hidden="true"><i style={{ width: `${(feitos / passos.length) * 100}%` }} /></div>
-                <ul className="es-passos">
-                  {passos.map((p) => (
-                    <li key={p.id} className={p.feito ? "feito" : p === proximo ? "proximo" : ""}>
-                      <span className="es-caixa" aria-hidden="true">{p.feito ? "✓" : ""}</span>
-                      <span>{p.texto}</span>
-                      {!p.feito && <button className={p === proximo ? "small" : "ghost small"} disabled={ocupado} onClick={() => agirPasso(p.id)}>{p.acao}</button>}
-                    </li>
-                  ))}
-                </ul>
-                {painel === "cpfs" && (
-                  <PainelCpfs empresas={empresas} ocupado={ocupado} onFechar={() => setPainel(null)}
-                    onEnviar={(empresa, cpfs) => rodar(async () => {
-                      const r = await supabase.rpc("esocial_adicionar_cpfs", { p_empresa: empresa, p_cpfs: cpfs });
-                      const inv = (r.data as { invalidos?: string[] } | null)?.invalidos ?? [];
-                      if (!r.error && inv.length) return { error: { message: `Adicionados. Estes CPFs estão errados e ficaram de fora: ${inv.join(", ")}` } };
-                      return r;
-                    }, "CPFs adicionados. A leitura automática vai buscar os dados de cada um.")} />
-                )}
-                {painel === "historico" && (
-                  <PainelHistorico empresas={empresas} ocupado={ocupado} onFechar={() => setPainel(null)}
-                    onSalvar={(data) => rodar(async () => {
-                      for (const e of empresas) {
-                        const r = await supabase.rpc("esocial_configurar", { p_empresa: e.id, p_leitura: null, p_limite: null, p_historico_desde: data });
-                        if (r.error) return r;
-                      }
-                      setPainel(null);
-                      return { error: null };
-                    }, `Vamos ler desde ${dataBR(data)}. O histórico chega aos poucos (o governo libera 10 leituras por dia).`)} />
-                )}
-              </section>
-            )}
+          <div className="es-layout">
+            {/* Navegação do sistema de RH */}
+            <nav className="es-nav" aria-label="Seções do RH">
+              {SECOES.map((s) => {
+                const n = s.id === "visao" ? alertas.length : s.id === "pessoas" ? numeros.ativos : s.id === "ausencias" ? foraAgora.length
+                  : s.id === "movimentacoes" ? movimentacoes.filter((m) => m.quando.startsWith(hoje().slice(0, 7))).length : s.id === "integracao" ? leituras.reduce((t, l) => t + l.esperandoDownload, 0) : 0;
+                return (
+                  <button key={s.id} className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
+                    <Icone nome={s.icone} />
+                    <span>{s.rotulo}</span>
+                    {n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
+                  </button>
+                );
+              })}
+            </nav>
 
-            {/* 0b. Leitura do governo: o que já foi lido, o que falta, acessos de hoje */}
-            <section className="es-bloco">
-              <div className="es-bloco-cabeca">
-                <h2><Icone nome="leitura" />Leitura do governo</h2>
-                <Ajuda texto="O governo libera só 10 acessos por dia por empresa e entrega os dados de cada funcionário um por vez. Por isso a leitura é feita aos poucos: todo dia, das 8h às 20h, uma consulta a cada 15 minutos. Aqui você vê o que já chegou e o que ainda falta." />
-              </div>
-              <div className="es-leituras">
-                {leituras.map((l) => {
-                  const pct = l.pessoas ? Math.round((l.lidas / l.pessoas) * 100) : 0;
-                  return (
-                    <div key={l.empresa_id} className="es-leitura">
-                      <div className="es-leitura-cabeca">
-                        <strong>{nomeCurto(l.nome)}</strong>
-                        <span className={`es-selo ${l.semCertificado ? "" : l.ligada ? "trabalhando" : "experiencia"}`}>
-                          {l.semCertificado ? "Sem certificado" : l.ligada ? "Leitura ligada" : "Leitura desligada"}
-                        </span>
+            <div className="es-conteudo">
+              {/* ===================== Visão geral ===================== */}
+              {secao === "visao" && (
+                <>
+                  {proximo && (
+                    <section className="es-bloco">
+                      <div className="es-bloco-cabeca">
+                        <h2><Icone nome="passos" />Primeiros passos</h2>
+                        <span className="muted">{feitos} de {passos.length} feitos</span>
                       </div>
-                      <div className="es-leitura-linha">
-                        <span>Pessoas com o último mês lido</span>
-                        <strong>{l.lidas} de {l.pessoas}</strong>
-                      </div>
-                      <div className="es-barra" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
-                      <dl className="es-leitura-dados">
-                        <div><dt>Histórico lido</dt><dd>{l.lidoDesde ? `${dataBR(l.lidoDesde)} a ${dataBR(l.lidoAte)}` : "nenhum ainda"} <span className="muted">· pedido desde {dataBR(l.metaDesde)}</span></dd></div>
-                        <div><dt>Eventos guardados</dt><dd>{l.eventosBaixados}{l.esperandoDownload ? <span className="muted"> · {l.esperandoDownload} esperando download</span> : null}</dd></div>
-                        <div><dt>Acessos de hoje</dt><dd>{l.usadosHoje} de {l.limite}{l.usadosHoje ? <span className="muted"> · {l.hojeOk} ok{l.hojeVazios ? `, ${l.hojeVazios} vazios` : ""}{l.hojeErros ? `, ${l.hojeErros} com erro` : ""}</span> : null}</dd></div>
-                        <div><dt>Próxima leitura</dt><dd>{l.proxima}</dd></div>
-                        {l.ultima && <div><dt>Última resposta</dt><dd className={l.ultima.ok ? "" : "es-ruim"}>{horaCurta(l.ultima.quando)} · {l.ultima.texto}</dd></div>}
-                      </dl>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
+                      <div className="es-barra" aria-hidden="true"><i style={{ width: `${(feitos / passos.length) * 100}%` }} /></div>
+                      <ul className="es-passos">
+                        {passos.map((p) => (
+                          <li key={p.id} className={p.feito ? "feito" : p === proximo ? "proximo" : ""}>
+                            <span className="es-caixa" aria-hidden="true">{p.feito ? "✓" : ""}</span>
+                            <span>{p.texto}</span>
+                            {!p.feito && <button className={p === proximo ? "small" : "ghost small"} disabled={ocupado} onClick={() => agirPasso(p.id)}>{p.acao}</button>}
+                          </li>
+                        ))}
+                      </ul>
+                      {painelCpfs}
+                      {painelHistorico}
+                    </section>
+                  )}
 
-            {/* 1. Precisa de atenção */}
-            <section className="es-bloco">
-              <div className="es-bloco-cabeca"><h2><Icone nome="atencao" />Precisa de atenção</h2>{alertas.length > 5 && <span className="muted">5 de {alertas.length}</span>}</div>
-              {alertas.length === 0 ? (
-                <p className="es-tudo-certo">✓ Nada pendente. Olhamos contratos de experiência, afastamentos, prazos de admissão e desligamento, fechamento da folha e certificados.</p>
-              ) : (
-                <ul className="es-alertas">
-                  {alertas.slice(0, 5).map((a, i) => (
-                    <li key={i} className={`es-alerta ${a.nivel}`}>
-                      <span className="es-alerta-icone" aria-hidden="true">{a.nivel === "erro" ? "!" : a.nivel === "atencao" ? "!" : "i"}</span>
-                      <div>
-                        <strong>{a.texto}</strong>
-                        <span className="muted">{a.detalhe}</span>
-                      </div>
-                      {(a.pessoa || a.acao) && <button className="ghost small" onClick={() => agirAlerta(a)}>{a.pessoa ? "Ver ficha" : a.acao === "leitura" ? "Ligar" : "Ver"}</button>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {/* 2. Números */}
-            <div className="es-numeros">
-              <Numero rotulo="Trabalhando" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}
-                ajuda="Pessoas com admissão informada e sem desligamento. Inclui quem está de férias ou afastado." onClick={() => verFiltro("Trabalhando")} />
-              <Numero rotulo="Afastados agora" valor={String(numeros.ferias + numeros.afastados)} detalhe={`${numeros.ferias} de férias · ${numeros.afastados} por outros motivos`}
-                ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => verFiltro("Afastados")} />
-              <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
-                detalhe={numeros.rotatividade != null ? "Restaurantes: 73% a 78% ao ano" : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
-                ajuda="Quanto da equipe foi trocada no ano: média de entradas e saídas dividida pelo número de pessoas. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
-              <Numero rotulo="Saíram antes de 90 dias" valor={String(numeros.cedo)} detalhe={`de ${numeros.saidasAno} saídas no ano · ${numeros.pediram} pediram para sair`}
-                ajuda="Gente que saiu nos primeiros 3 meses. Número alto costuma indicar problema na contratação ou no treinamento." onClick={() => verFiltro("Saíram")} />
-            </div>
-
-            {/* 3. Folha do mês */}
-            <section className="es-bloco">
-              <div className="es-bloco-cabeca">
-                <h2><Icone nome="folha" />Folha do mês</h2>
-                <Ajuda texto="Todo mês o contador envia a folha ao governo e a 'fecha' até o dia 15. Depois disso saem as guias de INSS (DCTFWeb) e FGTS (FGTS Digital), que vencem no dia 20." />
-              </div>
-              <ul className="es-folhas">
-                {folhas.map((f) => (
-                  <li key={`${f.empresa_id}-${f.competencia}`}>
-                    <span><strong>{nomeMes(f.competencia)}</strong> · {nomeEmpresa(f.empresa_id)}</span>
-                    {f.fechada != null ? (
-                      <span className="es-ok">✓ Fechada pelo contador{f.fechada ? ` em ${dataBR(f.fechada)}` : ""}</span>
-                    ) : f.consultada ? (
-                      <span className={f.competencia === mesAnterior() && diaDoMes() <= 15 ? "muted" : "es-ruim"}>
-                        {f.competencia === mesAnterior() && diaDoMes() <= 15 ? "Ainda não fechada (prazo dia 15)" : "✕ Não vimos o fechamento"}
-                      </span>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="atencao" />Precisa de atenção</h2>{alertas.length > 5 && <span className="muted">5 de {alertas.length}</span>}</div>
+                    {alertas.length === 0 ? (
+                      <p className="es-tudo-certo">✓ Nada pendente. Olhamos contratos de experiência, afastamentos, prazos de admissão e desligamento, fechamento da folha e certificados.</p>
                     ) : (
-                      <span className="muted">Ainda não lemos esta folha</span>
+                      <ul className="es-alertas">
+                        {alertas.slice(0, 5).map((a, i) => (
+                          <li key={i} className={`es-alerta ${a.nivel}`}>
+                            <span className="es-alerta-icone" aria-hidden="true">{a.nivel === "info" ? "i" : "!"}</span>
+                            <div><strong>{a.texto}</strong><span className="muted">{a.detalhe}</span></div>
+                            {(a.pessoa || a.acao) && <button className="ghost small" onClick={() => agirAlerta(a)}>{a.pessoa ? "Ver ficha" : a.acao === "leitura" ? "Ligar" : "Ver"}</button>}
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                  </li>
-                ))}
-              </ul>
-              <p className="muted es-nota">Lembretes: folha no eSocial até o dia 15 · guias de INSS e FGTS até o dia 20.</p>
-            </section>
+                  </section>
 
-            {/* 3b. Calendário do mês */}
-            <section className="es-bloco">
-              <div className="es-bloco-cabeca">
-                <h2><Icone nome="calendario" />Calendário de {nomeMes(hoje().slice(0, 7))}</h2>
-                <Ajuda texto="As datas fixas do mês para o empregador: pagamento, prazo do contador no eSocial, declaração do INSS e guias. O que já aconteceu fica marcado com ✓." />
-              </div>
-              <ol className="es-calendario">
-                {calendario.map((c, i) => (
-                  <li key={i} className={`es-cal-item ${c.estado}`}>
-                    <span className="es-cal-dia"><b>{c.dia}</b><small>{nomeMes(c.data.slice(0, 7)).slice(0, 3)}</small></span>
-                    <div>
-                      <strong>{c.titulo}</strong>
-                      <span className="muted">{c.detalhe}</span>
+                  <div className="es-numeros">
+                    <Numero rotulo="Trabalhando" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}
+                      ajuda="Pessoas com admissão informada e sem desligamento. Inclui quem está de férias ou afastado." onClick={() => { setFiltro("Trabalhando"); irPara("pessoas"); }} />
+                    <Numero rotulo="Fora hoje" valor={String(foraAgora.length)} detalhe={`${numeros.ferias} de férias · ${numeros.afastados} afastados`}
+                      ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => irPara("ausencias")} />
+                    <Numero rotulo="Em experiência" valor={String(emExperiencia.length)} detalhe={emExperiencia[0] ? `próximo acaba ${dataBR(emExperiencia[0].fimContrato)}` : "nenhum contrato a vencer"}
+                      ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("movimentacoes")} />
+                    <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
+                      detalhe={numeros.rotatividade != null ? "Restaurantes: 73% a 78% ao ano" : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
+                      ajuda="Quanto da equipe foi trocada no ano: média de entradas e saídas dividida pelo número de pessoas. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
+                  </div>
+
+                  <div className="es-duas">
+                    <section className="es-bloco">
+                      <div className="es-bloco-cabeca"><h2><Icone nome="calendario" />Próximos prazos</h2><button className="ghost small" onClick={() => irPara("folha")}>Ver o mês</button></div>
+                      <ol className="es-calendario compacto">
+                        {calendario.filter((c) => c.estado !== "feito").slice(0, 3).map((c, i) => (
+                          <li key={i} className={`es-cal-item ${c.estado}`}>
+                            <span className="es-cal-dia"><b>{c.dia}</b><small>{nomeMes(c.data.slice(0, 7)).slice(0, 3)}</small></span>
+                            <div><strong>{c.titulo}</strong><span className="muted">{c.detalhe}</span></div>
+                          </li>
+                        ))}
+                        {calendario.every((c) => c.estado === "feito") && <li className="muted">Nada pendente neste mês.</li>}
+                      </ol>
+                    </section>
+                    <section className="es-bloco">
+                      <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Movimentações recentes</h2><button className="ghost small" onClick={() => irPara("movimentacoes")}>Ver todas</button></div>
+                      {movimentacoes.length === 0 ? (
+                        <p className="muted tv-nada">Nenhuma admissão ou saída lida nos últimos 3 meses.</p>
+                      ) : (
+                        <ul className="es-lista">
+                          {movimentacoes.slice(0, 5).map((m, i) => (
+                            <li key={i}><button className="es-linha-botao" onClick={() => setAberta(m.pessoa.chave)}>
+                              <span className={`es-ponto-mov ${m.tipo}`} aria-hidden="true" />
+                              <span className="es-lista-texto"><strong>{nomeProprio(m.pessoa.nome)}</strong><span className="muted">{m.texto}</span></span>
+                              <span className="muted">{dataBR(m.quando)}</span>
+                            </button></li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  </div>
+
+                  <section className="es-bloco es-leitura-resumo">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="leitura" />Leitura do governo</h2><button className="ghost small" onClick={() => irPara("integracao")}>Ver detalhes</button></div>
+                    <ul className="es-lista">
+                      {leituras.map((l) => (
+                        <li key={l.empresa_id} className="es-leitura-curta">
+                          <strong>{nomeCurto(l.nome)}</strong>
+                          <span>{l.lidas} de {l.pessoas} pessoas com o último mês lido</span>
+                          <span className="muted">· {l.usadosHoje} de {l.limite} acessos hoje · próxima: {l.proxima}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </>
+              )}
+
+              {/* ===================== Pessoas ===================== */}
+              {secao === "pessoas" && (
+                <section className="es-bloco" id="es-equipe">
+                  <div className="es-bloco-cabeca">
+                    <h2><Icone nome="equipe" />Pessoas <span className="muted">{pessoasVistas.length}</span></h2>
+                    <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
+                      <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
+                    </button>
+                  </div>
+                  <div className="es-filtros">
+                    <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar na equipe" />
+                    <div className="tv-unidades">
+                      {FILTROS.map((f) => {
+                        const n = pessoasVistas.filter((p) => NO_FILTRO[f](p.situacao)).length;
+                        return (
+                          <button key={f} className={f === filtro ? "botao-painel on" : "botao-painel"} onClick={() => setFiltro(f)}>{f} <span className="muted">{n}</span></button>
+                        );
+                      })}
                     </div>
-                    <span className={`es-cal-quem ${c.quem}`}>{c.quem === "contador" ? "Contador" : c.quem === "governo" ? "Governo" : "Empresa"}</span>
-                    <span className="es-cal-estado" aria-label={c.estado}>{c.estado === "feito" ? "✓" : c.estado === "atrasado" ? "!" : c.estado === "pendente" ? "•" : ""}</span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-
-            {/* 4. Equipe */}
-            <section className="es-bloco" id="es-equipe">
-              <div className="es-bloco-cabeca">
-                <h2><Icone nome="equipe" />Equipe</h2>
-                <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
-                  <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
-                </button>
-              </div>
-              <div className="es-filtros">
-                <div className="tv-unidades">
-                  {FILTROS.map((f) => {
-                    const n = pessoasVistas.filter((p) => NO_FILTRO[f](p.situacao)).length;
-                    return (
-                      <button key={f} className={f === filtro ? "botao-painel on" : "botao-painel"} onClick={() => setFiltro(f)}>
-                        {f} <span className="muted">{n}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="tv-unidades es-filtro-leitura" role="group" aria-label="Leitura do governo">
-                  {LEITURAS.map((f) => {
-                    const n = f === "Todas" ? pessoasVistas.length : pessoasVistas.filter((p) => (f === "Já lidas") === !!p.leitura.ate).length;
-                    return (
-                      <button key={f} className={f === filtroLeitura ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroLeitura(f)}>
-                        {f} <span className="muted">{n}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar na equipe" />
-              </div>
-              {pessoasVistas.length === 0 ? (
-                <div className="es-vazio">
-                  <p><strong>Nenhum funcionário ainda.</strong></p>
-                  <p className="muted">O governo entrega os dados de cada pessoa pelo CPF. Adicione os CPFs da equipe e a leitura automática traz admissões, férias e saídas.</p>
-                  <button className="small" onClick={() => setPainel("cpfs")}>Adicionar CPFs</button>
-                </div>
-              ) : equipe.length === 0 ? (
-                <p className="muted tv-nada">Ninguém neste filtro.</p>
-              ) : (
-                <ul className="es-equipe">
-                  {visiveis.map((p) => (
-                    <li key={p.chave}>
-                      <button className="es-pessoa" onClick={() => setAberta(p.chave)}>
-                        <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
-                        <span className="es-pessoa-nome">
-                          <strong>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}</strong>
-                          <span className="muted">
-                            {p.unidade && <span className="es-unidade">{p.unidade}</span>}
-                            {[titulo(p.cargo), !p.unidade && filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
-                          </span>
-                        </span>
-                        <span className="es-pessoa-desde muted">
-                          {p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}
-                          <small className={p.leitura.ate ? "es-lida" : "es-nao-lida"}>{p.leitura.ate ? `governo lido até ${dataBR(p.leitura.ate)}` : "governo ainda não lido"}</small>
-                        </span>
-                        <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
-                        {p.alertas.length > 0 && <span className="es-pessoa-alerta" title={p.alertas[0].texto}>!</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                    {unidades.length > 1 && (
+                      <div className="tv-unidades" role="group" aria-label="Unidade">
+                        <button className={filtroUnidade === "" ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroUnidade("")}>Todas as unidades</button>
+                        {unidades.map((u) => (
+                          <button key={u} className={filtroUnidade === u ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroUnidade(u)}>
+                            {u} <span className="muted">{pessoasVistas.filter((p) => p.unidade === u).length}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="tv-unidades es-filtro-leitura" role="group" aria-label="Leitura do governo">
+                      {LEITURAS.map((f) => {
+                        const n = f === "Todas" ? pessoasVistas.length : pessoasVistas.filter((p) => (f === "Já lidas") === !!p.leitura.ate).length;
+                        return (
+                          <button key={f} className={f === filtroLeitura ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroLeitura(f)}>{f} <span className="muted">{n}</span></button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {pessoasVistas.length === 0 ? (
+                    <div className="es-vazio">
+                      <p><strong>Nenhum funcionário ainda.</strong></p>
+                      <p className="muted">O governo entrega os dados de cada pessoa pelo CPF. Adicione os CPFs da equipe e a leitura automática traz admissões, férias e saídas.</p>
+                      <button className="small" onClick={() => setPainel("cpfs")}>Adicionar CPFs</button>
+                      {painelCpfs}
+                    </div>
+                  ) : equipe.length === 0 ? (
+                    <p className="muted tv-nada">Ninguém neste filtro.</p>
+                  ) : (
+                    <ul className="es-equipe">
+                      {visiveis.map((p) => (
+                        <li key={p.chave}>
+                          <button className="es-pessoa" onClick={() => setAberta(p.chave)}>
+                            <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
+                            <span className="es-pessoa-nome">
+                              <strong>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}</strong>
+                              <span className="muted">
+                                {p.unidade && <span className="es-unidade">{p.unidade}</span>}
+                                {[titulo(p.cargo), !p.unidade && filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
+                              </span>
+                            </span>
+                            <span className="es-pessoa-desde muted">
+                              {p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}
+                              <small className={p.leitura.ate ? "es-lida" : "es-nao-lida"}>{p.leitura.ate ? `governo lido até ${dataBR(p.leitura.ate)}` : "governo ainda não lido"}</small>
+                            </span>
+                            <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
+                            {p.alertas.length > 0 && <span className="es-pessoa-alerta" title={p.alertas[0].texto}>!</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {visiveis.length < equipe.length && (
+                    <p className="es-mais"><button className="ghost small" onClick={() => setMostrarTodos(true)}>Mostrar as outras {equipe.length - visiveis.length} pessoas</button></p>
+                  )}
+                </section>
               )}
-              {visiveis.length < equipe.length && (
-                <p className="es-mais"><button className="ghost small" onClick={() => setMostrarTodos(true)}>Mostrar as outras {equipe.length - visiveis.length} pessoas</button></p>
-              )}
-            </section>
 
-            {/* 5. Configurações e área técnica */}
-            <details className="es-bloco es-tecnico" id="es-tecnico" open={tecnicoAberto} onToggle={(e) => setTecnicoAberto((e.target as HTMLDetailsElement).open)}>
-              <summary>
-                <span><Icone nome="tecnico" /><strong>Configurações e área técnica</strong> <span className="muted">· leitura automática, eventos do jeito que o governo guarda</span></span>
-              </summary>
-              {tecnicoAberto && (
-                <AreaTecnica empresas={empresas} empresaInicial={filtroEmpresa === "todas" ? empresas[0]?.id ?? null : filtroEmpresa}
-                  eventos={eventos} trabalhadores={trabalhadores} execucoes={execucoes} verCpf={verCpf} alternarCpf={alternarCpf}
-                  ocupado={ocupado} emAndamento={emAndamento} bloqueado={bloqueado} rodar={rodar} supabase={supabase} />
+              {/* ===================== Férias e afastamentos ===================== */}
+              {secao === "ausencias" && (
+                <>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="ausencias" />Fora agora</h2><span className="muted">{foraAgora.length}</span></div>
+                    {foraAgora.length === 0 ? (
+                      <p className="muted tv-nada">Ninguém de férias ou afastado neste momento, pelo que o governo já entregou.</p>
+                    ) : (
+                      <ul className="es-lista">
+                        {foraAgora.map((p) => (
+                          <li key={p.chave}><button className="es-linha-botao" onClick={() => setAberta(p.chave)}>
+                            <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
+                            <span className="es-lista-texto"><strong>{nomeProprio(p.nome)}</strong><span className="muted">{p.unidade}{p.unidade ? " · " : ""}{titulo(p.cargo)}</span></span>
+                            <span className={`es-selo ${p.situacao}`}>{p.situacao === "ferias" ? "Férias" : "Afastado"}</span>
+                            <span className="muted">{p.afastamento ? `desde ${dataBR(p.afastamento.desde)} (${diasEntre(p.afastamento.desde, hoje())} dias)` : ""}</span>
+                          </button></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="calendario" />Férias e afastamentos lidos</h2><span className="muted">{ausencias.length}</span></div>
+                    {ausencias.length === 0 ? (
+                      <div className="es-vazio">
+                        <p><strong>Ainda sem férias ou afastamentos lidos.</strong></p>
+                        <p className="muted">Eles chegam com a leitura de cada pessoa no governo (evento S-2230). Férias programadas e saldo de férias dependem do histórico completo, que vem dos arquivos do contador.</p>
+                      </div>
+                    ) : (
+                      <ul className="es-lista">
+                        {ausencias.map((a, i) => (
+                          <li key={i}><button className="es-linha-botao" onClick={() => setAberta(a.pessoa.chave)}>
+                            <span className="es-lista-texto"><strong>{nomeProprio(a.pessoa.nome)}</strong><span className="muted">{a.texto}</span></span>
+                            <span className="muted">{dataBR(a.inicio)}{a.fim ? ` → ${dataBR(a.fim)}` : " → em aberto"}</span>
+                          </button></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </>
               )}
-              {tecnicoAberto && <RegistroConsultas consultas={consultas} meuId={userId} />}
-            </details>
 
-            <Glossario />
-          </>
+              {/* ===================== Admissões e saídas ===================== */}
+              {secao === "movimentacoes" && (
+                <>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="passos" />Contratos de experiência</h2><span className="muted">{emExperiencia.length}</span></div>
+                    {emExperiencia.length === 0 ? (
+                      <p className="muted tv-nada">Nenhum contrato de experiência em andamento, pelo que o governo já entregou. (Admissões antigas só mostram a data de término depois da leitura do evento de admissão.)</p>
+                    ) : (
+                      <ul className="es-lista">
+                        {emExperiencia.map((p) => {
+                          const d = diasEntre(hoje(), p.fimContrato!);
+                          return (
+                            <li key={p.chave}><button className="es-linha-botao" onClick={() => setAberta(p.chave)}>
+                              <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
+                              <span className="es-lista-texto"><strong>{nomeProprio(p.nome)}</strong><span className="muted">{p.unidade}{p.unidade ? " · " : ""}{titulo(p.cargo)} · entrou em {dataBR(p.dtAdm)}</span></span>
+                              <span className={d <= 10 ? "es-ruim" : ""}>{d === 0 ? "acaba hoje" : d < 0 ? "venceu" : `acaba em ${d} dia${d === 1 ? "" : "s"}`} · {dataBR(p.fimContrato)}</span>
+                            </button></li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </section>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Admissões e saídas</h2><span className="muted">últimos 6 meses · {movimentacoes6.length}</span></div>
+                    {movimentacoes6.length === 0 ? (
+                      <p className="muted tv-nada">Nenhuma admissão ou saída nos últimos 6 meses, pelo cadastro e pelo que o governo já entregou.</p>
+                    ) : (
+                      <ul className="es-lista">
+                        {movimentacoes6.map((m, i) => (
+                          <li key={i}><button className="es-linha-botao" onClick={() => setAberta(m.pessoa.chave)}>
+                            <span className={`es-ponto-mov ${m.tipo}`} aria-hidden="true" />
+                            <span className="es-lista-texto"><strong>{nomeProprio(m.pessoa.nome)}</strong><span className="muted">{m.texto}{m.pessoa.unidade ? ` · ${m.pessoa.unidade}` : ""}</span></span>
+                            <span className="muted">{dataBR(m.quando)}</span>
+                            {m.prazo && <span className={m.prazo.ok ? "es-ok" : "es-ruim"}>{m.prazo.ok ? "no prazo ✓" : "fora do prazo ✕"}</span>}
+                          </button></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </>
+              )}
+
+              {/* ===================== Folha e prazos ===================== */}
+              {secao === "folha" && (
+                <>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca">
+                      <h2><Icone nome="folha" />Folha do mês</h2>
+                      <Ajuda texto="Todo mês o contador envia a folha ao governo e a 'fecha' até o dia 15. Depois disso saem as guias de INSS (DCTFWeb) e FGTS (FGTS Digital), que vencem no dia 20." />
+                    </div>
+                    <ul className="es-folhas">
+                      {folhas.map((f) => (
+                        <li key={`${f.empresa_id}-${f.competencia}`}>
+                          <span><strong>{nomeMes(f.competencia)}</strong> · {nomeEmpresa(f.empresa_id)}</span>
+                          {f.fechada != null ? (
+                            <span className="es-ok">✓ Fechada pelo contador{f.fechada ? ` em ${dataBR(f.fechada)}` : ""}</span>
+                          ) : f.consultada ? (
+                            <span className={f.competencia === mesAnterior() && diaDoMes() <= 15 ? "muted" : "es-ruim"}>
+                              {f.competencia === mesAnterior() && diaDoMes() <= 15 ? "Ainda não fechada (prazo dia 15)" : "✕ Não vimos o fechamento"}
+                            </span>
+                          ) : (
+                            <span className="muted">Ainda não lemos esta folha</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="muted es-nota">Custo da folha, encargos e folha sobre vendas entram quando lermos as remunerações (S-1200) e as rubricas do contador.</p>
+                  </section>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca">
+                      <h2><Icone nome="calendario" />Calendário de {nomeMes(hoje().slice(0, 7))}</h2>
+                      <Ajuda texto="As datas fixas do mês para o empregador: pagamento, prazo do contador no eSocial, declaração do INSS e guias. O que já aconteceu fica marcado com ✓." />
+                    </div>
+                    <ol className="es-calendario">
+                      {calendario.map((c, i) => (
+                        <li key={i} className={`es-cal-item ${c.estado}`}>
+                          <span className="es-cal-dia"><b>{c.dia}</b><small>{nomeMes(c.data.slice(0, 7)).slice(0, 3)}</small></span>
+                          <div><strong>{c.titulo}</strong><span className="muted">{c.detalhe}</span></div>
+                          <span className={`es-cal-quem ${c.quem}`}>{c.quem === "contador" ? "Contador" : c.quem === "governo" ? "Governo" : "Empresa"}</span>
+                          <span className="es-cal-estado" aria-label={c.estado}>{c.estado === "feito" ? "✓" : c.estado === "atrasado" ? "!" : c.estado === "pendente" ? "•" : ""}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                </>
+              )}
+
+              {/* ===================== Leitura do governo (integração) ===================== */}
+              {secao === "integracao" && (
+                <>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca">
+                      <h2><Icone nome="leitura" />Andamento da leitura</h2>
+                      <Ajuda texto="O governo libera só 10 acessos por dia por empresa e entrega os dados de cada funcionário um por vez. Por isso a leitura é feita aos poucos: todo dia, das 8h às 20h, uma consulta a cada 15 minutos. Aqui você vê o que já chegou e o que ainda falta." />
+                    </div>
+                    <div className="es-leituras">
+                      {leituras.map((l) => {
+                        const pct = l.pessoas ? Math.round((l.lidas / l.pessoas) * 100) : 0;
+                        return (
+                          <div key={l.empresa_id} className="es-leitura">
+                            <div className="es-leitura-cabeca">
+                              <strong>{nomeCurto(l.nome)}</strong>
+                              <span className={`es-selo ${l.semCertificado ? "" : l.ligada ? "trabalhando" : "experiencia"}`}>
+                                {l.semCertificado ? "Sem certificado" : l.ligada ? "Leitura ligada" : "Leitura desligada"}
+                              </span>
+                            </div>
+                            <div className="es-leitura-linha"><span>Pessoas com o último mês lido</span><strong>{l.lidas} de {l.pessoas}</strong></div>
+                            <div className="es-barra" aria-hidden="true"><i style={{ width: `${pct}%` }} /></div>
+                            <dl className="es-leitura-dados">
+                              <div><dt>Histórico lido</dt><dd>{l.lidoDesde ? `${dataBR(l.lidoDesde)} a ${dataBR(l.lidoAte)}` : "nenhum ainda"} <span className="muted">· pedido desde {dataBR(l.metaDesde)}</span></dd></div>
+                              <div><dt>Eventos guardados</dt><dd>{l.eventosBaixados}{l.esperandoDownload ? <span className="muted"> · {l.esperandoDownload} esperando download</span> : null}</dd></div>
+                              <div><dt>Acessos de hoje</dt><dd>{l.usadosHoje} de {l.limite}{l.usadosHoje ? <span className="muted"> · {l.hojeOk} ok{l.hojeVazios ? `, ${l.hojeVazios} vazios` : ""}{l.hojeErros ? `, ${l.hojeErros} com erro` : ""}</span> : null}</dd></div>
+                              <div><dt>Próxima leitura</dt><dd>{l.proxima}</dd></div>
+                              {l.ultima && <div><dt>Última resposta</dt><dd className={l.ultima.ok ? "" : "es-ruim"}>{horaCurta(l.ultima.quando)} · {l.ultima.texto}</dd></div>}
+                            </dl>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="muted es-nota">Como funciona: 9 consultas por dia buscam os eventos de um funcionário cada (o mês mais recente de todos primeiro, depois o histórico para trás) e o último acesso do dia baixa tudo o que foi encontrado. Para ter o histórico completo de uma vez, importe os arquivos do contador.</p>
+                  </section>
+
+                  {proximo && (
+                    <section className="es-bloco">
+                      <div className="es-bloco-cabeca"><h2><Icone nome="passos" />Primeiros passos</h2><span className="muted">{feitos} de {passos.length} feitos</span></div>
+                      <ul className="es-passos">
+                        {passos.map((p) => (
+                          <li key={p.id} className={p.feito ? "feito" : p === proximo ? "proximo" : ""}>
+                            <span className="es-caixa" aria-hidden="true">{p.feito ? "✓" : ""}</span>
+                            <span>{p.texto}</span>
+                            {!p.feito && <button className={p === proximo ? "small" : "ghost small"} disabled={ocupado} onClick={() => agirPasso(p.id)}>{p.acao}</button>}
+                          </li>
+                        ))}
+                      </ul>
+                      {painelCpfs}
+                      {painelHistorico}
+                    </section>
+                  )}
+
+                  <section className="es-bloco" id="es-tecnico">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="tecnico" />Configurações e registros</h2><span className="muted">certificado, leitura automática, eventos do jeito que o governo guarda</span></div>
+                    <AreaTecnica empresas={empresas} empresaInicial={filtroEmpresa === "todas" ? empresas[0]?.id ?? null : filtroEmpresa}
+                      eventos={eventos} trabalhadores={trabalhadores} execucoes={execucoes} verCpf={verCpf} alternarCpf={alternarCpf}
+                      ocupado={ocupado} emAndamento={emAndamento} bloqueado={bloqueado} rodar={rodar} supabase={supabase} />
+                    <RegistroConsultas consultas={consultas} meuId={userId} />
+                  </section>
+                </>
+              )}
+
+              {/* ===================== Ajuda ===================== */}
+              {secao === "ajuda" && (
+                <>
+                  <section className="es-bloco">
+                    <h2><Icone nome="livro" />Como esta área funciona</h2>
+                    <ul className="es-ajuda-lista">
+                      <li><strong>Visão geral</strong>: o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
+                      <li><strong>Pessoas</strong>: toda a equipe, por unidade e situação, com a ficha e a linha do tempo de cada um.</li>
+                      <li><strong>Férias e afastamentos</strong>: quem está fora agora e o histórico de ausências lido do governo.</li>
+                      <li><strong>Admissões e saídas</strong>: contratos de experiência a vencer e as movimentações dos últimos meses, com os prazos do eSocial.</li>
+                      <li><strong>Folha e prazos</strong>: se o contador fechou a folha de cada mês e o calendário de obrigações.</li>
+                      <li><strong>Leitura do governo</strong>: o andamento da leitura, as configurações e os registros técnicos.</li>
+                    </ul>
+                    <p className="muted">O cadastro inicial (nome, cargo, admissão, unidade) veio da relação do contador. O resto chega aos poucos do governo, 10 consultas por dia por empresa.</p>
+                  </section>
+                  <Glossario aberto />
+                </>
+              )}
+            </div>
+          </div>
         )}
       </main>
 
@@ -547,6 +761,9 @@ const ICONES: Record<string, string> = {
   tecnico: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
   livro: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z",
   leitura: "M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6M12 7v5l3 2",
+  inicio: "M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z",
+  ausencias: "M12 3v2M4.2 5.2l1.4 1.4M2 12h2M20 12h2M18.4 5.2 17 6.6M8 14a4 4 0 0 1 8 0M3 18h18M5 21h14",
+  movimentacoes: "M4 8h13l-3-3M17 8l-3 3M20 16H7l3-3M7 16l3 3",
 };
 function Icone({ nome }: { nome: keyof typeof ICONES }) {
   return (
@@ -724,7 +941,7 @@ function RegistroConsultas({ consultas, meuId }: { consultas: Consulta[]; meuId:
   );
 }
 
-function Glossario() {
+function Glossario({ aberto = false }: { aberto?: boolean }) {
   const termos: [string, string][] = [
     ["eSocial", "Sistema do governo onde a empresa (pelo contador) informa tudo sobre os funcionários: admissão, salário, férias, afastamentos e saída."],
     ["Evento", "Cada informação enviada ao eSocial. Tem um código: S-2200 é admissão, S-2299 é desligamento, S-1200 é a folha de uma pessoa."],
@@ -738,7 +955,7 @@ function Glossario() {
     ["Certificado A1", "Arquivo de identidade digital da empresa (e-CNPJ). É com ele que o Brasico lê os dados do governo."],
   ];
   return (
-    <details className="es-bloco es-glossario">
+    <details className="es-bloco es-glossario" open={aberto}>
       <summary><Icone nome="livro" /><strong>Glossário</strong> <span className="muted">· o que quer dizer cada termo</span></summary>
       <dl>
         {termos.map(([t, d]) => (

@@ -439,6 +439,45 @@ export function montarCalendario(folhas: Folha[], empresas: EmpresaRH[], base = 
   return itens.sort((a, b) => a.dia - b.dia);
 }
 
+// ---------------------------------------------------------------------
+// Admissões e saídas (cadastro + eventos) e ausências (S-2230), para as seções do RH
+// ---------------------------------------------------------------------
+export type Movimentacao = { tipo: "entrada" | "saida"; quando: string; texto: string; pessoa: Pessoa; prazo?: { ok: boolean } };
+
+export function montarMovimentacoes(pessoas: Pessoa[], meses = 6): Movimentacao[] {
+  const desde = somarDias(hoje(), -Math.round(meses * 30.44));
+  const m: Movimentacao[] = [];
+  for (const p of pessoas) {
+    if (p.dtAdm && p.dtAdm >= desde) {
+      const adm = p.eventos.find((e) => e.tipo === "S-2200");
+      const rec = adm ? (adm.resumo?.recebido_em ?? "").slice(0, 10) : "";
+      m.push({ tipo: "entrada", quando: p.dtAdm, pessoa: p, texto: `Entrou${p.cargo ? ` como ${p.cargo.toLowerCase()}` : ""}${p.vinculo ? ` (${p.vinculo})` : ""}`,
+        prazo: rec ? { ok: rec < p.dtAdm } : undefined });
+    }
+    if (p.dtDeslig && p.dtDeslig >= desde) {
+      const sai = p.eventos.find((e) => e.tipo === "S-2299" || e.tipo === "S-2399");
+      const rec = sai ? (sai.resumo?.recebido_em ?? "").slice(0, 10) : "";
+      m.push({ tipo: "saida", quando: p.dtDeslig, pessoa: p, texto: `Saiu${p.motivoSaida ? `: ${p.motivoSaida}` : ""}${p.dtAdm ? ` · ${tempoDeCasa(p.dtAdm, p.dtDeslig)} de casa` : ""}`,
+        prazo: rec ? { ok: diasEntre(p.dtDeslig, rec) <= 10 } : undefined });
+    }
+  }
+  return m.sort((a, b) => b.quando.localeCompare(a.quando));
+}
+
+export type Ausencia = { pessoa: Pessoa; inicio: string; fim: string | null; texto: string };
+
+export function montarAusencias(pessoas: Pessoa[]): Ausencia[] {
+  const a: Ausencia[] = [];
+  for (const p of pessoas) {
+    for (const e of p.eventos) {
+      if (e.tipo !== "S-2230" || !e.resumo?.dtIniAfast) continue;
+      const motivo = MOTIVO_AFAST[e.resumo.codMotAfast ?? ""] ?? "afastamento";
+      a.push({ pessoa: p, inicio: e.resumo.dtIniAfast, fim: e.resumo.dtTermAfast || null, texto: motivo.charAt(0).toUpperCase() + motivo.slice(1) });
+    }
+  }
+  return a.sort((x, y) => y.inicio.localeCompare(x.inicio));
+}
+
 export const ROTULO_SITUACAO: Record<Situacao, string> = {
   trabalhando: "Trabalhando", experiencia: "Em experiência", afastado: "Afastado", ferias: "De férias", saiu: "Saiu", aguardando: "Aguardando leitura",
 };
