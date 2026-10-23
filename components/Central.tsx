@@ -32,7 +32,7 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
       supabase.from("mcp_tokens").select("id").eq("user_id", userId).is("revoked_at", null).limit(1),
     ]);
     const todos = (ws as Projeto[]) ?? [];
-    const lista = todos.filter((p) => !p.removido_em);
+    const lista = todos.filter((p) => !p.removido_em).reverse();
     setProjetos(lista);
     setLixeira(
       todos.filter((p) => p.removido_em).sort((a, b) => (b.removido_em ?? "").localeCompare(a.removido_em ?? ""))
@@ -41,12 +41,16 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     if (!lista.length) return;
 
     const ids = lista.map((p) => p.id);
-    const [{ data: notas }, { data: log }, { data: membros }] = await Promise.all([
+    // A última mudança de cada projeto (duas linhas, por causa das duplicatas antigas do histórico)
+    const ultimas = ids.map((id) =>
+      supabase.from("activity_log").select("workspace_id,user_id,entity_id,created_at,source").eq("workspace_id", id)
+        .order("created_at", { ascending: false }).limit(2));
+    const [{ data: notas }, { data: membros }, ...logs] = await Promise.all([
       supabase.from("notes").select("workspace_id").in("workspace_id", ids).is("archived_at", null),
-      supabase.from("activity_log").select("workspace_id,user_id,entity_id,created_at,source").in("workspace_id", ids)
-        .order("created_at", { ascending: false }).limit(200),
       supabase.from("workspace_members").select("user_id").in("workspace_id", ids),
+      ...ultimas,
     ]);
+    const log = logs.flatMap((l) => l.data ?? []);
     const uids = Array.from(new Set((membros ?? []).map((m: { user_id: string }) => m.user_id)));
     const { data: perfis } = await supabase.from("profiles").select("id,email,display_name").in("id", uids);
     const nomeDe = (id: string) => {
@@ -58,7 +62,7 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     const r: Record<string, Info> = {};
     ids.forEach((id) => (r[id] = { capitulos: 0, quando: null, quem: null, claude: false }));
     (notas ?? []).forEach((n: { workspace_id: string }) => r[n.workspace_id].capitulos++);
-    semDuplicatas((log ?? []) as { workspace_id: string; user_id: string | null; entity_id: string | null; created_at: string; source: string }[]).forEach((l) => {
+    semDuplicatas(log as { workspace_id: string; user_id: string | null; entity_id: string | null; created_at: string; source: string }[]).forEach((l) => {
       const x = r[l.workspace_id];
       if (x && !x.quando) {
         x.quando = l.created_at;
@@ -67,6 +71,9 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
       }
     });
     setInfo(r);
+    // Mais recentes primeiro: pela última edição (ou pela criação, se nunca foi editado)
+    const recente = (p: Projeto) => r[p.id]?.quando ?? p.created_at;
+    setProjetos([...lista].sort((a, b) => recente(b).localeCompare(recente(a))));
   }
 
   useEffect(() => {
