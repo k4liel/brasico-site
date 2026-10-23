@@ -41,16 +41,18 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     if (!lista.length) return;
 
     const ids = lista.map((p) => p.id);
-    // A última mudança de cada projeto (duas linhas, por causa das duplicatas antigas do histórico)
+    // As últimas mudanças de cada projeto; as traduções são filtradas abaixo
     const ultimas = ids.map((id) =>
-      supabase.from("activity_log").select("workspace_id,user_id,entity_id,created_at,source").eq("workspace_id", id)
-        .order("created_at", { ascending: false }).limit(2));
+      supabase.from("activity_log").select("workspace_id,user_id,entity_id,created_at,source,details").eq("workspace_id", id)
+        .order("created_at", { ascending: false }).limit(200));
     const [{ data: notas }, { data: membros }, ...logs] = await Promise.all([
       supabase.from("notes").select("workspace_id").in("workspace_id", ids).is("archived_at", null),
       supabase.from("workspace_members").select("user_id").in("workspace_id", ids),
       ...ultimas,
     ]);
-    const log = logs.flatMap((l) => l.data ?? []);
+    // Gravar a tradução de um capítulo ("… (alemão)") não é editar o projeto: conta só o conteúdo original
+    const TRADUCAO = /\((inglês|polonês|francês|alemão)\)$/;
+    const log = logs.flatMap((l) => l.data ?? []).filter((x: { details: string | null }) => !TRADUCAO.test(x.details ?? ""));
     const uids = Array.from(new Set((membros ?? []).map((m: { user_id: string }) => m.user_id)));
     const { data: perfis } = await supabase.from("profiles").select("id,email,display_name").in("id", uids);
     const nomeDe = (id: string) => {
@@ -163,11 +165,11 @@ Para confirmar, digite o nome do projeto:`
                   </span>
                   {i?.quando && (
                     <span className="projeto-mudanca">
-                      <span className="projeto-avatar" aria-hidden>{(i.quem ?? "?").charAt(0).toUpperCase()}</span>
+                      <span className="projeto-avatar" aria-hidden>{i.quem ? i.quem.charAt(0).toUpperCase() : "↻"}</span>
                       <span className="projeto-quem">
                         <span className="projeto-autor">
-                          {i.quem ?? "Alguém"} editou
-                          {i.claude && <span className="via">via Claude</span>}
+                          {i.quem ? `${i.quem} editou` : "Atualizado automaticamente"}
+                          {i.quem && i.claude && <span className="via">via Claude</span>}
                         </span>
                         <span className="projeto-data" title={haQuanto(i.quando)}>
                           {dataHora(i.quando)} · {haQuanto(i.quando)}
