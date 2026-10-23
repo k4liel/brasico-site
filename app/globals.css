@@ -928,7 +928,11 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 
 /* Resumo geral */
 .tp-geral { display: grid; grid-template-columns: minmax(220px, .9fr) 2.6fr; gap: 0; padding: 0; overflow: hidden; }
-.tp-geral-total { display: grid; align-content: center; gap: 4px; padding: 22px 24px; border-right: 1px solid var(--border); }
+.tp-geral-total { display: grid; align-content: center; gap: 4px; padding: 22px 24px; border-right: 1px solid var(--border); min-width: 0; }
+/* Os valores encolhem com a largura do card (cqi = 1% da largura), para caber "R$ 1.234.567,89" sem vazar */
+.tp-geral-total, .tp-unidade, .tp-ritmo-principal { container-type: inline-size; }
+.tp-geral-total .tp-numero-xl, .tp-ritmo-principal .tp-numero-xl { font-size: min(34px, 11.5cqi); }
+.tp-unidade .tp-numero { font-size: min(22px, 11.5cqi); }
 .tp-geral-unidades { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .tp-unidade { all: unset; box-sizing: border-box; position: relative; cursor: pointer; display: grid; align-content: start; gap: 6px; padding: 20px 22px 18px; border-left: 1px solid var(--border); transition: background .15s; min-width: 0; }
 .tp-unidade:first-child { border-left: 0; }
