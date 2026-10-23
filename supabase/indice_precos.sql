@@ -10,6 +10,7 @@
 -- A chave da API fica só no Vault (cicchetti_api_chave). Cada chamada fica em
 -- cicchetti_consultas (endpoint 'coleta_notas' / 'coleta_itens', sem usuário).
 -- Quem vê: só quem está em cicchetti_acesso.
+-- O CNPJ que alguns fornecedores MEI trazem no começo do nome é tirado na coleta.
 -- =====================================================================
 
 create table if not exists public.precos_notas (
@@ -135,7 +136,7 @@ begin
       insert into public.precos_notas as p (id, unidade, numero, serie, modelo, fonte, status, fornecedor, data_emissao, data_entrada,
         competencia, valor_produtos, valor_desconto, valor_frete, valor_impostos, valor_total, atualizado_origem, visto_em)
       select (x->>'id')::uuid, c.unidade, x->>'numero', x->>'serie', x->>'modelo_documento', x->>'fonte', x->>'status',
-        coalesce(x->>'fornecedor_nome', ''), (x->>'data_emissao')::date, (x->>'data_entrada')::date, x->>'competencia',
+        trim(regexp_replace(coalesce(x->>'fornecedor_nome', ''), '^[0-9][0-9./-]{6,}\s*', '')), (x->>'data_emissao')::date, (x->>'data_entrada')::date, x->>'competencia',
         (x->>'valor_produtos')::numeric, (x->>'valor_desconto')::numeric, (x->>'valor_frete')::numeric,
         (x->>'valor_impostos')::numeric, (x->>'valor_total')::numeric, (x->>'atualizado_em')::timestamptz, now()
       from jsonb_array_elements(v_dados->'notas') x

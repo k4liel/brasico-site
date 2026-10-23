@@ -112,16 +112,20 @@ returns text language sql immutable as $$
   select coalesce(case p_lang
     when 'en' then case c when 'Comida' then 'Food' when 'Bebida' then 'Drinks' when 'Conferir' then 'To review'
       when 'Limpeza' then 'Cleaning' when 'Embalagem' then 'Packaging' when 'Embalagens' then 'Packaging'
-      when 'Comida de funcionários' then 'Staff meals' when 'Devolução' then 'Returns' when 'Sem categoria' then 'Uncategorised' end
+      when 'Comida de funcionários' then 'Staff meals' when 'Devolução' then 'Returns' when 'Sem categoria' then 'Uncategorised' 
+      when 'Descartáveis' then 'Disposables' when 'Fora do CMV' then 'Outside COGS' when 'Servico' then 'Services' when 'Escritório' then 'Office' when 'Outros' then 'Other' when 'Manutenção' then 'Maintenance' when 'Bonificação' then 'Free goods' when 'Upgrade' then 'Upgrades' end
     when 'pl' then case c when 'Comida' then 'Jedzenie' when 'Bebida' then 'Napoje' when 'Conferir' then 'Do sprawdzenia'
       when 'Limpeza' then 'Środki czystości' when 'Embalagem' then 'Opakowania' when 'Embalagens' then 'Opakowania'
-      when 'Comida de funcionários' then 'Posiłki pracownicze' when 'Devolução' then 'Zwroty' when 'Sem categoria' then 'Bez kategorii' end
+      when 'Comida de funcionários' then 'Posiłki pracownicze' when 'Devolução' then 'Zwroty' when 'Sem categoria' then 'Bez kategorii' 
+      when 'Descartáveis' then 'Jednorazowe' when 'Fora do CMV' then 'Poza kosztem towarów' when 'Servico' then 'Usługi' when 'Escritório' then 'Biuro' when 'Outros' then 'Inne' when 'Manutenção' then 'Konserwacja' when 'Bonificação' then 'Gratisy' when 'Upgrade' then 'Ulepszenia' end
     when 'fr' then case c when 'Comida' then 'Nourriture' when 'Bebida' then 'Boissons' when 'Conferir' then 'À vérifier'
       when 'Limpeza' then 'Nettoyage' when 'Embalagem' then 'Emballages' when 'Embalagens' then 'Emballages'
-      when 'Comida de funcionários' then 'Repas du personnel' when 'Devolução' then 'Retours' when 'Sem categoria' then 'Sans catégorie' end
+      when 'Comida de funcionários' then 'Repas du personnel' when 'Devolução' then 'Retours' when 'Sem categoria' then 'Sans catégorie' 
+      when 'Descartáveis' then 'Jetables' when 'Fora do CMV' then 'Hors coût des marchandises' when 'Servico' then 'Services' when 'Escritório' then 'Bureau' when 'Outros' then 'Autres' when 'Manutenção' then 'Maintenance' when 'Bonificação' then 'Gratuités' when 'Upgrade' then 'Améliorations' end
     when 'de' then case c when 'Comida' then 'Lebensmittel' when 'Bebida' then 'Getränke' when 'Conferir' then 'Zu prüfen'
       when 'Limpeza' then 'Reinigung' when 'Embalagem' then 'Verpackung' when 'Embalagens' then 'Verpackung'
-      when 'Comida de funcionários' then 'Personalessen' when 'Devolução' then 'Rücksendungen' when 'Sem categoria' then 'Ohne Kategorie' end
+      when 'Comida de funcionários' then 'Personalessen' when 'Devolução' then 'Rücksendungen' when 'Sem categoria' then 'Ohne Kategorie' 
+      when 'Descartáveis' then 'Einwegartikel' when 'Fora do CMV' then 'Außerhalb Wareneinsatz' when 'Servico' then 'Dienstleistungen' when 'Escritório' then 'Büro' when 'Outros' then 'Sonstiges' when 'Manutenção' then 'Wartung' when 'Bonificação' then 'Naturalrabatt' when 'Upgrade' then 'Upgrades' end
     end, c)
 $$;
 
