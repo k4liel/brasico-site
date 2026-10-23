@@ -323,7 +323,7 @@ begin
     vmax := greatest(vmax, tot);
   end loop;
   if vmax = 0 then return ''; end if;
-  pe := public.precos_passo(vmax * 1.05 / 4); nt := ceil(vmax * 1.05 / pe)::int; vmax := pe * nt;
+  pe := public.precos_passo(vmax * 1.05 / 5); nt := ceil(vmax * 1.05 / pe)::int; vmax := pe * nt;
   passo := (W - ml - mr)::numeric / n; bw := least(passo * 0.56, 64);
   out := format('<svg class="ip-graf-svg" viewBox="0 0 %s %s" role="img">', W, H);
   for k in 0..nt loop
