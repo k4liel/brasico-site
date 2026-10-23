@@ -209,7 +209,7 @@ grant select on public.precos_historico to authenticated;
 
 -- Agenda: um passo por minuto
 select cron.unschedule('precos-coleta') where exists (select 1 from cron.job where jobname = 'precos-coleta');
-select cron.schedule('precos-coleta', '* * * * *', $job$ select public.precos_coletar(25) $job$);
+select cron.schedule('precos-coleta', '* * * * *', $job$ select public.precos_coletar(45) $job$);
 
 -- ---------------------------------------------------------------------
 -- Conector: consulta da base de preços (ferramenta precos_consultar)
