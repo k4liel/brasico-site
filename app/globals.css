@@ -1140,6 +1140,9 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tp-lista li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--strong); }
 .tp-lista li > b { font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .tp-lista small { display: inline; margin-left: 6px; }
+/* Dinheiro + Pix: soma em destaque no topo das formas de pagamento */
+.tp-lista li.tp-soma { padding: 8px 10px; margin: 0 -10px; border-radius: 8px; background: color-mix(in srgb, var(--tp-ouro) 12%, transparent); }
+.tp-lista li.tp-soma > span:first-child, .tp-lista li.tp-soma > b { font-weight: 700; }
 .tp-linha { display: block; height: 6px; border-radius: 999px; background: var(--tp-trilho); overflow: hidden; }
 .tp-linha i { display: block; height: 100%; border-radius: 999px; background: var(--tp-ouro); }
 
@@ -1155,15 +1158,9 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 
 .tp-qualidade { margin: 4px 2px 0; font-size: 12.5px; color: var(--muted); line-height: 1.55; }
 
-/* Gráfico clicável: dia aberto e evolução mensal */
+/* Gráfico clicável: dia aberto */
 .tp-coluna.clicavel { cursor: pointer; }
 .tp-coluna.escolhido { background: color-mix(in srgb, var(--tp-ouro) 16%, transparent); box-shadow: inset 0 -2px 0 var(--tp-ouro); }
-.tp-coluna.parcial i { background: repeating-linear-gradient(135deg, var(--tp-ouro) 0 5px, color-mix(in srgb, var(--tp-ouro) 55%, transparent) 5px 9px); }
-.tp-grafico-meses .tp-coluna i { width: 58%; max-width: 44px; }
-.tp-grafico-meses .tp-dias span { font-size: 11px; }
-.tp-marca-ano { position: absolute; left: 14%; right: 14%; height: 0; border-top: 2px solid var(--text); opacity: .55; pointer-events: none; }
-.tp-chave-ano { display: inline-block; width: 14px; margin: 0 5px 3px 0; border-top: 2px solid var(--text); opacity: .6; vertical-align: middle; }
-.tp-carregando-linha { height: 200px; border-radius: 10px; background: var(--tp-trilho); animation: tp-pulso 1.6s ease-in-out infinite; }
 
 /* Detalhe do dia */
 .tp-dia { border-color: color-mix(in srgb, var(--tp-ouro) 45%, var(--border)); }
@@ -1177,6 +1174,12 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tp-chip-revisar { color: var(--tp-alerta); border-color: color-mix(in srgb, var(--tp-alerta) 45%, transparent); background: color-mix(in srgb, var(--tp-alerta) 10%, transparent); }
 .tp-alerta-lista { margin: 0 0 14px; padding: 10px 14px 10px 30px; border-radius: 10px; font-size: 13.5px; color: var(--text); background: color-mix(in srgb, var(--tp-alerta) 9%, transparent); border: 1px solid color-mix(in srgb, var(--tp-alerta) 35%, transparent); }
 .tp-kpis-dia { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 18px; }
+/* Detalhe do dia: 3 por linha, para o faturamento caber inteiro */
+@media (min-width: 561px) {
+  .tp-kpis.tp-kpis-dia { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tp-kpis-dia .tp-indicador:nth-child(3n + 1) { border-left: 0; }
+  .tp-kpis-dia .tp-indicador:nth-child(n + 4) { border-top: 1px solid var(--border); }
+}
 .tp-tres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 28px; }
 .tp-tres h4 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .tp-lista-curta { gap: 8px; }

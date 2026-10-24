@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 import {
-  type Dia, type Ponto, MESES, SEMANA, agruparGarcons, agruparPagamentos, agruparProdutos, comMovimento, dataBr, diaSemana,
-  escalaBonita, inteiro, maiuscula, mesCurto, pct, plural, reais, reaisCurto, somar, somarMeses, titulo,
+  type Dia, MESES, SEMANA, agruparGarcons, agruparPagamentos, agruparProdutos, dataBr, diaSemana, dinheiroPix,
+  inteiro, maiuscula, pct, plural, reais, somar, titulo,
 } from "@/lib/totvs-painel";
 
 // Blocos do painel de vendas TOTVS (components/Totvs.tsx)
@@ -46,6 +46,7 @@ export function PainelDia({ d, onFechar, onAnterior, onProximo }: {
   const s = somar([d]);
   const pags = agruparPagamentos([d]);
   const totalPag = pags.reduce((a, p) => a + p.valor, 0) || 1;
+  const dp = dinheiroPix(pags);
   const produtos = agruparProdutos([d]).slice(0, 8);
   const garcons = agruparGarcons([d]).slice(0, 6);
   const itensCanc = (d.cancelados ?? []).filter((c) => c.tipo === "item").length;
@@ -89,6 +90,12 @@ export function PainelDia({ d, onFechar, onAnterior, onProximo }: {
             <div>
               <h4>Pagamentos</h4>
               <ul className="tp-lista tp-lista-curta">
+                {dp.total > 0 && (
+                  <li className="tp-soma">
+                    <span title={`Dinheiro ${reais(dp.dinheiro)} + Pix ${reais(dp.pix)}`}>Dinheiro + Pix</span>
+                    <b>{reais(dp.total)}<small>{pct(dp.total / totalPag)}</small></b>
+                  </li>
+                )}
                 {pags.map((p) => (
                   <li key={`${p.tipo}${p.forma}`}>
                     <span title={p.forma}>{titulo(p.forma)}</span>
@@ -126,80 +133,6 @@ export function PainelDia({ d, onFechar, onAnterior, onProximo }: {
                 .filter(Boolean).join(" · ")}
             </p>
           )}
-        </>
-      )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-// Evolução: os 12 meses até o mês escolhido, com o mesmo mês do ano anterior marcado
-// ---------------------------------------------------------------------------------------------
-export function Evolucao({ serie, mes, hoje, meses, onEscolher }: {
-  serie: Ponto[] | null; mes: string; hoje: string; meses: string[]; onEscolher: (m: string) => void;
-}) {
-  const [foco, setFoco] = useState<string | null>(null);
-  const porMes = new Map<string, { total: number; dias: number }>();
-  for (const p of serie ?? []) {
-    if (!comMovimento(p)) continue;
-    const m = p.dia.slice(0, 7);
-    const x = porMes.get(m) ?? { total: 0, dias: 0 };
-    x.total += Number(p.total); x.dias += 1;
-    porMes.set(m, x);
-  }
-  const lista = Array.from({ length: 12 }, (_, i) => {
-    const m = somarMeses(mes, i - 11);
-    const atual = porMes.get(m);
-    const antes = porMes.get(somarMeses(m, -12));
-    return { m, total: atual?.total ?? 0, dias: atual?.dias ?? 0, antes: antes?.total ?? 0, parcial: m === hoje.slice(0, 7) };
-  });
-  const escala = escalaBonita(Math.max(...lista.flatMap((x) => [x.total, x.antes]), 1));
-  const f = lista.find((x) => x.m === foco);
-  const doze = lista.reduce((a, x) => a + x.total, 0);
-  const dozeAntes = lista.reduce((a, x) => a + x.antes, 0);
-
-  return (
-    <section className="tp-painel">
-      <div className="tp-painel-topo">
-        <h3>Evolução mensal</h3>
-        <span className="tp-nota" aria-live="polite">
-          {f
-            ? `${maiuscula(mesCurto(f.m))}${f.parcial ? " (parcial)" : ""} · ${reais(f.total)}${f.antes ? ` · ${mesCurto(somarMeses(f.m, -12))}: ${reais(f.antes)}` : ""}`
-            : `12 meses: ${reais(doze)}${dozeAntes > 0 ? ` · 12 meses antes: ${reais(dozeAntes)}` : ""}`}
-        </span>
-      </div>
-      {serie === null ? <div className="tp-carregando-linha" aria-label="Carregando" /> : (
-        <>
-          <div className="tp-grafico tp-grafico-meses" style={{ "--tp-dias": 12 } as CSSProperties}>
-            <div className="tp-plot">
-              {[1, 0.5, 0].map((x) => (
-                <span key={x} className={x ? "tp-grade" : "tp-grade base"} style={{ bottom: `${x * 100}%` }} aria-hidden="true">
-                  <em>{x ? reaisCurto(escala * x) : "R$ 0"}</em>
-                </span>
-              ))}
-              <div className="tp-barras" role="list" onMouseLeave={() => setFoco(null)}>
-                {lista.map((x) => {
-                  const clicavel = meses.includes(x.m) && x.m !== mes;
-                  return (
-                    <div key={x.m} role="listitem" tabIndex={0}
-                      className={`tp-coluna${x.m === mes ? " escolhido" : ""}${foco === x.m ? " on" : ""}${x.parcial ? " parcial" : ""}${clicavel ? " clicavel" : ""}`}
-                      onMouseEnter={() => setFoco(x.m)} onFocus={() => setFoco(x.m)} onBlur={() => setFoco(null)}
-                      onClick={() => clicavel && onEscolher(x.m)} onKeyDown={(e) => e.key === "Enter" && clicavel && onEscolher(x.m)}
-                      aria-label={`${mesCurto(x.m)}: ${reais(x.total)}${x.antes ? `; ano anterior ${reais(x.antes)}` : ""}`}>
-                      {x.total > 0 && <i style={{ height: `${(x.total / escala) * 100}%` }} />}
-                      {x.antes > 0 && <b className="tp-marca-ano" style={{ bottom: `${(x.antes / escala) * 100}%` }} />}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="tp-dias" aria-hidden="true">
-              {lista.map((x) => <span key={x.m} className="marco">{mesCurto(x.m)}</span>)}
-            </div>
-          </div>
-          <p className="tp-nota tp-legenda-dias">
-            <span className="tp-chave-ano" /> mesmo mês do ano anterior · mês atual parcial · clique num mês para abrir
-          </p>
         </>
       )}
     </section>

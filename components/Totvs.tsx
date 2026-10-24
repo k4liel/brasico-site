@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
-import { Evolucao, Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
+import { Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
 import {
-  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, agruparPagamentos, comMovimento, dataBr, diaSemana, diasNoMes,
+  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, agruparPagamentos, comMovimento, dinheiroPix, dataBr, diaSemana, diasNoMes,
   escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses, titulo,
 } from "@/lib/totvs-painel";
 
@@ -161,13 +161,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
 
   const maxDia = Math.max(...ds.map((d) => Number(d.total)), 1);
   const melhor = ativos.reduce<Dia | undefined>((m, d) => (!m || Number(d.total) > Number(m.total) ? d : m), undefined);
-  const porSemana = SEMANA.map((nome, w) => {
-    const x = ativos.filter((d) => diaSemana(d.dia) === w);
-    return { nome, n: x.length, media: x.length ? x.reduce((a, d) => a + Number(d.total), 0) / x.length : 0 };
-  });
-  const maxSemana = Math.max(...porSemana.map((x) => x.media), 1);
   const pagamentos = agruparPagamentos(ds);
   const totalPag = pagamentos.reduce((a, p) => a + p.valor, 0) || 1;
+  const dp = dinheiroPix(pagamentos);
 
   const buscando = historico.filter((h) => !h.parado);
 
@@ -430,35 +426,25 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                   </div>
                 )}
 
-                <Evolucao serie={serie} mes={mes} hoje={hoje} meses={meses} onEscolher={setMes} />
-
-                <div className="tp-duas">
-                  <section className="tp-painel">
-                    <div className="tp-painel-topo"><h3>Média por dia da semana</h3><span className="tp-nota">só dias com movimento</span></div>
-                    <ul className="tp-lista">
-                      {porSemana.map((x) => (
-                        <li key={x.nome}>
-                          <span>{x.nome}<small>{plural(x.n, "dia", "dias")}</small></span>
-                          <span className="tp-linha"><i style={{ width: `${(x.media / maxSemana) * 100}%` }} /></span>
-                          <b>{x.n ? reais(x.media) : "—"}</b>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-
-                  <section className="tp-painel">
-                    <div className="tp-painel-topo"><h3>Formas de pagamento</h3><span className="tp-nota">{reais(totalPag)} recebidos</span></div>
-                    <ul className="tp-lista">
-                      {pagamentos.slice(0, 8).map((p) => (
-                        <li key={`${p.tipo}${p.forma}`}>
-                          <span title={p.forma}>{titulo(p.forma)}{p.tipo !== "caixa" && <small>{p.tipo}</small>}</span>
-                          <span className="tp-linha"><i style={{ width: `${(p.valor / totalPag) * 100}%` }} /></span>
-                          <b>{reais(p.valor)}<small>{pct(p.valor / totalPag)}</small></b>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                </div>
+                <section className="tp-painel">
+                  <div className="tp-painel-topo"><h3>Formas de pagamento</h3><span className="tp-nota">{reais(totalPag)} recebidos</span></div>
+                  <ul className="tp-lista">
+                    {dp.total > 0 && (
+                      <li className="tp-soma">
+                        <span>Dinheiro + Pix<small>{reais(dp.dinheiro)} + {reais(dp.pix)}</small></span>
+                        <span className="tp-linha"><i style={{ width: `${(dp.total / totalPag) * 100}%` }} /></span>
+                        <b>{reais(dp.total)}<small>{pct(dp.total / totalPag)}</small></b>
+                      </li>
+                    )}
+                    {pagamentos.slice(0, 8).map((p) => (
+                      <li key={`${p.tipo}${p.forma}`}>
+                        <span title={p.forma}>{titulo(p.forma)}{p.tipo !== "caixa" && <small>{p.tipo}</small>}</span>
+                        <span className="tp-linha"><i style={{ width: `${(p.valor / totalPag) * 100}%` }} /></span>
+                        <b>{reais(p.valor)}<small>{pct(p.valor / totalPag)}</small></b>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
 
                 <Produtos key={`p-${unidade}-${mes}`} dias={ds} />
                 <Garcons key={`g-${unidade}-${mes}`} dias={ds} />

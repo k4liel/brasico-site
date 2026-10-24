@@ -71,6 +71,14 @@ export const agruparPagamentos = (dias: Dia[]) =>
     (a, p) => ({ ...p, valor: (a?.valor ?? 0) + Number(p.valor), vezes: (a?.vezes ?? 0) + Number(p.vezes) }))
     .sort((a, b) => b.valor - a.valor);
 
+// Dinheiro e Pix do caixa, separados e somados (linha "Dinheiro + Pix" nas formas de pagamento)
+export function dinheiroPix(pags: Pagamento[]) {
+  const valor = (forma: string) => pags.filter((p) => p.tipo === "caixa" && p.forma.trim().toUpperCase() === forma).reduce((a, p) => a + p.valor, 0);
+  const dinheiro = valor("DINHEIRO");
+  const pix = valor("PIX");
+  return { dinheiro, pix, total: dinheiro + pix };
+}
+
 export type GarcomMes = Garcom & { dias: Set<string> };
 export const agruparGarcons = (dias: Dia[]) =>
   agrupar<GarcomMes>(dias, (d) => d.garcons as GarcomMes[], (g) => g.nome,
