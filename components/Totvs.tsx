@@ -32,6 +32,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const [puxando, setPuxando] = useState("");
   const [foco, setFoco] = useState<string | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
+  // O detalhe do dia já vem aberto no último dia com venda; só fecha quando a pessoa fecha
+  const [fechouDia, setFechouDia] = useState(false);
   const [historico, setHistorico] = useState<Historico[]>([]);
 
   useEffect(() => {
@@ -91,6 +93,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
 
   useEffect(() => {
     setAberto(null);
+    setFechouDia(false);
   }, [mes, unidade]);
 
   useEffect(() => {
@@ -196,7 +199,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const pessoasGeral = resumoUnidades.reduce((a, x) => a + x.s.pessoas, 0);
   const escala = escalaBonita(maxDia);
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
-  const iAberto = aberto ? ds.findIndex((d) => d.dia === aberto) : -1;
+  const diaPadrao = (ativos[ativos.length - 1] ?? ds[ds.length - 1])?.dia ?? null;
+  const abertoAgora = aberto ?? (fechouDia ? null : diaPadrao);
+  const iAberto = abertoAgora ? ds.findIndex((d) => d.dia === abertoAgora) : -1;
   const diaAberto = iAberto >= 0 ? ds[iAberto] : undefined;
   const anos = Array.from(new Set(meses.map((m) => m.slice(0, 4)))).sort();
   const mix = [
@@ -206,7 +211,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   ].filter((x) => x.valor > 0);
 
   function abrirDia(dia: string) {
-    setAberto((a) => (a === dia ? null : dia));
+    const fechar = abertoAgora === dia;
+    setAberto(fechar ? null : dia);
+    setFechouDia(fechar);
     requestAnimationFrame(() => document.getElementById("tp-dia")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   }
 
@@ -391,7 +398,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                           const d = ds.find((x) => x.dia === dia);
                           return (
                             <div key={dia} role="listitem"
-                              className={`tp-coluna${foco === dia ? " on" : ""}${aberto === dia ? " escolhido" : ""}${d ? " clicavel" : ""}${d?.status === "revisar" ? " revisar" : ""}`}
+                              className={`tp-coluna${foco === dia ? " on" : ""}${abertoAgora === dia ? " escolhido" : ""}${d ? " clicavel" : ""}${d?.status === "revisar" ? " revisar" : ""}`}
                               onMouseEnter={() => setFoco(dia)} onFocus={() => setFoco(dia)} onBlur={() => setFoco(null)} tabIndex={d ? 0 : -1}
                               onClick={() => d && abrirDia(dia)} onKeyDown={(e) => d && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrirDia(dia))}
                               aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}${d.status === "revisar" ? ", para revisar" : ""}. Abrir detalhe` : `${dataBr(dia)}: sem dados`}>
@@ -417,7 +424,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
 
                 {diaAberto && (
                   <div id="tp-dia">
-                    <PainelDia d={diaAberto} onFechar={() => setAberto(null)}
+                    <PainelDia d={diaAberto} onFechar={() => { setAberto(null); setFechouDia(true); }}
                       onAnterior={iAberto > 0 ? () => setAberto(ds[iAberto - 1].dia) : undefined}
                       onProximo={iAberto < ds.length - 1 ? () => setAberto(ds[iAberto + 1].dia) : undefined} />
                   </div>
