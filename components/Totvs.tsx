@@ -228,27 +228,18 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           </div>
         </header>
 
-        {/* Período: ano e mês, só os meses que já têm dados ficam ativos */}
+        {/* Período: mês e ano em duas caixas; meses sem dados ficam desativados */}
         <nav className="tp-periodo" aria-label="Escolher período">
-          <div className="tp-anos" role="group" aria-label="Ano">
-            {anos.map((a) => (
-              <button key={a} className={a === mes.slice(0, 4) ? "on" : ""} aria-pressed={a === mes.slice(0, 4)}
-                onClick={() => setMes(meses.find((m) => m.startsWith(a) && m.slice(5) === mes.slice(5)) ?? meses.find((m) => m.startsWith(a)) ?? mes)}>
-                {a}
-              </button>
-            ))}
-          </div>
-          <div className="tp-mesesgrade" role="group" aria-label="Mês">
+          <select aria-label="Mês" value={mes.slice(5)} onChange={(e) => setMes(`${mes.slice(0, 4)}-${e.target.value}`)}>
             {MESES.map((nome, i) => {
-              const m = `${mes.slice(0, 4)}-${String(i + 1).padStart(2, "0")}`;
-              const tem = meses.includes(m);
-              return (
-                <button key={m} className={m === mes ? "on" : ""} disabled={!tem} aria-pressed={m === mes} onClick={() => setMes(m)} title={tem ? maiuscula(nomeMes(m)) : "Sem dados"}>
-                  {maiuscula(nome.slice(0, 3))}
-                </button>
-              );
+              const mm = String(i + 1).padStart(2, "0");
+              return <option key={mm} value={mm} disabled={!meses.includes(`${mes.slice(0, 4)}-${mm}`)}>{maiuscula(nome)}</option>;
             })}
-          </div>
+          </select>
+          <select aria-label="Ano" value={mes.slice(0, 4)}
+            onChange={(e) => { const a = e.target.value; setMes(meses.find((m) => m.startsWith(a) && m.slice(5) === mes.slice(5)) ?? meses.filter((m) => m.startsWith(a)).pop() ?? mes); }}>
+            {anos.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
         </nav>
 
         {buscando.length > 0 && (
