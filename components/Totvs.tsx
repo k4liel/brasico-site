@@ -5,8 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
 import {
-  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, agruparPagamentos, comMovimento, semDinheiroPix, dataBr, diaSemana, diasNoMes,
-  escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses, titulo,
+  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, diaSemana, diasNoMes,
+  escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses,
 } from "@/lib/totvs-painel";
 
 // Página TOTVS: painel das unidades (no estilo do dashboard do Cicchetti Management) com os dados
@@ -161,8 +161,6 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
 
   const maxDia = Math.max(...ds.map((d) => Number(d.total)), 1);
   const melhor = ativos.reduce<Dia | undefined>((m, d) => (!m || Number(d.total) > Number(m.total) ? d : m), undefined);
-  const pagamentos = agruparPagamentos(ds);
-  const totalPag = pagamentos.reduce((a, p) => a + p.valor, 0) || 1;
 
   const buscando = historico.filter((h) => !h.parado);
 
@@ -424,19 +422,6 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                       onProximo={iAberto < ds.length - 1 ? () => setAberto(ds[iAberto + 1].dia) : undefined} />
                   </div>
                 )}
-
-                <section className="tp-painel">
-                  <div className="tp-painel-topo"><h3>Formas de pagamento</h3><span className="tp-nota">{reais(totalPag)} recebidos</span></div>
-                  <ul className="tp-lista">
-                    {semDinheiroPix(pagamentos).slice(0, 8).map((p) => (
-                      <li key={`${p.tipo}${p.forma}`}>
-                        <span title={p.forma}>{titulo(p.forma)}{p.tipo !== "caixa" && <small>{p.tipo}</small>}</span>
-                        <span className="tp-linha"><i style={{ width: `${(p.valor / totalPag) * 100}%` }} /></span>
-                        <b>{reais(p.valor)}<small>{pct(p.valor / totalPag)}</small></b>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
 
                 <Produtos key={`p-${unidade}-${mes}`} dias={ds} />
                 <Garcons key={`g-${unidade}-${mes}`} dias={ds} />
