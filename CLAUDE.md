@@ -9,6 +9,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - **Conteúdo, visual e estrutura de um projeto:** pelo conector Brasico. Não precisa de código.
 - **Funções novas do site:** código neste repositório (`k4liel/brasico-site`, público, branch `main`).
 - **Arquivos de clientes (PDFs, planilhas, documentos):** só no bucket privado `workspace-files` do Supabase, pasta `<id do projeto>/<pasta>/`. **Nunca no GitHub.**
+- **Fotos de pratos enviadas pelo Claude:** Edge Function `fotos-enviar` (só `<projeto>/fotos/`, JPG/PNG/WebP até 3 MB), protegida pelo segredo `fotos_segredo` do Vault (supabase/fotos_enviar.sql). O segredo fica aleatório (envio desligado): para usar, peça ao dono, cadastre um segredo novo, envie e troque de novo por um aleatório.
 
 ## Antes de mudar código
 1. `git pull` antes de começar: o outro pode ter enviado algo.
