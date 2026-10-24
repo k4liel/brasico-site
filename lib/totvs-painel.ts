@@ -71,9 +71,6 @@ export const agruparPagamentos = (dias: Dia[]) =>
     (a, p) => ({ ...p, valor: (a?.valor ?? 0) + Number(p.valor), vezes: (a?.vezes ?? 0) + Number(p.vezes) }))
     .sort((a, b) => b.valor - a.valor);
 
-// Dinheiro e Pix não aparecem na lista de formas de pagamento (pedido do dono); o total recebido continua com eles
-export const semDinheiroPix = (pags: Pagamento[]) =>
-  pags.filter((p) => !(p.tipo === "caixa" && ["DINHEIRO", "PIX"].includes(p.forma.trim().toUpperCase())));
 
 export type GarcomMes = Garcom & { dias: Set<string> };
 export const agruparGarcons = (dias: Dia[]) =>

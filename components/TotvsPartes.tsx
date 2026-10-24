@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  type Dia, MESES, SEMANA, agruparGarcons, agruparPagamentos, agruparProdutos, dataBr, diaSemana, semDinheiroPix,
+  type Dia, MESES, SEMANA, agruparGarcons, agruparProdutos, dataBr, diaSemana,
   inteiro, maiuscula, pct, plural, reais, somar, titulo,
 } from "@/lib/totvs-painel";
 
@@ -44,8 +44,6 @@ export function PainelDia({ d, onFechar, onAnterior, onProximo }: {
   d: Dia; onFechar: () => void; onAnterior?: () => void; onProximo?: () => void;
 }) {
   const s = somar([d]);
-  const pags = agruparPagamentos([d]);
-  const totalPag = pags.reduce((a, p) => a + p.valor, 0) || 1;
   const produtos = agruparProdutos([d]).slice(0, 8);
   const garcons = agruparGarcons([d]).slice(0, 6);
   const itensCanc = (d.cancelados ?? []).filter((c) => c.tipo === "item").length;
@@ -85,18 +83,7 @@ export function PainelDia({ d, onFechar, onAnterior, onProximo }: {
             <Indicador rotulo="Descontos" valor={reais(s.descontos)} />
             <Indicador rotulo="Cancelamentos" valor={plural(itensCanc, "item", "itens")} nota={plural(cuponsCanc, "cupom inteiro", "cupons inteiros")} />
           </div>
-          <div className="tp-tres">
-            <div>
-              <h4>Pagamentos</h4>
-              <ul className="tp-lista tp-lista-curta">
-                {semDinheiroPix(pags).map((p) => (
-                  <li key={`${p.tipo}${p.forma}`}>
-                    <span title={p.forma}>{titulo(p.forma)}</span>
-                    <b>{reais(p.valor)}<small>{pct(p.valor / totalPag)}</small></b>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          <div className="tp-dia-listas">
             <div>
               <h4>Produtos que mais venderam</h4>
               <ul className="tp-lista tp-lista-curta">
