@@ -1140,9 +1140,6 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .tp-lista li > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--strong); }
 .tp-lista li > b { font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .tp-lista small { display: inline; margin-left: 6px; }
-/* Dinheiro + Pix: soma em destaque no topo das formas de pagamento */
-.tp-lista li.tp-soma { padding: 8px 10px; margin: 0 -10px; border-radius: 8px; background: color-mix(in srgb, var(--tp-ouro) 12%, transparent); }
-.tp-lista li.tp-soma > span:first-child, .tp-lista li.tp-soma > b { font-weight: 700; }
 .tp-linha { display: block; height: 6px; border-radius: 999px; background: var(--tp-trilho); overflow: hidden; }
 .tp-linha i { display: block; height: 100%; border-radius: 999px; background: var(--tp-ouro); }
 
