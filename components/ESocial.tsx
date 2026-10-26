@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
 import Ponto from "./Ponto";
+import BancoHoras from "./BancoHoras";
 
 type Consulta = { id: string; user_id: string | null; origem: string; ferramenta: string; parametros: Record<string, unknown>; quantidade: number; created_at: string };
 
@@ -29,15 +30,17 @@ const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
 const LEITURAS = ["Todas", "Já lidas", "Ainda não lidas"] as const;
 type FiltroLeitura = (typeof LEITURAS)[number];
 // Seções do sistema de RH (navegação à esquerda; no celular, em linha)
+// Cada seção tem um grupo (no menu), um título e uma linha que explica o que ela mostra
 const SECOES = [
-  { id: "visao", rotulo: "Visão geral", icone: "inicio" },
-  { id: "pessoas", rotulo: "Pessoas", icone: "equipe" },
-  { id: "ponto", rotulo: "Ponto", icone: "ponto" },
-  { id: "ausencias", rotulo: "Férias e afastamentos", icone: "ausencias" },
-  { id: "movimentacoes", rotulo: "Admissões e saídas", icone: "movimentacoes" },
-  { id: "folha", rotulo: "Folha e prazos", icone: "folha" },
-  { id: "integracao", rotulo: "Leitura do governo", icone: "leitura" },
-  { id: "ajuda", rotulo: "Ajuda", icone: "livro" },
+  { id: "visao", grupo: "Equipe", rotulo: "Visão geral", icone: "inicio", titulo: "Visão geral", texto: "O que precisa da sua atenção, os números da equipe, os próximos prazos e as últimas movimentações." },
+  { id: "pessoas", grupo: "Equipe", rotulo: "Pessoas", icone: "equipe", titulo: "Pessoas", texto: "Toda a equipe por unidade e situação. Clique numa pessoa para ver a ficha e a linha do tempo." },
+  { id: "ponto", grupo: "Equipe", rotulo: "Ponto e escalas", icone: "ponto", titulo: "Ponto e escalas", texto: "A escala de cada pessoa, quem bateu ponto hoje e o resumo dos últimos 30 dias, direto dos relógios de ponto (RHiD)." },
+  { id: "banco", grupo: "Equipe", rotulo: "Banco de horas", icone: "banco", titulo: "Banco de horas", texto: "O saldo de horas de cada pessoa segundo o RHiD: quem está positivo, quem está negativo e como mudou no último mês." },
+  { id: "ausencias", grupo: "Contratos", rotulo: "Férias e afastamentos", icone: "ausencias", titulo: "Férias e afastamentos", texto: "Quem está fora agora e o histórico de ausências lido do governo." },
+  { id: "movimentacoes", grupo: "Contratos", rotulo: "Admissões e saídas", icone: "movimentacoes", titulo: "Admissões e saídas", texto: "Contratos de experiência a vencer e as entradas e saídas dos últimos meses, com os prazos do eSocial." },
+  { id: "folha", grupo: "Obrigações", rotulo: "Folha e prazos", icone: "folha", titulo: "Folha e prazos", texto: "Se o contador fechou a folha de cada mês e o calendário de obrigações do empregador." },
+  { id: "integracao", grupo: "Obrigações", rotulo: "Leitura do governo", icone: "leitura", titulo: "Leitura do governo", texto: "O andamento da leitura do eSocial, as configurações de cada empresa e os registros técnicos." },
+  { id: "ajuda", grupo: "Apoio", rotulo: "Ajuda", icone: "livro", titulo: "Ajuda", texto: "Como esta área funciona e o que quer dizer cada termo." },
 ] as const;
 type Secao = (typeof SECOES)[number]["id"];
 const SECAO_PADRAO: Secao = "visao";
@@ -302,6 +305,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
         {/* Cabeçalho do sistema de RH */}
         <div className="es-topo">
           <div>
+            <span className="es-sobre">Companhia · Recursos humanos</span>
             <h1>RH</h1>
             <p className="muted">
               {ultimaLeitura ? `Dados do governo (eSocial) · última leitura ${horaCurta(ultimaLeitura.created_at)}` : "Dados do governo (eSocial) · ainda não lemos"}
@@ -338,20 +342,27 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
           <div className="es-layout">
             {/* Navegação do sistema de RH */}
             <nav className="es-nav" aria-label="Seções do RH">
-              {SECOES.map((s) => {
+              {SECOES.map((s, i) => {
                 const n = s.id === "visao" ? alertas.length : s.id === "pessoas" ? numeros.ativos : s.id === "ausencias" ? foraAgora.length
                   : s.id === "movimentacoes" ? movimentacoes.filter((m) => m.quando.startsWith(hoje().slice(0, 7))).length : s.id === "integracao" ? leituras.reduce((t, l) => t + l.esperandoDownload, 0) : 0;
                 return (
-                  <button key={s.id} className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
-                    <Icone nome={s.icone} />
-                    <span>{s.rotulo}</span>
-                    {n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
-                  </button>
+                  <Fragment key={s.id}>
+                    {(i === 0 || SECOES[i - 1].grupo !== s.grupo) && <div className="es-nav-grupo">{s.grupo}</div>}
+                    <button className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
+                      <Icone nome={s.icone} />
+                      <span>{s.rotulo}</span>
+                      {n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
+                    </button>
+                  </Fragment>
                 );
               })}
             </nav>
 
             <div className="es-conteudo">
+              {(() => {
+                const s = SECOES.find((x) => x.id === secao)!;
+                return <header className="es-secao"><h2>{s.titulo}</h2><p>{s.texto}</p></header>;
+              })()}
               {/* ===================== Visão geral ===================== */}
               {secao === "visao" && (
                 <>
@@ -535,6 +546,11 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
               {secao === "ponto" && (
                 <Ponto supabase={supabase} filtroEmpresa={filtroEmpresa} verCpf={verCpf} alternarCpf={alternarCpf}
                   chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} olho={<Olho aberto={verCpf} />} />
+              )}
+
+              {/* ===================== Banco de horas (RHiD) ===================== */}
+              {secao === "banco" && (
+                <BancoHoras supabase={supabase} filtroEmpresa={filtroEmpresa} chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
               )}
 
               {/* ===================== Férias e afastamentos ===================== */}
@@ -752,7 +768,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     <ul className="es-ajuda-lista">
                       <li><strong>Visão geral</strong>: o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
                       <li><strong>Pessoas</strong>: toda a equipe, por unidade e situação, com a ficha e a linha do tempo de cada um.</li>
-                      <li><strong>Ponto</strong>: quem bateu ponto hoje, faltas, atrasos e banco de horas dos últimos 30 dias, vindos dos relógios (RHiD), e o cruzamento com o eSocial.</li>
+                      <li><strong>Ponto e escalas</strong>: a escala de cada pessoa, quem bateu ponto hoje, faltas e atrasos dos últimos 30 dias, vindos dos relógios (RHiD), e o cruzamento com o eSocial.</li>
+                      <li><strong>Banco de horas</strong>: o saldo de horas de cada pessoa (positivo ou negativo) e como mudou no último mês.</li>
                       <li><strong>Férias e afastamentos</strong>: quem está fora agora e o histórico de ausências lido do governo.</li>
                       <li><strong>Admissões e saídas</strong>: contratos de experiência a vencer e as movimentações dos últimos meses, com os prazos do eSocial.</li>
                       <li><strong>Folha e prazos</strong>: se o contador fechou a folha de cada mês e o calendário de obrigações.</li>
@@ -795,6 +812,7 @@ const ICONES: Record<string, string> = {
   ausencias: "M12 3v2M4.2 5.2l1.4 1.4M2 12h2M20 12h2M18.4 5.2 17 6.6M8 14a4 4 0 0 1 8 0M3 18h18M5 21h14",
   movimentacoes: "M4 8h13l-3-3M17 8l-3 3M20 16H7l3-3M7 16l3 3",
   ponto: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2",
+  banco: "M3 10h18M3 6h18M7 14h4M5 20h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2Z",
 };
 function Icone({ nome }: { nome: keyof typeof ICONES }) {
   return (
