@@ -102,6 +102,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     const ler = () => {
       const h = window.location.hash.replace("#", "");
       setSecao(SECOES.some((s) => s.id === h) ? (h as Secao) : SECAO_PADRAO);
+      window.scrollTo({ top: 0 });
     };
     ler();
     window.addEventListener("hashchange", ler);

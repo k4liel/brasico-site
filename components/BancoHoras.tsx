@@ -5,6 +5,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
+import { FiltroUnidade } from "./Ponto";
 
 type Pessoa = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null };
 type Dia = { cliente_id: number; pessoa_id: number; dia: string; saldo_banco: number | null };
@@ -140,16 +141,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
         </div>
         <div className="es-filtros">
           <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome" aria-label="Buscar" />
-          {unidades.length > 1 && (
-            <div className="tv-unidades" role="group" aria-label="Unidade">
-              <button className={unidade === "" ? "botao-painel on" : "botao-painel"} onClick={() => setUnidade("")}>Todas as unidades</button>
-              {unidades.map((u) => (
-                <button key={u} className={unidade === u ? "botao-painel on" : "botao-painel"} onClick={() => setUnidade(u)}>
-                  {u} <span className="muted">{daEmpresa.filter((l) => l.unidade === u).length}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} contar={(u) => daEmpresa.filter((l) => l.unidade === u).length} />
         </div>
         {vistas.length === 0 ? (
           <p className="muted tv-nada">{pessoas.length ? "Ninguém neste filtro." : "O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h."}</p>
@@ -169,7 +161,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
                       const pct = Math.round((Math.abs(l.saldo!) / maior) * 50);
                       return (
                         <li key={chave(l.p.cliente_id, l.p.id)}>
-                          <button className="bh-linha" onClick={() => temRH && onAbrirPessoa(k)} disabled={!temRH}
+                          <button className={temRH ? "bh-linha" : "bh-linha sem-ficha"} onClick={() => temRH && onAbrirPessoa(k)} aria-disabled={!temRH}
                             title={temRH ? "Ver a ficha no RH" : "Sem ficha no RH (CPF fora do cadastro do eSocial)"}>
                             <span className="bh-nome"><strong>{nomeProprio(l.p.nome)}</strong><span className="muted">saldo em {dataBR(l.dia)}</span></span>
                             <span className="bh-barra" aria-hidden="true"><i className={l.saldo! < 0 ? "neg" : "pos"} style={{ width: `${pct}%` }} /></span>

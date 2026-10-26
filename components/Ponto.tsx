@@ -222,16 +222,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
               return n ? <button key={e} className={estado === e ? "botao-painel on" : "botao-painel"} onClick={() => setEstado(e)}>{e} <span className="muted">{n}</span></button> : null;
             })}
           </div>
-          {unidades.length > 1 && (
-            <div className="tv-unidades" role="group" aria-label="Unidade">
-              <button className={unidade === "" ? "botao-painel on" : "botao-painel"} onClick={() => setUnidade("")}>Todas as unidades</button>
-              {unidades.map((u) => (
-                <button key={u} className={unidade === u ? "botao-painel on" : "botao-painel"} onClick={() => setUnidade(u)}>
-                  {u} <span className="muted">{daEmpresa.filter((l) => l.unidade === u).length}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} contar={(u) => daEmpresa.filter((l) => l.unidade === u).length} />
         </div>
         {pessoas.length === 0 ? (
           <p className="muted tv-nada">O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h.</p>
@@ -250,7 +241,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
               const temRH = chavesRH.has(l.chaveRH);
               return (
                 <li key={chave(l.p.cliente_id, l.p.id)}>
-                  <button className="es-pessoa" onClick={() => temRH && onAbrirPessoa(l.chaveRH)} disabled={!temRH}
+                  <button className={temRH ? "es-pessoa" : "es-pessoa sem-ficha"} onClick={() => temRH && onAbrirPessoa(l.chaveRH)} aria-disabled={!temRH}
                     title={temRH ? "Ver a ficha no RH" : "Sem ficha no RH (CPF fora do cadastro do eSocial)"}>
                     <span className="es-avatar" aria-hidden="true">{iniciais(l.p.nome)}</span>
                     <span className="es-pessoa-nome">
@@ -338,6 +329,27 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
         </section>
       </div>
     </>
+  );
+}
+
+// Até 8 unidades: botões; mais que isso: uma caixa de escolha
+export function FiltroUnidade({ unidades, valor, onMudar, contar }: { unidades: string[]; valor: string; onMudar: (u: string) => void; contar: (u: string) => number }) {
+  if (unidades.length < 2) return null;
+  if (unidades.length > 8) {
+    return (
+      <select className="es-filtro-select" value={valor} onChange={(v) => onMudar(v.target.value)} aria-label="Unidade">
+        <option value="">Todas as unidades</option>
+        {unidades.map((u) => <option key={u} value={u}>{u} ({contar(u)})</option>)}
+      </select>
+    );
+  }
+  return (
+    <div className="tv-unidades" role="group" aria-label="Unidade">
+      <button className={valor === "" ? "botao-painel on" : "botao-painel"} onClick={() => onMudar("")}>Todas as unidades</button>
+      {unidades.map((u) => (
+        <button key={u} className={valor === u ? "botao-painel on" : "botao-painel"} onClick={() => onMudar(u)}>{u} <span className="muted">{contar(u)}</span></button>
+      ))}
+    </div>
   );
 }
 
