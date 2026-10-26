@@ -1,5 +1,5 @@
 // Copia do RHiD (ponto em nuvem da Control iD) os cadastros de cada cliente que o login enxerga:
-// empresas, departamentos, cargos, relógios e pessoas. Somente leitura.
+// empresas, departamentos, relógios e pessoas. Somente leitura.
 // Chamada pelo banco (rhid_pedir, via pg_net) com o segredo no cabeçalho x-segredo.
 // Corpo: { "execucao": "<id em rhid_execucoes>" }. Responde na hora e trabalha em segundo plano.
 // E-mail e senha ficam no Vault (rhid_email, rhid_senha). Nada de segredo nos logs.
@@ -29,10 +29,12 @@ function quando(v: unknown) {
   if (!s) return null;
   const m = s.match(/\/Date\((-?\d+)/);
   const d = m ? new Date(Number(m[1])) : new Date(s);
-  if (isNaN(d.getTime()) || d.getUTCFullYear() < 1950) return null;
+  // O RHiD usa 01/01/2000 para "nunca" (relógio que nunca conectou)
+  if (isNaN(d.getTime()) || d.getUTCFullYear() <= 2000) return null;
   return d.toISOString();
 }
-const dia = (v: unknown) => quando(v)?.slice(0, 10) ?? null;
+// Datas de cadastro (admissão) vêm como "2023-01-01" e podem ser antigas
+const dia = (v: unknown) => txt(v).match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? quando(v)?.slice(0, 10) ?? null;
 
 async function pedir(caminho: string, init: RequestInit) {
   const ctl = new AbortController();
@@ -44,10 +46,14 @@ async function pedir(caminho: string, init: RequestInit) {
     try {
       p = corpo ? JSON.parse(corpo) : null;
     } catch {
-      if (!r.ok) throw new ErroRhid(`HTTP ${r.status}`);
-      throw new ErroRhid(`${caminho}: resposta que não é JSON`);
+      const trecho = corpo.replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new ErroRhid(`${caminho}: ${r.ok ? "resposta que não é JSON" : `HTTP ${r.status}`}${trecho ? ` (${trecho})` : ""}`);
     }
-    if (!r.ok) throw new ErroRhid(`${caminho}: HTTP ${r.status}${p?.error ? ` (${txt(p.error).slice(0, 120)})` : ""}`);
+    if (!r.ok) {
+      const motivo = txt(p?.error ?? p?.message ?? p?.Message ?? (typeof p === "string" ? p : "")).slice(0, 160);
+      throw new ErroRhid(`${caminho}: HTTP ${r.status}${motivo ? ` (${motivo})` : ""}`);
+    }
     // Alguns endpoints devolvem o JSON serializado como texto
     if (typeof p === "string") {
       try {
@@ -82,9 +88,22 @@ async function entrar(email: string, senha: string, dominio?: string): Promise<L
 }
 
 const lista = (p: J): J[] => (Array.isArray(p) ? p : Array.isArray(p?.records) ? p.records : []);
+const ids = (v: unknown) => (Array.isArray(v) ? v : []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
 
+// Sem start/length na URL: com eles a API do RHiD responde 500 (out/2026)
 async function ler(token: string, caminho: string) {
-  return lista(await pedir(caminho, { headers: { Authorization: `Bearer ${token}` } }));
+  return lista(await pedir(caminho, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }));
+}
+
+// Um registro pelo id; null se o RHiD não devolver
+async function lerUm(token: string, caminho: string, erros: string[]) {
+  try {
+    const p = await pedir(caminho, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    return p && typeof p === "object" && !Array.isArray(p) ? p : null;
+  } catch (e) {
+    erros.push(e instanceof Error ? e.message.slice(0, 120) : "erro desconhecido");
+    return null;
+  }
 }
 
 async function gravar(tabela: string, linhas: Record<string, unknown>[]) {
@@ -94,18 +113,44 @@ async function gravar(tabela: string, linhas: Record<string, unknown>[]) {
   }
 }
 
-// Um cliente RHiD: lê os cadastros e grava
+// Um cliente RHiD. As listas de empresas, departamentos, cargos e relógios dão erro 500 na API
+// (out/2026); por isso a cópia parte das pessoas e lê cada empresa, departamento e relógio pelo id.
+// Cargos ficam de fora até a lista voltar a funcionar.
 async function copiarCliente(cliente: number, token: string) {
   const agora = new Date().toISOString();
-  const [empresas, departamentos, cargos, relogios, pessoas] = [
-    await ler(token, "/company"),
-    await ler(token, "/department"),
-    await ler(token, "/personroles"),
-    await ler(token, "/device"),
-    await ler(token, "/person"),
-  ];
+  const erros: string[] = [];
+  const pessoas = await ler(token, "/person");
   const base = (x: J) => ({ cliente_id: cliente, id: Number(x?.id), atualizado_em: agora });
   const valido = (x: { id: number }) => Number.isFinite(x.id);
+
+  const idsEmpresas = [...new Set(pessoas.map((x) => Number(x?.idCompany)).filter((n) => n > 0))];
+  const empresas = [];
+  for (const id of idsEmpresas) {
+    const x = await lerUm(token, `/company/${id}`, erros);
+    if (x) empresas.push(x);
+  }
+  const idsDepartamentos = [...new Set(pessoas.map((x) => Number(x?.idDepartment)).filter((n) => n > 0))];
+  const departamentos = [];
+  for (const id of idsDepartamentos) {
+    const x = await lerUm(token, `/department/${id}`, erros);
+    if (x) departamentos.push(x);
+  }
+  const idsRelogios = [...new Set([...pessoas.flatMap((x) => ids(x?.linkedDeviceIds)), ...empresas.flatMap((x) => ids(x?.linkedDeviceIds))])];
+  const relogios = [];
+  for (const id of idsRelogios) {
+    const x = await lerUm(token, `/device/${id}`, erros);
+    if (x) relogios.push(x);
+  }
+  // As pessoas não trazem os relógios: procura pelos ids em sequência até 3 ids seguidos sem relógio
+  if (!idsRelogios.length) {
+    for (let id = 1, vazios = 0; id <= 50 && vazios < 3; id++) {
+      const x = await lerUm(token, `/device/${id}`, []);
+      if (x && Number(x.id) === id) {
+        relogios.push(x);
+        vazios = 0;
+      } else vazios++;
+    }
+  }
 
   await gravar("rhid_empresas", empresas.map((x) => ({
     ...base(x), cnpj: digitos(x.cnpj), nome: txt(x.name), fantasia: txt(x.tradingName),
@@ -113,9 +158,6 @@ async function copiarCliente(cliente: number, token: string) {
   })).filter(valido));
   await gravar("rhid_departamentos", departamentos.map((x) => ({
     ...base(x), nome: txt(x.name), empresa_id: num(x.idCompany),
-  })).filter(valido));
-  await gravar("rhid_cargos", cargos.map((x) => ({
-    ...base(x), nome: txt(x.name), empresa_id: num(x.idCompany), departamento_id: num(x.idDepartment),
   })).filter(valido));
   await gravar("rhid_relogios", relogios.map((x) => ({
     ...base(x), nome: txt(x.name), serial: txt(x.serial), modelo: txt(x.model), versao: txt(x.version),
@@ -134,7 +176,8 @@ async function copiarCliente(cliente: number, token: string) {
       .eq("cliente_id", cliente).lt("atualizado_em", agora).eq("presente", true);
     if (error) throw new Error(`marcar ausentes: ${error.message}`);
   }
-  return { empresas: empresas.length, departamentos: departamentos.length, cargos: cargos.length, relogios: relogios.length, pessoas: linhasPessoas.length };
+  const contagem = { empresas: empresas.length, departamentos: departamentos.length, relogios: relogios.length, pessoas: linhasPessoas.length };
+  return erros.length ? { ...contagem, nao_lidos: erros.length, exemplo_erro: erros[0] } : contagem;
 }
 
 async function processar(execucaoId: string) {

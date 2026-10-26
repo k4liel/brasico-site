@@ -70,6 +70,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - API oficial só de leitura (`https://www.rhid.com.br/v2/api.svc`, documentação em `/v2/swagger.svc`). Login por e-mail e senha; um login pode ver vários clientes RHiD (um domínio cada, em `rhid_clientes`).
 - Fase 1 (cadastros): a Edge Function `rhid-extrair` copia empresas, departamentos, cargos, relógios e pessoas para as tabelas `rhid_*` (supabase/rhid.sql). Pedido em `rhid_execucoes` (`rhid_pedir`, pg_net). Agenda `rhid-diario` às 5h de Fortaleza; só roda com o e-mail e a senha no Vault.
 - E-mail e senha só no Vault (`rhid_email`, `rhid_senha`), cadastrados por um sócio no SQL Editor. Nunca no GitHub nem no chat. Nunca copie senha do funcionário, crachá, código de barras, digitais nem foto.
+- Defeitos da API (out/2026): as listas `/company`, `/device`, `/department` e `/personroles` dão 500, e `/person` dá 500 se a URL levar `start`/`length`. Por isso a cópia lê `/person` sem parâmetros e busca empresa, departamento e relógio pelo id (relógios em sequência 1, 2, 3…). Cargos ficam de fora. `/apuracao_ponto` funciona.
 - Quem vê: só quem está em `rhid_acesso`. Próximas fases: batidas (AFD), apuração, justificativas, tela Ponto no RH e ferramentas no conector.
 
 ## eSocial (leitura direta do governo)
