@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } f
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { FiltroUnidade } from "./Ponto";
+import { localESetor } from "@/lib/esocial/locais";
 
 type Pessoa = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null };
 type Dia = { cliente_id: number; pessoa_id: number; dia: string; saldo_banco: number | null };
@@ -101,7 +102,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
         p, saldo, dia: ultimo?.dia ?? "",
         variacao: saldo != null && antes?.saldo_banco != null ? saldo - antes.saldo_banco : null,
         raiz: p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "",
-        unidade: p.departamento_id != null ? nomeDepto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "",
+        ...localESetor(p.departamento_id != null ? nomeDepto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : ""),
       };
     });
   }, [pessoas, dias, raizDe, nomeDepto]);
@@ -110,9 +111,9 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
   if (!carregado) return <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>;
 
   const daEmpresa = linhas.filter((l) => l.saldo != null && (filtroEmpresa === "todas" || l.raiz === filtroEmpresa));
-  const unidades = [...new Set(daEmpresa.map((l) => l.unidade).filter(Boolean))].sort();
+  const unidades = [...new Set(daEmpresa.map((l) => l.local).filter(Boolean))].sort();
   const termo = busca.trim().toLowerCase();
-  const vistas = daEmpresa.filter((l) => !unidade || l.unidade === unidade).filter((l) => !termo || l.p.nome.toLowerCase().includes(termo));
+  const vistas = daEmpresa.filter((l) => !unidade || l.local === unidade).filter((l) => !termo || l.p.nome.toLowerCase().includes(termo));
   const positivos = vistas.filter((l) => l.saldo! > 0);
   const negativos = vistas.filter((l) => l.saldo! < 0);
   const totalPos = positivos.reduce((t, l) => t + l.saldo!, 0);
@@ -120,7 +121,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
   const maior = Math.max(1, ...vistas.map((l) => Math.abs(l.saldo!)));
   const ordenar = (a: typeof vistas[number], b: typeof vistas[number]) =>
     ordem === "Nome" ? a.p.nome.localeCompare(b.p.nome) : ordem === "Mais negativo" ? a.saldo! - b.saldo! : b.saldo! - a.saldo!;
-  const grupos = [...new Set(vistas.map((l) => l.unidade || "Sem unidade"))].sort();
+  const grupos = [...new Set(vistas.map((l) => l.local || "Sem local"))].sort();
   const diaMaisNovo = vistas.map((l) => l.dia).sort().at(-1);
   const semSaldo = linhas.filter((l) => l.saldo == null && (filtroEmpresa === "todas" || l.raiz === filtroEmpresa)).length;
 
@@ -143,7 +144,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
         </div>
         <div className="es-filtros">
           <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome" aria-label="Buscar" />
-          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} contar={(u) => daEmpresa.filter((l) => l.unidade === u).length} />
+          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} rotulo="locais" contar={(u) => daEmpresa.filter((l) => l.local === u).length} />
         </div>
         {vistas.length === 0 ? (
           <p className="muted tv-nada">{pessoas.length ? "Ninguém neste filtro." : "O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h."}</p>
@@ -152,7 +153,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
             <div className="bh-cabeca" aria-hidden="true"><span>Pessoa</span><span>Devendo · Crédito</span><span>Saldo</span><span>30 dias</span></div>
             <ul className="bh-lista">
               {grupos.map((g) => {
-                const do_ = vistas.filter((l) => (l.unidade || "Sem unidade") === g).sort(ordenar);
+                const do_ = vistas.filter((l) => (l.local || "Sem local") === g).sort(ordenar);
                 const soma = do_.reduce((t, l) => t + l.saldo!, 0);
                 return (
                   <Fragment key={g}>
@@ -165,7 +166,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
                         <li key={chave(l.p.cliente_id, l.p.id)}>
                           <button className={temRH ? "bh-linha" : "bh-linha sem-ficha"} onClick={() => temRH && onAbrirPessoa(k)} aria-disabled={!temRH}
                             title={temRH ? "Ver a ficha no RH" : "Sem ficha no RH (CPF fora do cadastro do eSocial)"}>
-                            <span className="bh-nome"><strong>{nomeProprio(l.p.nome)}</strong><span className="muted">saldo em {dataBR(l.dia)}</span></span>
+                            <span className="bh-nome"><strong>{nomeProprio(l.p.nome)}</strong><span className="muted">{[l.setor, `saldo em ${dataBR(l.dia)}`].filter(Boolean).join(" \u00b7 ")}</span></span>
                             <span className="bh-barra" aria-hidden="true"><i className={l.saldo! < 0 ? "neg" : "pos"} style={{ width: `${pct}%` }} /></span>
                             <span className={`bh-saldo ${l.saldo! < 0 ? "neg" : l.saldo! > 0 ? "pos" : ""}`}>{horas(l.saldo!, true)}</span>
                             <span className="bh-var">{l.variacao == null ? "—" : l.variacao === 0 ? "igual" : horas(l.variacao, true)}</span>

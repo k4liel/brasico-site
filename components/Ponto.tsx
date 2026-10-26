@@ -7,9 +7,10 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cpfVisivel, dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import PontoEscala, { type PessoaEscala } from "./PontoEscala";
+import { localESetor } from "@/lib/esocial/locais";
 
 type PessoaPonto = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null };
-type Batida = { hora: string; tipo: string };
+type Batida = { hora: string; tipo: string; origem?: string; justificada?: boolean };
 type DiaPonto = {
   cliente_id: number; pessoa_id: number; dia: string; horario: string; folga: boolean; feriado: boolean; falta: boolean; justificado: boolean;
   minutos_trabalhados: number; minutos_atraso: number; minutos_falta: number; saldo_banco: number | null; alerta: string; batidas: Batida[];
@@ -18,7 +19,7 @@ type EmpresaPonto = { cliente_id: number; id: number; cnpj: string };
 type Departamento = { cliente_id: number; id: number; nome: string };
 type Relogio = { cliente_id: number; id: number; nome: string; situacao: string; ultima_conexao: string | null; rep_p: boolean };
 type Execucao = { id: string; status: string; created_at: string; fim: string | null; erro: string };
-type Cruzamento = { empresa_id: string; cpf: string; nome: string; ponto_situacao: string; ponto_ultima_batida: string | null; ativo: boolean };
+type Cruzamento = { empresa_id: string; cpf: string; nome: string; unidade: string; ponto_situacao: string; ponto_ultima_batida: string | null; ativo: boolean };
 
 const ESTADOS = ["Trabalhando", "Saiu", "Ainda sem batida", "Folga", "Sem escala"] as const;
 type Estado = (typeof ESTADOS)[number];
@@ -70,6 +71,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
   const [cruzamento, setCruzamento] = useState<Cruzamento[]>([]);
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState("");
+  const [local, setLocal] = useState("");
   const [unidade, setUnidade] = useState("");
   const [estado, setEstado] = useState<Estado | "">("");
   const [busca, setBusca] = useState("");
@@ -84,7 +86,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
         supabase.from("rhid_departamentos").select("cliente_id,id,nome"),
         supabase.from("rhid_relogios").select("cliente_id,id,nome,situacao,ultima_conexao,rep_p").order("nome"),
         supabase.from("rhid_execucoes").select("id,status,created_at,fim,erro").eq("tipo", "batidas").order("created_at", { ascending: false }).limit(5),
-        tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,ponto_situacao,ponto_ultima_batida,ativo")
+        tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,unidade,ponto_situacao,ponto_ultima_batida,ativo")
           .eq("ativo", true).order("nome").range(a, b)),
         tudo<DiaPonto>((a, b) => supabase.from("rhid_dias")
           .select("cliente_id,pessoa_id,dia,horario,folga,feriado,falta,justificado,minutos_trabalhados,minutos_atraso,minutos_falta,saldo_banco,alerta,batidas")
@@ -153,9 +155,12 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
     return m;
   }, [dias]);
 
+  const unidadeRH = useMemo(() => new Map(cruzamento.map((c) => [`${c.empresa_id}:${c.cpf}`, c.unidade])), [cruzamento]);
   const agora = hoje();
   const linhas = useMemo(() => pessoas.map((p) => {
     const raiz = p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "";
+    const depto = p.departamento_id != null ? nomeDepto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "";
+    const { local, setor } = localESetor(depto, unidadeRH.get(`${raiz}:${p.cpf}`) ?? "");
     const ds = diasDe.get(chave(p.cliente_id, p.id)) ?? [];
     const dHoje = ds.find((d) => d.dia === agora);
     const batidasHoje = dHoje?.batidas ?? [];
@@ -165,7 +170,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
     const passados = ds.filter((d) => d.dia < agora);
     const saldo = [...ds].reverse().find((d) => d.saldo_banco != null)?.saldo_banco ?? null;
     return {
-      p, raiz, unidade: p.departamento_id != null ? nomeDepto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "",
+      p, raiz, unidade: setor, local, setor,
       estado: est, batidasHoje, horarioHoje: dHoje?.horario ?? "",
       diasTrabalhados: passados.filter((d) => d.minutos_trabalhados > 0).length,
       minutos: passados.reduce((t, d) => t + d.minutos_trabalhados, 0),
@@ -173,15 +178,17 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
       atraso: passados.reduce((t, d) => t + d.minutos_atraso, 0),
       saldo, chaveRH: `${raiz}:${p.cpf}`,
     };
-  }), [pessoas, raizDe, diasDe, nomeDepto, agora]);
+  }), [pessoas, raizDe, diasDe, nomeDepto, unidadeRH, agora]);
 
   if (acesso === false) return <section className="es-bloco"><p className="muted">Você não tem acesso ao ponto (RHiD).</p></section>;
   if (!carregado) return <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>;
 
   const daEmpresa = linhas.filter((l) => filtroEmpresa === "todas" || l.raiz === filtroEmpresa);
-  const unidades = [...new Set(daEmpresa.map((l) => l.unidade).filter(Boolean))].sort();
+  const locais = [...new Set(daEmpresa.map((l) => l.local || "Sem local"))].sort();
+  const doLocal = daEmpresa.filter((l) => !local || (l.local || "Sem local") === local);
+  const unidades = [...new Set(doLocal.map((l) => l.setor).filter(Boolean))].sort();
   const termo = busca.trim().toLowerCase();
-  const vistas = daEmpresa.filter((l) => !unidade || l.unidade === unidade)
+  const vistas = doLocal.filter((l) => !unidade || l.setor === unidade)
     .filter((l) => !termo || l.p.nome.toLowerCase().includes(termo) || l.p.cpf.includes(termo.replace(/\D/g, "") || "#"));
   const hojeLista = vistas.filter((l) => !estado || l.estado === estado)
     .sort((a, b) => ESTADOS.indexOf(a.estado) - ESTADOS.indexOf(b.estado) || a.p.nome.localeCompare(b.p.nome));
@@ -224,14 +231,26 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
               return n ? <button key={e} className={estado === e ? "botao-painel on" : "botao-painel"} onClick={() => setEstado(e)}>{e} <span className="muted">{n}</span></button> : null;
             })}
           </div>
-          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} contar={(u) => daEmpresa.filter((l) => l.unidade === u).length} />
+        </div>
+        <div className="es-filtros pt-locais">
+          {locais.length > 1 && (
+            <div className="tv-unidades" role="group" aria-label="Local">
+              <button className={local === "" ? "botao-painel on" : "botao-painel"} onClick={() => { setLocal(""); setUnidade(""); }}>Todos os locais</button>
+              {locais.map((u) => (
+                <button key={u} className={local === u ? "botao-painel on" : "botao-painel"} onClick={() => { setLocal(u); setUnidade(""); }}>
+                  {u} <span className="muted">{daEmpresa.filter((l) => (l.local || "Sem local") === u).length}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} rotulo="setores" contar={(u) => doLocal.filter((l) => l.setor === u).length} />
         </div>
         {pessoas.length === 0 ? (
           <p className="muted tv-nada">O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h.</p>
         ) : (
           <PontoEscala onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
             pessoas={vistas.map<PessoaEscala>((l) => ({
-              chave: l.chaveRH, nome: nomeProprio(l.p.nome), unidade: l.unidade,
+              chave: l.chaveRH, nome: nomeProprio(l.p.nome), local: l.local, setor: l.setor,
               dias: new Map((diasDe.get(chave(l.p.cliente_id, l.p.id)) ?? []).map((d) => [d.dia, d])),
             }))} />
         )}
@@ -249,7 +268,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
                     <span className="es-pessoa-nome">
                       <strong>{nomeProprio(l.p.nome)}</strong>
                       <span className="muted">
-                        {l.unidade && <span className="es-unidade">{l.unidade}</span>}
+                        {l.local && <span className="es-unidade">{l.local}</span>}{l.setor && <span className="es-unidade">{l.setor}</span>}
                         {[l.horarioHoje ? `escala ${l.horarioHoje.replace(/\s+/g, " · ")}` : "", l.p.cpf ? cpfVisivel(l.p.cpf, verCpf) : "sem CPF no relógio"].filter(Boolean).join(" · ")}
                       </span>
                     </span>
@@ -271,12 +290,13 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
         </div>
         <div className="tv-rolagem">
           <table className="tv-tabela pt-tabela">
-            <thead><tr><th>Pessoa</th><th>Unidade</th><th>Dias</th><th>Horas</th><th>Faltas</th><th>Atrasos</th><th>Banco de horas</th></tr></thead>
+            <thead><tr><th>Pessoa</th><th>Local</th><th>Setor</th><th>Dias</th><th>Horas</th><th>Faltas</th><th>Atrasos</th><th>Banco de horas</th></tr></thead>
             <tbody>
               {[...vistas].sort((a, b) => b.faltas - a.faltas || b.atraso - a.atraso || a.p.nome.localeCompare(b.p.nome)).map((l) => (
                 <tr key={chave(l.p.cliente_id, l.p.id)}>
                   <td>{nomeProprio(l.p.nome)}</td>
-                  <td>{l.unidade}</td>
+                  <td>{l.local}</td>
+                  <td>{l.setor}</td>
                   <td>{l.diasTrabalhados}</td>
                   <td>{horas(l.minutos)}</td>
                   <td className={l.faltas ? "es-ruim" : ""}>{l.faltas}</td>
@@ -335,19 +355,19 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
 }
 
 // Até 8 unidades: botões; mais que isso: uma caixa de escolha
-export function FiltroUnidade({ unidades, valor, onMudar, contar }: { unidades: string[]; valor: string; onMudar: (u: string) => void; contar: (u: string) => number }) {
+export function FiltroUnidade({ unidades, valor, onMudar, contar, rotulo = "unidades" }: { unidades: string[]; valor: string; onMudar: (u: string) => void; contar: (u: string) => number; rotulo?: string }) {
   if (unidades.length < 2) return null;
   if (unidades.length > 8) {
     return (
-      <select className="es-filtro-select" value={valor} onChange={(v) => onMudar(v.target.value)} aria-label="Unidade">
-        <option value="">Todas as unidades</option>
+      <select className="es-filtro-select" value={valor} onChange={(v) => onMudar(v.target.value)} aria-label={rotulo}>
+        <option value="">{`Todos os ${rotulo}`}</option>
         {unidades.map((u) => <option key={u} value={u}>{u} ({contar(u)})</option>)}
       </select>
     );
   }
   return (
     <div className="tv-unidades" role="group" aria-label="Unidade">
-      <button className={valor === "" ? "botao-painel on" : "botao-painel"} onClick={() => onMudar("")}>Todas as unidades</button>
+      <button className={valor === "" ? "botao-painel on" : "botao-painel"} onClick={() => onMudar("")}>{`Todos os ${rotulo}`}</button>
       {unidades.map((u) => (
         <button key={u} className={valor === u ? "botao-painel on" : "botao-painel"} onClick={() => onMudar(u)}>{u} <span className="muted">{contar(u)}</span></button>
       ))}

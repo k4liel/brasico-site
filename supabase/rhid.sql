@@ -430,3 +430,173 @@ begin
 end $$;
 revoke execute on function public.rhid_atualizar_ponto() from public, anon;
 grant execute on function public.rhid_atualizar_ponto() to authenticated;
+create extension if not exists unaccent with schema extensions;
+
+-- =====================================================================
+-- Conector (Claude): ferramentas rhid_* só de leitura. Mesmo desenho do TOTVS (mcp_totvs_*):
+-- o link do Claude é validado por mcp_auth e o usuário precisa estar em rhid_acesso.
+-- Toda leitura de dados de pessoas fica registrada em esocial_consultas (LGPD, art. 37),
+-- e aparece na área técnica do RH.
+-- =====================================================================
+create or replace function public.mcp_rhid_auth(p_token text, p_ferramenta text, p_parametros jsonb default '{}', p_quantidade int default 0)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare a record;
+begin
+  select * into a from public.mcp_auth(p_token);
+  if not public.rhid_pode_ver(a.o_user) then
+    raise exception 'Sem acesso ao ponto (RHiD)' using errcode = '42501';
+  end if;
+  insert into public.esocial_consultas (user_id, origem, ferramenta, parametros, quantidade)
+  values (a.o_user, 'claude', p_ferramenta, coalesce(p_parametros, '{}'), coalesce(p_quantidade, 0));
+  return a.o_user;
+end $$;
+revoke execute on function public.mcp_rhid_auth(text, text, jsonb, int) from public, anon, authenticated;
+
+-- Empresa do RH (raiz do CNPJ) de uma pessoa do RHiD
+create or replace function public.rhid_raiz(p_cliente bigint, p_empresa bigint)
+returns text language sql stable security definer set search_path = public as $$
+  select left(e.cnpj, 8) from public.rhid_empresas e where e.cliente_id = p_cliente and e.id = p_empresa
+$$;
+revoke execute on function public.rhid_raiz(bigint, bigint) from public, anon, authenticated;
+
+-- Acha pessoas do relógio pelo nome (parte), CPF ou id "cliente:id"
+create or replace function public.rhid_achar_pessoas(p_busca text)
+returns table (cliente_id bigint, id bigint) language sql stable security definer set search_path = public as $$
+  select p.cliente_id, p.id from public.rhid_pessoas p
+  where p.presente and (
+    (p_busca ~ '^\d+:\d+$' and p.cliente_id = split_part(p_busca, ':', 1)::bigint and p.id = split_part(p_busca, ':', 2)::bigint)
+    or (regexp_replace(p_busca, '\D', '', 'g') ~ '^\d{11}$' and p.cpf = regexp_replace(p_busca, '\D', '', 'g'))
+    or (p_busca !~ '^\d+:\d+$' and regexp_replace(p_busca, '\D', '', 'g') !~ '^\d{11}$' and unaccent(p.nome) ilike '%' || unaccent(trim(p_busca)) || '%')
+  )
+$$;
+revoke execute on function public.rhid_achar_pessoas(text) from public, anon, authenticated;
+
+-- Situação geral: clientes, relógios, última leitura, quantas pessoas e dias lidos
+create or replace function public.mcp_rhid_situacao(p_token text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_hoje date := (now() at time zone 'America/Fortaleza')::date;
+begin
+  perform public.mcp_rhid_auth(p_token, 'rhid_situacao');
+  return jsonb_build_object(
+    'hoje', v_hoje,
+    'clientes', coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'nome', c.nome, 'ativo', c.ativo,
+        'empresas', (select jsonb_agg(jsonb_build_object('id', e.id, 'nome', e.nome, 'cnpj', e.cnpj, 'raiz_rh', left(e.cnpj, 8))) from public.rhid_empresas e where e.cliente_id = c.id),
+        'pessoas_ativas', (select count(*) from public.rhid_pessoas p where p.cliente_id = c.id and p.situacao = 1 and p.presente and (p.cpf <> '' or exists (select 1 from public.rhid_dias d where d.cliente_id = p.cliente_id and d.pessoa_id = p.id))),
+        'pessoas_sem_cpf', (select count(*) from public.rhid_pessoas p where p.cliente_id = c.id and p.situacao = 1 and p.presente and p.cpf = ''),
+        'relogios', (select jsonb_agg(jsonb_build_object('id', r.id, 'nome', r.nome, 'ultima_conexao', to_char(r.ultima_conexao at time zone 'America/Fortaleza', 'YYYY-MM-DD HH24:MI'),
+            'conectado_24h', r.ultima_conexao > now() - interval '24 hours') order by r.id) from public.rhid_relogios r where r.cliente_id = c.id and not r.rep_p),
+        'dias_lidos_de', (select min(dia) from public.rhid_dias d where d.cliente_id = c.id),
+        'dias_lidos_ate', (select max(dia) from public.rhid_dias d where d.cliente_id = c.id)
+      ) order by c.nome) from public.rhid_clientes c), '[]'::jsonb),
+    'ultimas_leituras', coalesce((select jsonb_agg(jsonb_build_object('tipo', x.tipo, 'status', x.status, 'origem', x.origem,
+        'quando', to_char(x.created_at at time zone 'America/Fortaleza', 'YYYY-MM-DD HH24:MI'), 'erro', nullif(x.erro, ''), 'resumo', x.resumo) order by x.created_at desc)
+      from (select * from public.rhid_execucoes order by created_at desc limit 6) x), '[]'::jsonb),
+    'agenda', 'Cadastros às 5h; ponto a cada 10 min das 5h às 7h50 e às 12h e 17h (Fortaleza). Dias futuros trazem a escala prevista.');
+end $$;
+
+-- Equipe do relógio: pessoas ativas, unidade (departamento), situação no ponto e saldo do banco
+create or replace function public.mcp_rhid_equipe(p_token text, p_busca text default null, p_unidade text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_hoje date := (now() at time zone 'America/Fortaleza')::date; v jsonb;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'id', p.cliente_id || ':' || p.id, 'nome', p.nome, 'cpf', p.cpf, 'matricula', p.matricula, 'admissao', p.admissao,
+      'cliente', c.nome, 'empresa_rh', public.rhid_raiz(p.cliente_id, p.empresa_id), 'unidade', coalesce(d.nome, ''),
+      'ultima_batida', u.ultima, 'escala_hoje', nullif(regexp_replace(h.horario, E'\\r?\\n', ' / ', 'g'), ''),
+      'saldo_banco_min', s.saldo, 'saldo_banco', case when s.saldo is null then null else
+        (case when s.saldo < 0 then '-' else '+' end) || (abs(s.saldo) / 60) || 'h' || lpad((abs(s.saldo) % 60)::text, 2, '0') end,
+      'no_rh', exists (select 1 from public.esocial_trabalhadores t where t.cpf = p.cpf and t.empresa_id = public.rhid_raiz(p.cliente_id, p.empresa_id))
+    ) order by c.nome, d.nome, p.nome), '[]'::jsonb) into v
+  from public.rhid_pessoas p
+  join public.rhid_clientes c on c.id = p.cliente_id
+  left join public.rhid_departamentos d on d.cliente_id = p.cliente_id and d.id = p.departamento_id
+  left join lateral (select max(x.dia) ultima from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and jsonb_array_length(x.batidas) > 0) u on true
+  left join lateral (select x.saldo_banco saldo from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.saldo_banco is not null and x.dia <= v_hoje order by x.dia desc limit 1) s on true
+  left join lateral (select x.horario from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.dia = v_hoje) h on true
+  where p.situacao = 1 and p.presente and (p.cpf <> '' or u.ultima is not null)
+    and (p_busca is null or (p.cliente_id, p.id) in (select a.cliente_id, a.id from public.rhid_achar_pessoas(p_busca) a))
+    and (p_unidade is null or unaccent(coalesce(d.nome, '')) ilike '%' || unaccent(p_unidade) || '%');
+  perform public.mcp_rhid_auth(p_token, 'rhid_equipe', jsonb_strip_nulls(jsonb_build_object('busca', p_busca, 'unidade', p_unidade)), jsonb_array_length(v));
+  return jsonb_build_object('hoje', v_hoje, 'pessoas', v);
+end $$;
+
+-- Ponto de uma pessoa (ou de uma unidade) num período: por dia, escala, batidas, horas, faltas, atrasos, saldo
+create or replace function public.mcp_rhid_ponto(p_token text, p_pessoa text default null, p_unidade text default null, p_de date default null, p_ate date default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_hoje date := (now() at time zone 'America/Fortaleza')::date; v_de date; v_ate date; v jsonb;
+begin
+  if p_pessoa is null and p_unidade is null then raise exception 'Informe a pessoa (nome, CPF ou id) ou a unidade.'; end if;
+  v_ate := coalesce(p_ate, v_hoje);
+  v_de := coalesce(p_de, v_ate - 6);
+  if v_ate - v_de > 92 then raise exception 'Período longo demais (máximo de 93 dias).'; end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'pessoa', p.nome, 'id', p.cliente_id || ':' || p.id, 'unidade', coalesce(d.nome, ''),
+      'dias', (select jsonb_agg(jsonb_build_object(
+          'dia', x.dia, 'escala', nullif(regexp_replace(x.horario, E'\\r?\\n', ' / ', 'g'), ''),
+          'folga', x.folga or (x.horario = '' and not x.feriado), 'feriado', x.feriado,
+          'batidas', (select coalesce(jsonb_agg(b->>'hora'), '[]'::jsonb) from jsonb_array_elements(x.batidas) b),
+          'trabalhou_min', x.minutos_trabalhados, 'extra_min', x.minutos_extra, 'atraso_min', x.minutos_atraso,
+          'saida_antecipada_min', x.minutos_saida_antecipada, 'falta', x.falta, 'falta_justificada', x.falta and x.justificado,
+          'abono_min', x.minutos_abono, 'saldo_banco_min', x.saldo_banco, 'alerta', nullif(x.alerta, ''))
+          order by x.dia)
+        from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.dia between v_de and v_ate),
+      'totais', (select jsonb_build_object('trabalhou_min', sum(x.minutos_trabalhados), 'extra_min', sum(x.minutos_extra),
+          'atraso_min', sum(x.minutos_atraso), 'faltas', count(*) filter (where x.falta and not x.justificado),
+          'faltas_justificadas', count(*) filter (where x.falta and x.justificado), 'dias_trabalhados', count(*) filter (where x.minutos_trabalhados > 0))
+        from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.dia between v_de and least(v_ate, v_hoje - 1))
+    ) order by d.nome, p.nome), '[]'::jsonb) into v
+  from public.rhid_pessoas p
+  left join public.rhid_departamentos d on d.cliente_id = p.cliente_id and d.id = p.departamento_id
+  where p.situacao = 1 and p.presente
+    and (p_pessoa is null or (p.cliente_id, p.id) in (select a.cliente_id, a.id from public.rhid_achar_pessoas(p_pessoa) a))
+    and (p_unidade is null or unaccent(coalesce(d.nome, '')) ilike '%' || unaccent(p_unidade) || '%');
+  perform public.mcp_rhid_auth(p_token, 'rhid_ponto', jsonb_strip_nulls(jsonb_build_object('pessoa', p_pessoa, 'unidade', p_unidade, 'de', v_de, 'ate', v_ate)), jsonb_array_length(v));
+  return jsonb_build_object('de', v_de, 'ate', v_ate, 'hoje', v_hoje, 'minutos', 'todos os tempos estão em minutos', 'pessoas', v);
+end $$;
+
+-- Banco de horas de todo mundo: saldo atual e variação em 30 dias, por unidade
+create or replace function public.mcp_rhid_banco_horas(p_token text, p_unidade text default null)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_hoje date := (now() at time zone 'America/Fortaleza')::date; v jsonb;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'pessoa', p.nome, 'id', p.cliente_id || ':' || p.id, 'unidade', coalesce(d.nome, ''), 'cliente', c.nome,
+      'saldo_min', s.saldo, 'saldo', (case when s.saldo < 0 then '-' else '+' end) || (abs(s.saldo) / 60) || 'h' || lpad((abs(s.saldo) % 60)::text, 2, '0'),
+      'saldo_em', s.dia, 'variacao_30_dias_min', s.saldo - a.saldo
+    ) order by s.saldo), '[]'::jsonb) into v
+  from public.rhid_pessoas p
+  join public.rhid_clientes c on c.id = p.cliente_id
+  left join public.rhid_departamentos d on d.cliente_id = p.cliente_id and d.id = p.departamento_id
+  join lateral (select x.saldo_banco saldo, x.dia from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.saldo_banco is not null and x.dia <= v_hoje order by x.dia desc limit 1) s on true
+  left join lateral (select x.saldo_banco saldo from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.saldo_banco is not null and x.dia <= v_hoje - 30 order by x.dia desc limit 1) a on true
+  where p.situacao = 1 and p.presente
+    and (p_unidade is null or unaccent(coalesce(d.nome, '')) ilike '%' || unaccent(p_unidade) || '%');
+  perform public.mcp_rhid_auth(p_token, 'rhid_banco_horas', jsonb_strip_nulls(jsonb_build_object('unidade', p_unidade)), jsonb_array_length(v));
+  return jsonb_build_object('hoje', v_hoje,
+    'total_positivo_min', (select coalesce(sum((e->>'saldo_min')::int), 0) from jsonb_array_elements(v) e where (e->>'saldo_min')::int > 0),
+    'total_negativo_min', (select coalesce(sum((e->>'saldo_min')::int), 0) from jsonb_array_elements(v) e where (e->>'saldo_min')::int < 0),
+    'pessoas', v);
+end $$;
+
+-- Pedir uma leitura agora (cadastros ou ponto)
+create or replace function public.mcp_rhid_atualizar(p_token text, p_tipo text default 'batidas')
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_user uuid; v_id uuid;
+begin
+  v_user := public.mcp_rhid_auth(p_token, 'rhid_atualizar', jsonb_build_object('tipo', p_tipo));
+  if p_tipo not in ('cadastros', 'batidas') then raise exception 'Tipo deve ser "cadastros" ou "batidas".'; end if;
+  v_id := public.rhid_pedir(p_tipo, 'claude', v_user);
+  return jsonb_build_object('execucao', v_id, 'tipo', p_tipo,
+    'aviso', 'Leitura pedida. Leva de alguns segundos a 2 minutos; veja o resultado em rhid_situacao (ultimas_leituras).');
+end $$;
+
+revoke execute on function public.mcp_rhid_situacao(text) from public, authenticated;
+revoke execute on function public.mcp_rhid_equipe(text, text, text) from public, authenticated;
+revoke execute on function public.mcp_rhid_ponto(text, text, text, date, date) from public, authenticated;
+revoke execute on function public.mcp_rhid_banco_horas(text, text) from public, authenticated;
+revoke execute on function public.mcp_rhid_atualizar(text, text) from public, authenticated;
+grant execute on function public.mcp_rhid_situacao(text) to anon;
+grant execute on function public.mcp_rhid_equipe(text, text, text) to anon;
+grant execute on function public.mcp_rhid_ponto(text, text, text, date, date) to anon;
+grant execute on function public.mcp_rhid_banco_horas(text, text) to anon;
+grant execute on function public.mcp_rhid_atualizar(text, text) to anon;

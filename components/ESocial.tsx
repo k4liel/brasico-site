@@ -12,6 +12,7 @@ import {
 import Topo from "./Topo";
 import Ponto from "./Ponto";
 import BancoHoras from "./BancoHoras";
+import Salarios from "./Salarios";
 
 type Consulta = { id: string; user_id: string | null; origem: string; ferramenta: string; parametros: Record<string, unknown>; quantidade: number; created_at: string };
 
@@ -36,6 +37,7 @@ const SECOES = [
   { id: "pessoas", grupo: "Equipe", rotulo: "Pessoas", icone: "equipe", titulo: "Pessoas", texto: "Toda a equipe por unidade e situação. Clique numa pessoa para ver a ficha e a linha do tempo." },
   { id: "ponto", grupo: "Equipe", rotulo: "Ponto e escalas", icone: "ponto", titulo: "Ponto e escalas", texto: "A escala de cada pessoa, quem bateu ponto hoje e o resumo dos últimos 30 dias, direto dos relógios de ponto (RHiD)." },
   { id: "banco", grupo: "Equipe", rotulo: "Banco de horas", icone: "banco", titulo: "Banco de horas", texto: "O saldo de horas de cada pessoa segundo o RHiD: quem está positivo, quem está negativo e como mudou no último mês." },
+  { id: "salarios", grupo: "Obrigações", rotulo: "Salários", icone: "salario", titulo: "Salários", texto: "O salário de contrato de cada pessoa, como o contador informou ao eSocial, por local e setor. Dado sensível: fica escondido até você mostrar." },
   { id: "ausencias", grupo: "Contratos", rotulo: "Férias e afastamentos", icone: "ausencias", titulo: "Férias e afastamentos", texto: "Quem está fora agora e o histórico de ausências lido do governo." },
   { id: "movimentacoes", grupo: "Contratos", rotulo: "Admissões e saídas", icone: "movimentacoes", titulo: "Admissões e saídas", texto: "Contratos de experiência a vencer e as entradas e saídas dos últimos meses, com os prazos do eSocial." },
   { id: "folha", grupo: "Obrigações", rotulo: "Folha e prazos", icone: "folha", titulo: "Folha e prazos", texto: "Se o contador fechou a folha de cada mês e o calendário de obrigações do empregador." },
@@ -567,6 +569,11 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 <BancoHoras supabase={supabase} filtroEmpresa={filtroEmpresa} chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
               )}
 
+              {/* ===================== Salários (eSocial) ===================== */}
+              {secao === "salarios" && (
+                <Salarios pessoas={pessoasVistas} empresas={empresas} verCpf={verCpf} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
+              )}
+
               {/* ===================== Férias e afastamentos ===================== */}
               {secao === "ausencias" && (
                 <>
@@ -784,6 +791,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       <li><strong>Pessoas</strong>: toda a equipe, por unidade e situação, com a ficha e a linha do tempo de cada um.</li>
                       <li><strong>Ponto e escalas</strong>: a escala de cada pessoa, quem bateu ponto hoje, faltas e atrasos dos últimos 30 dias, vindos dos relógios (RHiD), e o cruzamento com o eSocial.</li>
                       <li><strong>Banco de horas</strong>: o saldo de horas de cada pessoa (positivo ou negativo) e como mudou no último mês.</li>
+                      <li><strong>Salários</strong>: o salário de contrato de cada pessoa informado ao eSocial, por local e setor, escondido até você mostrar.</li>
                       <li><strong>Férias e afastamentos</strong>: quem está fora agora e o histórico de ausências lido do governo.</li>
                       <li><strong>Admissões e saídas</strong>: contratos de experiência a vencer e as movimentações dos últimos meses, com os prazos do eSocial.</li>
                       <li><strong>Folha e prazos</strong>: se o contador fechou a folha de cada mês e o calendário de obrigações.</li>
@@ -827,6 +835,7 @@ const ICONES: Record<string, string> = {
   movimentacoes: "M4 8h13l-3-3M17 8l-3 3M20 16H7l3-3M7 16l3 3",
   ponto: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2",
   banco: "M3 10h18M3 6h18M7 14h4M5 20h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2Z",
+  salario: "M12 2v20M17 6.5a4 4 0 0 0-4-2.5H11a3.5 3.5 0 0 0 0 7h2a3.5 3.5 0 0 1 0 7h-2a4 4 0 0 1-4-2.5",
 };
 function Icone({ nome }: { nome: keyof typeof ICONES }) {
   return (
