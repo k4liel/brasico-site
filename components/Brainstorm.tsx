@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 
@@ -51,6 +51,37 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
   const arrastou = useRef(false);
   const dados = useRef({ listas: [] as Lista[], itens: [] as Item[] });
   dados.current = { listas: listas ?? [], itens };
+  const posicoes = useRef(new Map<string, { x: number; y: number }>());
+  const primeiraPintura = useRef(true);
+
+  // FLIP: a cada desenho, compara onde cada card/coluna estava e desliza do lugar antigo para o novo.
+  // As posições são medidas descontando a rolagem, para rolar o quadro não parecer "movimento".
+  useLayoutEffect(() => {
+    const q = quadro.current;
+    if (!q) return;
+    const semMovimento = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const novas = new Map<string, { x: number; y: number }>();
+    q.querySelectorAll<HTMLElement>("[data-flip]").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const corpo = el.closest<HTMLElement>("[data-rolagem]");
+      const pos = { x: r.left + q.scrollLeft, y: r.top + (corpo?.scrollTop ?? 0) };
+      const id = el.dataset.flip!;
+      const antes = posicoes.current.get(id);
+      if (antes && !semMovimento && !primeiraPintura.current) {
+        const dx = antes.x - pos.x;
+        const dy = antes.y - pos.y;
+        if ((Math.abs(dx) > 1 || Math.abs(dy) > 1) && Math.abs(dx) < 1200 && Math.abs(dy) < 1200) {
+          el.animate(
+            [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
+            { duration: 320, easing: "cubic-bezier(.2, .8, .2, 1)" }
+          );
+        }
+      }
+      novas.set(id, pos);
+    });
+    posicoes.current = novas;
+    if (novas.size) primeiraPintura.current = false;
+  });
 
   const carregar = useCallback(async () => {
     const [{ data: l }, { data: i }, { data: p }] = await Promise.all([
@@ -85,7 +116,10 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
   const abertosDe = (lista: string) => itens.filter((i) => i.lista_id === lista && !i.feito).sort(porOrdem);
   const feitosDe = (lista: string) =>
     itens.filter((i) => i.lista_id === lista && i.feito).sort((a, b) => (b.feito_em ?? "").localeCompare(a.feito_em ?? ""));
-  const totalAbertos = itens.filter((i) => !i.feito && colunas.some((l) => l.id === i.lista_id)).length;
+  const noQuadro = itens.filter((i) => colunas.some((l) => l.id === i.lista_id));
+  const totalAbertos = noQuadro.filter((i) => !i.feito).length;
+  const totalFeitos = noQuadro.length - totalAbertos;
+  const totalAtrasados = noQuadro.filter((i) => !i.feito && !!i.prazo && i.prazo < hojeISO()).length;
 
   // ---------- Gravação ----------
   async function salvarItem(id: string, campos: Partial<Item> & { arquivado_em?: string }) {
@@ -360,7 +394,7 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
   // ---------- Desenho ----------
   const vaga = (altura: number) => <div className="bq-vaga" style={{ height: altura }} aria-hidden="true" />;
 
-  const card = (i: Item) => {
+  const card = (i: Item, n = 0) => {
     const hoje = hojeISO();
     const atrasado = !!i.prazo && !i.feito && i.prazo < hoje;
     const ehHoje = !!i.prazo && !i.feito && i.prazo === hoje;
@@ -369,7 +403,9 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
       <div
         key={i.id}
         data-card={i.feito ? undefined : i.id}
-        className={`bq-card${i.feito ? " feito" : ""}${escondido ? " escondido" : ""}`}
+        data-flip={`card-${i.id}`}
+        style={{ "--n": Math.min(n, 8) } as React.CSSProperties}
+        className={`bq-card${i.feito ? " feito" : ""}${escondido ? " escondido" : ""}${atrasado ? " atrasado" : ""}`}
         role="button"
         tabIndex={0}
         aria-label={`Abrir card: ${i.texto}`}
@@ -431,7 +467,7 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
     const feitos = feitosDe(l.id);
     const escondida = arr?.tipo === "coluna" && arr.id === l.id;
     const alvoAqui = arr?.tipo === "card" && arr.lista === l.id;
-    const corpo: React.ReactNode[] = abertos.map(card);
+    const corpo: React.ReactNode[] = abertos.map((i, n) => card(i, n));
     if (alvoAqui) {
       const visiveis = abertos.filter((i) => i.id !== arr.id);
       const antes = visiveis[arr.indice - 1];
@@ -439,11 +475,15 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
       corpo.splice(pos, 0, <div key="vaga">{vaga(arr.altura)}</div>);
     }
     const adicionando = novoCard?.lista === l.id;
+    const total = abertos.length + feitos.length;
+    const progresso = total ? feitos.length / total : 0;
     return (
       <section
         key={l.id}
         data-coluna={l.id}
-        className={`bq-coluna${escondida ? " escondida" : ""}${alvoAqui ? " alvo" : ""}`}
+        data-flip={`coluna-${l.id}`}
+        style={{ "--n": Math.min(idx, 6) } as React.CSSProperties}
+        className={`bq-coluna${escondida ? " escondida" : ""}${alvoAqui ? " alvo" : ""}${abertos.length === 0 && !alvoAqui ? " vazia" : ""}`}
         aria-label={l.nome}
       >
         <header className="bq-coluna-cabeca" {...pegar("coluna", l.id, l.id)}>
@@ -482,8 +522,14 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
             )}
           </div>
         </header>
+        <div className="bq-progresso" title={total ? `${feitos.length} de ${total} concluído${total > 1 ? "s" : ""}` : "Sem cards"} aria-hidden="true">
+          <span style={{ transform: `scaleX(${progresso})` }} />
+        </div>
 
         <div className="bq-coluna-corpo" data-rolagem>
+          {abertos.length === 0 && !alvoAqui && !adicionando && (
+            <p className="bq-vazia">{feitos.length ? "Tudo concluído por aqui." : "Nenhum card ainda. Arraste um para cá ou crie o primeiro."}</p>
+          )}
           {corpo}
           {adicionando && (
             <form
@@ -527,7 +573,7 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
                 <svg viewBox="0 0 16 16" aria-hidden="true" className={verFeitos[l.id] ? "virado" : ""}><path d="M6 4l4 4-4 4" /></svg>
                 {feitos.length} concluído{feitos.length > 1 ? "s" : ""}
               </button>
-              {verFeitos[l.id] && feitos.map(card)}
+              {verFeitos[l.id] && feitos.map((i, n) => card(i, n))}
             </div>
           )}
         </div>
@@ -559,21 +605,33 @@ export default function Brainstorm({ userId, userEmail }: { userId: string; user
     <div className="pagina bq-pagina">
       <Topo email={userEmail} ativo="brainstorm" />
       <header className="bq-cabeca">
-        <div>
+        <div className="bq-titulo">
+          <span className="bq-sobretitulo">Equipe Brasico</span>
           <h1>Brainstorm</h1>
-          <p className="muted small">
-            {listas === null
-              ? "Carregando…"
-              : `${colunas.length} coluna${colunas.length === 1 ? "" : "s"} · ${totalAbertos} card${totalAbertos === 1 ? "" : "s"} em aberto`}
-          </p>
         </div>
-        <p className="bq-dica muted small">Arraste os cards entre as colunas. No celular, segure o card um instante antes de arrastar.</p>
+        {listas !== null && (
+          <div className="bq-numeros" aria-label="Resumo do quadro">
+            <span><b>{totalAbertos}</b> em aberto</span>
+            <span><b>{totalFeitos}</b> concluído{totalFeitos === 1 ? "" : "s"}</span>
+            <span className={totalAtrasados ? "alerta" : ""}><b>{totalAtrasados}</b> atrasado{totalAtrasados === 1 ? "" : "s"}</span>
+          </div>
+        )}
+        <p className="bq-dica muted small">Arraste os cards entre as colunas. No celular, segure um instante antes de arrastar.</p>
       </header>
 
       <div className={`bq-quadro${arr ? " arrastando" : ""}`} ref={quadro}>
+        {listas === null && (
+          <div className="bq-carregando" aria-label="Carregando">
+            {[0, 1, 2].map((n) => (
+              <div key={n} className="bq-coluna bq-esqueleto" style={{ "--n": n } as React.CSSProperties}>
+                <i /><i /><i />
+              </div>
+            ))}
+          </div>
+        )}
         {desenharColunas()}
         {listas !== null && (
-          <div className="bq-coluna bq-coluna-nova">
+          <div className="bq-coluna bq-coluna-nova" style={{ "--n": Math.min(colunas.length, 6) } as React.CSSProperties}>
             {novaColuna !== null ? (
               <form
                 onSubmit={(e) => {
