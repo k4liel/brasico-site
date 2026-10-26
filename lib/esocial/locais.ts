@@ -21,6 +21,8 @@ export function localESetor(departamento: string, unidadeRH = ""): { local: stri
     const sigla = m[2].trim().toUpperCase();
     return { local: SIGLAS[sigla] ?? nomeBonito(m[2]), setor: nomeBonito(m[1]) };
   }
+  // A cozinha de produção da Pipa é um local próprio (unidade pipa_producao no Cicchetti Management)
+  if (/^PRODU[ÇC][ÃA]O$/i.test(d)) return { local: "Produção Pipa", setor: "Produção" };
   const u = unidadeRH.trim().toUpperCase();
   const localRH = SIGLAS[u] ?? (unidadeRH.trim() ? nomeBonito(unidadeRH) : "");
   // Departamento que é um local (Genesis): sem setor
