@@ -78,7 +78,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 
 ## Compras (lista semanal e produção de fim de ano)
 - Todas as compras ficam no projeto **Compras** do Brasico: aba 01 com o método (o padrão da lista), a aba da semana atual, a aba 03 com as compras da produção de fim de ano e as semanas anteriores no grupo Histórico. O projeto Produção Sempre Vivo guarda só a execução do cronograma.
-- A lista tem 3 partes: Cicchetti Centro (notas das últimas 4 semanas ÷ 4 × porcentagem da semana), Produção → Cicchetti (vendas TOTVS × fichas − câmara fria) e produção de fim de ano. PDFs em `privado/<semana>/`. Skill em .claude/skills/compras.
+- A lista tem 3 partes: Cicchetti Centro (notas das últimas 4 semanas ÷ 4 × porcentagem da semana), Produção → Cicchetti (vendas TOTVS × fichas − câmara fria) e produção de fim de ano. **A lista é sempre entregue em PDF** (nunca só no chat), em `privado/<semana>/`. Aba 04: análise de vendas; aba 05: como o padrão nasceu. Skill em .claude/skills/compras.
 
 ## eSocial (leitura direta do governo)
 - Só leitura, sem software de terceiros: o Brasico baixa do eSocial os eventos que o contador transmite (webservices oficiais de consulta de identificadores e download, MOD v1.16 seções 7.7 e 7.8). Pesquisa completa em `reports/Integração com o eSocial.md` (fora do GitHub).
