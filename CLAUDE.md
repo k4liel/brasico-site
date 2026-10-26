@@ -66,6 +66,12 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - `preco_efetivo` = (total − desconto + frete) / quantidade, na unidade de compra da nota. Compare só itens na mesma unidade de compra.
 - Quem vê: quem está em `cicchetti_acesso`. Conector: `precos_consultar`. O projeto "Índice de Preços" no site é o relatório feito a partir dessa base.
 
+## RHiD (ponto da Control iD)
+- API oficial só de leitura (`https://www.rhid.com.br/v2/api.svc`, documentação em `/v2/swagger.svc`). Login por e-mail e senha; um login pode ver vários clientes RHiD (um domínio cada, em `rhid_clientes`).
+- Fase 1 (cadastros): a Edge Function `rhid-extrair` copia empresas, departamentos, cargos, relógios e pessoas para as tabelas `rhid_*` (supabase/rhid.sql). Pedido em `rhid_execucoes` (`rhid_pedir`, pg_net). Agenda `rhid-diario` às 5h de Fortaleza; só roda com o e-mail e a senha no Vault.
+- E-mail e senha só no Vault (`rhid_email`, `rhid_senha`), cadastrados por um sócio no SQL Editor. Nunca no GitHub nem no chat. Nunca copie senha do funcionário, crachá, código de barras, digitais nem foto.
+- Quem vê: só quem está em `rhid_acesso`. Próximas fases: batidas (AFD), apuração, justificativas, tela Ponto no RH e ferramentas no conector.
+
 ## eSocial (leitura direta do governo)
 - Só leitura, sem software de terceiros: o Brasico baixa do eSocial os eventos que o contador transmite (webservices oficiais de consulta de identificadores e download, MOD v1.16 seções 7.7 e 7.8). Pesquisa completa em `reports/Integração com o eSocial.md` (fora do GitHub).
 - Certificado e-CNPJ A1 por empresa (raiz do CNPJ): o sócio envia o .pfx e a senha em Menu → Certificados digitais (página própria, components/Certificados.tsx). Um certificado por CNPJ completo (tabela `certificados`, supabase/certificados.sql): o da matriz (final 0001) fica em `esocial_cert_<raiz>` e é o usado pelo eSocial e pela Receita; o de filial fica em `cert_<cnpj>` e nunca substitui a matriz; a rota `/api/esocial/certificado` converte e guarda no Vault (`esocial_cert_<raiz>`). A senha não é guardada. Nunca peça nem cole certificado ou senha no chat.
