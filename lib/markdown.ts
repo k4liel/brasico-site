@@ -106,13 +106,13 @@ function renderCards(body: string[]) {
 // ---------------------------------------------------------------------
 // :::escala — grade mensal de escala, um quadradinho por dia
 // ---------------------------------------------------------------------
-type TipoTurno = "folga" | "descanso" | "dia" | "abertura" | "manha" | "inter" | "tarde" | "noite" | "partido" | "plantao";
+export type TipoTurno = "folga" | "descanso" | "dia" | "abertura" | "manha" | "inter" | "tarde" | "noite" | "partido" | "plantao";
 type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; entrada: number | null };
 
 const dois = (n: number) => String(n).padStart(2, "0");
 
-// Cor do turno pelo horário de entrada
-function tipoPorEntrada(a: number, b: number): TipoTurno {
+// Cor do turno pelo horário de entrada (também usada na escala do Ponto, components/PontoEscala.tsx)
+export function tipoPorEntrada(a: number, b: number): TipoTurno {
   const duracao = (b <= a ? b + 24 : b) - a;
   if (b <= a && duracao >= 11 && a >= 17) return "plantao";
   if (a <= 7) return "abertura";

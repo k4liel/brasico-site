@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cpfVisivel, dataBR, hoje, somarDias } from "@/lib/esocial/rh";
+import PontoEscala, { type PessoaEscala } from "./PontoEscala";
 
 type PessoaPonto = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null };
 type Batida = { hora: string; tipo: string };
@@ -157,7 +158,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
     const dHoje = ds.find((d) => d.dia === agora);
     const batidasHoje = dHoje?.batidas ?? [];
     const est: Estado = batidasHoje.length ? (batidasHoje.length % 2 ? "Trabalhando" : "Saiu")
-      : dHoje?.folga || dHoje?.feriado ? "Folga" : dHoje?.horario ? "Ainda sem batida" : "Sem escala";
+      : !dHoje ? "Sem escala" : dHoje.horario && !dHoje.folga && !dHoje.feriado ? "Ainda sem batida" : "Folga";
     // Hoje fica de fora das faltas: o dia ainda não acabou
     const passados = ds.filter((d) => d.dia < agora);
     const saldo = [...ds].reverse().find((d) => d.saldo_banco != null)?.saldo_banco ?? null;
@@ -198,7 +199,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
     <>
       <section className="es-bloco">
         <div className="es-bloco-cabeca">
-          <h2>{icone("ponto")}Ponto hoje <span className="muted">{dataBR(agora)}</span></h2>
+          <h2>{icone("ponto")}Escala e ponto <span className="muted">{dataBR(agora)}</span></h2>
           <span className="pt-acoes">
             <span className="muted">{lendo ? "Lendo o RHiD…" : ultima ? `atualizado ${horaCurta(ultima.fim!)}` : "ainda não lido"}</span>
             <button className="ghost small" onClick={atualizar} disabled={lendo}>Atualizar</button>
@@ -232,9 +233,18 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
             </div>
           )}
         </div>
-        {hojeLista.length === 0 ? (
-          <p className="muted tv-nada">{pessoas.length ? "Ninguém neste filtro." : "O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h."}</p>
+        {pessoas.length === 0 ? (
+          <p className="muted tv-nada">O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h.</p>
         ) : (
+          <PontoEscala onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
+            pessoas={vistas.map<PessoaEscala>((l) => ({
+              chave: l.chaveRH, nome: nomeProprio(l.p.nome), unidade: l.unidade,
+              dias: new Map((diasDe.get(chave(l.p.cliente_id, l.p.id)) ?? []).map((d) => [d.dia, d])),
+            }))} />
+        )}
+        {hojeLista.length > 0 && (
+          <details className="pt-lista-hoje">
+          <summary>Lista de hoje <span className="muted">{hojeLista.length}</span></summary>
           <ul className="es-equipe">
             {hojeLista.map((l) => {
               const temRH = chavesRH.has(l.chaveRH);
@@ -257,6 +267,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
               );
             })}
           </ul>
+          </details>
         )}
       </section>
 

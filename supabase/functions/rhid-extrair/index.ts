@@ -189,6 +189,7 @@ async function copiarCliente(cliente: number, token: string) {
 // ---------------------------------------------------------------------
 const ORCAMENTO_MS = 110_000;
 const RECENTES = 7; // dias refeitos a cada leitura (justificativas e ajustes mudam a apuração)
+const FUTUROS = 13; // dias à frente: a escala prevista (a apuração traz o horário contratual)
 const HISTORICO_DIAS = 365; // até onde o histórico volta
 const REFAZER_MS = 2 * 3600_000; // a apuração recente de uma pessoa vale por 2 horas
 
@@ -260,7 +261,7 @@ async function copiarPonto(cliente: number, token: string, inicio: number, fase:
     if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
     if (p.apuracao_em && Date.now() - new Date(p.apuracao_em).getTime() < REFAZER_MS) continue;
     try {
-      r.dias += await apurar(token, cliente, Number(p.id), somarDias(hoje, -(RECENTES - 1)), hoje);
+      r.dias += await apurar(token, cliente, Number(p.id), somarDias(hoje, -(RECENTES - 1)), somarDias(hoje, FUTUROS));
       await supabase.from("rhid_pessoas").update({ apuracao_em: new Date().toISOString() }).eq("cliente_id", cliente).eq("id", p.id);
       r.pessoas++;
     } catch (e) { falhou(e); }
