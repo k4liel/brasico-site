@@ -127,7 +127,8 @@ export default function PontoEscala({ pessoas, onAbrir }: { pessoas: PessoaEscal
       x: Math.min(Math.max(r.left + r.width / 2, 160), window.innerWidth - 160), y: acima ? r.top - 10 : r.bottom + 10, acima,
       quem: p.nome, dia: `${DIAS_SEMANA[diaSemana(dia)]} ${dataBR(dia)}`,
       previsto: t.horario, intervalo: t.intervalo, turno: t.trabalha ? T.turnos[t.tipo] : "",
-      batidas: d?.batidas ?? [], situacao: sit.texto, classe: sit.classe, alerta: d?.alerta ?? "", futuro: dia > agora,
+      // Hoje o RHiD ainda marca "Falta" enquanto o dia não fecha: com batida, o alerta do dia não vale
+      batidas: d?.batidas ?? [], situacao: sit.texto, classe: sit.classe, alerta: dia === agora && d?.batidas.length ? "" : d?.alerta ?? "", futuro: dia > agora,
     });
   }
   function esconder() {
