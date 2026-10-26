@@ -73,6 +73,10 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Defeitos da API (out/2026): as listas `/company`, `/device`, `/department` e `/personroles` dão 500, e `/person` dá 500 se a URL levar `start`/`length`. Por isso a cópia lê `/person` sem parâmetros e busca empresa, departamento e relógio pelo id (relógios em sequência 1, 2, 3…). Cargos ficam de fora. `/apuracao_ponto` funciona.
 - Quem vê: só quem está em `rhid_acesso`. Próximas fases: batidas (AFD), apuração, justificativas, tela Ponto no RH e ferramentas no conector.
 
+## Compras (lista semanal e produção de fim de ano)
+- Todas as compras ficam no projeto **Compras** do Brasico: aba 01 com o método (o padrão da lista), a aba da semana atual, a aba 03 com as compras da produção de fim de ano e as semanas anteriores no grupo Histórico. O projeto Produção Sempre Vivo guarda só a execução do cronograma.
+- A lista tem 3 partes: Cicchetti Centro (notas das últimas 4 semanas ÷ 4 × porcentagem da semana), Produção → Cicchetti (vendas TOTVS × fichas − câmara fria) e produção de fim de ano. PDFs em `privado/<semana>/`. Skill em .claude/skills/compras.
+
 ## eSocial (leitura direta do governo)
 - Só leitura, sem software de terceiros: o Brasico baixa do eSocial os eventos que o contador transmite (webservices oficiais de consulta de identificadores e download, MOD v1.16 seções 7.7 e 7.8). Pesquisa completa em `reports/Integração com o eSocial.md` (fora do GitHub).
 - Certificado e-CNPJ A1 por empresa (raiz do CNPJ): o sócio envia o .pfx e a senha em Menu → Certificados digitais (página própria, components/Certificados.tsx). Um certificado por CNPJ completo (tabela `certificados`, supabase/certificados.sql): o da matriz (final 0001) fica em `esocial_cert_<raiz>` e é o usado pelo eSocial e pela Receita; o de filial fica em `cert_<cnpj>` e nunca substitui a matriz; a rota `/api/esocial/certificado` converte e guarda no Vault (`esocial_cert_<raiz>`). A senha não é guardada. Nunca peça nem cole certificado ou senha no chat.
