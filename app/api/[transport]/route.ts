@@ -477,7 +477,7 @@ function buildHandler(token: string) {
 
       server.tool(
         "esocial_equipe",
-        "Equipe cadastrada no RH (nome, cargo, unidade/restaurante, data de admissão, matrícula) por empresa. Vem do cadastro do contador e é completada pelos eventos lidos do governo. Cada consulta fica registrada (LGPD). Dados pessoais: use só para o que o usuário pediu.",
+        "Equipe cadastrada no RH (nome, cargo, unidade (restaurante ou setor), data de admissão, matrícula) por empresa. Vem do cadastro do contador e é completada pelos eventos lidos do governo. Cada consulta fica registrada (LGPD). Dados pessoais: use só para o que o usuário pediu.",
         { empresa: z.string().optional().describe("raiz do CNPJ (8 posições); vazio = todas") },
         async ({ empresa }) => call("mcp_esocial_equipe", { p_empresa: empresa ?? null })
       );

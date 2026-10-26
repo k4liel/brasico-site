@@ -48,8 +48,16 @@ const MOTIVO_AFAST: Record<string, string> = {
 const SAUDE = new Set(["01", "03", "07"]);
 const VINCULO: Record<string, string> = {
   "101": "CLT", "102": "CLT (trabalhador rural)", "103": "Aprendiz", "105": "Contrato por prazo", "106": "Temporário",
-  "111": "Intermitente", "701": "Autônomo", "721": "Diretor", "901": "Estagiário",
+  "111": "Intermitente", "701": "Autônomo", "721": "Diretor", "722": "Diretor", "723": "Sócio ou empresário",
+  "741": "MEI", "761": "Dirigente de associação", "781": "Ministro religioso", "901": "Estagiário", "903": "Bolsista",
 };
+
+// "LAIF HOTELARIAS LTDA" → "LAIF HOTELARIAS"; "ASSOCIACAO GENESIS" → "ASSOCIAÇÃO GENESIS"
+export const nomeCurto = (nome: string) =>
+  nome.replace(/\s+(LTDA|EIRELI|ME|EPP|S\/?A)\.?$/i, "").replace(/\b(EMPREENDIMENTOS TURISTICOS)\b/i, "")
+    .replace(/\bASSOCIACAO\b/, "ASSOCIAÇÃO").trim();
+// Associação não é restaurante: referências do setor (rotatividade) não valem para ela
+export const ehAssociacao = (nome: string) => /^ASSOCIA/i.test(nome);
 
 export const nomeVinculo = (c?: string | null) => (c ? VINCULO[c] ?? `Categoria ${c}` : "");
 
@@ -211,25 +219,25 @@ export function montarAlertas(empresas: EmpresaRH[], pessoas: Pessoa[], folhas: 
     if (e.cert_validade) {
       const d = diasEntre(agora, e.cert_validade.slice(0, 10));
       if (d <= 30) a.push({ nivel: d <= 7 ? "erro" : "atencao", empresa_id: e.id, acao: "certificado",
-        texto: d < 0 ? `O certificado da ${e.nome} venceu` : `O certificado da ${e.nome} vence em ${d} dia${d === 1 ? "" : "s"}`,
+        texto: d < 0 ? `O certificado da ${nomeCurto(e.nome)} venceu` : `O certificado da ${nomeCurto(e.nome)} vence em ${d} dia${d === 1 ? "" : "s"}`,
         detalhe: "Sem ele a leitura para. Renove na certificadora e envie o novo arquivo em Menu → Certificados digitais." });
     }
     if (!e.leitura_automatica) a.push({ nivel: "info", empresa_id: e.id, acao: "leitura",
-      texto: `A leitura automática da ${e.nome} está desligada`, detalhe: "Ligue para os dados chegarem sozinhos todo dia." });
+      texto: `A leitura automática da ${nomeCurto(e.nome)} está desligada`, detalhe: "Ligue para os dados chegarem sozinhos todo dia." });
     // 407: o governo não aceita este certificado para ler os eventos dos funcionários (perfil/procuração)
     const trab = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo === "identificadores_trabalhador").slice(0, 2);
     if (trab.length >= 1 && trab.every((x) => x.cd_resposta === 407)) a.push({ nivel: "erro", empresa_id: e.id, acao: "tecnico",
-      texto: `O eSocial não deixa a ${e.nome} ler os dados dos funcionários com este certificado`,
+      texto: `O eSocial não deixa a ${nomeCurto(e.nome)} ler os dados dos funcionários com este certificado`,
       detalhe: "Resposta do governo: código 407, 'sem perfil de procuração ou não consta como representante legal'. Confira com o contador se o certificado é da mesma empresa que transmite o eSocial; pode ser preciso uma procuração eletrônica no e-CAC." });
     const ultimas = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao").slice(0, 4);
     if (ultimas.length >= 4 && ultimas.every((x) => x.status === "falha")) a.push({ nivel: "atencao", empresa_id: e.id, acao: "tecnico",
-      texto: `As últimas leituras da ${e.nome} falharam`, detalhe: `Última resposta: ${ultimas[0].erro || ultimas[0].desc_resposta}`.slice(0, 160) });
+      texto: `As últimas leituras da ${nomeCurto(e.nome)} falharam`, detalhe: `Última resposta: ${ultimas[0].erro || ultimas[0].desc_resposta}`.slice(0, 160) });
   }
   const dia = Number(agora.slice(8, 10));
   for (const f of folhas) {
     if (f.competencia === mesAnterior() && dia > 15 && f.consultada && !f.fechada) {
       const emp = empresas.find((e) => e.id === f.empresa_id);
-      a.push({ nivel: "erro", empresa_id: f.empresa_id, texto: `${emp?.nome ?? "Empresa"}: folha de ${nomeMes(f.competencia)} não foi fechada`,
+      a.push({ nivel: "erro", empresa_id: f.empresa_id, texto: `${emp ? nomeCurto(emp.nome) : "Empresa"}: folha de ${nomeMes(f.competencia)} não foi fechada`,
         detalhe: "O prazo era o dia 15. Sem o fechamento, as guias de INSS e FGTS não saem. Fale com o contador." });
     }
   }
@@ -359,7 +367,7 @@ export function montarLeitura(empresas: EmpresaRH[], trabalhadores: TrabalhadorR
     if (!e.leitura_automatica) proxima = "leitura automática desligada";
     else if (!e.cert_validade) proxima = "sem certificado";
     else if (diaMes <= 7) proxima = "dia 8 às 8h (o governo não libera do dia 1 ao 7)";
-    else if (sobra <= 0) proxima = "amanhã às 8h (os 10 acessos de hoje acabaram)";
+    else if (sobra <= 0) proxima = `amanhã às 8h (os ${e.limite_diario} acessos de hoje acabaram)`;
     else if (h < 8) proxima = "hoje às 8h";
     else if (h >= 20) proxima = "amanhã às 8h";
     else {

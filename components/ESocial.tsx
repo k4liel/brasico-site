@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
-  cpfVisivel, dataBR, diasEntre, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
+  cpfVisivel, dataBR, diasEntre, ehAssociacao, nomeCurto, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
   montarAusencias, montarCalendario, montarLeitura, montarMovimentacoes, montarPessoas, nomeMes, ROTULO_SITUACAO, somarDias, tempoDeCasa,
   type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
@@ -62,7 +62,6 @@ const titulo = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowe
 const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
 const nomeProprio = (s: string) =>
   s.toLowerCase().split(/\s+/).map((p, i) => (i > 0 && MINUSCULAS.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(" ");
-const nomeCurto = (nome: string) => nome.replace(/\s+(LTDA|EIRELI|ME|EPP|S\/?A)\.?$/i, "").replace(/\b(EMPREENDIMENTOS TURISTICOS)\b/i, "").trim();
 
 function lerLocal(chave: string) {
   try {
@@ -185,6 +184,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 
   function escolherEmpresa(id: string) {
     setFiltroEmpresa(id);
+    setFiltroUnidade("");
     gravarLocal("brasico-esocial-empresa", id);
   }
   function alternarCpf() {
@@ -398,8 +398,11 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     <Numero rotulo="Em experiência" valor={String(emExperiencia.length)} detalhe={emExperiencia[0] ? `próximo acaba ${dataBR(emExperiencia[0].fimContrato)}` : "nenhum contrato a vencer"}
                       ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("movimentacoes")} />
                     <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
-                      detalhe={numeros.rotatividade != null ? "Restaurantes: 73% a 78% ao ano" : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
+                      detalhe={numeros.rotatividade != null ? (empresasVistas.every((e) => !ehAssociacao(e.nome)) ? "Restaurantes: 73% a 78% ao ano" : "Troca da equipe no último ano") : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
                       ajuda="Quanto da equipe foi trocada no ano: média de entradas e saídas dividida pelo número de pessoas. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
+                    <Numero rotulo="Saíram antes de 90 dias" valor={String(numeros.cedo)}
+                      detalhe={numeros.saidasAno ? `de ${numeros.saidasAno} saídas no ano · ${numeros.pediram} pediram para sair` : "nenhuma saída lida neste ano"}
+                      ajuda="Quem saiu ainda no período de experiência, neste ano. Muitas saídas cedo costumam indicar problema na contratação ou no acolhimento." onClick={() => { setFiltro("Saíram"); irPara("pessoas"); }} />
                   </div>
 
                   <div className="es-duas">
@@ -505,7 +508,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                               <strong>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}</strong>
                               <span className="muted">
                                 {p.unidade && <span className="es-unidade">{p.unidade}</span>}
-                                {[titulo(p.cargo), !p.unidade && filtroEmpresa === "todas" ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
+                                {[titulo(p.cargo), filtroEmpresa === "todas" && empresas.length > 1 ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
                               </span>
                             </span>
                             <span className="es-pessoa-desde muted">
@@ -931,7 +934,7 @@ function RegistroConsultas({ consultas, meuId }: { consultas: Consulta[]; meuId:
           {consultas.map((c) => (
             <li key={c.id}>
               <span className="muted">{hora(c.created_at)}</span>
-              <span>{c.user_id === meuId ? "Você" : "Sócio"} · leu <strong>{FERRAMENTA[c.ferramenta] ?? c.ferramenta}</strong>
+              <span>{c.user_id === meuId ? "Você" : "Outra pessoa da equipe"} · leu <strong>{FERRAMENTA[c.ferramenta] ?? c.ferramenta}</strong>
                 {c.quantidade ? ` (${c.quantidade} registros)` : ""}{c.parametros && Object.keys(c.parametros).length ? ` · ${Object.entries(c.parametros).map(([k, v]) => `${k}: ${String(v)}`).join(", ")}` : ""}</span>
             </li>
           ))}
@@ -950,7 +953,7 @@ function Glossario({ aberto = false }: { aberto?: boolean }) {
     ["Contrato de experiência", "Os primeiros dias do contrato (até 90, podendo ser dividido em 45 + 45) em que a empresa pode encerrar sem aviso prévio."],
     ["Afastamento", "Período em que a pessoa não trabalha mas continua empregada: férias, doença, licença-maternidade. Por doença, depois de 15 dias quem paga é o INSS."],
     ["ASO", "Atestado de Saúde Ocupacional: o exame médico do trabalho, feito na admissão, periodicamente e na saída."],
-    ["Rotatividade", "Quanto da equipe é trocado num período. Em restaurantes fica perto de 75% ao ano."],
+    ["Rotatividade", "Quanto da equipe é trocado num período. Em restaurantes fica perto de 75% ao ano; em outros setores costuma ser bem menor."],
     ["Recibo", "Número que o governo devolve quando aceita um evento. É a prova de que a informação foi entregue."],
     ["Certificado A1", "Arquivo de identidade digital da empresa (e-CNPJ). É com ele que o Brasico lê os dados do governo."],
   ];
