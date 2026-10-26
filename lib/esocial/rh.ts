@@ -24,7 +24,7 @@ export type Situacao = "trabalhando" | "experiencia" | "afastado" | "ferias" | "
 
 export type Pessoa = {
   chave: string; empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; unidade: string; vinculo: string;
-  dtAdm: string | null; dtDeslig: string | null; motivoSaida: string | null; fimContrato: string | null;
+  dtAdm: string | null; dtDeslig: string | null; motivoSaida: string | null; codSaida: string | null; fimContrato: string | null;
   afastamento: { desde: string; motivo: string; saude: boolean } | null;
   salario: string | null; situacao: Situacao; eventos: EventoRH[]; alertas: Alerta[];
   // Até onde o governo já foi lido para esta pessoa (datas de recepção dos eventos)
@@ -46,6 +46,11 @@ const MOTIVO_AFAST: Record<string, string> = {
   "21": "licença não remunerada", "22": "mandato eleitoral", "24": "mandato sindical", "29": "serviço militar",
 };
 const SAUDE = new Set(["01", "03", "07"]);
+// Saídas que não são troca de equipe e ficam fora da rotatividade: falecimento, transferências e aposentadoria
+const NAO_E_TROCA = new Set(["10", "11", "12", "13", "38"]);
+// Afastamentos que dão estabilidade: acidente/doença do trabalho (12 meses após a volta) e maternidade (até 5 meses após o parto)
+const ACIDENTE = new Set(["01", "07"]);
+const MATERNIDADE = new Set(["17", "18", "20"]);
 const VINCULO: Record<string, string> = {
   "101": "CLT", "102": "CLT (trabalhador rural)", "103": "Aprendiz", "105": "Contrato por prazo", "106": "Temporário",
   "111": "Intermitente", "701": "Autônomo", "721": "Diretor", "722": "Diretor", "723": "Sócio ou empresário",
@@ -149,6 +154,7 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
       cargo: comCargo?.resumo.nmCargo || t?.cargo || "", unidade: t?.unidade ?? "", vinculo: nomeVinculo(adm?.resumo.codCateg),
       dtAdm, dtDeslig: saiu ? saida!.resumo.dtDeslig || saida!.resumo.dtTerm || null : null,
       motivoSaida: saiu ? MOTIVO_SAIDA[saida!.resumo.mtvDeslig ?? ""] ?? (saida!.resumo.mtvDeslig ? `motivo ${saida!.resumo.mtvDeslig}` : null) : null,
+      codSaida: saiu ? saida!.resumo.mtvDeslig || null : null,
       fimContrato, afastamento, salario: comSalario?.resumo.vrSalFx ?? null, situacao, eventos: evs, alertas: [],
       leitura: { desde: t?.consultado_desde?.slice(0, 10) ?? null, ate: t?.consultado_ate?.slice(0, 10) ?? null, eventos: evs.length },
     };
@@ -184,6 +190,23 @@ function alertasDaPessoa(p: Pessoa): Alerta[] {
       texto: `Desligamento de ${quem} foi informado com ${diasEntre(p.dtDeslig, recebido(sai)!)} dias`,
       detalhe: "O prazo é de 10 dias depois da saída." });
   }
+  if (p.dtDeslig && (p.codSaida === "02" || p.codSaida === "03") && diasEntre(p.dtDeslig, agora) <= 180) {
+    const afs = p.eventos.filter((e) => e.tipo === "S-2230");
+    for (const ini of afs.filter((e) => e.resumo?.dtIniAfast && (ACIDENTE.has(e.resumo.codMotAfast ?? "") || MATERNIDADE.has(e.resumo.codMotAfast ?? "")))) {
+      const desde = ini.resumo.dtIniAfast!;
+      const mat = MATERNIDADE.has(ini.resumo.codMotAfast ?? "");
+      const volta = afs.map((e) => e.resumo?.dtTermAfast).filter((d): d is string => !!d && d >= desde).sort()[0] ?? null;
+      const protegidoAte = mat ? somarDias(desde, 150) : volta ? somarDias(volta, 365) : null;
+      if (protegidoAte && desde <= p.dtDeslig && p.dtDeslig <= protegidoAte) {
+        a.push({ nivel: "erro", empresa_id: p.empresa_id, pessoa: p.chave,
+          texto: `${quem} foi dispensado logo depois de ${mat ? "licença-maternidade" : "afastamento por acidente ou doença do trabalho"}`,
+          detalhe: mat
+            ? "A gestante tem estabilidade até 5 meses após o parto. Confirme com o contador se a dispensa foi correta: risco de processo."
+            : "Quem volta de afastamento por acidente de trabalho tem estabilidade de 12 meses. Confirme com o contador: risco de processo." });
+        break;
+      }
+    }
+  }
   if (sai?.resumo.mtvDeslig === "17") {
     a.push({ nivel: "erro", empresa_id: p.empresa_id, pessoa: p.chave, texto: `${quem} saiu por rescisão indireta`,
       detalhe: "A pessoa acusou a empresa de descumprir o contrato. Risco de processo trabalhista." });
@@ -194,9 +217,16 @@ function alertasDaPessoa(p: Pessoa): Alerta[] {
 // ---------------------------------------------------------------------
 // Folha do mês (fechamento S-1299 e totais do governo S-5011 / S-5013)
 // ---------------------------------------------------------------------
-export type Folha = { empresa_id: string; competencia: string; fechada: string | null; consultada: boolean; inss: boolean; fgts: boolean };
+export type Folha = {
+  empresa_id: string; competencia: string; fechada: string | null; consultada: boolean; inss: boolean; fgts: boolean;
+  // Quem trabalhou no mês e já foi lido do governo, e quem dessas pessoas não tem a folha individual (S-1200)
+  lidas: number; semFolha: Pessoa[];
+};
 
-export function montarFolhas(empresas: EmpresaRH[], eventos: EventoRH[], execucoes: ExecucaoRH[], competencias: string[]): Folha[] {
+// Primeiro dia do mês seguinte a "AAAA-MM"
+const mesSeguinte = (c: string) => somarDias(`${c}-01`, 31).slice(0, 7) + "-01";
+
+export function montarFolhas(empresas: EmpresaRH[], eventos: EventoRH[], execucoes: ExecucaoRH[], competencias: string[], pessoas: Pessoa[] = []): Folha[] {
   const v = validos(eventos);
   return empresas.flatMap((emp) => competencias.map((c) => {
     const tem = (tipo: string) => v.find((e) => e.empresa_id === emp.id && e.tipo === tipo && e.per_apur === c);
@@ -204,8 +234,18 @@ export function montarFolhas(empresas: EmpresaRH[], eventos: EventoRH[], execuco
     const f = tem("S-1299");
     const consultada = pendente || execucoes.some((x) => x.empresa_id === emp.id && x.ambiente === 1 && x.tipo === "identificadores_empregador"
       && ["ok", "sem_dados"].includes(x.status) && x.parametros?.tpEvt === "S-1299" && x.parametros?.perApur === c);
+    // Os totais do governo (S-5011 INSS, S-5013 FGTS) aparecem na consulta mas não baixam: basta existirem
+    const gerado = (tipo: string) => eventos.some((e) => e.empresa_id === emp.id && e.tipo === tipo && e.per_apur === c);
+    const ini = `${c}-01`;
+    const fim = somarDias(mesSeguinte(c), -1);
+    const lidas = pessoas.filter((p) => p.empresa_id === emp.id && p.dtAdm && p.dtAdm <= fim && (!p.dtDeslig || p.dtDeslig >= ini)
+      && !(p.afastamento && p.afastamento.desde < ini && p.afastamento.motivo !== "15")
+      && p.leitura.ate && p.leitura.ate >= somarDias(mesSeguinte(c), 15));
+    // Quem ainda tem eventos achados e não baixados fica fora: a folha pode estar entre eles
+    const baixando = new Set(eventos.filter((e) => e.empresa_id === emp.id && e.situacao === "pendente" && e.cpf_trab).map((e) => e.cpf_trab));
+    const semFolha = lidas.filter((p) => !baixando.has(p.cpf) && !p.eventos.some((e) => e.tipo === "S-1200" && e.per_apur === c));
     return { empresa_id: emp.id, competencia: c, fechada: f ? recebido(f) ?? f.baixado_em?.slice(0, 10) ?? "" : null,
-      consultada, inss: !!tem("S-5011"), fgts: !!tem("S-5013") };
+      consultada, inss: gerado("S-5011"), fgts: gerado("S-5013"), lidas: lidas.length, semFolha };
   }));
 }
 
@@ -230,7 +270,14 @@ export function montarAlertas(empresas: EmpresaRH[], pessoas: Pessoa[], folhas: 
       texto: `O eSocial não deixa a ${nomeCurto(e.nome)} ler os dados dos funcionários com este certificado`,
       detalhe: "Resposta do governo: código 407, 'sem perfil de procuração ou não consta como representante legal'. Confira com o contador se o certificado é da mesma empresa que transmite o eSocial; pode ser preciso uma procuração eletrônica no e-CAC." });
     const ultimas = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao").slice(0, 4);
-    if (ultimas.length >= 4 && ultimas.every((x) => x.status === "falha")) a.push({ nivel: "atencao", empresa_id: e.id, acao: "tecnico",
+    const ultimaBoa = execucoes.find((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao" && ["ok", "sem_dados"].includes(x.status));
+    const primeira = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao").at(-1);
+    const parada = e.leitura_automatica && Number(agora.slice(8, 10)) > 9
+      && (ultimaBoa ? diasEntre(ultimaBoa.created_at.slice(0, 10), agora) > 2 : !!primeira && diasEntre(primeira.created_at.slice(0, 10), agora) > 2);
+    if (parada) a.push({ nivel: "atencao", empresa_id: e.id, acao: "tecnico",
+      texto: `A leitura da ${nomeCurto(e.nome)} está parada${ultimaBoa ? ` desde ${dataBR(ultimaBoa.created_at.slice(0, 10))}` : ""}`,
+      detalhe: "Há mais de 2 dias nenhuma leitura do governo deu certo para esta empresa. Veja os pedidos em Leitura do governo." });
+    else if (ultimas.length >= 4 && ultimas.every((x) => x.status === "falha")) a.push({ nivel: "atencao", empresa_id: e.id, acao: "tecnico",
       texto: `As últimas leituras da ${nomeCurto(e.nome)} falharam`, detalhe: `Última resposta: ${ultimas[0].erro || ultimas[0].desc_resposta}`.slice(0, 160) });
   }
   const dia = Number(agora.slice(8, 10));
@@ -270,7 +317,7 @@ export function montarNumeros(pessoas: Pessoa[], empresas: EmpresaRH[]) {
   if (mesesLidos >= 12 && ativos.length && temSaidasLidas) {
     const inicio = somarDias(agora, -365);
     const e12 = pessoas.filter((p) => p.dtAdm && p.dtAdm >= inicio).length;
-    const s12 = pessoas.filter((p) => p.dtDeslig && p.dtDeslig >= inicio).length;
+    const s12 = pessoas.filter((p) => p.dtDeslig && p.dtDeslig >= inicio && !NAO_E_TROCA.has(p.codSaida ?? "")).length;
     rotatividade = Math.round((((e12 + s12) / 2) / ativos.length) * 100);
   }
   return { ativos: ativos.length, entraram, sairam, ferias, afastados, saidasAno: saidasAno.length, cedo: cedo.length, pediram, rotatividade, mesesLidos };

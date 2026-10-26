@@ -1574,3 +1574,6 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
   .es-nav-item.on::before { display: none; }
   .es-nav-item .es-icone { display: none; }
 }
+
+.es-folha-conferencia { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+.es-link { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }

@@ -200,7 +200,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const pessoas = useMemo(() => montarPessoas(eventos, trabalhadores), [eventos, trabalhadores]);
   const pessoasVistas = daEmpresa(pessoas);
   const competencias = [mesAnterior(), mesAnterior(hoje(), 2)];
-  const folhas = montarFolhas(empresasVistas, eventos, execucoes, competencias);
+  const folhas = montarFolhas(empresasVistas, eventos, execucoes, competencias, pessoas);
   const calendario = montarCalendario(folhas, empresasVistas);
   const alertas = montarAlertas(empresasVistas, pessoasVistas, folhas, daEmpresa(execucoes));
   const numeros = montarNumeros(pessoasVistas, empresasVistas);
@@ -399,7 +399,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("movimentacoes")} />
                     <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
                       detalhe={numeros.rotatividade != null ? (empresasVistas.every((e) => !ehAssociacao(e.nome)) ? "Restaurantes: 73% a 78% ao ano" : "Troca da equipe no último ano") : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
-                      ajuda="Quanto da equipe foi trocada no ano: média de entradas e saídas dividida pelo número de pessoas. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
+                      ajuda="Quanto da equipe foi trocada nos últimos 12 meses: (entradas + saídas) ÷ 2 ÷ pessoas trabalhando hoje. Falecimento, transferência e aposentadoria não contam, porque não são troca de equipe. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
                     <Numero rotulo="Saíram antes de 90 dias" valor={String(numeros.cedo)}
                       detalhe={numeros.saidasAno ? `de ${numeros.saidasAno} saídas no ano · ${numeros.pediram} pediram para sair` : "nenhuma saída lida neste ano"}
                       ajuda="Quem saiu ainda no período de experiência, neste ano. Muitas saídas cedo costumam indicar problema na contratação ou no acolhimento." onClick={() => { setFiltro("Saíram"); irPara("pessoas"); }} />
@@ -632,10 +632,27 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                           ) : (
                             <span className="muted">Ainda não lemos esta folha</span>
                           )}
+                          {(f.fechada != null || f.inss || f.fgts || f.lidas > 0) && (
+                            <span className="es-folha-conferencia">
+                              <span className={f.inss ? "es-ok" : "muted"}>{f.inss ? "✓" : "·"} INSS calculado pelo governo</span>
+                              <span className={f.fgts ? "es-ok" : "muted"}>{f.fgts ? "✓" : "·"} FGTS calculado pelo governo</span>
+                              {f.lidas > 0 && (
+                                <span className={f.semFolha.length ? "es-ruim" : "es-ok"}>
+                                  {f.semFolha.length ? "✕" : "✓"} Folha individual de {f.lidas - f.semFolha.length} de {f.lidas} pessoa{f.lidas === 1 ? "" : "s"}
+                                  {f.semFolha.length > 0 && (
+                                    <> · faltam {f.semFolha.slice(0, 3).map((p) => (
+                                      <button key={p.chave} className="es-link" onClick={() => setAberta(p.chave)}>{p.nome ? nomeProprio(p.nome) : "sem nome"}</button>
+                                    )).reduce<React.ReactNode[]>((acc, el, i) => (i ? [...acc, ", ", el] : [el]), [])}{f.semFolha.length > 3 ? ` e mais ${f.semFolha.length - 3}` : ""}</>
+                                  )}
+                                </span>
+                              )}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
-                    <p className="muted es-nota">Custo da folha, encargos e folha sobre vendas entram quando lermos as remunerações (S-1200) e as rubricas do contador.</p>
+                    <p className="muted es-nota">A conferência mostra se o governo calculou o INSS e o FGTS do mês e se cada pessoa que trabalhou (e já foi lida) tem a sua folha.
+                      Os valores dos totais do governo não são entregues por este serviço; o valor das guias fica na DCTFWeb e no FGTS Digital.</p>
                   </section>
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
