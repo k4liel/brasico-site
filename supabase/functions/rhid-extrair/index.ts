@@ -1,5 +1,5 @@
-// Copia do RHiD (ponto em nuvem da Control iD) os cadastros de cada cliente que o login enxerga:
-// empresas, departamentos, relógios e pessoas. Somente leitura.
+// Copia do RHiD (ponto em nuvem da Control iD), somente leitura, de cada cliente que o login enxerga:
+// tipo "cadastros": empresas, departamentos, relógios e pessoas; tipo "batidas": a apuração do ponto.
 // Chamada pelo banco (rhid_pedir, via pg_net) com o segredo no cabeçalho x-segredo.
 // Corpo: { "execucao": "<id em rhid_execucoes>" }. Responde na hora e trabalha em segundo plano.
 // E-mail e senha ficam no Vault (rhid_email, rhid_senha). Nada de segredo nos logs.
@@ -19,7 +19,8 @@ type J = any;
 
 class ErroRhid extends Error {}
 
-const txt = (v: unknown) => String(v ?? "").trim();
+// Sem caracteres de controle: alguns textos do RHiD trazem \u0000, que o banco recusa
+const txt = (v: unknown) => String(v ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim();
 const num = (v: unknown) => (v == null || v === "" || !isFinite(Number(v)) ? null : Number(v));
 const digitos = (v: unknown) => txt(v).replace(/\D/g, "");
 
@@ -180,8 +181,112 @@ async function copiarCliente(cliente: number, token: string) {
   return erros.length ? { ...contagem, nao_lidos: erros.length, exemplo_erro: erros[0] } : contagem;
 }
 
+// ---------------------------------------------------------------------
+// Ponto: apuração do dia de cada pessoa (batidas, horas, extras, atrasos, faltas, banco de horas).
+// O AFD dos relógios é recusado (403) para este usuário; a apuração traz as batidas e as contas do RHiD.
+// Uma chamada por pessoa e período (até 90 dias). Cada execução trabalha até ORCAMENTO_MS e para;
+// a agenda chama de novo e continua de onde parou (apuracao_em e historico_ate em rhid_pessoas).
+// ---------------------------------------------------------------------
+const ORCAMENTO_MS = 110_000;
+const RECENTES = 7; // dias refeitos a cada leitura (justificativas e ajustes mudam a apuração)
+const HISTORICO_DIAS = 365; // até onde o histórico volta
+const REFAZER_MS = 2 * 3600_000; // a apuração recente de uma pessoa vale por 2 horas
+
+const diaFortaleza = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
+const somarDias = (d: string, n: number) => new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 86400_000).toISOString().slice(0, 10);
+const inteiro = (v: unknown) => Math.round(Number(v) || 0);
+const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+
+// Um dia da apuração no formato do Brasico (minutos; batidas com hora, entrada/saída e origem)
+function diaDaApuracao(cliente: number, pessoa: number, x: J, agora: string) {
+  const d = dia(x?.date) ?? dia(x?.dateTimeInicio);
+  if (!d) return null;
+  const batidas = (Array.isArray(x?.listAfdtManutencao) ? x.listAfdtManutencao : [])
+    .filter((b: J) => !b?.oculto)
+    .map((b: J) => {
+      const iso = txt(b?.dateTime).match(/T(\d{2}:\d{2})/)?.[1];
+      return {
+        hora: iso ?? (Number.isFinite(Number(b?.hora)) ? hhmm(inteiro(b.hora)) : ""),
+        tipo: txt(b?._typeEntradaSaida),
+        origem: txt(b?._typeRegister),
+        classificacao: txt(b?._typeClassification),
+        justificada: b?.idJustification != null,
+      };
+    })
+    .filter((b: { hora: string }) => b.hora);
+  return {
+    cliente_id: cliente, pessoa_id: pessoa, dia: d,
+    horario: txt(x?.strHorarioContratualSimples).slice(0, 120),
+    folga: !!x?.folga, feriado: Number(x?.isHoliday) > 0 || !!x?.holiday,
+    falta: !!x?.faltaDiaInteiro, justificado: x?.idJustification != null, pendencia: !!x?.possuiPendencias,
+    minutos_trabalhados: inteiro(x?.totalHorasTrabalhadas), minutos_extra: inteiro(x?.horasExtrasCalculadas),
+    minutos_extra_noturna: inteiro(x?.extraNoturna), minutos_atraso: inteiro(x?.atrasoEntrada),
+    minutos_saida_antecipada: inteiro(x?.saidaAntecipada), minutos_falta: inteiro(x?.horasApenasFalta),
+    minutos_abono: inteiro(x?.minutosAbono),
+    saldo_banco: x?.saldoBancoFinalDia == null ? null : inteiro(x.saldoBancoFinalDia),
+    alerta: txt(x?.toolTipAlert).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300),
+    batidas, atualizado_em: agora,
+  };
+}
+
+async function apurar(token: string, cliente: number, pessoa: number, ini: string, fim: string) {
+  const q = new URLSearchParams({ dataIni: ini, dataFinal: fim, idPerson: String(pessoa) });
+  const p = await pedir(`/apuracao_ponto?${q}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  const agora = new Date().toISOString();
+  const linhas = (Array.isArray(p) ? p : []).map((x: J) => diaDaApuracao(cliente, pessoa, x, agora)).filter(Boolean);
+  // Um dia pode vir em mais de uma página: fica o último
+  const unicos = [...new Map(linhas.map((l: J) => [l.dia, l])).values()];
+  if (unicos.length) {
+    const { error } = await supabase.from("rhid_dias").upsert(unicos, { onConflict: "cliente_id,pessoa_id,dia" });
+    if (error) throw new Error(`gravação da apuração: ${error.message}`);
+  }
+  return unicos.length;
+}
+
+// Fase "recentes": os últimos dias de quem está desatualizado. Fase "historico": uma janela de 90 dias
+// para trás por pessoa, até a admissão ou 1 ano. Todos os clientes passam pela 1ª fase antes da 2ª.
+async function copiarPonto(cliente: number, token: string, inicio: number, fase: "recentes" | "historico") {
+  const hoje = diaFortaleza();
+  const { data: pessoas } = await supabase.from("rhid_pessoas")
+    .select("id,admissao,apuracao_em,historico_ate,historico_fim")
+    .eq("cliente_id", cliente).eq("situacao", 1).eq("presente", true)
+    .order("apuracao_em", { ascending: true, nullsFirst: true });
+  const r = { pessoas: 0, dias: 0, faltou_tempo: false, erros: 0, exemplo_erro: "" };
+  const falhou = (e: unknown) => {
+    r.erros++;
+    if (!r.exemplo_erro) r.exemplo_erro = e instanceof Error ? e.message.slice(0, 160) : "erro desconhecido";
+  };
+  for (const p of fase === "recentes" ? pessoas ?? [] : []) {
+    if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
+    if (p.apuracao_em && Date.now() - new Date(p.apuracao_em).getTime() < REFAZER_MS) continue;
+    try {
+      r.dias += await apurar(token, cliente, Number(p.id), somarDias(hoje, -(RECENTES - 1)), hoje);
+      await supabase.from("rhid_pessoas").update({ apuracao_em: new Date().toISOString() }).eq("cliente_id", cliente).eq("id", p.id);
+      r.pessoas++;
+    } catch (e) { falhou(e); }
+  }
+  for (const p of fase === "historico" ? pessoas ?? [] : []) {
+    if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
+    if (p.historico_fim) continue;
+    const limite = [somarDias(hoje, -HISTORICO_DIAS), p.admissao ?? ""].sort().at(-1)!;
+    const fim = p.historico_ate ? somarDias(p.historico_ate, -1) : somarDias(hoje, -RECENTES);
+    if (fim < limite) {
+      await supabase.from("rhid_pessoas").update({ historico_fim: true }).eq("cliente_id", cliente).eq("id", p.id);
+      continue;
+    }
+    const ini = [somarDias(fim, -89), limite].sort().at(-1)!;
+    try {
+      r.dias += await apurar(token, cliente, Number(p.id), ini, fim);
+      await supabase.from("rhid_pessoas").update({ historico_ate: ini, historico_fim: ini <= limite })
+        .eq("cliente_id", cliente).eq("id", p.id);
+      r.pessoas++;
+    } catch (e) { falhou(e); }
+  }
+  return r;
+}
+
 async function processar(execucaoId: string) {
-  const { data: ex } = await supabase.from("rhid_execucoes").select("id,status").eq("id", execucaoId).maybeSingle();
+  const { data: ex } = await supabase.from("rhid_execucoes").select("id,status,tipo").eq("id", execucaoId).maybeSingle();
   if (!ex || ex.status !== "na_fila") return;
   await supabase.from("rhid_execucoes").update({ status: "rodando", inicio: new Date().toISOString() }).eq("id", ex.id);
 
@@ -204,21 +309,30 @@ async function processar(execucaoId: string) {
     const { data: ativos } = await supabase.from("rhid_clientes").select("id").eq("ativo", true);
     const ligados = new Set((ativos ?? []).map((x: { id: number }) => Number(x.id)));
 
+    const inicio = Date.now();
     const falhas: string[] = [];
-    for (const cl of clientes) {
-      if (!ligados.has(cl.id)) continue;
-      try {
-        // Com um cliente só, o token do primeiro login já serve; com vários, entra de novo no domínio de cada um
-        const token = clientes.length === 1 && primeiro.token ? primeiro.token : (await entrar(c.email, c.senha, cl.dominio)).token;
-        if (!token) throw new ErroRhid("login sem token");
-        resumo[cl.nome || String(cl.id)] = await copiarCliente(cl.id, token);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "erro desconhecido";
-        falhas.push(`${cl.nome || cl.id}: ${msg}`);
-        resumo[cl.nome || String(cl.id)] = { erro: msg };
+    const tokens = new Map<number, string>();
+    for (const fase of ex.tipo === "batidas" ? ["recentes", "historico"] as const : ["cadastros"] as const) {
+      for (const cl of clientes) {
+        if (!ligados.has(cl.id)) continue;
+        const nome = fase === "historico" ? `${cl.nome || cl.id} (histórico)` : cl.nome || String(cl.id);
+        try {
+          // Com um cliente só, o token do primeiro login já serve; com vários, entra de novo no domínio de cada um
+          let token = tokens.get(cl.id) ?? "";
+          if (!token) {
+            token = clientes.length === 1 && primeiro.token ? primeiro.token : (await entrar(c.email, c.senha, cl.dominio)).token;
+            if (!token) throw new ErroRhid("login sem token");
+            tokens.set(cl.id, token);
+          }
+          resumo[nome] = fase === "cadastros" ? await copiarCliente(cl.id, token) : await copiarPonto(cl.id, token, inicio, fase);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "erro desconhecido";
+          falhas.push(`${nome}: ${msg}`);
+          resumo[nome] = { erro: msg };
+        }
       }
     }
-    await fim(falhas.length === clientes.length ? "falha" : "ok", falhas.join("; "));
+    await fim(falhas.length && falhas.length >= Object.keys(resumo).length ? "falha" : "ok", falhas.join("; "));
     console.log(JSON.stringify({ integracao: "rhid", correlation_id: ex.id, clientes: clientes.length, falhas: falhas.length }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "erro desconhecido";

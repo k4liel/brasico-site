@@ -10,6 +10,7 @@ import {
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
+import Ponto from "./Ponto";
 
 type Consulta = { id: string; user_id: string | null; origem: string; ferramenta: string; parametros: Record<string, unknown>; quantidade: number; created_at: string };
 
@@ -31,6 +32,7 @@ type FiltroLeitura = (typeof LEITURAS)[number];
 const SECOES = [
   { id: "visao", rotulo: "Visão geral", icone: "inicio" },
   { id: "pessoas", rotulo: "Pessoas", icone: "equipe" },
+  { id: "ponto", rotulo: "Ponto", icone: "ponto" },
   { id: "ausencias", rotulo: "Férias e afastamentos", icone: "ausencias" },
   { id: "movimentacoes", rotulo: "Admissões e saídas", icone: "movimentacoes" },
   { id: "folha", rotulo: "Folha e prazos", icone: "folha" },
@@ -209,6 +211,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const leituras = montarLeitura(empresasVistas, trabalhadores, eventos, execucoes);
   const nomeEmpresa = (id: string) => nomeCurto(empresas.find((e) => e.id === id)?.nome ?? id);
   const pessoaAberta = pessoas.find((p) => p.chave === aberta) ?? null;
+  const chavesRH = useMemo(() => new Set(pessoas.map((p) => p.chave)), [pessoas]);
   const bloqueado = diaDoMes() <= 7;
 
   const termo = busca.trim().toLowerCase();
@@ -528,6 +531,12 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 </section>
               )}
 
+              {/* ===================== Ponto (RHiD) ===================== */}
+              {secao === "ponto" && (
+                <Ponto supabase={supabase} filtroEmpresa={filtroEmpresa} verCpf={verCpf} alternarCpf={alternarCpf}
+                  chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} olho={<Olho aberto={verCpf} />} />
+              )}
+
               {/* ===================== Férias e afastamentos ===================== */}
               {secao === "ausencias" && (
                 <>
@@ -743,6 +752,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     <ul className="es-ajuda-lista">
                       <li><strong>Visão geral</strong>: o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
                       <li><strong>Pessoas</strong>: toda a equipe, por unidade e situação, com a ficha e a linha do tempo de cada um.</li>
+                      <li><strong>Ponto</strong>: quem bateu ponto hoje, faltas, atrasos e banco de horas dos últimos 30 dias, vindos dos relógios (RHiD), e o cruzamento com o eSocial.</li>
                       <li><strong>Férias e afastamentos</strong>: quem está fora agora e o histórico de ausências lido do governo.</li>
                       <li><strong>Admissões e saídas</strong>: contratos de experiência a vencer e as movimentações dos últimos meses, com os prazos do eSocial.</li>
                       <li><strong>Folha e prazos</strong>: se o contador fechou a folha de cada mês e o calendário de obrigações.</li>
@@ -784,6 +794,7 @@ const ICONES: Record<string, string> = {
   inicio: "M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z",
   ausencias: "M12 3v2M4.2 5.2l1.4 1.4M2 12h2M20 12h2M18.4 5.2 17 6.6M8 14a4 4 0 0 1 8 0M3 18h18M5 21h14",
   movimentacoes: "M4 8h13l-3-3M17 8l-3 3M20 16H7l3-3M7 16l3 3",
+  ponto: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2",
 };
 function Icone({ nome }: { nome: keyof typeof ICONES }) {
   return (
