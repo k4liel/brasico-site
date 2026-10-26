@@ -10,7 +10,7 @@ import PontoEscala, { type PessoaEscala } from "./PontoEscala";
 import { localESetor } from "@/lib/esocial/locais";
 
 type PessoaPonto = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null };
-type Batida = { hora: string; tipo: string; origem?: string; justificada?: boolean };
+type Batida = { hora: string; tipo: string; origem?: string; classificacao?: string; justificada?: boolean };
 type DiaPonto = {
   cliente_id: number; pessoa_id: number; dia: string; horario: string; folga: boolean; feriado: boolean; falta: boolean; justificado: boolean;
   minutos_trabalhados: number; minutos_atraso: number; minutos_falta: number; saldo_banco: number | null; alerta: string; batidas: Batida[];
@@ -93,7 +93,9 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
           .gte("dia", desde).order("dia").range(a, b)),
       ]);
       // Cadastros sem CPF e sem nenhuma batida (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
-      const comPonto = new Set(di.map((d) => chave(d.cliente_id, d.pessoa_id)));
+      // Marcações previstas da escala (classificação "F") não são batidas (linhas antigas podem trazê-las)
+      for (const d of di) d.batidas = d.batidas.filter((b) => b.classificacao !== "F");
+      const comPonto = new Set(di.filter((d) => d.batidas.length).map((d) => chave(d.cliente_id, d.pessoa_id)));
       setPessoas(pe.filter((p) => p.cpf || comPonto.has(chave(p.cliente_id, p.id))));
       setEmpresas((em.data ?? []) as EmpresaPonto[]);
       setDepartamentos((de.data ?? []) as Departamento[]);

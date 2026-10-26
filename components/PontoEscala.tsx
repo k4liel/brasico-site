@@ -10,7 +10,7 @@ import { tipoPorEntrada, type TipoTurno } from "@/lib/markdown";
 import { TEXTOS } from "@/lib/idioma";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 
-export type BatidaEscala = { hora: string; tipo?: string; origem?: string; justificada?: boolean };
+export type BatidaEscala = { hora: string; tipo?: string; origem?: string; classificacao?: string; justificada?: boolean };
 export type DiaEscala = {
   dia: string; horario: string; folga: boolean; feriado: boolean; falta: boolean; justificado: boolean;
   minutos_trabalhados: number; minutos_atraso: number; minutos_abono?: number; alerta?: string; batidas: BatidaEscala[];
@@ -53,7 +53,8 @@ function segunda(d: string) {
   return somarDias(d, -((dow + 6) % 7));
 }
 const diaSemana = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
-const ajustada = (b: BatidaEscala) => !!b.justificada || (!!b.origem && b.origem !== "O");
+// Origem "O" = batida original do relógio; "I" = incluída/alterada no RHiD (justificativa, ajuste do gestor)
+const ajustada = (b: BatidaEscala) => !!b.justificada || b.classificacao === "J" || b.origem === "I";
 
 // O que aconteceu num dia já passado (ou em andamento)
 function situacaoDo(d: DiaEscala | undefined, t: Turno, dia: string, agora: string) {

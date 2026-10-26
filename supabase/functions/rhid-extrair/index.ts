@@ -202,8 +202,9 @@ const hhmm = (min: number) => `${String(Math.floor(min / 60) % 24).padStart(2, "
 function diaDaApuracao(cliente: number, pessoa: number, x: J, agora: string) {
   const d = dia(x?.date) ?? dia(x?.dateTimeInicio);
   if (!d) return null;
+  // A lista traz também as marcações PREVISTAS da escala (classificação "F"): não são batidas
   const batidas = (Array.isArray(x?.listAfdtManutencao) ? x.listAfdtManutencao : [])
-    .filter((b: J) => !b?.oculto)
+    .filter((b: J) => !b?.oculto && txt(b?._typeClassification) !== "F")
     .map((b: J) => {
       const iso = txt(b?.dateTime).match(/T(\d{2}:\d{2})/)?.[1];
       return {

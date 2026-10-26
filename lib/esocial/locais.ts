@@ -34,4 +34,9 @@ const SETORES = new Set(["ADMINISTRATIVO", "COZINHA", "LIMPEZA", "SALÃO/BAR", "
   "MANUTENÇÃO/JARDIM", "MANUTENCAO/JARDIM", "RECEPÇÃO", "RECEPCAO", "PORTARIA", "BAR", "SALÃO", "SALAO"]);
 
 // Unidade do RH (eSocial) em nome de local
-export const localDaUnidadeRH = (unidade: string) => SIGLAS[(unidade ?? "").trim().toUpperCase()] ?? (unidade?.trim() ? nomeBonito(unidade) : "");
+export const localDaUnidadeRH = (unidade: string) => {
+  const u = (unidade ?? "").trim();
+  const m = u.match(/\(([^)]+)\)\s*$/);
+  if (m) return SIGLAS[m[1].trim().toUpperCase()] ?? nomeBonito(m[1]);
+  return SIGLAS[u.toUpperCase()] ?? (u ? nomeBonito(u) : "");
+};
