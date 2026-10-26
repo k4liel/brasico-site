@@ -449,7 +449,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
               <div className="tt-caixa">
                 <span className="tt-passo">2</span>
                 <b>Agenda diária</b>
-                <span className="muted">Todo dia às 4h30 busca o dia anterior de cada unidade e tenta de novo, até as 6h30, o que faltar da última semana</span>
+                <span className="muted">Todo dia às 4h30 busca o dia anterior de cada unidade e tenta de novo, até as 6h30, o que faltar da última semana. Ao meio-dia confere o dia anterior outra vez</span>
               </div>
               <div className="tt-ou" aria-hidden="true">ou</div>
               <div className="tt-caixa">
