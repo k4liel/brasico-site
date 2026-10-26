@@ -115,6 +115,14 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   }
   const [aberta, setAberta] = useState<string | null>(null);
   const [verCpf, setVerCpf] = useState(false);
+  // Menu lateral retrátil: fechado, só os ícones, e o conteúdo ocupa a tela toda
+  const [navFechada, setNavFechada] = useState(false);
+  function alternarNav() {
+    setNavFechada((v) => {
+      gravarLocal("brasico-esocial-nav", v ? "aberta" : "fechada");
+      return !v;
+    });
+  }
   const [painel, setPainel] = useState<"cpfs" | "historico" | null>(null);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState("");
@@ -122,6 +130,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 
   useEffect(() => {
     setVerCpf(lerLocal("brasico-esocial-ver-cpf") === "1");
+    setNavFechada(lerLocal("brasico-esocial-nav") === "fechada");
     const e = lerLocal("brasico-esocial-empresa");
     if (e) setFiltroEmpresa(e);
   }, []);
@@ -340,16 +349,20 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             <button className="small" onClick={() => (window.location.href = "/certificados")}>Enviar certificado</button>
           </section>
         ) : (
-          <div className="es-layout">
+          <div className={navFechada ? "es-layout fechado" : "es-layout"}>
             {/* Navegação do sistema de RH */}
             <nav className="es-nav" aria-label="Seções do RH">
+              <button className="es-nav-alternar" onClick={alternarNav} title={navFechada ? "Abrir o menu" : "Recolher o menu"} aria-label={navFechada ? "Abrir o menu" : "Recolher o menu"} aria-expanded={!navFechada}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={navFechada ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} /></svg>
+                <span>Recolher</span>
+              </button>
               {SECOES.map((s, i) => {
                 const n = s.id === "visao" ? alertas.length : s.id === "pessoas" ? numeros.ativos : s.id === "ausencias" ? foraAgora.length
                   : s.id === "movimentacoes" ? movimentacoes.filter((m) => m.quando.startsWith(hoje().slice(0, 7))).length : s.id === "integracao" ? leituras.reduce((t, l) => t + l.esperandoDownload, 0) : 0;
                 return (
                   <Fragment key={s.id}>
                     {(i === 0 || SECOES[i - 1].grupo !== s.grupo) && <div className="es-nav-grupo">{s.grupo}</div>}
-                    <button className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
+                    <button className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined} title={navFechada ? s.rotulo : undefined}>
                       <Icone nome={s.icone} />
                       <span>{s.rotulo}</span>
                       {n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
