@@ -59,7 +59,9 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
         tudo<Dia>((a, b) => supabase.from("rhid_dias").select("cliente_id,pessoa_id,dia,saldo_banco")
           .gte("dia", somarDias(hoje(), -35)).lte("dia", hoje()).not("saldo_banco", "is", null).order("dia").range(a, b)),
       ]);
-      setPessoas(pe);
+      // Cadastros sem CPF e sem saldo lido (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
+      const comSaldo = new Set(di.map((d) => chave(d.cliente_id, d.pessoa_id)));
+      setPessoas(pe.filter((p) => p.cpf || comSaldo.has(chave(p.cliente_id, p.id))));
       setEmpresas((em.data ?? []) as Empresa[]);
       setDepartamentos((de.data ?? []) as Departamento[]);
       setDias(di);

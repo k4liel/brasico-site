@@ -90,7 +90,9 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
           .select("cliente_id,pessoa_id,dia,horario,folga,feriado,falta,justificado,minutos_trabalhados,minutos_atraso,minutos_falta,saldo_banco,alerta,batidas")
           .gte("dia", desde).order("dia").range(a, b)),
       ]);
-      setPessoas(pe);
+      // Cadastros sem CPF e sem nenhuma batida (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
+      const comPonto = new Set(di.map((d) => chave(d.cliente_id, d.pessoa_id)));
+      setPessoas(pe.filter((p) => p.cpf || comPonto.has(chave(p.cliente_id, p.id))));
       setEmpresas((em.data ?? []) as EmpresaPonto[]);
       setDepartamentos((de.data ?? []) as Departamento[]);
       setRelogios(((re.data ?? []) as Relogio[]).filter((r) => !r.rep_p));
