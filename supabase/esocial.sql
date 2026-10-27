@@ -812,9 +812,9 @@ alter table public.esocial_trabalhadores add column if not exists admissao_consu
 create or replace function public.esocial_acessos_hoje(p_empresa text, p_ambiente int default 1)
 returns table (contados int, perdidos int, tentativas int) language sql stable security definer set search_path = public as $$
   select
-    count(*) filter (where x.cd_resposta is not null or x.status in ('na_fila', 'rodando') or (e.falhas_contam and x.erro not like 'conexão:%'))::int,
-    count(*) filter (where x.status = 'falha' and x.cd_resposta is null)::int,
-    count(*)::int
+    count(x.id) filter (where x.cd_resposta is not null or x.status in ('na_fila', 'rodando') or (e.falhas_contam and x.erro not like 'conexão:%'))::int,
+    count(x.id) filter (where x.status = 'falha' and x.cd_resposta is null)::int,
+    count(x.id)::int
   from public.esocial_empresas e
   left join public.esocial_execucoes x on x.empresa_id = e.id and x.ambiente = p_ambiente
     and (x.created_at at time zone 'America/Sao_Paulo')::date = public.esocial_agora()::date
