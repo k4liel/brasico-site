@@ -278,7 +278,13 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const pendentes = mensagensVis.filter((m) => !m.lida_na_receita);
   const atencao = useMemo(
     () => mensagensVis.filter((m) => !m.lida_na_receita && nivelDe(m) !== "info")
-      .sort((a, b) => (a.ciencia_em ?? "9999").localeCompare(b.ciencia_em ?? "9999")),
+      // Primeiro o que ainda vai vencer (o mais perto antes); depois o que já correu (o mais recente antes)
+      .sort((a, b) => {
+        const h = hojeSP();
+        const fa = (a.ciencia_em ?? "9999") >= h, fb = (b.ciencia_em ?? "9999") >= h;
+        if (fa !== fb) return fa ? -1 : 1;
+        return fa ? (a.ciencia_em ?? "9999").localeCompare(b.ciencia_em ?? "9999") : (b.ciencia_em ?? "").localeCompare(a.ciencia_em ?? "");
+      }),
     [mensagensVis],
   );
   const intimacoes = pendentes.filter((m) => /intima/i.test(m.assunto)).length;
@@ -432,7 +438,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                     <button className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined} title={navFechada ? s.rotulo : undefined}>
                       <Icone nome={s.icone} />
                       <span>{s.rotulo}</span>
-                      {s.id === "gastos" ? <b className="es-nav-n">{reais(gastoCiclo)}</b> : n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
+                      {n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
                     </button>
                   </Fragment>
                 );
@@ -748,7 +754,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                       <div className="es-bloco-cabeca"><h2><Icone nome="banco" />Por empresa</h2><span className="muted">cada uma paga a própria conta</span></div>
                       <div className="tv-tabela-caixa">
                         <table className="tv-tabela rf-tabela-gastos">
-                          <thead><tr><th>Empresa</th><th>Hoje</th><th>Ciclo / teto</th><th>Preço agora</th><th>Gasto no ciclo</th><th></th></tr></thead>
+                          <thead><tr><th>Empresa</th><th>Hoje</th><th>Ciclo / teto</th><th>Gasto no ciclo</th><th></th></tr></thead>
                           <tbody>
                             {empresasVisiveis.map((e) => {
                               const c = config(e.id);
@@ -757,16 +763,16 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                               return (
                                 <Fragment key={e.id}>
                                   <tr>
-                                    <td><strong>{nomeCurto(e.nome)}</strong></td>
-                                    <td>{reais(gastoDe(e.id, hoje, hoje))}<div className="muted small">{chamadasHoje(e.id)} de {c?.limite_diario_cobradas ?? 0} chamadas</div></td>
+                                    <td><strong>{nomeCurto(e.nome)}</strong>
+                                      <div className="muted small">preço agora: consulta {reais(precoAgora(e.id, "consulta"))} · emissão {reais(precoAgora(e.id, "emissao"))}</div></td>
+                                    <td className="rf-nowrap">{reais(gastoDe(e.id, hoje, hoje))}<div className="muted small">{chamadasHoje(e.id)} de {c?.limite_diario_cobradas ?? 0} chamadas</div></td>
                                     <td className="rf-celula-medidor"><Medidor valor={g} maximo={c?.orcamento_ciclo ?? 0} /><div className="muted small">teto {reais(c?.orcamento_ciclo)}</div></td>
-                                    <td className="small">consulta {reais(precoAgora(e.id, "consulta"))}<br />emissão {reais(precoAgora(e.id, "emissao"))}</td>
                                     <td><b>{reais(g)}</b></td>
                                     <td>{!editando && <button className="ghost small" onClick={() => setAjustando({ id: e.id, limite: String(c?.limite_diario_cobradas ?? 30), teto: String(c?.orcamento_ciclo ?? 30).replace(".", ",") })}>Ajustar</button>}</td>
                                   </tr>
                                   {editando && (
                                     <tr className="rf-sem-hover">
-                                      <td colSpan={6}>
+                                      <td colSpan={5}>
                                         <div className="rf-ajuste">
                                           <label>Chamadas cobradas por dia <input inputMode="numeric" value={ajustando.limite} onChange={(ev) => setAjustando({ ...ajustando, limite: ev.target.value })} /></label>
                                           <label>Teto do ciclo (R$) <input inputMode="decimal" value={ajustando.teto} onChange={(ev) => setAjustando({ ...ajustando, teto: ev.target.value })} /></label>
