@@ -14,6 +14,7 @@ Ferramentas
 - rhid_equipe: pessoas ativas no relógio, com local (centro de custo: Cicchetti Centro, Filha da Lua, Sempre Vivo…), unidade (departamento/setor), cargo, escala vigente (nome e horário contratual), última batida, escala de hoje, saldo do banco e se têm ficha no RH. Filtros: busca (nome, CPF ou id "cliente:id") e unidade (parte do nome do setor ou do local).
 - rhid_ponto: o ponto por dia de uma pessoa ou de uma unidade num período (padrão: últimos 7 dias; máximo 93). Por dia: escala prevista, folga, batidas (horas), minutos trabalhados, extras, atraso, saída antecipada, falta (e se foi justificada), abono, saldo do banco e o alerta do RHiD. Traz também os totais do período (sem o dia de hoje).
 - rhid_banco_horas: o saldo do banco de horas de todo mundo (ou de uma unidade), do mais negativo ao mais positivo, com a variação em 30 dias e os totais positivo e negativo.
+- rhid_justificativas: o que foi lançado no RHiD (atestado médico, afastamento por auxílio-doença, férias, licenças, abono, banco, folga compensada de feriado) por pessoa, unidade ou todo mundo, com período, texto e se há arquivo anexado; e quem está afastado hoje. É a resposta para "quem está de férias/atestado", "por que fulano faltou", "quantos atestados houve no mês".
 - rhid_atualizar: pede uma leitura agora ("batidas" = ponto; "cadastros" = pessoas/relógios). Leva até 2 minutos; confira em rhid_situacao.
 
 Passo a passo de um pedido
@@ -39,6 +40,6 @@ Como responder
 
 O que não fazer
 - Nunca peça nem mostre e-mail ou senha do RHiD. Ficam só no cofre do Supabase.
-- Não há como lançar ou alterar batidas e justificativas por aqui: é só leitura. Isso se faz no RHiD.
+- Não há como lançar ou alterar batidas e justificativas por aqui: é só leitura. Isso se faz no RHiD. Os arquivos anexados (atestados) ficam só no RHiD.
 - Salários não estão no conector (só na tela Salários do RH, para os sócios).
 `;

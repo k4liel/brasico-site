@@ -140,6 +140,31 @@ function escalaVigente(ficha: J, hoje: string) {
   return { escala_id: atual?.id ?? num(ficha?.idShiftAtual), escala_desde: atual?.desde ?? null };
 }
 
+// Justificativas (atestados, afastamentos, férias, abonos, banco): lista por POST, em páginas de 500.
+// Guarda o período, o tipo, o texto e se há arquivo; o arquivo em si nunca se copia.
+async function copiarJustificativas(cliente: number, token: string, desde: string, ate: string) {
+  const agora = new Date().toISOString();
+  let total = 0;
+  for (let page = 0; page < 40; page++) {
+    const corpo = { ini: desde, fim: ate, page, maxSize: 500, companies: [], departments: [], costcenters: [], personroles: [], people: [], shifts: [], justificationTypes: [] };
+    const p = await pedir(`${INTERNA}justification.svc/list`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(corpo),
+    });
+    if (p?.error) throw new ErroRhid(`justificativas: ${txt(p.error).slice(0, 120)}`);
+    const lista: J[] = Array.isArray(p?.data) ? p.data : [];
+    const linhas = lista.map((x) => ({
+      cliente_id: cliente, id: Number(x?.id), pessoa_id: num(x?.idPerson), tipo_id: num(x?.idJustificationType),
+      texto: txt(x?.justificativa).slice(0, 200), descricao: txt(x?.description).slice(0, 300),
+      inicio: quando(x?.inicio), fim: quando(x?.fim), minutos_diurno: num(x?.minutesDiurno), minutos_noturno: num(x?.minutesNoturno),
+      aprovacao: num(x?.approvalStatus), tem_arquivo: !!x?.hasFile, inserido_em: quando(x?.insertedIn), atualizado_em: agora,
+    })).filter((l) => Number.isFinite(l.id) && l.inicio);
+    await gravar("rhid_justificativas", linhas);
+    total += linhas.length;
+    if (lista.length < 500 || total >= Number(p?.recordsFiltered ?? 0)) break;
+  }
+  return total;
+}
+
 // Um cliente RHiD. As listas vêm da API interna do site (as da api.svc dão 500, out/2026); se uma lista
 // falhar, a cópia cai para o jeito antigo: parte das pessoas e lê cada empresa e departamento pelo id.
 // Relógios continuam pela api.svc (a lista interna é negada a este usuário).
@@ -238,9 +263,17 @@ async function copiarCliente(cliente: number, token: string, inicio: number) {
       .eq("cliente_id", cliente).lt("atualizado_em", agora).eq("presente", true);
     if (error) throw new Error(`marcar ausentes: ${error.message}`);
   }
+  // Justificativas dos últimos 13 meses e dos próximos 4 (férias já marcadas)
+  let lancadas = 0;
+  try {
+    lancadas = await copiarJustificativas(cliente, token, somarDias(hoje, -400), somarDias(hoje, 120));
+  } catch (e) {
+    erros.push(e instanceof Error ? e.message.slice(0, 120) : "erro desconhecido");
+  }
   const contagem = {
     empresas: empresas.length, departamentos: departamentos.length, relogios: relogios.length, pessoas: linhasPessoas.length,
-    cargos: cargos.length, centros_custo: centros.length, escalas: escalas.length, escalas_vigentes: escalaDe.size, tipos_justificativa: justificativas.length,
+    cargos: cargos.length, centros_custo: centros.length, escalas: escalas.length, escalas_vigentes: escalaDe.size,
+    tipos_justificativa: justificativas.length, justificativas: lancadas,
   };
   return erros.length ? { ...contagem, nao_lidos: erros.length, exemplo_erro: erros[0] } : contagem;
 }
@@ -317,11 +350,17 @@ async function copiarPonto(cliente: number, token: string, inicio: number, fase:
     .select("id,admissao,apuracao_em,historico_ate,historico_fim")
     .eq("cliente_id", cliente).eq("situacao", 1).eq("presente", true)
     .order("apuracao_em", { ascending: true, nullsFirst: true });
-  const r = { pessoas: 0, dias: 0, faltou_tempo: false, erros: 0, exemplo_erro: "" };
+  const r = { pessoas: 0, dias: 0, justificativas: 0, faltou_tempo: false, erros: 0, exemplo_erro: "" };
   const falhou = (e: unknown) => {
     r.erros++;
     if (!r.exemplo_erro) r.exemplo_erro = e instanceof Error ? e.message.slice(0, 160) : "erro desconhecido";
   };
+  // Justificativas recentes mudam a apuração (atestado lançado hoje vale para ontem): relê 45 dias para trás
+  if (fase === "recentes") {
+    try {
+      r.justificativas = await copiarJustificativas(cliente, token, somarDias(hoje, -45), somarDias(hoje, 120));
+    } catch (e) { falhou(e); }
+  }
   for (const p of fase === "recentes" ? pessoas ?? [] : []) {
     if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
     if (p.apuracao_em && Date.now() - new Date(p.apuracao_em).getTime() < REFAZER_MS) continue;

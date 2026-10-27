@@ -1801,6 +1801,11 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
 .pe-grade .esc-pessoa { font-weight: 600; }
 .pe-grade .pe-cargo { display: block; font-size: 11px; line-height: 1.2; color: var(--muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
 .pt-tabela .pt-escala-nome { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-just .es-pessoa { display: flex; align-items: center; gap: 12px; width: 100%; }
+.pt-just .es-pessoa-nome { flex: 1 1 220px; min-width: 0; }
+.pt-just-texto { flex: 1 1 200px; display: flex; flex-direction: column; font-size: 13px; }
+.pt-just-texto b { font-weight: 600; }
+.pt-tabela .pt-just-livre { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pe-pessoa-botao { all: unset; cursor: pointer; font-weight: 600; }
 .pe-pessoa-botao:hover { text-decoration: underline; text-underline-offset: 3px; }
 .pe-grade tr.pe-grupo td { position: sticky; left: 0; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); padding: 14px 12px 4px; background: transparent; }

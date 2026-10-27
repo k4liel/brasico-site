@@ -539,6 +539,18 @@ function buildHandler(token: string) {
       );
 
       server.tool(
+        "rhid_justificativas",
+        "Justificativas lançadas no RHiD (atestados, afastamentos, férias, licenças, abonos, banco de horas, folgas compensadas): pessoa, tipo, período, texto, se afasta e se tem arquivo anexado. Traz também quem está afastado hoje. Sem datas: 30 dias para trás e 60 à frente.",
+        {
+          pessoa: z.string().max(80).optional().describe("nome, CPF ou id 'cliente:id'"),
+          unidade: z.string().max(80).optional().describe("parte do nome do setor ou do local"),
+          de: DATA.optional(),
+          ate: DATA.optional(),
+        },
+        async ({ pessoa, unidade, de, ate }) => call("mcp_rhid_justificativas", { p_pessoa: pessoa ?? null, p_unidade: unidade ?? null, p_de: de ?? null, p_ate: ate ?? null })
+      );
+
+      server.tool(
         "rhid_atualizar",
         "Pede uma leitura do RHiD agora: 'batidas' (ponto e escala) ou 'cadastros' (pessoas e relógios). Leva até 2 minutos; confira em rhid_situacao.",
         { tipo: z.enum(["batidas", "cadastros"]).optional() },
@@ -568,7 +580,7 @@ function buildHandler(token: string) {
         "9. Vendas TOTVS: as vendas das unidades vêm do Chef Web da TOTVS e são puxadas sozinhas todo dia às 4h30 (o dia anterior). Para perguntas sobre faturamento, produtos, pagamentos ou garçons, use totvs_vendas (leia antes guia_vendas); se o dia ainda não estiver lá, peça com totvs_extrair. Dias com status 'revisar' têm conferências que não bateram: avise o usuário em vez de esconder a diferença.\n" +
         "10. eSocial: o Brasico só LÊ do governo os eventos que o contador transmite (esocial_situacao, esocial_eventos); nada é enviado ao eSocial. Os dados são pessoais (LGPD): mostre só o necessário.\n" +
         "11. Cicchetti Management: para vendas, CMV (notas de compra) e RH das unidades midway, pipa_centro e pipa_producao no sistema de gestão, use as ferramentas cicchetti_* (leia antes guia_cicchetti). É só leitura; toda consulta pede unidade (e período em vendas e CMV); mostre as unidades sempre separadas e nunca peça a chave da API no chat. Para preços de compra (cotação, comparar fornecedores, oscilação de um item), use primeiro precos_consultar: é a base do Índice de Preços, com todos os itens de todas as notas já coletados.\n" +
-        "12. Ponto (RHiD): quem bateu ponto, escala, faltas, atrasos e banco de horas vêm dos relógios de ponto, copiados pelo Brasico (rhid_situacao, rhid_equipe, rhid_ponto, rhid_banco_horas; leia antes guia_ponto). É só leitura, em minutos, e dado pessoal (LGPD): mostre só o necessário. Se o período não foi lido, peça com rhid_atualizar.",
+        "12. Ponto (RHiD): quem bateu ponto, escala, faltas, atrasos e banco de horas vêm dos relógios de ponto, copiados pelo Brasico (rhid_situacao, rhid_equipe, rhid_ponto, rhid_banco_horas, rhid_justificativas; leia antes guia_ponto). É só leitura, em minutos, e dado pessoal (LGPD): mostre só o necessário. Se o período não foi lido, peça com rhid_atualizar.",
     },
     { basePath: "/api", maxDuration: 60 }
   );

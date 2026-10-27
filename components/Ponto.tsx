@@ -22,6 +22,13 @@ type EmpresaPonto = { cliente_id: number; id: number; cnpj: string };
 type Departamento = { cliente_id: number; id: number; nome: string };
 type Relogio = { cliente_id: number; id: number; nome: string; situacao: string; ultima_conexao: string | null; rep_p: boolean };
 type Execucao = { id: string; status: string; created_at: string; fim: string | null; erro: string };
+type Justificativa = {
+  cliente_id: number; id: number; pessoa_id: number | null; tipo_id: number | null; texto: string; descricao: string;
+  inicio: string | null; fim: string | null; aprovacao: number | null; tem_arquivo: boolean; inserido_em: string | null;
+};
+// Tipo de justificativa que afasta (férias, atestado, licença, auxílio, suspensão), como rhid_tipo_afasta no banco
+const afasta = (nome: string) => /afast|f[ée]rias|licen[çc]a|aux[íi]lio|atestado|maternidade|paternidade|suspens/i.test(nome);
+const diaFortaleza = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600_000).toISOString().slice(0, 10) : "");
 type Cruzamento = { empresa_id: string; cpf: string; nome: string; unidade: string; ponto_situacao: string; ponto_ultima_batida: string | null; ativo: boolean };
 
 const ESTADOS = ["Trabalhando", "Saiu", "Ainda sem batida", "Folga", "Sem escala"] as const;
@@ -33,6 +40,7 @@ const CRUZAMENTO: Record<string, { rotulo: string; texto: string }> = {
   batendo: { rotulo: "Batendo ponto", texto: "Bateu nos últimos 3 dias. O eSocial relê a cada 7 dias em vez de 2." },
   parou: { rotulo: "Parou de bater", texto: "Ativo no relógio, mas sem batida há mais de 7 dias. Lido primeiro no eSocial: pode ser afastamento ou saída." },
   inativo: { rotulo: "Inativo no relógio", texto: "Desativado no RHiD. Lido primeiro no eSocial para confirmar a saída." },
+  afastado: { rotulo: "Afastado pelo RHiD", texto: "Férias, atestado ou licença lançados no RHiD cobrindo hoje. O eSocial relê a cada 7 dias em vez de 2." },
   sem_ponto: { rotulo: "Sem ponto", texto: "CPF não encontrado no RHiD (sem CPF no cadastro do relógio, ou não bate ponto)." },
 };
 
@@ -72,6 +80,8 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
   const [cargos, setCargos] = useState<Departamento[]>([]);
   const [centros, setCentros] = useState<Departamento[]>([]);
   const [escalas, setEscalas] = useState<Departamento[]>([]);
+  const [tiposJust, setTiposJust] = useState<Departamento[]>([]);
+  const [justificativas, setJustificativas] = useState<Justificativa[]>([]);
   const [relogios, setRelogios] = useState<Relogio[]>([]);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
   const [cruzamento, setCruzamento] = useState<Cruzamento[]>([]);
@@ -85,7 +95,7 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
   const carregar = useCallback(async () => {
     try {
       const desde = somarDias(hoje(), -30);
-      const [pe, em, de, cg, cc, es, re, ex, cr, di] = await Promise.all([
+      const [pe, em, de, cg, cc, es, tj, ju, re, ex, cr, di] = await Promise.all([
         tudo<PessoaPonto>((a, b) => supabase.from("rhid_pessoas").select("cliente_id,id,nome,cpf,empresa_id,departamento_id,cargo_id,centro_custo_id,escala_id")
           .eq("situacao", 1).eq("presente", true).order("nome").range(a, b)),
         supabase.from("rhid_empresas").select("cliente_id,id,cnpj"),
@@ -93,6 +103,9 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
         supabase.from("rhid_cargos").select("cliente_id,id,nome"),
         supabase.from("rhid_centros_custo").select("cliente_id,id,nome"),
         supabase.from("rhid_escalas").select("cliente_id,id,nome"),
+        supabase.from("rhid_justificativa_tipos").select("cliente_id,id,nome"),
+        supabase.from("rhid_justificativas").select("cliente_id,id,pessoa_id,tipo_id,texto,descricao,inicio,fim,aprovacao,tem_arquivo,inserido_em")
+          .gte("fim", `${desde}T00:00:00`).order("inicio", { ascending: false }).limit(1000),
         supabase.from("rhid_relogios").select("cliente_id,id,nome,situacao,ultima_conexao,rep_p").order("nome"),
         supabase.from("rhid_execucoes").select("id,status,created_at,fim,erro").eq("tipo", "batidas").order("created_at", { ascending: false }).limit(5),
         tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,unidade,ponto_situacao,ponto_ultima_batida,ativo")
@@ -111,6 +124,8 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
       setCargos((cg.data ?? []) as Departamento[]);
       setCentros((cc.data ?? []) as Departamento[]);
       setEscalas((es.data ?? []) as Departamento[]);
+      setTiposJust((tj.data ?? []) as Departamento[]);
+      setJustificativas((ju.data ?? []) as Justificativa[]);
       setRelogios(((re.data ?? []) as Relogio[]).filter((r) => !r.rep_p));
       setExecucoes((ex.data ?? []) as Execucao[]);
       setCruzamento(cr);
@@ -224,6 +239,19 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
   const cruz = cruzamento.filter((c) => filtroEmpresa === "todas" || c.empresa_id === filtroEmpresa);
   const atencao = cruz.filter((c) => c.ponto_situacao === "parou" || c.ponto_situacao === "inativo");
 
+  // Justificativas das pessoas vistas (filtros de empresa, local, setor e busca), com o nome do tipo
+  const nomeTipoJust = new Map(tiposJust.map((t) => [chave(t.cliente_id, t.id), t.nome]));
+  const linhaDe = new Map(vistas.map((l) => [chave(l.p.cliente_id, l.p.id), l]));
+  const justVistas = justificativas.flatMap((j) => {
+    const l = j.pessoa_id != null ? linhaDe.get(chave(j.cliente_id, j.pessoa_id)) : undefined;
+    if (!l) return [];
+    const tipo = j.tipo_id != null ? nomeTipoJust.get(chave(j.cliente_id, j.tipo_id)) ?? "" : "";
+    const inicio = diaFortaleza(j.inicio), fim = diaFortaleza(j.fim);
+    return [{ j, l, tipo, inicio, fim, afasta: afasta(tipo || j.texto), hoje: inicio <= agora && fim >= agora }];
+  });
+  const afastadosHoje = justVistas.filter((x) => x.afasta && x.hoje).sort((a, b) => a.fim.localeCompare(b.fim));
+  const justRecentes = justVistas.filter((x) => !(x.afasta && x.hoje)).slice(0, 60);
+
   return (
     <>
       <section className="es-bloco">
@@ -330,6 +358,56 @@ export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, ch
           </table>
         </div>
         <p className="muted pt-nota">Contas do RHiD (apuração do ponto). O dia de hoje não entra nas faltas. Banco de horas: saldo no último dia lido.</p>
+      </section>
+
+      <section className="es-bloco">
+        <div className="es-bloco-cabeca">
+          <h2>{icone("ausencias")}Justificativas e afastamentos</h2>
+          <span className="muted">lançadas no RHiD · {justVistas.length} nos últimos 30 dias</span>
+        </div>
+        {afastadosHoje.length > 0 && (
+          <>
+            <h3 className="pt-sub">Afastados hoje <span className="muted">{afastadosHoje.length}</span></h3>
+            <ul className="es-equipe pt-just">
+              {afastadosHoje.map(({ j, l, tipo, inicio, fim }) => (
+                <li key={chave(j.cliente_id, j.id)}>
+                  <span className="es-pessoa">
+                    <span className="es-avatar" aria-hidden="true">{iniciais(l.p.nome)}</span>
+                    <span className="es-pessoa-nome">
+                      <strong>{nomeProprio(l.p.nome)}</strong>
+                      <span className="muted">{[l.local, l.setor, l.cargo].filter(Boolean).join(" · ")}</span>
+                    </span>
+                    <span className="pt-just-texto"><b>{tipo || j.texto}</b><span className="muted">{inicio === fim ? dataBR(inicio) : `${dataBR(inicio)} a ${dataBR(fim)}`}{j.tem_arquivo ? " · com arquivo" : ""}</span></span>
+                    <span className="es-selo afastado">volta {dataBR(somarDias(fim, 1))}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {justRecentes.length > 0 ? (
+          <>
+            <h3 className="pt-sub">Últimas justificativas</h3>
+            <div className="tv-rolagem">
+              <table className="tv-tabela pt-tabela">
+                <thead><tr><th>Pessoa</th><th>Tipo</th><th>Período</th><th>Texto</th><th>Arquivo</th><th>Lançada em</th></tr></thead>
+                <tbody>
+                  {justRecentes.map(({ j, l, tipo, inicio, fim }) => (
+                    <tr key={chave(j.cliente_id, j.id)}>
+                      <td>{nomeProprio(l.p.nome)}</td>
+                      <td>{tipo || "—"}</td>
+                      <td>{inicio === fim ? dataBR(inicio) : `${dataBR(inicio)} a ${dataBR(fim)}`}</td>
+                      <td className="pt-just-livre" title={j.descricao || j.texto}>{j.texto && j.texto !== tipo ? j.texto : j.descricao}</td>
+                      <td>{j.tem_arquivo ? "Sim" : "—"}</td>
+                      <td>{j.inserido_em ? dataBR(diaFortaleza(j.inserido_em)) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : afastadosHoje.length === 0 && <p className="muted tv-nada">Nenhuma justificativa lançada no RHiD nos últimos 30 dias para as pessoas vistas.</p>}
+        <p className="muted pt-nota">Atestados, férias, licenças, abonos e ajustes de banco lançados no RHiD. Os arquivos anexados ficam só lá.</p>
       </section>
 
       <div className="es-duas">
