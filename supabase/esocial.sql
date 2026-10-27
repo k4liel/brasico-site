@@ -784,3 +784,342 @@ begin
   return null;
 end $$;
 revoke execute on function public.esocial_proximo(text) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------
+-- Acessos inteligentes (27/10/2026). O governo dá 10 acessos/dia por empresa (consulta + download somados,
+-- MOD v1.16 §7.7.7 e §7.8.7) e responde 405 quando acabam. Medido no Brasico: de 21 a 26/10, 1 a 6 dos 10
+-- acessos de cada dia eram páginas HTML "Configuration Error" (HTTP 500 do servidor web, antes do serviço),
+-- quase todas entre 8h e 10h, e o dia inteiro era gasto até 10h15. Regras novas:
+-- 1. Só conta no limite o que o governo respondeu (cd_resposta) ou está em andamento. Falha sem código
+--    (página 500, conexão) não conta, com um teto de segurança de limite + 5 tentativas por dia.
+--    Validação automática: se o governo responder 405 com menos acessos contados que o limite, é porque as
+--    falhas contam; a empresa fica marcada (falhas_contam) e a contagem volta a incluir as falhas.
+-- 2. Um acesso contado a cada 40 min por empresa: o dia se espalha das 8h às 15h e foge da instabilidade.
+--    Depois de uma falha sem código, espera 12 min.
+-- 3. Releitura por situação no ponto (RHiD): parou 3 dias, inativo 7 (30 depois do S-2299), batendo e
+--    afastado 21, sem ponto 30. Antes era 2 a 7 dias e só a releitura da LAIF já consumia o dia inteiro.
+-- 4. Admissão: um acesso na janela da admissão de cada pessoa (S-2200, com o salário de contrato), antes de
+--    andar o histórico mês a mês. Marcado em esocial_trabalhadores.admissao_consultada.
+-- 5. Download: falha sem código libera nova tentativa em 2 h (antes 20 h).
+-- O site repete sozinho uma chamada que caiu em página 500 (lib/esocial/mensagens.ts), sem gastar acesso.
+-- ---------------------------------------------------------------------
+alter table public.esocial_empresas
+  add column if not exists falhas_contam boolean not null default false,
+  add column if not exists aviso_acessos text not null default '';
+alter table public.esocial_trabalhadores add column if not exists admissao_consultada boolean not null default false;
+
+-- Acessos de hoje de uma empresa: contados (valem no limite), perdidos (falha sem resposta do governo) e tentativas
+create or replace function public.esocial_acessos_hoje(p_empresa text, p_ambiente int default 1)
+returns table (contados int, perdidos int, tentativas int) language sql stable security definer set search_path = public as $$
+  select
+    count(*) filter (where x.cd_resposta is not null or x.status in ('na_fila', 'rodando') or (e.falhas_contam and x.erro not like 'conexão:%'))::int,
+    count(*) filter (where x.status = 'falha' and x.cd_resposta is null)::int,
+    count(*)::int
+  from public.esocial_empresas e
+  left join public.esocial_execucoes x on x.empresa_id = e.id and x.ambiente = p_ambiente
+    and (x.created_at at time zone 'America/Sao_Paulo')::date = public.esocial_agora()::date
+    and (x.tipo like 'identificadores_%' or x.tipo like 'download_%')
+  where e.id = p_empresa
+$$;
+revoke execute on function public.esocial_acessos_hoje(text, int) from public, anon;
+grant execute on function public.esocial_acessos_hoje(text, int) to authenticated;
+
+-- 405 do governo = limite esgotado. Se chegou com menos acessos contados que o limite, as falhas contam:
+-- a empresa fica marcada e a contagem passa a incluí-las (nada a fazer à mão).
+create or replace function public.esocial_aprender_405()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_contados int; v_limite int;
+begin
+  if new.cd_resposta = 405 and coalesce(old.cd_resposta, 0) <> 405 and new.ambiente = 1 then
+    select contados into v_contados from public.esocial_acessos_hoje(new.empresa_id, 1);
+    select limite_diario into v_limite from public.esocial_empresas where id = new.empresa_id;
+    if v_contados < 10 then
+      update public.esocial_empresas set falhas_contam = true,
+        aviso_acessos = format('Em %s o governo respondeu 405 (limite esgotado) com só %s acessos contados: as falhas também contam. A contagem foi corrigida sozinha.',
+          to_char(public.esocial_agora(), 'DD/MM/YYYY HH24:MI'), v_contados)
+      where id = new.empresa_id;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists esocial_execucoes_405 on public.esocial_execucoes;
+create trigger esocial_execucoes_405 after update of cd_resposta on public.esocial_execucoes
+  for each row execute function public.esocial_aprender_405();
+
+-- Download: falha sem código (página 500) libera nova tentativa em 2 h; falha com código do governo, 20 h
+create or replace function public.esocial_download_falhou_hoje(p_empresa text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.esocial_execucoes where empresa_id = p_empresa and ambiente = 1
+    and tipo = 'download_id' and status = 'falha' and coalesce(cd_resposta, 0) <> 401
+    and created_at > now() - case when cd_resposta is null then interval '2 hours' else interval '20 hours' end)
+$$;
+
+-- esocial_pedir: a mesma contagem (falha sem código não conta) e o teto de tentativas
+create or replace function public.esocial_pedir(p_empresa text, p_ambiente int, p_tipo text, p_parametros jsonb,
+  p_origem text, p_user uuid)
+returns uuid language plpgsql security definer set search_path = public, vault as $$
+declare
+  e public.esocial_empresas;
+  v_id uuid;
+  v_download boolean := p_tipo like 'identificadores_%' or p_tipo like 'download_%';
+  v_hoje date := public.esocial_agora()::date;
+  v_usados int;
+  v_tentativas int;
+  v_limite int;
+begin
+  select * into e from public.esocial_empresas where id = p_empresa;
+  if e.id is null then raise exception 'Empresa "%" não encontrada no eSocial.', p_empresa; end if;
+  if p_ambiente not in (1, 2) then raise exception 'Ambiente inválido (1 = produção, 2 = produção restrita).'; end if;
+  if e.cert_validade is null then raise exception 'A empresa % ainda não tem certificado.', e.nome; end if;
+  if e.cert_validade <= now() then raise exception 'O certificado da empresa % venceu. Envie o novo pela tela do eSocial.', e.nome; end if;
+  if p_tipo = 'envio_lote' and (p_ambiente = 1 and not e.transmissao) then
+    raise exception 'A transmissão em produção está desligada. Só é possível enviar na Produção Restrita (testes).';
+  end if;
+
+  if v_download then
+    if extract(day from v_hoje) <= 7 then
+      raise exception 'O eSocial não aceita consultas nem downloads do dia 1 ao dia 7 de cada mês.';
+    end if;
+    if exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = p_ambiente
+               and status in ('na_fila', 'rodando') and created_at > now() - interval '10 minutes'
+               and (tipo like 'identificadores_%' or tipo like 'download_%')) then
+      raise exception 'Já há um pedido em andamento para esta empresa. O eSocial aceita um por vez; tente em instantes.';
+    end if;
+    select contados, tentativas into v_usados, v_tentativas from public.esocial_acessos_hoje(e.id, p_ambiente);
+    v_limite := case when p_origem = 'agenda' then e.limite_diario else 10 end;
+    if v_usados >= v_limite then
+      raise exception 'Limite de % acessos de hoje ao download do eSocial já foi usado para esta empresa (o governo permite 10 por dia).', v_limite;
+    end if;
+    if v_tentativas >= v_limite + 5 then
+      raise exception 'Hoje já houve % tentativas para esta empresa (contando as que falharam no servidor do governo). Por segurança, só amanhã.', v_tentativas;
+    end if;
+  end if;
+
+  insert into public.esocial_execucoes (empresa_id, ambiente, tipo, parametros, origem, pedido_por)
+  values (e.id, p_ambiente, p_tipo, coalesce(p_parametros, '{}'), p_origem, p_user) returning id into v_id;
+
+  perform net.http_post(
+    url := 'https://brasico.vercel.app/api/esocial',
+    headers := jsonb_build_object('Content-Type', 'application/json',
+      'x-segredo', (select decrypted_secret from vault.decrypted_secrets where name = 'esocial_segredo')),
+    body := jsonb_build_object('execucao', v_id),
+    timeout_milliseconds := 30000);
+  return v_id;
+end $$;
+
+-- esocial_worker_concluir: a consulta da admissão (motivo = 'admissao') marca admissao_consultada e NÃO mexe na
+-- janela lida (consultado_desde/consultado_ate), que precisa continuar contígua para o histórico
+create or replace function public.esocial_worker_concluir(p_segredo text, p_execucao uuid, p_status text, p_cd int,
+  p_desc text, p_resultado jsonb, p_erro text, p_eventos jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare x public.esocial_execucoes; ev jsonb; v_ini timestamptz; v_fim timestamptz;
+begin
+  perform public.esocial_conferir_segredo(p_segredo);
+  update public.esocial_execucoes set status = p_status, cd_resposta = p_cd, desc_resposta = left(coalesce(p_desc, ''), 1000),
+    resultado = coalesce(p_resultado, '{}'), erro = left(coalesce(p_erro, ''), 1000), fim = now()
+  where id = p_execucao and status = 'rodando' returning * into x;
+  if x.id is null then return; end if;
+
+  for ev in select * from jsonb_array_elements(coalesce(p_eventos, '[]')) loop
+    insert into public.esocial_eventos as t (ambiente, id_evento, empresa_id, nr_recibo, tipo, cpf_trab, per_apur, situacao,
+      resumo, xml_evento, xml_recibo, baixado_em, execucao_id)
+    values (x.ambiente, ev->>'id_evento', x.empresa_id, ev->>'nr_recibo', ev->>'tipo', ev->>'cpf_trab', ev->>'per_apur',
+      coalesce(ev->>'situacao', 'pendente'), coalesce(ev->'resumo', '{}'), ev->>'xml_evento', ev->>'xml_recibo',
+      case when ev->>'situacao' = 'baixado' then now() end, x.id)
+    on conflict (ambiente, id_evento) do update set
+      nr_recibo = coalesce(excluded.nr_recibo, t.nr_recibo),
+      tipo = coalesce(excluded.tipo, t.tipo),
+      cpf_trab = coalesce(excluded.cpf_trab, t.cpf_trab),
+      per_apur = coalesce(excluded.per_apur, t.per_apur),
+      situacao = case when t.situacao = 'baixado' and excluded.situacao = 'pendente' then t.situacao else excluded.situacao end,
+      resumo = case when excluded.situacao = 'baixado' then excluded.resumo else t.resumo end,
+      xml_evento = coalesce(excluded.xml_evento, t.xml_evento),
+      xml_recibo = coalesce(excluded.xml_recibo, t.xml_recibo),
+      baixado_em = coalesce(excluded.baixado_em, t.baixado_em),
+      execucao_id = excluded.execucao_id;
+
+    if ev->>'cpf_trab' ~ '^[0-9]{11}$' then
+      insert into public.esocial_trabalhadores as w (empresa_id, cpf, nome, matricula, origem)
+      values (x.empresa_id, ev->>'cpf_trab', coalesce(ev->'resumo'->>'nome', ''), coalesce(ev->'resumo'->>'matricula', ''), 'evento')
+      on conflict (empresa_id, cpf) do update set
+        nome = case when w.nome = '' then excluded.nome else w.nome end,
+        matricula = case when w.matricula = '' then excluded.matricula else w.matricula end;
+    end if;
+  end loop;
+
+  if x.tipo = 'identificadores_trabalhador' and p_status in ('ok', 'sem_dados') then
+    if x.parametros->>'motivo' = 'admissao' then
+      update public.esocial_trabalhadores set admissao_consultada = true
+      where empresa_id = x.empresa_id and cpf = x.parametros->>'cpf';
+    else
+      -- Janela lida de um trabalhador: amplia o trecho coberto (para frente e para trás). Com mais de 50 eventos
+      -- na janela (cursor), só o trecho até o cursor conta como lido.
+      v_ini := (x.parametros->>'dtIni')::timestamp at time zone 'America/Sao_Paulo';
+      v_fim := coalesce((p_resultado->>'cursor')::timestamptz, (x.parametros->>'dtFim')::timestamp at time zone 'America/Sao_Paulo');
+      update public.esocial_trabalhadores set
+        consultado_ate = greatest(coalesce(consultado_ate, v_fim), v_fim),
+        consultado_desde = least(coalesce(consultado_desde, v_ini), v_ini)
+      where empresa_id = x.empresa_id and cpf = x.parametros->>'cpf';
+    end if;
+  end if;
+end $$;
+
+-- esocial_proximo com as regras novas. Ordem: download cheio (50 ids ou último acesso) → fechamento S-1299 dos
+-- 2 últimos meses → quem nunca foi lido → releitura vencida (parou/inativo primeiro) → S-1005 e S-1010 →
+-- janela da admissão de quem ainda não tem S-2200 → histórico para trás → download do que estiver pendente.
+create or replace function public.esocial_proximo(p_empresa text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  e public.esocial_empresas;
+  v_agora timestamp := public.esocial_agora();
+  v_usados int;
+  v_tentativas int;
+  v_pend int;
+  v_ids jsonb;
+  v_mes date;
+  w record;
+  v_ini timestamp;
+  v_fim timestamp;
+  v_desde timestamp;
+  v_ultimo timestamptz;
+begin
+  select * into e from public.esocial_empresas where id = p_empresa;
+  if e.id is null or not e.leitura_automatica or e.cert_validade is null or e.cert_validade <= now() then return null; end if;
+  if extract(day from v_agora) <= 7 then return null; end if;
+  select contados, tentativas into v_usados, v_tentativas from public.esocial_acessos_hoje(e.id, 1);
+  if v_usados >= e.limite_diario then return null; end if;
+  if v_tentativas >= e.limite_diario + 5 then return null; end if;
+
+  -- Espaçamento: um acesso contado a cada 40 min; depois de uma falha sem código, 12 min de espera
+  select max(created_at) into v_ultimo from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+    and (tipo like 'identificadores_%' or tipo like 'download_%') and (cd_resposta is not null or status in ('na_fila', 'rodando'));
+  if v_ultimo > now() - interval '40 minutes' then return null; end if;
+  if exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1 and status = 'falha'
+      and cd_resposta is null and created_at > now() - interval '12 minutes') then return null; end if;
+  v_desde := e.historico_desde::timestamp;
+
+  begin
+    select count(*) into v_pend from public.esocial_eventos where empresa_id = e.id and ambiente = 1 and situacao = 'pendente' and length(id_evento) = 36;
+    if v_pend > 0 and (v_pend >= 50 or v_usados = e.limite_diario - 1) and not public.esocial_download_falhou_hoje(e.id) then
+      select jsonb_agg(id_evento) into v_ids from (
+        select id_evento from public.esocial_eventos where empresa_id = e.id and ambiente = 1 and situacao = 'pendente' and length(id_evento) = 36
+        order by descoberto_em limit 50) p;
+      return public.esocial_pedir(e.id, 1, 'download_id', jsonb_build_object('ids', v_ids), 'agenda', null);
+    end if;
+
+    for v_mes in select generate_series(greatest(date_trunc('month', v_desde), date_trunc('month', v_agora) - interval '2 months'),
+                                        date_trunc('month', v_agora) - interval '1 month', interval '1 month')::date loop
+      select max(created_at at time zone 'America/Sao_Paulo') into v_ini from public.esocial_execucoes
+      where empresa_id = e.id and ambiente = 1 and tipo = 'identificadores_empregador' and status in ('ok', 'sem_dados')
+        and parametros->>'tpEvt' = 'S-1299' and parametros->>'perApur' = to_char(v_mes, 'YYYY-MM');
+      v_fim := v_mes + interval '1 month' + interval '19 days';
+      if v_ini > v_fim then continue; end if;
+      if v_ini is not null and v_agora <= v_fim then continue; end if;
+      if v_agora < v_mes + interval '1 month' + interval '7 days' then continue; end if;
+      if exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+          and tipo = 'identificadores_empregador' and status = 'falha' and created_at > now() - interval '3 days'
+          and parametros->>'tpEvt' = 'S-1299' and parametros->>'perApur' = to_char(v_mes, 'YYYY-MM')) then continue; end if;
+      return public.esocial_pedir(e.id, 1, 'identificadores_empregador',
+        jsonb_build_object('tpEvt', 'S-1299', 'perApur', to_char(v_mes, 'YYYY-MM')), 'agenda', null);
+    end loop;
+
+    if (select count(*) from (select cd_resposta from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+          and tipo = 'identificadores_trabalhador' and created_at > now() - interval '3 days' order by created_at desc limit 2) u
+        where u.cd_resposta = 407) >= 2 then return null; end if;
+
+    -- Quem nunca foi lido: o mês mais recente
+    select * into w from public.esocial_trabalhadores t
+    where t.empresa_id = e.id and t.ativo and t.consultado_ate is null
+      and not exists (select 1 from public.esocial_execucoes f where f.empresa_id = e.id and f.ambiente = 1
+        and f.tipo = 'identificadores_trabalhador' and f.status = 'falha' and f.parametros->>'cpf' = t.cpf and f.created_at > now() - interval '20 hours')
+    order by t.admissao desc nulls last, t.nome limit 1;
+    if w.cpf is not null then
+      v_fim := v_agora - interval '65 minutes';
+      v_ini := greatest(v_fim - interval '31 days' + interval '1 minute', v_desde);
+      return public.esocial_pedir(e.id, 1, 'identificadores_trabalhador', jsonb_build_object('cpf', w.cpf,
+        'dtIni', to_char(v_ini, 'YYYY-MM-DD"T"HH24:MI:SS'), 'dtFim', to_char(v_fim, 'YYYY-MM-DD"T"HH24:MI:SS')), 'agenda', null);
+    end if;
+
+    -- Releitura: o intervalo depende do que o ponto (RHiD) diz da pessoa
+    select * into w from public.esocial_trabalhadores t
+    where t.empresa_id = e.id and t.ativo
+      and t.consultado_ate < now() - case t.ponto_situacao
+        when 'parou' then interval '3 days'
+        when 'inativo' then case when exists (select 1 from public.esocial_eventos v where v.empresa_id = e.id and v.cpf_trab = t.cpf and v.tipo = 'S-2299')
+                                 then interval '30 days' else interval '7 days' end
+        when 'batendo' then interval '21 days'
+        when 'afastado' then interval '21 days'
+        when 'sem_ponto' then interval '30 days'
+        else interval '7 days' end
+      and not exists (select 1 from public.esocial_execucoes f where f.empresa_id = e.id and f.ambiente = 1
+        and f.tipo = 'identificadores_trabalhador' and f.status = 'falha' and f.parametros->>'cpf' = t.cpf and f.created_at > now() - interval '20 hours')
+    order by (t.ponto_situacao in ('parou', 'inativo')) desc, t.consultado_ate limit 1;
+    if w.cpf is not null then
+      v_ini := w.consultado_ate at time zone 'America/Sao_Paulo';
+      v_fim := least(v_ini + interval '31 days' - interval '1 minute', v_agora - interval '65 minutes');
+      return public.esocial_pedir(e.id, 1, 'identificadores_trabalhador', jsonb_build_object('cpf', w.cpf,
+        'dtIni', to_char(v_ini, 'YYYY-MM-DD"T"HH24:MI:SS'), 'dtFim', to_char(v_fim, 'YYYY-MM-DD"T"HH24:MI:SS')), 'agenda', null);
+    end if;
+
+    if e.cnpj is not null and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+        and tipo = 'identificadores_tabela' and status in ('ok', 'sem_dados') and parametros->>'tpEvt' = 'S-1005'
+        and created_at > now() - interval '30 days')
+      and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+        and tipo = 'identificadores_tabela' and status = 'falha' and parametros->>'tpEvt' = 'S-1005'
+        and parametros ? 'chEvt' and created_at > now() - interval '3 days') then
+      return public.esocial_pedir(e.id, 1, 'identificadores_tabela',
+        jsonb_build_object('tpEvt', 'S-1005', 'chEvt', 'tpInsc=1;nrInsc=' || e.cnpj), 'agenda', null);
+    end if;
+
+    if not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+        and tipo = 'identificadores_tabela' and status in ('ok', 'sem_dados') and parametros->>'tpEvt' = 'S-1010')
+      and not exists (select 1 from public.esocial_execucoes where empresa_id = e.id and ambiente = 1
+        and tipo = 'identificadores_tabela' and status = 'falha' and parametros->>'tpEvt' = 'S-1010' and created_at > now() - interval '3 days') then
+      return public.esocial_pedir(e.id, 1, 'identificadores_tabela', jsonb_build_object('tpEvt', 'S-1010'), 'agenda', null);
+    end if;
+
+    -- Admissão: quem já tem S-2200/S-2300 ou cuja janela lida já cobre a admissão não precisa
+    update public.esocial_trabalhadores t set admissao_consultada = true
+    where t.empresa_id = e.id and t.ativo and not t.admissao_consultada and t.admissao is not null
+      and (exists (select 1 from public.esocial_eventos v where v.empresa_id = e.id and v.cpf_trab = t.cpf and v.tipo in ('S-2200', 'S-2300'))
+           or (t.consultado_desde <= (t.admissao - 2)::timestamp at time zone 'America/Sao_Paulo'
+               and t.consultado_ate >= (t.admissao + 20)::timestamp at time zone 'America/Sao_Paulo'));
+    -- Eventos não periódicos (S-2200) do grupo 3 só existem no eSocial desde abril/2019
+    select * into w from public.esocial_trabalhadores t
+    where t.empresa_id = e.id and t.ativo and not t.admissao_consultada and t.admissao >= '2019-04-01'
+      and t.admissao < v_agora::date - 10
+      and not exists (select 1 from public.esocial_execucoes f where f.empresa_id = e.id and f.ambiente = 1
+        and f.tipo = 'identificadores_trabalhador' and f.status = 'falha' and f.parametros->>'cpf' = t.cpf and f.created_at > now() - interval '20 hours')
+    order by t.admissao desc, t.nome limit 1;
+    if w.cpf is not null then
+      v_ini := (w.admissao - 3)::timestamp;
+      v_fim := least(v_ini + interval '31 days' - interval '1 minute', v_agora - interval '65 minutes');
+      return public.esocial_pedir(e.id, 1, 'identificadores_trabalhador', jsonb_build_object('cpf', w.cpf, 'motivo', 'admissao',
+        'dtIni', to_char(v_ini, 'YYYY-MM-DD"T"HH24:MI:SS'), 'dtFim', to_char(v_fim, 'YYYY-MM-DD"T"HH24:MI:SS')), 'agenda', null);
+    end if;
+
+    -- Histórico para trás, um mês por vez, até a admissão ou historico_desde
+    select * into w from public.esocial_trabalhadores t
+    where t.empresa_id = e.id and t.ativo and t.consultado_desde is not null
+      and t.consultado_desde > greatest(v_desde, coalesce(t.admissao, v_desde::date)::timestamp) at time zone 'America/Sao_Paulo'
+      and not exists (select 1 from public.esocial_execucoes f where f.empresa_id = e.id and f.ambiente = 1
+        and f.tipo = 'identificadores_trabalhador' and f.status = 'falha' and f.parametros->>'cpf' = t.cpf and f.created_at > now() - interval '20 hours')
+    order by t.consultado_desde desc limit 1;
+    if w.cpf is not null then
+      v_fim := (w.consultado_desde at time zone 'America/Sao_Paulo') - interval '1 second';
+      v_ini := greatest(v_fim - interval '31 days' + interval '1 minute', v_desde, coalesce(w.admissao, v_desde::date)::timestamp - interval '10 days');
+      return public.esocial_pedir(e.id, 1, 'identificadores_trabalhador', jsonb_build_object('cpf', w.cpf,
+        'dtIni', to_char(v_ini, 'YYYY-MM-DD"T"HH24:MI:SS'), 'dtFim', to_char(v_fim, 'YYYY-MM-DD"T"HH24:MI:SS')), 'agenda', null);
+    end if;
+
+    if v_pend > 0 and not public.esocial_download_falhou_hoje(e.id) then
+      select jsonb_agg(id_evento) into v_ids from (
+        select id_evento from public.esocial_eventos where empresa_id = e.id and ambiente = 1 and situacao = 'pendente' and length(id_evento) = 36
+        order by descoberto_em limit 50) p;
+      return public.esocial_pedir(e.id, 1, 'download_id', jsonb_build_object('ids', v_ids), 'agenda', null);
+    end if;
+  exception when others then
+    return null;
+  end;
+  return null;
+end $$;

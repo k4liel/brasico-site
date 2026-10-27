@@ -2,7 +2,7 @@
 // Consulta de identificadores e download exigem a mensagem assinada (MOD 7.7 e 7.8); consulta de lote não.
 import { DOMParser, XMLSerializer, type Element, type Node } from "@xmldom/xmldom";
 import { assinar } from "./assinatura";
-import { chamar, type Ambiente } from "./soap";
+import { chamar, ErroConexao, type Ambiente } from "./soap";
 
 export type { Element };
 
@@ -61,6 +61,26 @@ function status(raiz: Element, onde = "status"): Status {
   const s = primeiro(raiz, onde);
   const cd = texto(s, "cdResposta");
   return { cdResposta: cd == null ? null : Number(cd), descResposta: texto(s, "descResposta") ?? "" };
+}
+
+// O servidor web do eSocial devolve de vez em quando uma página HTML "Configuration Error" (HTTP 500) antes
+// de o pedido chegar ao serviço: não é resposta do eSocial e não conta no limite diário. Repete até 3 vezes,
+// com 8 s de espera, enquanto couber nos 60 s da rota. Erros de conexão também. Códigos do governo não se repetem.
+const PAGINA_ERRO = /devolveu uma página de erro \(HTTP 5/;
+async function comRepeticao<T>(fazer: () => Promise<T>): Promise<T> {
+  const inicio = Date.now();
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      return await fazer();
+    } catch (e) {
+      const repetivel = e instanceof ErroConexao || (e instanceof Error && PAGINA_ERRO.test(e.message));
+      if (!repetivel || tentativa >= 3 || Date.now() - inicio > 30_000) {
+        if (e instanceof Error && tentativa > 1) e.message = `${e.message} (${tentativa} tentativas)`.slice(0, 500);
+        throw e;
+      }
+      await new Promise((r) => setTimeout(r, 8_000));
+    }
+  }
 }
 
 // Resposta HTTP → documento SOAP. Falha clara quando o IIS recusa o certificado (403) ou o SOAP traz Fault.
@@ -135,9 +155,9 @@ export async function enviarLote(amb: Ambiente, cred: Credencial, opts: {
 export type Identificadores = Status & { total: number; ultimo: string | null; ids: { id: string; nrRec: string }[] };
 
 async function identificadores(amb: Ambiente, cred: Credencial, metodo: string, parametro: string, mensagem: string): Promise<Identificadores> {
-  const r = await chamar({ ambiente: amb, servico: "identificadores", metodo, parametro, mensagem: assinar(mensagem, cred.certificado, cred.chave),
-    cadeiaPem: cred.cadeia, chavePem: cred.chave });
-  const raiz = abrirResposta(r);
+  const assinada = assinar(mensagem, cred.certificado, cred.chave);
+  const raiz = await comRepeticao(async () => abrirResposta(await chamar({ ambiente: amb, servico: "identificadores", metodo, parametro,
+    mensagem: assinada, cadeiaPem: cred.cadeia, chavePem: cred.chave })));
   const ret = primeiro(raiz, "retornoConsultaIdentificadoresEvts") ?? raiz;
   const dados = primeiro(ret, "retornoIdentificadoresEvts");
   return {
@@ -178,9 +198,9 @@ export async function baixar(amb: Ambiente, cred: Credencial, emp: Empregador, p
     ? `<eSocial xmlns="${NS.downloadId}"><download>${ideEmpregador(emp)}<solicDownloadEvtsPorId>${chaves.map((c) => `<id>${esc(c)}</id>`).join("")}</solicDownloadEvtsPorId></download></eSocial>`
     : `<eSocial xmlns="${NS.downloadRecibo}"><download>${ideEmpregador(emp)}<solicDownloadEvtsPorNrRecibo>${chaves.map((c) => `<nrRec>${esc(c)}</nrRec>`).join("")}</solicDownloadEvtsPorNrRecibo></download></eSocial>`;
   const metodo = por === "id" ? "SolicitarDownloadEventosPorId" : "SolicitarDownloadEventosPorNrRecibo";
-  const r = await chamar({ ambiente: amb, servico: "download", metodo, parametro: "solicitacao", mensagem: assinar(m, cred.certificado, cred.chave),
-    cadeiaPem: cred.cadeia, chavePem: cred.chave });
-  const raiz = abrirResposta(r);
+  const assinada = assinar(m, cred.certificado, cred.chave);
+  const raiz = await comRepeticao(async () => abrirResposta(await chamar({ ambiente: amb, servico: "download", metodo, parametro: "solicitacao",
+    mensagem: assinada, cadeiaPem: cred.cadeia, chavePem: cred.chave })));
   const dl = primeiro(raiz, "download") ?? raiz;
   const geral = status(dl);
   const arquivos: Arquivo[] = filhos(dl, "arquivo").map((a) => {

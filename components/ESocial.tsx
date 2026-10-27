@@ -140,7 +140,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const carregar = useCallback(async () => {
     const [em, ev, tr, ex] = await Promise.all([
       supabase.from("esocial_empresas")
-        .select("id,nome,cnpj,leitura_automatica,limite_diario,historico_desde,cert_validade,cert_emissor,cert_atualizado_em")
+        .select("id,nome,cnpj,leitura_automatica,limite_diario,historico_desde,cert_validade,cert_emissor,cert_atualizado_em,falhas_contam,aviso_acessos")
         .order("ordem").order("nome"),
       supabase.from("esocial_eventos").select("id_evento,empresa_id,tipo,cpf_trab,per_apur,situacao,nr_recibo,resumo,descoberto_em,baixado_em")
         .eq("ambiente", 1).order("descoberto_em", { ascending: false }).limit(5000),
@@ -725,7 +725,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
                       <h2><Icone nome="leitura" />Andamento da leitura</h2>
-                      <Ajuda texto="O governo libera só 10 acessos por dia por empresa e entrega os dados de cada funcionário um por vez. Por isso a leitura é feita aos poucos: todo dia, das 8h às 20h, uma consulta a cada 15 minutos. Aqui você vê o que já chegou e o que ainda falta." />
+                      <Ajuda texto="O governo libera só 10 acessos por dia por empresa (consultas e downloads somados) e entrega os dados de cada funcionário um por vez. Por isso a leitura é feita aos poucos: todo dia, das 8h às 20h, um acesso a cada 40 minutos. Quando o servidor do governo cai (página de erro), a chamada é repetida na hora e não conta no limite. Aqui você vê o que já chegou e o que ainda falta." />
                     </div>
                     <div className="es-leituras">
                       {leituras.map((l) => {
@@ -743,7 +743,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                             <dl className="es-leitura-dados">
                               <div><dt>Histórico lido</dt><dd>{l.lidoDesde ? `${dataBR(l.lidoDesde)} a ${dataBR(l.lidoAte)}` : "nenhum ainda"} <span className="muted">· pedido desde {dataBR(l.metaDesde)}</span></dd></div>
                               <div><dt>Eventos guardados</dt><dd>{l.eventosBaixados}{l.esperandoDownload ? <span className="muted"> · {l.esperandoDownload} esperando download</span> : null}</dd></div>
-                              <div><dt>Acessos de hoje</dt><dd>{l.usadosHoje} de {l.limite}{l.usadosHoje ? <span className="muted"> · {l.hojeOk} ok{l.hojeVazios ? `, ${l.hojeVazios} vazios` : ""}{l.hojeErros ? `, ${l.hojeErros} com erro` : ""}</span> : null}</dd></div>
+                              <div><dt>Acessos de hoje</dt><dd>{l.usadosHoje} de {l.limite}{l.usadosHoje || l.hojePerdidos ? <span className="muted"> · {l.hojeOk} ok{l.hojeVazios ? `, ${l.hojeVazios} vazios` : ""}{l.hojeErros ? `, ${l.hojeErros} recusados` : ""}{l.hojePerdidos ? `, ${l.hojePerdidos} perdidos no servidor do governo (não contam)` : ""}</span> : null}</dd></div>
+                              {l.aviso && <div><dt>Aviso</dt><dd className="es-ruim">{l.aviso}</dd></div>}
                               <div><dt>Próxima leitura</dt><dd>{l.proxima}</dd></div>
                               {l.ultima && <div><dt>Última resposta</dt><dd className={l.ultima.ok ? "" : "es-ruim"}>{horaCurta(l.ultima.quando)} · {l.ultima.texto}</dd></div>}
                             </dl>
@@ -1103,7 +1104,7 @@ function AreaTecnica({ empresas, empresaInicial, eventos, trabalhadores, execuco
                 onChange={(v) => v.target.value && rodar(() => supabase.rpc("esocial_configurar", { p_empresa: e.id, p_leitura: null, p_limite: null, p_historico_desde: v.target.value }), "Início do histórico atualizado.")} />
             </label>
           </div>
-          <p className="muted es-nota">O governo permite 10 acessos por dia por empresa ao download, somando os do contador. A leitura automática usa só o limite acima.</p>
+          <p className="muted es-nota">O governo permite 10 acessos por dia por empresa ao download, somando os do contador. A leitura automática usa só o limite acima, um acesso a cada 40 minutos, e só conta o que o governo respondeu: erro no servidor do governo não gasta acesso (se um dia o governo disser o contrário com um 405, a empresa aprende sozinha e passa a contar).</p>
         </section>
       )}
 

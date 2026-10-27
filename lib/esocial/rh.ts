@@ -6,6 +6,7 @@
 export type EmpresaRH = {
   id: string; nome: string; cnpj: string | null; leitura_automatica: boolean; limite_diario: number; historico_desde: string;
   cert_validade: string | null; cert_emissor: string | null; cert_atualizado_em: string | null;
+  falhas_contam?: boolean; aviso_acessos?: string;
 };
 export type EventoRH = {
   id_evento: string; empresa_id: string; tipo: string | null; cpf_trab: string | null; per_apur: string | null; situacao: string;
@@ -387,8 +388,8 @@ export type Leitura = {
   empresa_id: string; nome: string;
   pessoas: number; lidas: number; lidoDesde: string | null; lidoAte: string | null; metaDesde: string;
   esperandoDownload: number; eventosBaixados: number;
-  usadosHoje: number; limite: number; hojeOk: number; hojeErros: number; hojeVazios: number;
-  proxima: string; ligada: boolean; semCertificado: boolean;
+  usadosHoje: number; limite: number; hojeOk: number; hojeErros: number; hojeVazios: number; hojePerdidos: number;
+  aviso: string; proxima: string; ligada: boolean; semCertificado: boolean;
   ultima: { quando: string; texto: string; ok: boolean } | null;
 };
 
@@ -406,9 +407,13 @@ export function montarLeitura(empresas: EmpresaRH[], trabalhadores: TrabalhadorR
   return empresas.map((e) => {
     const trs = trabalhadores.filter((t) => t.empresa_id === e.id && t.ativo);
     const exs = execucoes.filter((x) => x.empresa_id === e.id && x.ambiente === 1 && x.tipo !== "teste_conexao");
-    const hoje = exs.filter((x) => new Date(new Date(x.created_at).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10) === hojeStr
-      && !(x.status === "falha" && x.cd_resposta == null && x.erro.startsWith("conexão:")));
-    const usados = hoje.length;
+    const hoje = exs.filter((x) => new Date(new Date(x.created_at).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10) === hojeStr);
+    // Só conta no limite o que o governo respondeu (ou está em andamento). Falha sem código (página 500 do
+    // servidor web, conexão) é "perdida", não contada, a não ser que a empresa já tenha aprendido o contrário (405).
+    const perdidas = hoje.filter((x) => x.status === "falha" && x.cd_resposta == null);
+    const contadas = hoje.filter((x) => x.cd_resposta != null || ["na_fila", "rodando"].includes(x.status)
+      || (e.falhas_contam && x.status === "falha" && !x.erro.startsWith("conexão:")));
+    const usados = contadas.length;
     const sobra = e.limite_diario - usados;
     let proxima: string;
     if (!e.leitura_automatica) proxima = "leitura automática desligada";
@@ -418,8 +423,14 @@ export function montarLeitura(empresas: EmpresaRH[], trabalhadores: TrabalhadorR
     else if (h < 8) proxima = "hoje às 8h";
     else if (h >= 20) proxima = "amanhã às 8h";
     else {
-      const prox = (Math.floor(m / 15) + 1) * 15;
-      proxima = prox >= 60 ? `hoje às ${String(h + 1).padStart(2, "0")}:00` : `hoje às ${String(h).padStart(2, "0")}:${String(prox).padStart(2, "0")}`;
+      // Um acesso contado a cada 40 min (espalha o dia); o passo da agenda roda a cada 15 min
+      const ultimo = contadas.map((x) => new Date(x.created_at).getTime()).sort().reverse()[0];
+      const liberaEm = ultimo ? ultimo + 40 * 60 * 1000 : 0;
+      const base = Math.max(agora.getTime(), liberaEm);
+      const b = new Date(base - 3 * 3600 * 1000);
+      const prox = (Math.floor(b.getUTCMinutes() / 15) + 1) * 15;
+      const hh = b.getUTCHours();
+      proxima = prox >= 60 ? `hoje às ${String(hh + 1).padStart(2, "0")}:00` : `hoje às ${String(hh).padStart(2, "0")}:${String(prox).padStart(2, "0")}`;
     }
     const ult = exs[0];
     const desc = ult ? DESCRICAO_PEDIDO[ult.tipo] ?? ult.tipo : "";
@@ -441,8 +452,9 @@ export function montarLeitura(empresas: EmpresaRH[], trabalhadores: TrabalhadorR
       eventosBaixados: eventos.filter((v) => v.empresa_id === e.id && v.situacao === "baixado").length,
       usadosHoje: usados, limite: e.limite_diario,
       hojeOk: hoje.filter((x) => x.status === "ok").length,
-      hojeErros: hoje.filter((x) => x.status === "falha").length,
+      hojeErros: hoje.filter((x) => x.status === "falha" && x.cd_resposta != null).length,
       hojeVazios: hoje.filter((x) => x.status === "sem_dados").length,
+      hojePerdidos: perdidas.length, aviso: e.aviso_acessos ?? "",
       proxima, ligada: e.leitura_automatica, semCertificado: !e.cert_validade, ultima,
     };
   });
