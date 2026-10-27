@@ -38,6 +38,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Mesmo desenho do eSocial: pedido em `receita_execucoes` → banco chama `/api/receita` → resultado em `receita_mensagens`, `receita_relatorios`, `receita_pagamentos`. Custo de cada chamada em `receita_chamadas` (supabase/receita.sql; código em lib/receita).
 - Usa o certificado A1 do eSocial (Vault `esocial_cert_<raiz>`). Chaves do contrato do SERPRO só no Vault (`receita_serpro_<raiz>`), nunca no site ou no GitHub.
 - Ambiente `demonstracao` (grátis, dados de mentira) e `producao` (cobrado por chamada; só com `receita_empresas.producao_ligada`).
+- Em produção desde 27/10/2026: Brasico77, LAIF e Genesis, **cada uma com o próprio contrato** (chaves em `receita_serpro_<raiz>`). A filial usa o contrato da matriz. Faturamento por ciclo do dia 21 ao dia 20: a faixa de preço conta só as chamadas da empresa no ciclo, e `receita_pedir` recusa ao passar do `limite_diario_cobradas` ou do teto `orcamento_ciclo` (R$, ajustável no site por `receita_ajustar`; supabase/receita_custos.sql). `receita_chamadas` está no Realtime: a página (/receita, components/Receita.tsx, seções `#visao`, `#caixa`, `#situacao`, `#pagamentos`, `#gastos`, `#pedidos`, `#ajuda`) mostra o gasto ao vivo e pede confirmação com o custo antes de toda consulta cobrada.
 
 ## Trabalhando nos projetos pelo conector
 - Leia o capítulo antes de alterar e envie a `versao` lida em `atualizar_nota`. Se a gravação for recusada porque o capítulo mudou, leia de novo e junte as mudanças. Nunca descarte o trabalho do outro.

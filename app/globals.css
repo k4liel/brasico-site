@@ -1445,6 +1445,75 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .rf-selo-grande { margin: 0 0 0 10px; font-size: 12px; padding: 3px 10px; }
 :root[data-theme="dark"] .rf-teste strong { color: #fbbf24; }
 
+/* Receita Federal: página no padrão do RH (.es) + o que é só dela (gasto ao vivo, cartões por empresa) */
+.rf .rf-aovivo { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; padding: 5px 12px; font-size: 12.5px;
+  color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
+.rf .rf-aovivo b { color: var(--strong); font-variant-numeric: tabular-nums; }
+.rf-ponto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: rf-pulso 2s infinite; vertical-align: 1px; }
+.rf-ponto.parado { background: var(--muted); animation: none; }
+@keyframes rf-pulso { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.rf-empresas { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.rf-empresas .rf-empresa { margin: 0; display: flex; flex-direction: column; }
+.rf-empresa-cabeca { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.rf-cnpj { margin-top: 2px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rf-pilula { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--seg); color: var(--muted); }
+.rf-pilula.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.rf-pilula.erro { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.rf-pilula.atencao { background: color-mix(in srgb, var(--es-amber) 16%, transparent); color: var(--es-amber-ink); }
+:root[data-theme="dark"] .rf-pilula.atencao { color: var(--es-amber); }
+.rf-linhas { list-style: none; margin: 16px 0 8px; padding: 0; display: grid; gap: 8px; font-size: 14px; }
+.rf-linhas li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.rf-linhas li > span:first-child { color: var(--muted); }
+.rf-linhas li > :last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.rf-medidor { height: 6px; border-radius: 3px; background: var(--seg); overflow: hidden; margin: 4px 0 16px; }
+.rf-medidor i { display: block; height: 100%; border-radius: 3px; background: var(--ok); transition: width .4s; }
+.rf-medidor.atencao i { background: var(--es-amber); }
+.rf-medidor.erro i { background: var(--danger); }
+.rf-empresa .rf-acoes { margin-top: auto; }
+.rf-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.rf-link { all: unset; cursor: pointer; color: var(--strong); text-decoration: underline; text-underline-offset: 3px; }
+.rf-forte { color: var(--strong); font-weight: 600; }
+.rf-perigo { color: var(--danger); font-weight: 600; }
+.rf-nowrap { white-space: nowrap; }
+.rf .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rf-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rf-filtros input[type="search"] { min-width: 240px; flex: 1; }
+.rf-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-right: 6px; vertical-align: 1px; }
+.rf-clicavel { cursor: pointer; }
+.rf .tv-tabela .rf-sem-hover:hover td { background: transparent; }
+.rf .tv-tabela td.rf-perigo, .rf .tv-tabela td.rf-forte { font-weight: 600; }
+.rf-texto { margin: 4px 0 8px; padding: 12px 16px; border-radius: var(--es-r-sm); background: var(--soft); white-space: pre-wrap; text-align: left; font-size: 14px; line-height: 1.55; }
+.rf-explica { margin: 0 0 12px; font-size: 14px; }
+.rf-consultas { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.rf-consultas li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--es-r-sm); }
+.rf-celula-medidor { min-width: 140px; }
+.rf-celula-medidor .rf-medidor { margin: 6px 0 4px; }
+.rf-ajuste { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 0 4px; }
+.rf-ajuste label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.rf-ajuste input { width: 88px; }
+.rf-dias { display: grid; gap: 6px; }
+.rf-dia { display: grid; grid-template-columns: 48px 1fr 80px; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.rf-dia.hoje { color: var(--strong); font-weight: 600; }
+.rf-dia-barra { height: 10px; border-radius: 5px; background: var(--seg); overflow: hidden; }
+.rf-dia-barra i { display: block; height: 100%; border-radius: 5px; background: var(--gold); transition: width .4s; }
+.rf-ao-vivo { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
+.rf-ao-vivo li { display: grid; grid-template-columns: 76px 1fr auto; gap: 10px; padding: 6px 8px; border-radius: 8px; }
+.rf-novo { animation: rf-novo 2.4s ease-out; }
+@keyframes rf-novo { from { background: color-mix(in srgb, var(--gold) 28%, transparent); } to { background: transparent; } }
+.rf-precos summary { cursor: pointer; list-style: none; }
+.rf-precos summary::-webkit-details-marker { display: none; }
+.rf-precos summary h2::after { content: "▾"; margin-left: 8px; color: var(--muted); font-size: 12px; }
+.rf-precos[open] summary { margin-bottom: 14px; }
+.rf .tv-tabela td.rf-faixas { text-align: left; white-space: normal; }
+.rf-faixas span { display: inline-block; margin: 2px 12px 2px 0; }
+.rf-glossario { margin: 0; display: grid; gap: 4px 0; }
+.rf-glossario dt { margin-top: 12px; font-weight: 600; color: var(--strong); }
+.rf-glossario dt:first-child { margin-top: 0; }
+.rf-glossario dd { margin: 0; font-size: 14px; color: var(--text); line-height: 1.5; }
+.rf-confirmar { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+  width: max-content; max-width: calc(100% - 32px); padding: 16px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 16px 40px var(--shadow); }
+.rf-confirmar > div { display: grid; gap: 2px; font-size: 14px; }
+
 /* =====================================================================
    RH (eSocial + Ponto): um padrão visual só
    Tipos — eyebrow 11/600 caixa alta · legenda 12.5 · texto 14 · título de cartão 15/600
