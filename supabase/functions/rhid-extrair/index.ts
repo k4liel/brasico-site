@@ -37,11 +37,15 @@ function quando(v: unknown) {
 // Datas de cadastro (admissão) vêm como "2023-01-01" e podem ser antigas
 const dia = (v: unknown) => txt(v).match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? quando(v)?.slice(0, 10) ?? null;
 
+// API interna do site do RHiD (/v2/customerdb/<tabela>.svc/<ação>): aceita o mesmo token e as suas LISTAS
+// funcionam (as da api.svc dão 500). É de onde vêm cargo, centro de custo, escalas e demissão.
+const INTERNA = "https://www.rhid.com.br/v2/customerdb/";
+
 async function pedir(caminho: string, init: RequestInit) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    const r = await fetch(`${API}${caminho}`, { ...init, signal: ctl.signal });
+    const r = await fetch(caminho.startsWith("http") ? caminho : `${API}${caminho}`, { ...init, signal: ctl.signal });
     const corpo = await r.text();
     let p: J = null;
     try {
@@ -96,6 +100,18 @@ async function ler(token: string, caminho: string) {
   return lista(await pedir(caminho, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }));
 }
 
+// Lista da API interna ({data: [...]}); vazia (e o erro anotado) se o RHiD recusar
+async function lerInterno(token: string, caminho: string, erros: string[]) {
+  try {
+    const p = await pedir(`${INTERNA}${caminho}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (p?.error) throw new ErroRhid(`${caminho}: ${txt(p.error).slice(0, 120)}`);
+    return Array.isArray(p) ? p : Array.isArray(p?.data) ? p.data : [];
+  } catch (e) {
+    erros.push(e instanceof Error ? e.message.slice(0, 120) : "erro desconhecido");
+    return [] as J[];
+  }
+}
+
 // Um registro pelo id; null se o RHiD não devolver
 async function lerUm(token: string, caminho: string, erros: string[]) {
   try {
@@ -114,27 +130,54 @@ async function gravar(tabela: string, linhas: Record<string, unknown>[]) {
   }
 }
 
-// Um cliente RHiD. As listas de empresas, departamentos, cargos e relógios dão erro 500 na API
-// (out/2026); por isso a cópia parte das pessoas e lê cada empresa, departamento e relógio pelo id.
-// Cargos ficam de fora até a lista voltar a funcionar.
-async function copiarCliente(cliente: number, token: string) {
+// Escala vigente da ficha completa: o vínculo pessoa×escala que cobre hoje (senão a "atual" do RHiD)
+function escalaVigente(ficha: J, hoje: string) {
+  const vinculos = (Array.isArray(ficha?.personShifts) ? ficha.personShifts : [])
+    .map((v: J) => ({ id: num(v?.idShift), desde: dia(v?.start), ate: dia(v?.end) }))
+    .filter((v: { id: number | null }) => v.id);
+  const atual = vinculos.find((v: { desde: string | null; ate: string | null }) => (!v.desde || v.desde <= hoje) && (!v.ate || v.ate >= hoje))
+    ?? vinculos.sort((a: J, b: J) => String(b.desde).localeCompare(String(a.desde)))[0];
+  return { escala_id: atual?.id ?? num(ficha?.idShiftAtual), escala_desde: atual?.desde ?? null };
+}
+
+// Um cliente RHiD. As listas vêm da API interna do site (as da api.svc dão 500, out/2026); se uma lista
+// falhar, a cópia cai para o jeito antigo: parte das pessoas e lê cada empresa e departamento pelo id.
+// Relógios continuam pela api.svc (a lista interna é negada a este usuário).
+async function copiarCliente(cliente: number, token: string, inicio: number) {
   const agora = new Date().toISOString();
+  const hoje = diaFortaleza();
   const erros: string[] = [];
-  const pessoas = await ler(token, "/person");
   const base = (x: J) => ({ cliente_id: cliente, id: Number(x?.id), atualizado_em: agora });
   const valido = (x: { id: number }) => Number.isFinite(x.id);
 
-  const idsEmpresas = [...new Set(pessoas.map((x) => Number(x?.idCompany)).filter((n) => n > 0))];
-  const empresas = [];
-  for (const id of idsEmpresas) {
-    const x = await lerUm(token, `/company/${id}`, erros);
-    if (x) empresas.push(x);
+  let pessoas = await lerInterno(token, "person.svc/a", erros);
+  if (!pessoas.length) pessoas = await ler(token, "/person");
+  const cargos = await lerInterno(token, "personrole.svc/a", erros);
+  const centros = await lerInterno(token, "costcenter.svc/a", erros);
+  const escalas = await lerInterno(token, "shift.svc/a", erros);
+  const justificativas = await lerInterno(token, "justificationtype.svc/a", erros);
+
+  let empresas = await lerInterno(token, "company.svc/a", erros);
+  if (!empresas.length) {
+    for (const id of [...new Set(pessoas.map((x) => Number(x?.idCompany)).filter((n) => n > 0))]) {
+      const x = await lerUm(token, `/company/${id}`, erros);
+      if (x) empresas.push(x);
+    }
   }
-  const idsDepartamentos = [...new Set(pessoas.map((x) => Number(x?.idDepartment)).filter((n) => n > 0))];
-  const departamentos = [];
-  for (const id of idsDepartamentos) {
-    const x = await lerUm(token, `/department/${id}`, erros);
-    if (x) departamentos.push(x);
+  let departamentos = await lerInterno(token, "department.svc/a", erros);
+  if (!departamentos.length) {
+    for (const id of [...new Set(pessoas.map((x) => Number(x?.idDepartment)).filter((n) => n > 0))]) {
+      const x = await lerUm(token, `/department/${id}`, erros);
+      if (x) departamentos.push(x);
+    }
+  }
+
+  // Escala vigente: só na ficha completa, uma chamada por pessoa ativa (dentro do tempo da execução)
+  const escalaDe = new Map<number, { escala_id: number | null; escala_desde: string | null }>();
+  for (const p of pessoas.filter((x) => num(x?.status) === 1)) {
+    if (Date.now() - inicio > ORCAMENTO_MS) { erros.push("faltou tempo para a escala de todos"); break; }
+    const ficha = await lerUm(token, `${INTERNA}person.svc/a/${Number(p.id)}`, erros);
+    if (ficha) escalaDe.set(Number(p.id), escalaVigente(ficha, hoje));
   }
   const idsRelogios = [...new Set([...pessoas.flatMap((x) => ids(x?.linkedDeviceIds)), ...empresas.flatMap((x) => ids(x?.linkedDeviceIds))])];
   const relogios = [];
@@ -160,6 +203,22 @@ async function copiarCliente(cliente: number, token: string) {
   await gravar("rhid_departamentos", departamentos.map((x) => ({
     ...base(x), nome: txt(x.name), empresa_id: num(x.idCompany),
   })).filter(valido));
+  await gravar("rhid_cargos", cargos.map((x) => ({
+    ...base(x), nome: txt(x.name), empresa_id: num(x.idCompany), departamento_id: num(x.idDepartment),
+  })).filter(valido));
+  await gravar("rhid_centros_custo", centros.map((x) => ({
+    ...base(x), nome: txt(x.name), empresa_id: num(x.idCompany), pessoas: num(x.numPersons),
+  })).filter(valido));
+  await gravar("rhid_escalas", escalas.map((x) => ({
+    ...base(x), nome: txt(x.name), tipo: txt(x.CycleTypeDescription), ciclo: num(x.cycles),
+    horario: txt(x.strHorarioContratualSimples).slice(0, 300), cor: txt(x.color), pessoas: num(x.numPersons),
+    dias: (Array.isArray(x.horarioContratual) ? x.horarioContratual : []).map((h: J) => ({
+      dia: num(h?.day), horas: (Array.isArray(h?.entradaSaida) ? h.entradaSaida : []).map(txt).filter(Boolean), minutos: num(h?.durationMinutes),
+    })),
+  })).filter(valido));
+  await gravar("rhid_justificativa_tipos", justificativas.map((x) => ({
+    ...base(x), nome: txt(x.name), abreviacao: txt(x.abreviation), tipo: num(x.type), abona_falta: x.abonarDiaFalta == null ? null : !!x.abonarDiaFalta,
+  })).filter(valido));
   await gravar("rhid_relogios", relogios.map((x) => ({
     ...base(x), nome: txt(x.name), serial: txt(x.serial), modelo: txt(x.model), versao: txt(x.version),
     situacao: txt(x.status), empresa_id: num(x.linkedCompanyId), pessoas: num(x.numberOfPeople),
@@ -169,6 +228,8 @@ async function copiarCliente(cliente: number, token: string) {
     ...base(x), nome: txt(x.name), nome_social: txt(x.socialName), cpf: digitos(x.cpf), pis: digitos(x.pis),
     matricula: txt(x.registration), empresa_id: num(x.idCompany), departamento_id: num(x.idDepartment),
     situacao: num(x.status), admissao: dia(x.admissionDate), presente: true,
+    cargo_id: num(x.idPersonRole), centro_custo_id: num(x.idCostCenter), demissao: dia(x.dismissalDate),
+    numero_folha: txt(x.numFolha).slice(0, 40), ...(escalaDe.get(Number(x.id)) ?? {}),
   })).filter(valido);
   await gravar("rhid_pessoas", linhasPessoas);
   // Quem não veio nesta cópia fica marcado, sem apagar
@@ -177,7 +238,10 @@ async function copiarCliente(cliente: number, token: string) {
       .eq("cliente_id", cliente).lt("atualizado_em", agora).eq("presente", true);
     if (error) throw new Error(`marcar ausentes: ${error.message}`);
   }
-  const contagem = { empresas: empresas.length, departamentos: departamentos.length, relogios: relogios.length, pessoas: linhasPessoas.length };
+  const contagem = {
+    empresas: empresas.length, departamentos: departamentos.length, relogios: relogios.length, pessoas: linhasPessoas.length,
+    cargos: cargos.length, centros_custo: centros.length, escalas: escalas.length, escalas_vigentes: escalaDe.size, tipos_justificativa: justificativas.length,
+  };
   return erros.length ? { ...contagem, nao_lidos: erros.length, exemplo_erro: erros[0] } : contagem;
 }
 
@@ -326,7 +390,7 @@ async function processar(execucaoId: string) {
             if (!token) throw new ErroRhid("login sem token");
             tokens.set(cl.id, token);
           }
-          resumo[nome] = fase === "cadastros" ? await copiarCliente(cl.id, token) : await copiarPonto(cl.id, token, inicio, fase);
+          resumo[nome] = fase === "cadastros" ? await copiarCliente(cl.id, token, inicio) : await copiarPonto(cl.id, token, inicio, fase);
         } catch (e) {
           const msg = e instanceof Error ? e.message : "erro desconhecido";
           falhas.push(`${nome}: ${msg}`);

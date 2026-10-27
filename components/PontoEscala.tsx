@@ -15,7 +15,7 @@ export type DiaEscala = {
   dia: string; horario: string; folga: boolean; feriado: boolean; falta: boolean; justificado: boolean;
   minutos_trabalhados: number; minutos_atraso: number; minutos_abono?: number; alerta?: string; batidas: BatidaEscala[];
 };
-export type PessoaEscala = { chave: string; nome: string; local: string; setor: string; dias: Map<string, DiaEscala> };
+export type PessoaEscala = { chave: string; nome: string; cargo?: string; local: string; setor: string; dias: Map<string, DiaEscala> };
 
 type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean };
 type Dica = {
@@ -264,6 +264,7 @@ function GrupoLinhas({ grupo, mostrarGrupo, pessoas, dias, agora, turnosDe, onAb
           <tr key={p.chave}>
             <td className="pe-nome">
               {onAbrir ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.chave)}>{p.nome}</button> : <span className="esc-pessoa">{p.nome}</span>}
+              {p.cargo && <small className="pe-cargo">{p.cargo}</small>}
             </td>
             {dias.map((d, i) => {
               const t = ts[i];

@@ -600,3 +600,222 @@ grant execute on function public.mcp_rhid_equipe(text, text, text) to anon;
 grant execute on function public.mcp_rhid_ponto(text, text, text, date, date) to anon;
 grant execute on function public.mcp_rhid_banco_horas(text, text) to anon;
 grant execute on function public.mcp_rhid_atualizar(text, text) to anon;
+
+-- ---------------------------------------------------------------------
+-- Cadastros completos (out/2026). O site do RHiD usa uma API interna (`/v2/customerdb/<tabela>.svc/<ação>`,
+-- mesmo token do login) cujas LISTAS funcionam: pessoas com cargo, centro de custo, demissão e nº da folha;
+-- cargos; centros de custo (o local de verdade: Cicchetti Centro, Filha da Lua, Sempre Vivo); escalas com o
+-- horário contratual; tipos de justificativa. A ficha completa (person.svc/a/<id>) traz a escala vigente.
+-- Continua tudo só leitura. Nada de e-mail, telefone, endereço, foto, crachá ou senha: não se copia.
+-- ---------------------------------------------------------------------
+create table if not exists public.rhid_centros_custo (
+  cliente_id bigint not null references public.rhid_clientes(id),
+  id bigint not null,
+  nome text not null default '',
+  empresa_id bigint,
+  pessoas int,
+  atualizado_em timestamptz not null default now(),
+  primary key (cliente_id, id)
+);
+
+-- dias: [{dia: 0..6 (ou posição no ciclo), horas: ["06:20","12:00","13:00","14:40"], minutos: 500}]
+create table if not exists public.rhid_escalas (
+  cliente_id bigint not null references public.rhid_clientes(id),
+  id bigint not null,
+  nome text not null default '',
+  tipo text not null default '',
+  ciclo int,
+  horario text not null default '',
+  cor text not null default '',
+  pessoas int,
+  dias jsonb not null default '[]',
+  atualizado_em timestamptz not null default now(),
+  primary key (cliente_id, id)
+);
+
+create table if not exists public.rhid_justificativa_tipos (
+  cliente_id bigint not null references public.rhid_clientes(id),
+  id bigint not null,
+  nome text not null default '',
+  abreviacao text not null default '',
+  tipo int,
+  abona_falta boolean,
+  atualizado_em timestamptz not null default now(),
+  primary key (cliente_id, id)
+);
+
+alter table public.rhid_pessoas
+  add column if not exists cargo_id bigint,
+  add column if not exists centro_custo_id bigint,
+  add column if not exists escala_id bigint,
+  add column if not exists escala_desde date,
+  add column if not exists demissao date,
+  add column if not exists numero_folha text not null default '';
+
+do $$
+declare t text;
+begin
+  foreach t in array array['rhid_centros_custo', 'rhid_escalas', 'rhid_justificativa_tipos'] loop
+    execute format('drop trigger if exists %I on public.%I', t || '_sem_exclusao', t);
+    execute format('create trigger %I before delete on public.%I for each row execute function public.bloquear_exclusao()',
+                   t || '_sem_exclusao', t);
+    execute format('drop trigger if exists %I on public.%I', t || '_sem_truncate', t);
+    execute format('create trigger %I before truncate on public.%I for each statement execute function public.bloquear_exclusao()',
+                   t || '_sem_truncate', t);
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "ver" on public.%I', t);
+    execute format('create policy "ver" on public.%I for select using (public.rhid_pode_ver(auth.uid()))', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('grant select on public.%I to authenticated', t);
+  end loop;
+end $$;
+
+-- Ponto × RH: o centro de custo do RHiD vira a unidade do RH e o cargo do RHiD preenche quem está sem cargo
+create or replace function public.rhid_sincronizar_rh()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_novos int; v_marcados int; v_completados int; v_hoje date := (now() at time zone 'America/Fortaleza')::date;
+begin
+  create temp table _ponto on commit drop as
+  select distinct on (left(e.cnpj, 8), p.cpf)
+    left(e.cnpj, 8) raiz, p.cpf, p.nome, p.matricula, p.admissao, p.situacao,
+    case when cc.nome ~* 'cicchetti' then 'CICCHETTI' when cc.nome ~* 'filha da lua' then 'FDL' when cc.nome ~* 'sempre vivo' then 'SV'
+         when d.nome ~* '\(CC\)' then 'CICCHETTI' when d.nome ~* '\(FDL\)' then 'FDL' when d.nome ~* '\(SV\)' then 'SV'
+         when left(e.cnpj, 8) = '36528542' then 'Genesis' else coalesce(d.nome, '') end depto,
+    coalesce(cg.nome, '') cargo,
+    (select max(x.dia) from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id
+       and jsonb_array_length(x.batidas) > 0) ultima
+  from public.rhid_pessoas p
+  join public.rhid_empresas e on e.cliente_id = p.cliente_id and e.id = p.empresa_id
+  left join public.rhid_departamentos d on d.cliente_id = p.cliente_id and d.id = p.departamento_id
+  left join public.rhid_centros_custo cc on cc.cliente_id = p.cliente_id and cc.id = p.centro_custo_id
+  left join public.rhid_cargos cg on cg.cliente_id = p.cliente_id and cg.id = p.cargo_id
+  where p.presente and length(p.cpf) = 11 and length(e.cnpj) = 14
+  order by left(e.cnpj, 8), p.cpf, p.situacao desc nulls last, p.admissao desc nulls last;
+
+  insert into public.esocial_trabalhadores (empresa_id, cpf, nome, matricula, admissao, unidade, cargo, origem)
+  select x.raiz, x.cpf, x.nome, x.matricula, x.admissao, x.depto, x.cargo, 'ponto'
+  from _ponto x
+  where x.situacao = 1 and exists (select 1 from public.esocial_empresas e where e.id = x.raiz)
+  on conflict do nothing;
+  get diagnostics v_novos = row_count;
+
+  -- Só completa o que está vazio: o que veio do contador ou do eSocial não se sobrescreve
+  update public.esocial_trabalhadores t set
+    cargo = case when coalesce(t.cargo, '') = '' then x.cargo else t.cargo end,
+    unidade = case when coalesce(t.unidade, '') = '' then x.depto else t.unidade end,
+    admissao = coalesce(t.admissao, x.admissao)
+  from _ponto x
+  where x.raiz = t.empresa_id and x.cpf = t.cpf
+    and ((coalesce(t.cargo, '') = '' and x.cargo <> '') or (coalesce(t.unidade, '') = '' and x.depto <> '') or (t.admissao is null and x.admissao is not null));
+  get diagnostics v_completados = row_count;
+
+  update public.esocial_trabalhadores t set
+    ponto_situacao = case
+      when x.cpf is null then 'sem_ponto'
+      when x.situacao is distinct from 1 then 'inativo'
+      when x.ultima >= v_hoje - 3 then 'batendo'
+      when x.ultima is null or x.ultima < v_hoje - 7 then 'parou'
+      else 'batendo' end,
+    ponto_ultima_batida = x.ultima,
+    ponto_atualizado_em = now()
+  from public.esocial_trabalhadores t2
+  left join _ponto x on x.raiz = t2.empresa_id and x.cpf = t2.cpf
+  where t.empresa_id = t2.empresa_id and t.cpf = t2.cpf;
+  get diagnostics v_marcados = row_count;
+  return jsonb_build_object('novos', v_novos, 'completados', v_completados, 'marcados', v_marcados);
+end $$;
+
+-- Equipe do relógio, agora com cargo, local (centro de custo) e escala vigente
+create or replace function public.mcp_rhid_equipe(p_token text, p_busca text default null, p_unidade text default null)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare v_hoje date := (now() at time zone 'America/Fortaleza')::date; v jsonb;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'id', p.cliente_id || ':' || p.id, 'nome', p.nome, 'cpf', p.cpf, 'matricula', p.matricula, 'admissao', p.admissao,
+      'cliente', c.nome, 'empresa_rh', public.rhid_raiz(p.cliente_id, p.empresa_id),
+      'local', coalesce(cc.nome, ''), 'unidade', coalesce(d.nome, ''), 'cargo', coalesce(cg.nome, ''),
+      'escala', coalesce(es.nome, ''), 'escala_horario', coalesce(es.horario, ''), 'escala_desde', p.escala_desde,
+      'ultima_batida', u.ultima, 'escala_hoje', nullif(regexp_replace(h.horario, E'\\r?\\n', ' / ', 'g'), ''),
+      'saldo_banco_min', s.saldo, 'saldo_banco', case when s.saldo is null then null else
+        (case when s.saldo < 0 then '-' else '+' end) || (abs(s.saldo) / 60) || 'h' || lpad((abs(s.saldo) % 60)::text, 2, '0') end,
+      'no_rh', exists (select 1 from public.esocial_trabalhadores t where t.cpf = p.cpf and t.empresa_id = public.rhid_raiz(p.cliente_id, p.empresa_id))
+    ) order by c.nome, cc.nome, d.nome, p.nome), '[]'::jsonb) into v
+  from public.rhid_pessoas p
+  join public.rhid_clientes c on c.id = p.cliente_id
+  left join public.rhid_departamentos d on d.cliente_id = p.cliente_id and d.id = p.departamento_id
+  left join public.rhid_centros_custo cc on cc.cliente_id = p.cliente_id and cc.id = p.centro_custo_id
+  left join public.rhid_cargos cg on cg.cliente_id = p.cliente_id and cg.id = p.cargo_id
+  left join public.rhid_escalas es on es.cliente_id = p.cliente_id and es.id = p.escala_id
+  left join lateral (select max(x.dia) ultima from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and jsonb_array_length(x.batidas) > 0) u on true
+  left join lateral (select x.saldo_banco saldo from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.saldo_banco is not null and x.dia <= v_hoje order by x.dia desc limit 1) s on true
+  left join lateral (select x.horario from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id and x.dia = v_hoje) h on true
+  where p.situacao = 1 and p.presente and (p.cpf <> '' or u.ultima is not null)
+    and (p_busca is null or (p.cliente_id, p.id) in (select a.cliente_id, a.id from public.rhid_achar_pessoas(p_busca) a))
+    and (p_unidade is null or unaccent(coalesce(d.nome, '') || ' ' || coalesce(cc.nome, '')) ilike '%' || unaccent(p_unidade) || '%');
+  perform public.mcp_rhid_auth(p_token, 'rhid_equipe', jsonb_strip_nulls(jsonb_build_object('busca', p_busca, 'unidade', p_unidade)), jsonb_array_length(v));
+  return jsonb_build_object('hoje', v_hoje, 'pessoas', v);
+end $$;
+revoke execute on function public.mcp_rhid_equipe(text, text, text) from public, authenticated;
+grant execute on function public.mcp_rhid_equipe(text, text, text) to anon;
+
+-- Contas do relógio ("ADM", "TESTE": sem departamento e sem cargo no RHiD) não são pessoas: não entram no RH
+-- (migration rhid_sincronizar_rh_contas_relogio). A versão vigente de rhid_sincronizar_rh é esta:
+update public.esocial_trabalhadores t set ativo = false
+where t.origem = 'ponto' and t.ativo
+  and not exists (select 1 from public.rhid_pessoas p join public.rhid_empresas e on e.cliente_id = p.cliente_id and e.id = p.empresa_id
+                  where p.cpf = t.cpf and left(e.cnpj, 8) = t.empresa_id and (p.departamento_id is not null or p.cargo_id is not null));
+
+create or replace function public.rhid_sincronizar_rh()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_novos int; v_marcados int; v_completados int; v_hoje date := (now() at time zone 'America/Fortaleza')::date;
+begin
+  create temp table _ponto on commit drop as
+  select distinct on (left(e.cnpj, 8), p.cpf)
+    left(e.cnpj, 8) raiz, p.cpf, p.nome, p.matricula, p.admissao, p.situacao,
+    (p.departamento_id is not null or p.cargo_id is not null) pessoa_real,
+    case when cc.nome ~* 'cicchetti' then 'CICCHETTI' when cc.nome ~* 'filha da lua' then 'FDL' when cc.nome ~* 'sempre vivo' then 'SV'
+         when d.nome ~* '\(CC\)' then 'CICCHETTI' when d.nome ~* '\(FDL\)' then 'FDL' when d.nome ~* '\(SV\)' then 'SV'
+         when left(e.cnpj, 8) = '36528542' then 'Genesis' else coalesce(d.nome, '') end depto,
+    coalesce(cg.nome, '') cargo,
+    (select max(x.dia) from public.rhid_dias x where x.cliente_id = p.cliente_id and x.pessoa_id = p.id
+       and jsonb_array_length(x.batidas) > 0) ultima
+  from public.rhid_pessoas p
+  join public.rhid_empresas e on e.cliente_id = p.cliente_id and e.id = p.empresa_id
+  left join public.rhid_departamentos d on d.cliente_id = p.cliente_id and d.id = p.departamento_id
+  left join public.rhid_centros_custo cc on cc.cliente_id = p.cliente_id and cc.id = p.centro_custo_id
+  left join public.rhid_cargos cg on cg.cliente_id = p.cliente_id and cg.id = p.cargo_id
+  where p.presente and length(p.cpf) = 11 and length(e.cnpj) = 14
+  order by left(e.cnpj, 8), p.cpf, p.situacao desc nulls last, p.admissao desc nulls last;
+
+  -- Só pessoas de verdade (com departamento ou cargo no RHiD): "ADM" e "TESTE" são contas do relógio
+  insert into public.esocial_trabalhadores (empresa_id, cpf, nome, matricula, admissao, unidade, cargo, origem)
+  select x.raiz, x.cpf, x.nome, x.matricula, x.admissao, x.depto, x.cargo, 'ponto'
+  from _ponto x
+  where x.situacao = 1 and x.pessoa_real and exists (select 1 from public.esocial_empresas e where e.id = x.raiz)
+  on conflict do nothing;
+  get diagnostics v_novos = row_count;
+
+  update public.esocial_trabalhadores t set
+    cargo = case when coalesce(t.cargo, '') = '' then x.cargo else t.cargo end,
+    unidade = case when coalesce(t.unidade, '') = '' then x.depto else t.unidade end,
+    admissao = coalesce(t.admissao, x.admissao)
+  from _ponto x
+  where x.raiz = t.empresa_id and x.cpf = t.cpf
+    and ((coalesce(t.cargo, '') = '' and x.cargo <> '') or (coalesce(t.unidade, '') = '' and x.depto <> '') or (t.admissao is null and x.admissao is not null));
+  get diagnostics v_completados = row_count;
+
+  update public.esocial_trabalhadores t set
+    ponto_situacao = case
+      when x.cpf is null then 'sem_ponto'
+      when x.situacao is distinct from 1 then 'inativo'
+      when x.ultima >= v_hoje - 3 then 'batendo'
+      when x.ultima is null or x.ultima < v_hoje - 7 then 'parou'
+      else 'batendo' end,
+    ponto_ultima_batida = x.ultima,
+    ponto_atualizado_em = now()
+  from public.esocial_trabalhadores t2
+  left join _ponto x on x.raiz = t2.empresa_id and x.cpf = t2.cpf
+  where t.empresa_id = t2.empresa_id and t.cpf = t2.cpf;
+  get diagnostics v_marcados = row_count;
+  return jsonb_build_object('novos', v_novos, 'completados', v_completados, 'marcados', v_marcados);
+end $$;

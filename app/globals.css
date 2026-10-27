@@ -1799,6 +1799,8 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
 .pe-grade .pe-nome { position: sticky; left: 0; z-index: 1; text-align: left; padding: 0 10px 0 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: var(--text); background: var(--panel, var(--bg)); }
 .pe-grade thead .pe-nome, .pe-grade tfoot .pe-nome { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .pe-grade .esc-pessoa { font-weight: 600; }
+.pe-grade .pe-cargo { display: block; font-size: 11px; line-height: 1.2; color: var(--muted); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+.pt-tabela .pt-escala-nome { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pe-pessoa-botao { all: unset; cursor: pointer; font-weight: 600; }
 .pe-pessoa-botao:hover { text-decoration: underline; text-underline-offset: 3px; }
 .pe-grade tr.pe-grupo td { position: sticky; left: 0; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); padding: 14px 12px 4px; background: transparent; }
