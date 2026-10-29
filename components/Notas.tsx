@@ -113,6 +113,8 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
   const [notas, setNotas] = useState<Nota[] | null>(null);
   const [total, setTotal] = useState(0);
   const [aberta, setAberta] = useState<Nota | null>(null);
+  // CNPJs abertos ou fechados (chave mês|cnpj); começam fechados, a não ser numa busca ou com uma empresa escolhida
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     supabase.from("notas_meses").select("*").order("mes", { ascending: false }).then(({ data }) => {
@@ -230,13 +232,24 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
               </header>
               {g.empresas.map((e) => {
                 const t = totalMes(g.mes, e.cnpj)[0];
+                const k = `${g.mes}|${e.cnpj}`;
+                const grupoAberto = abertos[k] ?? !!(termo || empresa);
+                const completas = e.notas.filter((n) => n.origem === "sefaz" && n.completa && n.situacao !== "cancelada").length;
+                const resumos = e.notas.filter((n) => n.origem === "sefaz" && !n.completa).length;
                 return (
-                  <div key={e.cnpj} className="nf-grupo">
-                    <div className="nf-grupo-cabeca">
+                  <div key={e.cnpj} className={grupoAberto ? "nf-grupo aberto" : "nf-grupo"}>
+                    <button className="nf-grupo-cabeca" onClick={() => setAbertos((x) => ({ ...x, [k]: !grupoAberto }))} aria-expanded={grupoAberto}>
+                      <span className="nf-grupo-icone" aria-hidden="true">{(nomeEmpresa[e.cnpj] ?? "E").slice(0, 1)}</span>
                       <span className="nf-grupo-nome"><strong>{nomeEmpresa[e.cnpj] ?? "Empresa"}</strong><small>CNPJ {cnpjMask(e.cnpj)}</small></span>
+                      <span className="nf-grupo-conta">
+                        <span><i className="nf-card-marca completa" />{completas} completas</span>
+                        {resumos > 0 && <span><i className="nf-card-marca resumo" />{resumos} só resumo</span>}
+                        <span className="muted">{e.notas.length} nesta página</span>
+                      </span>
                       <span className="nf-grupo-total">{t ? <><b>{brl(Number(t.valor))}</b><small>{t.notas} notas no mês</small></> : null}</span>
-                    </div>
-                    <ul className="nf-cards">
+                      <span className="ip-seta" aria-hidden="true" />
+                    </button>
+                    {grupoAberto && <ul className="nf-cards">
                       {e.notas.map((n) => {
                         const esta = aberta?.chave === n.chave;
                         return (
@@ -254,7 +267,7 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
                           </li>
                         );
                       })}
-                    </ul>
+                    </ul>}
                   </div>
                 );
               })}
@@ -475,16 +488,22 @@ function VisorPdfNota({ nota, onFechar }: { nota: Nota; onFechar: () => void }) 
 }
 
 // ---------------------------------------------------------------------
-// Aba Leitura da SEFAZ: empresas, rotina, ciência e o andamento
+// Aba Leitura da SEFAZ: cada empresa num cartão (situação, leitura diária, ciência) e o andamento das buscas
 // ---------------------------------------------------------------------
 function LeituraSefaz({ empresas, onMudou }: { empresas: Empresa[]; onMudou: () => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
+  const [doMes, setDoMes] = useState<Record<string, { notas: number; valor: number }>>({});
   const [aviso, setAviso] = useState("");
+  const mesAtual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Fortaleza" }).slice(0, 7);
   const carregar = useCallback(async () => {
-    const { data } = await supabase.from("notas_execucoes").select("id,empresa_cnpj,tipo,status,origem,resultado,cstat,erro,created_at").order("created_at", { ascending: false }).limit(15);
-    setExecucoes((data ?? []) as Execucao[]);
-  }, [supabase]);
+    const [x, m] = await Promise.all([
+      supabase.from("notas_execucoes").select("id,empresa_cnpj,tipo,status,origem,resultado,cstat,erro,created_at").order("created_at", { ascending: false }).limit(20),
+      supabase.from("notas_meses").select("*").eq("mes", mesAtual),
+    ]);
+    setExecucoes((x.data ?? []) as Execucao[]);
+    setDoMes(Object.fromEntries(((m.data ?? []) as Mes[]).map((r) => [r.empresa_cnpj, { notas: r.notas, valor: Number(r.valor) }])));
+  }, [supabase, mesAtual]);
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => {
     const canal = supabase.channel("notas-execucoes").on("postgres_changes", { event: "*", schema: "public", table: "notas_execucoes" }, () => { carregar(); onMudou(); }).subscribe();
@@ -494,7 +513,7 @@ function LeituraSefaz({ empresas, onMudou }: { empresas: Empresa[]; onMudou: () 
   async function buscar(cnpj: string) {
     setAviso("");
     const { error } = await supabase.rpc("notas_buscar", { p_cnpj: cnpj, p_tipo: "distribuicao" });
-    setAviso(error ? error.message : "Busca pedida à SEFAZ. O andamento aparece abaixo.");
+    setAviso(error ? error.message : "Busca pedida à SEFAZ. O andamento aparece ao lado.");
     onMudou(); carregar();
   }
   async function ajustar(cnpj: string, campo: "ativa" | "ciencia", valor: boolean) {
@@ -503,51 +522,93 @@ function LeituraSefaz({ empresas, onMudou }: { empresas: Empresa[]; onMudou: () 
     onMudou();
   }
   const nomeEmpresa = Object.fromEntries(empresas.map((e) => [e.cnpj, e.nome]));
+  const agora = new Date();
+  const h = Number(agora.toLocaleString("en-US", { timeZone: "America/Fortaleza", hour: "numeric", hour12: false }));
+  const proximaTexto = h < 6 ? "hoje às 6h" : h < 9 ? "hoje às 9h" : "amanhã às 6h";
 
   return (
-    <section className="es-bloco">
-      <div className="es-bloco-cabeca"><h2>Empresas consultadas na SEFAZ</h2><span className="muted">rotina toda segunda às 6h, nova rodada às 9h</span></div>
-      <div className="nf-tabela-wrap">
-        <table className="nf-tabela">
-          <thead><tr><th>Empresa</th><th>Na rotina</th><th>Ciência</th><th>Última consulta</th><th>Situação</th><th /></tr></thead>
-          <tbody>
-            {empresas.map((e) => {
-              const bloqueada = e.bloqueado_ate && new Date(e.bloqueado_ate) > new Date();
-              return (
-                <tr key={e.cnpj}>
-                  <td><strong>{e.nome}</strong><small>{cnpjMask(e.cnpj)}</small></td>
-                  <td><input type="checkbox" checked={e.ativa} onChange={(v) => ajustar(e.cnpj, "ativa", v.target.checked)} aria-label={`Incluir ${e.nome} na rotina semanal`} /></td>
-                  <td><input type="checkbox" checked={e.ciencia} onChange={(v) => ajustar(e.cnpj, "ciencia", v.target.checked)} aria-label={`Registrar a ciência das notas de ${e.nome}`} /></td>
-                  <td>{e.ultima_consulta ? `${dia(e.ultima_consulta)} ${hora(e.ultima_consulta)}` : "nunca"}</td>
-                  <td>{e.ultimo_status ? (STATUS[e.ultimo_status] ?? e.ultimo_status) : "—"}{bloqueada && <small>SEFAZ libera às {hora(e.bloqueado_ate!)}</small>}</td>
-                  <td><button className="ghost small" disabled={!!bloqueada} onClick={() => buscar(e.cnpj)}>Buscar agora</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <div className="sf">
+      <section className="sf-faixa">
+        <span className="sf-faixa-icone" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v5h-5" /></svg>
+        </span>
+        <div>
+          <strong>Leitura automática todo dia, às 6h e às 9h</strong>
+          <p>O Brasico pergunta à SEFAZ, sem custo, por todas as notas emitidas contra as empresas marcadas. A rodada das 9h traz as notas completas que só tinham chegado em resumo. Próxima leitura: {proximaTexto}.</p>
+        </div>
+      </section>
       {aviso && <p className="es-aviso">{aviso}</p>}
-      {execucoes.length > 0 && (
-        <ul className="nf-execucoes">
-          {execucoes.map((x) => (
-            <li key={x.id}>
-              <span className={`estado tv-${x.status === "sem_dados" ? "ok" : x.status}`}>{STATUS[x.status] ?? x.status}</span>
-              <span>{x.tipo === "ciencia" ? "Ciência" : "Busca"} · {nomeEmpresa[x.empresa_cnpj] ?? x.empresa_cnpj}</span>
-              <span className="muted">{dia(x.created_at)} {hora(x.created_at)}
-                {x.resultado?.notas != null && ` · ${x.resultado.notas} nota(s)`}
-                {x.resultado?.registradas != null && ` · ${x.resultado.registradas} ciência(s)`}
-                {x.erro && ` · ${x.erro}`}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+
+      <div className="sf-grade">
+        <div className="sf-empresas">
+          {empresas.map((e) => {
+            const bloqueada = !!e.bloqueado_ate && new Date(e.bloqueado_ate) > agora;
+            const falha = !bloqueada && !!e.ultimo_status && /falha|erro|rejei|656|indevido/i.test(e.ultimo_status);
+            const estado = bloqueada ? { cls: "espera", txt: `SEFAZ libera às ${hora(e.bloqueado_ate!)}` } : falha ? { cls: "falha", txt: "Precisa de atenção" }
+              : e.ativa ? { cls: "ok", txt: "Em dia" } : { cls: "parada", txt: "Fora da leitura diária" };
+            const m = doMes[e.cnpj];
+            return (
+              <article key={e.cnpj} className="sf-empresa">
+                <header className="sf-empresa-cabeca">
+                  <span className="nf-grupo-icone" aria-hidden="true">{e.nome.slice(0, 1)}</span>
+                  <span className="sf-empresa-nome"><strong>{e.nome}</strong><small>CNPJ {cnpjMask(e.cnpj)}</small></span>
+                  <span className={`sf-estado ${estado.cls}`}>{estado.txt}</span>
+                </header>
+                <dl className="sf-numeros">
+                  <div><dt>Notas no mês</dt><dd>{m ? m.notas : 0}</dd></div>
+                  <div><dt>Valor no mês</dt><dd>{brl(m?.valor ?? 0)}</dd></div>
+                  <div><dt>Última leitura</dt><dd>{e.ultima_consulta ? `${dia(e.ultima_consulta)} · ${hora(e.ultima_consulta)}` : "nunca"}</dd></div>
+                </dl>
+                {e.ultimo_status && !STATUS[e.ultimo_status] && <p className="sf-ultimo">{e.ultimo_status}</p>}
+                <footer className="sf-empresa-rodape">
+                  <label className="sf-chave">
+                    <input type="checkbox" checked={e.ativa} onChange={(v) => ajustar(e.cnpj, "ativa", v.target.checked)} />
+                    <span className="sf-chave-trilho" aria-hidden="true" /><span>Leitura diária</span>
+                  </label>
+                  <label className="sf-chave">
+                    <input type="checkbox" checked={e.ciencia} onChange={(v) => ajustar(e.cnpj, "ciencia", v.target.checked)} />
+                    <span className="sf-chave-trilho" aria-hidden="true" /><span>Ciência da operação</span>
+                  </label>
+                  <button className="ghost small" disabled={bloqueada} onClick={() => buscar(e.cnpj)}>Buscar agora</button>
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+
+        <section className="sf-andamento">
+          <h3>Andamento</h3>
+          {!execucoes.length ? <p className="muted">Nenhuma leitura ainda.</p> : (
+            <ol className="sf-linha-tempo">
+              {execucoes.map((x) => {
+                const cls = x.status === "falha" ? "falha" : x.status === "rodando" || x.status === "na_fila" ? "andando" : "ok";
+                return (
+                  <li key={x.id} className={cls}>
+                    <span className="sf-ponto" aria-hidden="true" />
+                    <div>
+                      <strong>{x.tipo === "ciencia" ? "Ciência" : "Leitura"} · {(nomeEmpresa[x.empresa_cnpj] ?? x.empresa_cnpj).replace(/ EMPREENDIMENTOS TURISTICOS LTDA| HOTELARIAS LTDA/i, "")}</strong>
+                      <small>{dia(x.created_at)} às {hora(x.created_at)} · {x.origem === "agenda" ? "automática" : "pedida no site"}</small>
+                      <span className="sf-resultado">
+                        <span className={`estado tv-${x.status === "sem_dados" ? "ok" : x.status}`}>{STATUS[x.status] ?? x.status}</span>
+                        {x.resultado?.notas != null && <span>{String(x.resultado.notas)} nota(s)</span>}
+                        {x.resultado?.registradas != null && <span>{String(x.resultado.registradas)} ciência(s)</span>}
+                      </span>
+                      {x.erro && <p className="sf-erro">{x.erro}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+      </div>
+
       <p className="muted es-nota">
         A SEFAZ entrega as NF-e dos últimos 90 dias, até 50 por consulta. Quando não há nota nova, ela pede 1 hora de espera antes da
-        próxima. A ciência da operação só registra que a empresa sabe da nota: não confirma nem recusa a compra. O PDF de cada nota
-        é montado na hora a partir do XML oficial que veio da SEFAZ.
+        próxima. A ciência da operação só registra que a empresa sabe da nota (não confirma nem recusa a compra) e libera a nota completa.
+        O PDF de cada nota é montado na hora a partir do XML oficial que veio da SEFAZ.
       </p>
-    </section>
+    </div>
   );
 }
 
@@ -555,6 +616,7 @@ type Linha = { descricao: string; quantidade: string; unidade: string; valor: st
 const linhaVazia = (): Linha => ({ descricao: "", quantidade: "", unidade: "", valor: "" });
 const numero = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
 
+// Nota avulsa: compra sem NF-e (cupom ou recibo) com foto, itens e valor
 export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPronto: () => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [empresa, setEmpresa] = useState("");
@@ -563,13 +625,22 @@ export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPron
   const [linhas, setLinhas] = useState<Linha[]>([linhaVazia()]);
   const [total, setTotal] = useState("");
   const [arquivo, setArquivo] = useState<File | null>(null);
+  const [previa, setPrevia] = useState<string | null>(null);
   const [obs, setObs] = useState("");
   const [erro, setErro] = useState("");
   const [ok, setOk] = useState("");
   const [enviando, setEnviando] = useState(false);
 
+  useEffect(() => {
+    if (!arquivo) { setPrevia(null); return; }
+    const u = URL.createObjectURL(arquivo);
+    setPrevia(u);
+    return () => URL.revokeObjectURL(u);
+  }, [arquivo]);
+
   const somaItens = linhas.reduce((s, l) => s + (numero(l.valor) || 0), 0);
   const mudar = (k: number, campo: keyof Linha, v: string) => setLinhas((ls) => ls.map((l, j) => (j === k ? { ...l, [campo]: v } : l)));
+  const valorFinal = numero(total) || somaItens;
 
   async function lancar(ev: React.FormEvent) {
     ev.preventDefault();
@@ -579,8 +650,7 @@ export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPron
     }));
     if (!loja.trim()) return setErro("Informe onde foi a compra.");
     if (!itens.length) return setErro("Inclua pelo menos um item com nome.");
-    const valor = numero(total) || somaItens;
-    if (!(valor > 0)) return setErro("Informe o valor total da compra.");
+    if (!(valorFinal > 0)) return setErro("Informe o valor total da compra.");
     setEnviando(true);
     let caminho = "";
     if (arquivo) {
@@ -589,50 +659,72 @@ export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPron
       if (up.error) { setEnviando(false); return setErro(`Não consegui guardar a foto: ${up.error.message}`); }
     }
     const { error } = await supabase.rpc("notas_lancar_avulsa", {
-      p_empresa: empresa, p_loja: loja, p_data: data, p_valor: valor, p_itens: itens, p_foto: caminho, p_observacao: obs,
+      p_empresa: empresa, p_loja: loja, p_data: data, p_valor: valorFinal, p_itens: itens, p_foto: caminho, p_observacao: obs,
     });
     setEnviando(false);
     if (error) return setErro(error.message);
-    setOk(`Nota avulsa de ${loja.trim()} lançada (${brl(valor)}).`);
+    setOk(`Nota avulsa de ${loja.trim()} lançada (${brl(valorFinal)}).`);
     setLoja(""); setLinhas([linhaVazia()]); setTotal(""); setArquivo(null); setObs("");
-    (ev.currentTarget as HTMLFormElement).reset();
+    (ev.target as HTMLFormElement).reset();
     onPronto();
   }
 
   return (
-    <section className="es-bloco" id="avulsa">
-      <div className="es-bloco-cabeca"><h2>Lançar nota avulsa</h2><span className="muted">compra sem NF-e: cupom ou recibo</span></div>
-      <form className="nf-avulsa" onSubmit={lancar}>
-        <div className="nf-campos">
-          <label>Onde comprou<input value={loja} onChange={(v) => setLoja(v.target.value)} placeholder="Mercadinho do centro" /></label>
-          <label>Data<input type="date" value={data} onChange={(v) => setData(v.target.value)} /></label>
-          <label>Empresa<select value={empresa} onChange={(v) => setEmpresa(v.target.value)}>
-            <option value="">Não sei</option>
-            {empresas.map((e) => <option key={e.cnpj} value={e.cnpj}>{e.nome}</option>)}
-          </select></label>
-          <label>Foto do cupom ou recibo<input type="file" accept="image/*" capture="environment" onChange={(v) => setArquivo(v.target.files?.[0] ?? null)} /></label>
-        </div>
-        <div className="nf-itens">
-          <div className="nf-item nf-item-cabeca"><span>Item</span><span>Qtd.</span><span>Unid.</span><span>Valor (R$)</span><span /></div>
-          {linhas.map((l, k) => (
-            <div className="nf-item" key={k}>
-              <input value={l.descricao} onChange={(v) => mudar(k, "descricao", v.target.value)} placeholder="Limão" aria-label={`Item ${k + 1}`} />
-              <input value={l.quantidade} onChange={(v) => mudar(k, "quantidade", v.target.value)} inputMode="decimal" placeholder="2" aria-label="Quantidade" />
-              <input value={l.unidade} onChange={(v) => mudar(k, "unidade", v.target.value)} placeholder="kg" aria-label="Unidade" />
-              <input value={l.valor} onChange={(v) => mudar(k, "valor", v.target.value)} inputMode="decimal" placeholder="21,98" aria-label="Valor do item" />
-              <button type="button" className="ghost small" onClick={() => setLinhas((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== k) : ls))} aria-label="Tirar item">×</button>
-            </div>
-          ))}
-          <button type="button" className="ghost small" onClick={() => setLinhas((ls) => [...ls, linhaVazia()])}>Mais um item</button>
-        </div>
-        <div className="nf-campos">
-          <label>Valor total (R$)<input value={total} onChange={(v) => setTotal(v.target.value)} inputMode="decimal" placeholder={somaItens ? somaItens.toFixed(2).replace(".", ",") : "0,00"} /></label>
-          <label className="nf-largo">Observação<input value={obs} onChange={(v) => setObs(v.target.value)} placeholder="Compra de emergência para o bar" /></label>
-        </div>
-        <button disabled={enviando}>{enviando ? "Lançando…" : "Lançar nota avulsa"}</button>
-        {erro && <p className="tv-alerta">{erro}</p>}
-        {ok && <p className="es-aviso">{ok}</p>}
-      </form>
-    </section>
+    <form className="av" id="avulsa" onSubmit={lancar}>
+      <div className="av-principal">
+        <section className="av-bloco">
+          <header className="av-bloco-cabeca"><span className="av-passo">1</span><div><h3>A compra</h3><p className="muted">onde, quando e para qual empresa</p></div></header>
+          <div className="av-campos">
+            <label className="av-largo">Onde comprou<input value={loja} onChange={(v) => setLoja(v.target.value)} placeholder="Mercadinho do centro" /></label>
+            <label>Data<input type="date" value={data} onChange={(v) => setData(v.target.value)} /></label>
+            <label>Empresa<select value={empresa} onChange={(v) => setEmpresa(v.target.value)}>
+              <option value="">Não sei</option>
+              {empresas.map((e) => <option key={e.cnpj} value={e.cnpj}>{e.nome}</option>)}
+            </select></label>
+          </div>
+        </section>
+
+        <section className="av-bloco">
+          <header className="av-bloco-cabeca"><span className="av-passo">2</span><div><h3>Os itens</h3><p className="muted">um por linha, com quantidade e valor</p></div></header>
+          <div className="av-itens">
+            <div className="av-item av-item-cabeca" aria-hidden="true"><span>Item</span><span>Qtd.</span><span>Unid.</span><span>Valor (R$)</span><span /></div>
+            {linhas.map((l, k) => (
+              <div className="av-item" key={k}>
+                <input value={l.descricao} onChange={(v) => mudar(k, "descricao", v.target.value)} placeholder="Limão" aria-label={`Item ${k + 1}`} />
+                <input value={l.quantidade} onChange={(v) => mudar(k, "quantidade", v.target.value)} inputMode="decimal" placeholder="2" aria-label="Quantidade" />
+                <input value={l.unidade} onChange={(v) => mudar(k, "unidade", v.target.value)} placeholder="kg" aria-label="Unidade" />
+                <input value={l.valor} onChange={(v) => mudar(k, "valor", v.target.value)} inputMode="decimal" placeholder="21,98" aria-label="Valor do item" />
+                <button type="button" className="ghost small av-tirar" onClick={() => setLinhas((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== k) : ls))} aria-label="Tirar item">×</button>
+              </div>
+            ))}
+            <button type="button" className="ghost small av-mais" onClick={() => setLinhas((ls) => [...ls, linhaVazia()])}>+ Mais um item</button>
+          </div>
+        </section>
+      </div>
+
+      <aside className="av-lado">
+        <section className="av-bloco">
+          <header className="av-bloco-cabeca"><span className="av-passo">3</span><div><h3>A foto</h3><p className="muted">do cupom ou do recibo</p></div></header>
+          <label className={previa ? "av-foto com" : "av-foto"}>
+            <input type="file" accept="image/*" capture="environment" onChange={(v) => setArquivo(v.target.files?.[0] ?? null)} />
+            {previa ? <img src={previa} alt="Foto escolhida do cupom" /> : (
+              <span className="av-foto-vazia">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+                <b>Tirar ou escolher a foto</b><small>JPG ou PNG</small>
+              </span>
+            )}
+          </label>
+        </section>
+        <section className="av-bloco av-resumo">
+          <div className="av-total"><span>Soma dos itens</span><b>{brl(somaItens)}</b></div>
+          <label>Valor total pago (R$)<input value={total} onChange={(v) => setTotal(v.target.value)} inputMode="decimal" placeholder={somaItens ? somaItens.toFixed(2).replace(".", ",") : "0,00"} /></label>
+          <label>Observação<input value={obs} onChange={(v) => setObs(v.target.value)} placeholder="Compra de emergência para o bar" /></label>
+          {erro && <p className="tv-alerta">{erro}</p>}
+          {ok && <p className="es-aviso">{ok}</p>}
+          <button disabled={enviando}>{enviando ? "Lançando…" : `Lançar nota avulsa${valorFinal > 0 ? ` · ${brl(valorFinal)}` : ""}`}</button>
+          <p className="muted av-nota">A nota avulsa não passa por nenhum órgão: fica guardada com a foto e os itens, junto das notas da SEFAZ.</p>
+        </section>
+      </aside>
+    </form>
   );
 }

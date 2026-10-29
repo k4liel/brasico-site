@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
+const OPERACAO = ["notas", "compras", "fichas", "estoque", "producao"];
+
 export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "notas" | "compras" | "fichas" | "estoque" | "producao" }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
@@ -45,6 +47,8 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
 
   // Menu lateral retrátil (computador e celular)
   const [aberto, setAberto] = useState(false);
+  // Operação começa fechada, a não ser quando a página aberta é uma das dela
+  const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
     if (!aberto) return;
@@ -112,28 +116,35 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             Claude e equipe
           </a>
 
-          {/* Operação: notas, compras, fichas, estoque e produção (uma página por fase) */}
-          <span className="menu-grupo">Operação</span>
-          <a className={ativo === "notas" ? "ativo" : ""} href="/notas" tabIndex={aberto ? 0 : -1}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V4a1 1 0 0 1 1-1Z" /><path d="M9 9h6M9 13h6" /></svg>
-            Notas fiscais
-          </a>
-          <a className={ativo === "compras" ? "ativo" : ""} href="/compras" tabIndex={aberto ? 0 : -1}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L20 8H6.2" /><circle cx="9" cy="20" r="1.3" /><circle cx="17" cy="20" r="1.3" /></svg>
-            Compras
-          </a>
-          <a className={ativo === "fichas" ? "ativo" : ""} href="/fichas" tabIndex={aberto ? 0 : -1}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3h12v18H6z" /><path d="M9 7h6M9 11h6M9 15h4" /></svg>
-            Fichas técnicas
-          </a>
-          <a className={ativo === "estoque" ? "ativo" : ""} href="/estoque" tabIndex={aberto ? 0 : -1}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" /></svg>
-            Estoque
-          </a>
-          <a className={ativo === "producao" ? "ativo" : ""} href="/producao" tabIndex={aberto ? 0 : -1}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4M8 15l2.5 2.5L16 13" /></svg>
-            Produção
-          </a>
+          {/* Operação: um item que abre e fecha, com as páginas de notas, compras, fichas, estoque e produção dentro */}
+          <button className={OPERACAO.includes(ativo ?? "") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setOpAberta((o) => !o)}
+            aria-expanded={opAberta} aria-controls="menu-operacao" tabIndex={aberto ? 0 : -1}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5" /></svg>
+            Operação
+            <span className={opAberta ? "menu-pasta-seta aberta" : "menu-pasta-seta"} aria-hidden="true" />
+          </button>
+          <div id="menu-operacao" className={opAberta ? "menu-sub aberto" : "menu-sub"}>
+            <a className={ativo === "notas" ? "ativo" : ""} href="/notas" tabIndex={aberto && opAberta ? 0 : -1}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V4a1 1 0 0 1 1-1Z" /><path d="M9 9h6M9 13h6" /></svg>
+              Notas fiscais
+            </a>
+            <a className={ativo === "compras" ? "ativo" : ""} href="/compras" tabIndex={aberto && opAberta ? 0 : -1}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L20 8H6.2" /><circle cx="9" cy="20" r="1.3" /><circle cx="17" cy="20" r="1.3" /></svg>
+              Compras
+            </a>
+            <a className={ativo === "fichas" ? "ativo" : ""} href="/fichas" tabIndex={aberto && opAberta ? 0 : -1}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3h12v18H6z" /><path d="M9 7h6M9 11h6M9 15h4" /></svg>
+              Fichas técnicas
+            </a>
+            <a className={ativo === "estoque" ? "ativo" : ""} href="/estoque" tabIndex={aberto && opAberta ? 0 : -1}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" /></svg>
+              Estoque
+            </a>
+            <a className={ativo === "producao" ? "ativo" : ""} href="/producao" tabIndex={aberto && opAberta ? 0 : -1}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4M8 15l2.5 2.5L16 13" /></svg>
+              Produção
+            </a>
+          </div>
         </nav>
 
         <div className="menu-rodape">
