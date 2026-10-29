@@ -242,18 +242,26 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
   );
 }
 
+// Situação da análise automática de terça (compras_analises, supabase/automacao.sql)
+const ANALISE: Record<string, string> = { analisando: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
+  pulada: "já estava em revisão", falha: "a análise falhou" };
+
 function Andamento({ semana }: { semana: Semana }) {
   const supabase = useMemo(() => createClient(), []);
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
   const [listas, setListas] = useState<Lista[]>([]);
   const [aberta, setAberta] = useState<string | null>(null);
+  const [analises, setAnalises] = useState<Record<string, { status: string; erro: string | null }>>({});
   const carregar = useCallback(async () => {
-    const [p, l] = await Promise.all([
+    const [p, l, a] = await Promise.all([
       supabase.from("operacao_pessoas").select("id,nome,unidade,setor,papel,user_id,wa_nome,ativo,convidado_em").eq("papel", "solicitante").eq("ativo", true),
       supabase.from("compras_listas").select("*").eq("semana_id", semana.id),
+      supabase.from("compras_analises").select("pessoa_id,status,erro,inicio").eq("semana_id", semana.id).order("inicio"),
     ]);
     setPessoas((p.data ?? []) as Pessoa[]);
     setListas((l.data ?? []) as Lista[]);
+    // a última análise automática de cada pessoa na semana (terça às 6h)
+    setAnalises(Object.fromEntries(((a.data ?? []) as { pessoa_id: string; status: string; erro: string | null }[]).map((x) => [x.pessoa_id, x])));
   }, [supabase, semana.id]);
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => {
@@ -281,7 +289,7 @@ function Andamento({ semana }: { semana: Semana }) {
                 return (
                   <li key={p.id}>
                     <button className="cp-pessoa" onClick={() => setAberta(aberta === p.id ? null : p.id)} aria-expanded={aberta === p.id}>
-                      <span><strong>{p.nome}</strong><small>{SETORES[p.setor ?? ""]}</small></span>
+                      <span><strong>{p.nome}</strong><small>{SETORES[p.setor ?? ""]}{!p.wa_nome ? " · sem nome no WhatsApp" : analises[p.id] ? ` · ${ANALISE[analises[p.id].status] ?? analises[p.id].status}` : ""}</small></span>
                       <span className={`estado ${l?.status === "aprovada" ? "tv-ok" : l?.status === "em_revisao" ? "tv-revisar" : ""}`}>{l ? STATUS[l.status] : "sem lista"}</span>
                     </button>
                   </li>

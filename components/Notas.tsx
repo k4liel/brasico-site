@@ -218,6 +218,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
 
         {aberta && <Detalhe nota={aberta} empresa={nomeEmpresa[aberta.empresa_cnpj]} onFechar={() => setAberta(null)} />}
 
+        <AlertasPreco />
         <NotaAvulsa empresas={empresas} onPronto={() => { carregarNotas(); }} />
         <IndicePrecos />
 
@@ -381,6 +382,45 @@ export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPron
 }
 
 // Índice de Preços: itens das notas da SEFAZ e avulsas junto com a base do Cicchetti Management
+// Alertas de preço (fase 6): compra dos últimos 14 dias 15% ou mais acima da média das compras anteriores
+// do mesmo item no mesmo fornecedor (view precos_alertas, supabase/automacao.sql)
+type Alerta = { chave: string; emissao: string; fornecedor: string | null; descricao: string; unidade: string | null; quantidade: number;
+  preco: number; media_anterior: number; compras_anteriores: number; alta_pct: number };
+function AlertasPreco() {
+  const supabase = useMemo(() => createClient(), []);
+  const [alertas, setAlertas] = useState<Alerta[] | null>(null);
+  const [todos, setTodos] = useState(false);
+  useEffect(() => {
+    supabase.from("precos_alertas").select("*").order("alta_pct", { ascending: false }).limit(200)
+      .then(({ data }) => setAlertas((data ?? []) as Alerta[]));
+  }, [supabase]);
+  if (!alertas?.length) return null;
+  const vistos = todos ? alertas : alertas.slice(0, 8);
+  return (
+    <section className="es-bloco">
+      <div className="es-bloco-cabeca"><h2>Alertas de preço</h2><span className="muted">{alertas.length} itens subiram 15% ou mais nos últimos 14 dias</span></div>
+      <div className="nf-tabela-wrap">
+        <table className="nf-tabela">
+          <thead><tr><th>Item</th><th>Fornecedor</th><th className="n">Pago</th><th className="n">Média antes</th><th className="n">Alta</th></tr></thead>
+          <tbody>
+            {vistos.map((a) => (
+              <tr key={a.chave + a.descricao}>
+                <td><strong>{a.descricao}</strong><small>{a.emissao ? new Date(a.emissao).toLocaleDateString("pt-BR") : ""} · {a.unidade ?? ""}</small></td>
+                <td>{a.fornecedor ?? "—"}</td>
+                <td className="n">{brl(a.preco)}</td>
+                <td className="n">{brl(a.media_anterior)}<small>{a.compras_anteriores} compras</small></td>
+                <td className="n"><span className="es-ruim">+{a.alta_pct.toLocaleString("pt-BR")}%</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {alertas.length > 8 && <button className="ghost small" onClick={() => setTodos((t) => !t)}>{todos ? "Mostrar menos" : `Ver todos os ${alertas.length}`}</button>}
+      <p className="muted es-nota">Compara com a média das compras do mesmo item, na mesma unidade e no mesmo fornecedor, nos 120 dias anteriores (pelo menos 2 compras).</p>
+    </section>
+  );
+}
+
 function IndicePrecos() {
   const supabase = useMemo(() => createClient(), []);
   const [termo, setTermo] = useState("");

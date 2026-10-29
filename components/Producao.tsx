@@ -24,7 +24,7 @@ const num = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleStr
 const unid = (u: string, q: number) => (u === "porção" ? (q === 1 ? "porção" : "porções") : u);
 const hoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Fortaleza" });
 const dataCurta = (d: string) => { const x = new Date(d + "T12:00:00"); return `${DIAS[x.getDay()]} ${d.slice(8, 10)}/${d.slice(5, 7)}`; };
-const sem = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const sem = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 // Item da câmara que combina com a tarefa (pela palavra principal do nome): só uma sugestão, a pessoa troca
 function sugerirItem(produto: string, itens: Item[]) {
