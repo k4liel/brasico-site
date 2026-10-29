@@ -122,7 +122,8 @@ function produtos(nfe: Element): Produto[] {
   return dets.map((d) => {
     const p = el(d, "prod");
     const icms = el(d, "ICMS");
-    const grupoIcms = icms?.firstChild && (icms.firstChild as Element).nodeType === 1 ? (icms.firstChild as Element) : el(icms, "ICMS00");
+    // o grupo do ICMS (ICMS00, ICMS20, ICMSSN102…) é o primeiro elemento dentro de <ICMS>
+    const grupoIcms = icms ? ((Array.from(icms.childNodes) as unknown as Element[]).find((c) => c.nodeType === 1) ?? null) : null;
     const orig = txt(grupoIcms, "orig") ?? "";
     const cst = txt(grupoIcms, "CST") ?? txt(grupoIcms, "CSOSN") ?? "";
     const ipi = el(d, "IPI");
