@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { TopoSimples } from "./Compras";
@@ -84,7 +84,7 @@ export default function Producao({ userId, userEmail }: { userId: string; userEm
 
   const socio = papel === "socio";
   const topo = socio ? <Topo email={userEmail} ativo="producao" />
-    : <TopoSimples email={userEmail} nome={nome} area="Produção" outra={{ href: "/estoque", nome: "Estoque" }} />;
+    : <TopoSimples email={userEmail} nome={nome} area="Produção" outra={{ href: "/estoque", nome: "Câmara fria" }} />;
 
   if (papel === undefined) return <div className="pagina"><main className="miolo"><p className="muted vazio">Carregando…</p></main></div>;
   if (papel === null) {
@@ -101,23 +101,48 @@ export default function Producao({ userId, userEmail }: { userId: string; userEm
   const atrasadas = deFazer.filter((t) => t.status === "a_fazer" && t.dia < hoje()).length;
   const repor = itens.filter((i) => i.repor > 0);
   const dias = [...new Set(tarefas.map((t) => t.dia))];
+  const pctGeral = deFazer.length ? Math.round((feitas / deFazer.length) * 100) : 0;
+  const doDia = tarefas.filter((t) => t.dia === dia);
+  const doDiaFazer = doDia.filter((t) => t.tipo === "tarefa");
+  const semanas = [...new Set(tarefas.map((t) => t.semana))];
+  const infoDia = doDia[0];
+  const categorias = [...new Set(metas.map((m) => m.categoria ?? "Outros"))];
+  const deHoje = tarefas.filter((t) => t.dia === hoje() && t.tipo === "tarefa");
 
   return (
     <div className="pagina">
       {topo}
-      <main className="miolo tv es pd">
+      <main className="miolo tv es pd nf-larga">
         <div className="es-topo">
           <div>
             <span className="es-sobre">Operação</span>
             <h1>Produção</h1>
-            <p>{plano ? <>{plano.nome}: {dataCurta(plano.inicio)} a {dataCurta(plano.fim)}. Marque cada tarefa ao terminar; o que for guardado na câmara fria entra no estoque.</> : "Nenhum plano de produção ativo."}</p>
+            <p>{plano ? <>{plano.nome}: {dataCurta(plano.inicio)} a {dataCurta(plano.fim)}. Marque cada tarefa ao terminar; o que for guardado na câmara fria entra no saldo dela.</> : "Nenhum plano de produção ativo."}</p>
           </div>
         </div>
 
-        <div className="es-numeros">
-          <div className="es-numero"><span className="tv-cartao-rotulo">Tarefas</span><span className="es-numero-valor">{feitas} de {deFazer.length}</span><span className="tv-cartao-detalhe">feitas</span></div>
-          <div className="es-numero"><span className="tv-cartao-rotulo">Atrasadas</span><span className={atrasadas ? "es-numero-valor es-ruim" : "es-numero-valor"}>{atrasadas}</span><span className="tv-cartao-detalhe">dias que já passaram, sem marcar</span></div>
-          <div className="es-numero"><span className="tv-cartao-rotulo">Repor na câmara</span><span className="es-numero-valor">{repor.length}</span><span className="tv-cartao-detalhe">itens abaixo do alvo</span></div>
+        <div className="ip-numeros">
+          <div className="ip-numero">
+            <span className="ip-rotulo">Andamento do plano</span>
+            <span className="ip-valor">{pctGeral}%</span>
+            <span className="ip-var neutro">{feitas} de {deFazer.length} tarefas feitas</span>
+            <span className="pd-progresso" aria-hidden="true"><span style={{ width: `${pctGeral}%` }} /></span>
+          </div>
+          <div className="ip-numero">
+            <span className="ip-rotulo">Hoje · {dataCurta(hoje())}</span>
+            <span className="ip-valor">{deHoje.length}</span>
+            <span className="ip-var neutro">{deHoje.length ? `${deHoje.filter((t) => t.status !== "a_fazer").length} já marcadas` : "nada no plano hoje"}</span>
+          </div>
+          <div className="ip-numero">
+            <span className="ip-rotulo">Atrasadas</span>
+            <span className={atrasadas ? "ip-valor cf-alerta" : "ip-valor"}>{atrasadas}</span>
+            <span className={atrasadas ? "ip-var sobe" : "ip-var neutro"}>{atrasadas ? "de dias que passaram sem marcar" : "nada atrasado"}</span>
+          </div>
+          <div className="ip-numero">
+            <span className="ip-rotulo">Repor a câmara</span>
+            <span className="ip-valor">{repor.length}</span>
+            <span className="ip-var neutro">{repor.length ? repor.slice(0, 3).map((r) => r.nome).join(", ") : "tudo acima do alvo"}</span>
+          </div>
         </div>
 
         <div className="cp-abas" role="tablist">
@@ -128,95 +153,116 @@ export default function Producao({ userId, userEmail }: { userId: string; userEm
         </div>
 
         {aba === "hoje" && (
-          <section className="es-bloco">
-            <div className="pd-dias" role="tablist" aria-label="Dia">
+          <>
+            <div className="pd-faixa" role="tablist" aria-label="Dia">
               {dias.map((d) => {
                 const ts = tarefas.filter((t) => t.dia === d && t.tipo === "tarefa");
-                const ok = ts.length > 0 && ts.every((t) => t.status !== "a_fazer");
+                const marcadas = ts.filter((t) => t.status !== "a_fazer").length;
+                const feriado = tarefas.some((t) => t.dia === d && t.tipo === "feriado");
+                const x = new Date(`${d}T12:00:00`);
+                const cls = ["pd-dia-chip", d === dia ? "on" : "", d === hoje() ? "hoje" : "", feriado ? "feriado" : "",
+                  ts.length && marcadas === ts.length ? "ok" : "", d < hoje() && marcadas < ts.length ? "atraso" : ""].filter(Boolean).join(" ");
                 return (
-                  <button key={d} role="tab" aria-selected={d === dia} className={[d === dia ? "on" : "", d === hoje() ? "hoje" : "", ok ? "ok" : ""].join(" ")} onClick={() => setDia(d)}>
-                    {dataCurta(d)}
+                  <button key={d} role="tab" aria-selected={d === dia} className={cls} onClick={() => setDia(d)} title={dataCurta(d)}>
+                    <small>{DIAS[x.getDay()]}</small>
+                    <b>{d.slice(8, 10)}</b>
+                    <i aria-hidden="true">{ts.length ? <span style={{ width: `${(marcadas / ts.length) * 100}%` }} /> : null}</i>
                   </button>
                 );
               })}
             </div>
-            <Dia tarefas={tarefas.filter((t) => t.dia === dia)} itens={itens} onMudou={carregar} />
-          </section>
+            {infoDia && (
+              <header className="pd-dia-cabeca2">
+                <div>
+                  <span className="es-sobre">{infoDia.semana} · {infoDia.semana_titulo}</span>
+                  <h2>{new Date(`${dia}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</h2>
+                  {infoDia.entrega && <p className="muted">{infoDia.entrega}</p>}
+                </div>
+                {doDiaFazer.length > 0 && <span className="pd-dia-conta"><b>{doDiaFazer.filter((t) => t.status !== "a_fazer").length}</b> de {doDiaFazer.length} marcadas</span>}
+              </header>
+            )}
+            <Dia tarefas={doDia} itens={itens} onMudou={carregar} />
+          </>
         )}
 
         {aba === "cronograma" && (
-          <section className="es-bloco">
-            {[...new Set(tarefas.map((t) => t.semana))].map((s) => {
+          <div className="pd-semanas">
+            {semanas.map((s) => {
               const ts = tarefas.filter((t) => t.semana === s);
+              const tf = ts.filter((t) => t.tipo === "tarefa");
+              const pct = tf.length ? Math.round((tf.filter((t) => t.status === "feito").length / tf.length) * 100) : 0;
               return (
-                <div key={s} className="pd-semana">
-                  <h3>{s} · {ts[0]?.semana_titulo}<small>{ts[0]?.entrega}</small></h3>
+                <section key={s} className="pd-semana">
+                  <header className="pd-semana-cabeca">
+                    <span className="pd-semana-n">{s}</span>
+                    <div><h3>{ts[0]?.semana_titulo}</h3><small>{dataCurta(ts[0].dia)} a {dataCurta(ts[ts.length - 1].dia)}{ts[0]?.entrega ? ` · ${ts[0].entrega}` : ""}</small></div>
+                    <span className="pd-semana-pct"><b>{pct}%</b><span className="pd-progresso" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span></span>
+                  </header>
                   <div className="pd-grade">
                     {[...new Set(ts.map((t) => t.dia))].map((d) => (
-                      <div key={d} className={d === hoje() ? "pd-dia hoje" : "pd-dia"}>
-                        <button className="pd-dia-cabeca" onClick={() => { setDia(d); setAba("hoje"); }}>{dataCurta(d)}</button>
+                      <button key={d} className={d === hoje() ? "pd-dia hoje" : "pd-dia"} onClick={() => { setDia(d); setAba("hoje"); }}>
+                        <span className="pd-dia-titulo">{dataCurta(d)}</span>
                         {ts.filter((t) => t.dia === d).map((t) => (
-                          <p key={t.id} className={`pd-mini ${t.tipo} ${t.status}`}>
-                            <span>{t.produto}</span>{t.quantidade_texto && <b>{t.quantidade_texto}</b>}
-                          </p>
+                          <span key={t.id} className={`pd-mini ${t.tipo} ${t.status}`}>
+                            <i aria-hidden="true" /><span>{t.produto}</span>{t.quantidade_texto && <b>{t.quantidade_texto}</b>}
+                          </span>
                         ))}
-                      </div>
+                      </button>
                     ))}
                   </div>
-                </div>
+                </section>
               );
             })}
-          </section>
+          </div>
         )}
 
         {aba === "metas" && (
-          <section className="es-bloco">
-            <div className="nf-tabela-wrap">
-              <table className="nf-tabela">
-                <thead><tr><th>Produto</th><th className="n">Total</th><th>Para cada casa</th><th>Na câmara agora</th></tr></thead>
-                <tbody>
-                  {metas.map((m, i) => {
+          <>
+            {categorias.map((c) => (
+              <section key={c} className="ft-secao">
+                <h2>{c}<span className="muted">{metas.filter((m) => (m.categoria ?? "Outros") === c).length} produtos</span></h2>
+                <div className="pd-metas">
+                  {metas.filter((m) => (m.categoria ?? "Outros") === c).map((m) => {
                     const it = itens.find((x) => x.item_id === m.estoque_item_id);
                     return (
-                      <Fragment key={m.id}>
-                        {m.categoria !== metas[i - 1]?.categoria && <tr className="pd-cat"><td colSpan={4}>{m.categoria}</td></tr>}
-                        <tr>
-                          <td><strong>{m.produto}</strong><small>{m.detalhe}{m.ficha_casa ? " · ficha da casa" : ""}</small></td>
-                          <td className="n">{m.total_texto} {m.unidade}</td>
-                          <td>{m.destinos.map((d) => <span key={d.destino} className="pd-destino">{d.destino} <b>{d.texto}</b></span>)}</td>
-                          <td>{it ? `${num(it.saldo)} ${unid(it.unidade, it.saldo)}` : <span className="muted">não é item da câmara</span>}</td>
-                        </tr>
-                      </Fragment>
+                      <article key={m.id} className="pd-meta">
+                        <header><strong>{m.produto}</strong>{m.ficha_casa && <span className="cf-selo ok">ficha da casa</span>}</header>
+                        <div className="cf-saldo"><b>{m.total_texto}</b><span>{m.unidade}</span></div>
+                        {m.detalhe && <p className="cf-meta">{m.detalhe}</p>}
+                        <ul className="pd-destinos">{m.destinos.map((d) => <li key={d.destino}><span>{d.destino}</span><b>{d.texto}</b></li>)}</ul>
+                        {it && <p className="pd-na-camara">Na câmara agora: <b>{num(it.saldo)} {unid(it.unidade, it.saldo)}</b></p>}
+                      </article>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              </section>
+            ))}
             <p className="muted es-nota">Copiado da aba 02 do projeto Produção Sempre Vivo. Folhas e tomate fresco não entram aqui: são comprados 1 a 2 dias antes de cada serviço.</p>
-          </section>
+          </>
         )}
 
         {aba === "repor" && (
-          <section className="es-bloco">
-            <div className="nf-tabela-wrap">
-              <table className="nf-tabela">
-                <thead><tr><th>Item</th><th className="n">Na câmara</th><th className="n">Sai por semana</th><th className="n">Mínimo</th><th className="n">Produzir</th></tr></thead>
-                <tbody>
-                  {itens.map((i) => (
-                    <tr key={i.item_id}>
-                      <td><strong>{i.nome}</strong></td>
-                      <td className="n">{num(i.saldo)} {unid(i.unidade, i.saldo)}</td>
-                      <td className="n">{i.saida_semanal ? num(i.saida_semanal) : "—"}</td>
-                      <td className="n">{i.minimo != null ? num(i.minimo) : "—"}</td>
-                      <td className="n">{i.repor > 0 ? <span className="es-ruim">{num(i.repor)} {unid(i.unidade, i.repor)}{i.pacote_tamanho && i.pacote_tamanho !== 1 ? <small>{num(Math.ceil(i.repor / i.pacote_tamanho))} {i.pacote_nome}s</small> : null}</span> : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <>
+            <div className="cf-itens">
+              {[...itens].sort((a, b) => b.repor - a.repor).map((i) => {
+                const falta = i.repor > 0;
+                return (
+                  <article key={i.item_id} className={falta ? "cf-item falta" : "cf-item ok"}>
+                    <header><strong>{i.nome}</strong><span className={falta ? "cf-selo falta" : "cf-selo ok"}>{falta ? "produzir" : "em dia"}</span></header>
+                    <div className="cf-saldo">{falta ? <><b>{num(i.repor)}</b><span>{unid(i.unidade, i.repor)} a produzir</span></> : <><b>{num(i.saldo)}</b><span>{unid(i.unidade, i.saldo)} na câmara</span></>}</div>
+                    <p className="cf-meta">
+                      {falta && <span>na câmara {num(i.saldo)}</span>}
+                      {i.minimo != null && <span>mínimo {num(i.minimo)}</span>}
+                      {i.saida_semanal > 0 && <span>sai {num(i.saida_semanal)} por semana</span>}
+                      {falta && i.pacote_tamanho && i.pacote_tamanho !== 1 && <span>{num(Math.ceil(i.repor / i.pacote_tamanho))} {i.pacote_nome}s</span>}
+                    </p>
+                  </article>
+                );
+              })}
             </div>
             <p className="muted es-nota">Produzir = o maior entre o mínimo e a média de saídas das últimas 4 semanas, menos o que está na câmara.
-              Enquanto as saídas não forem lançadas no Estoque, a conta usa só o mínimo.</p>
-          </section>
+              Enquanto as saídas não forem lançadas na Câmara fria, a conta usa só o mínimo.</p>
+          </>
         )}
       </main>
     </div>
@@ -258,11 +304,13 @@ function TarefaLinha({ t, itens, onMudou }: { t: Tarefa; itens: Item[]; onMudou:
   }
 
   return (
-    <div className={`pd-tarefa ${t.status}${t.atencao ? " atencao" : ""}`}>
+    <div className={`pd-tarefa ${t.status}${t.atencao ? " atencao" : ""}${aberta ? " aberto" : ""}`}>
       <button className="pd-tarefa-cabeca" onClick={() => setAberta((a) => !a)} aria-expanded={aberta}>
+        <span className={`pd-marca ${t.status}`} aria-hidden="true" />
         <span><strong>{t.produto}</strong>{t.detalhe && <small>{t.detalhe}</small>}{t.observacao && <small className="pd-obs">“{t.observacao}”</small>}</span>
         <span className="pd-qtd">{t.quantidade_texto}</span>
         <span className={`estado ${t.status === "feito" ? "tv-ok" : t.status === "nao_feito" ? "es-ruim" : ""}`}>{STATUS[t.status]}{t.estoque_mov_id ? " · na câmara" : ""}</span>
+        <span className="ip-seta" aria-hidden="true" />
       </button>
       {aberta && (
         <div className="pd-marcar">
@@ -286,8 +334,8 @@ function TarefaLinha({ t, itens, onMudou }: { t: Tarefa; itens: Item[]; onMudou:
               <input value={obs} onChange={(v) => setObs(v.target.value)} placeholder="rendeu menos, faltou insumo…" />
             </label>
           </div>
-          {item && total != null && <p className="et-resumo">Entram <strong>{num(total)} {unid(item.unidade, total)}</strong> de {item.nome} no estoque.</p>}
-          {t.estoque_mov_id && <p className="muted et-resumo">Marcar de novo troca a entrada anterior no estoque (não soma duas vezes).</p>}
+          {item && total != null && <p className="et-resumo">Entram <strong>{num(total)} {unid(item.unidade, total)}</strong> de {item.nome} na câmara fria.</p>}
+          {t.estoque_mov_id && <p className="muted et-resumo">Marcar de novo troca a entrada anterior na câmara fria (não soma duas vezes).</p>}
           {msg && <p className="es-aviso">{msg}</p>}
           <div className="pd-botoes">
             <button onClick={() => marcar("feito")}>Feito</button>

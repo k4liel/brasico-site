@@ -138,7 +138,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             </a>
             <a className={ativo === "estoque" ? "ativo" : ""} href="/estoque" tabIndex={aberto && opAberta ? 0 : -1}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" /></svg>
-              Estoque
+              Câmara fria
             </a>
             <a className={ativo === "producao" ? "ativo" : ""} href="/producao" tabIndex={aberto && opAberta ? 0 : -1}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4M8 15l2.5 2.5L16 13" /></svg>

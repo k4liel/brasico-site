@@ -81,8 +81,8 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 
   return (
     <div className="pagina">
-      {gestor ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={eu?.registra_estoque ? { href: "/estoque", nome: "Estoque" } : undefined} />}
-      <main className="miolo tv es cp-area">
+      {gestor ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : undefined} />}
+      <main className="miolo tv es cp-area nf-larga">
         {cabecalho}
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
           <>
@@ -145,13 +145,21 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
   if (lista === undefined) return <p className="muted">Carregando a sua lista…</p>;
   if (!lista || !itens.length) {
     return (
-      <section className="es-bloco">
-        <h2>Sua lista ainda não saiu</h2>
-        <p className="muted">Mande o pedido do seu setor no grupo COMPRAS até segunda à noite. Na terça às 6h a lista sugerida aparece aqui para você revisar.</p>
-      </section>
+      <>
+        <Etapas atual={0} />
+        <section className="av-bloco cp-vazio">
+          <h2>Sua lista ainda não saiu</h2>
+          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS até segunda à noite. Na terça às 6h a lista sugerida aparece aqui para você revisar.</p>
+        </section>
+      </>
     );
   }
-  return <EditorLista lista={lista} itens={itens} podeEditar={semana.status === "aberta" && lista.status !== "aprovada"} onMudou={carregar} gestor={false} />;
+  return (
+    <>
+      <Etapas atual={lista.status === "aprovada" ? 3 : 2} />
+      <EditorLista lista={lista} itens={itens} podeEditar={semana.status === "aberta" && lista.status !== "aprovada"} onMudou={carregar} gestor={false} />
+    </>
+  );
 }
 
 function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lista; itens: Item[]; podeEditar: boolean; onMudou: () => void; gestor: boolean }) {
@@ -188,9 +196,9 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
   }
 
   return (
-    <section className="es-bloco">
-      <div className="es-bloco-cabeca">
-        <h2>{vivos.length} itens <span className="muted">· {brl(total)}</span></h2>
+    <section className="av-bloco cp-lista">
+      <div className="cp-lista-cabeca">
+        <div className="cp-lista-total"><span>{vivos.length} itens</span><b>{brl(total)}</b></div>
         <span className={`estado ${lista.status === "aprovada" ? "tv-ok" : "tv-revisar"}`}>{STATUS[lista.status] ?? lista.status}</span>
       </div>
       {lista.pedido_texto && (
@@ -242,6 +250,27 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
   );
 }
 
+// As etapas da semana de compras, com a atual em destaque
+const ETAPAS = [
+  { t: "Pedidos no grupo", d: "até segunda à noite" },
+  { t: "Lista sugerida", d: "terça às 6h, pelo Claude" },
+  { t: "Revisão", d: "cada pessoa confere e aprova" },
+  { t: "Lista única", d: "a Fernanda junta por fornecedor" },
+  { t: "Semana fechada", d: "PDF e pedidos enviados" },
+];
+function Etapas({ atual }: { atual: number }) {
+  return (
+    <ol className="cp-etapas" aria-label="Etapas da semana">
+      {ETAPAS.map((e, i) => (
+        <li key={e.t} className={i < atual ? "feita" : i === atual ? "atual" : ""} aria-current={i === atual ? "step" : undefined}>
+          <span className="cp-etapa-n" aria-hidden="true">{i < atual ? "✓" : i + 1}</span>
+          <span><b>{e.t}</b><small>{e.d}</small></span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 // Situação da análise automática de terça (compras_analises, supabase/automacao.sql)
 const ANALISE: Record<string, string> = { analisando: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
   pulada: "já estava em revisão", falha: "a análise falhou" };
@@ -271,44 +300,67 @@ function Andamento({ semana }: { semana: Semana }) {
 
   const porUnidade = Object.keys(UNIDADES).map((u) => ({ u, pessoas: pessoas.filter((p) => p.unidade === u).sort((a, b) => (a.setor ?? "").localeCompare(b.setor ?? "")) }));
   const aprovadas = listas.filter((l) => l.status === "aprovada").length;
+  const revisao = listas.filter((l) => l.status === "em_revisao").length;
+  const semLista = pessoas.length - listas.filter((l) => l.status !== "aguardando").length;
+  const pct = pessoas.length ? Math.round((aprovadas / pessoas.length) * 100) : 0;
+  // Em que etapa a semana está: pedidos → lista sugerida → revisão → lista única → fechada
+  const etapa = semana.status === "fechada" ? 4 : aprovadas === pessoas.length && pessoas.length ? 3 : listas.some((l) => l.status !== "aguardando") ? 2 : 0;
 
   return (
     <>
-      <div className="es-numeros">
-        <div className="es-numero"><span className="tv-cartao-rotulo">Listas aprovadas</span><span className="es-numero-valor">{aprovadas} de {pessoas.length}</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Em revisão</span><span className="es-numero-valor">{listas.filter((l) => l.status === "em_revisao").length}</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Sem lista ainda</span><span className="es-numero-valor">{pessoas.length - listas.filter((l) => l.status !== "aguardando").length}</span></div>
+      <Etapas atual={etapa} />
+      <div className="ip-numeros">
+        <div className="ip-numero">
+          <span className="ip-rotulo">Listas aprovadas</span>
+          <span className="ip-valor">{aprovadas}<small className="cp-de"> de {pessoas.length}</small></span>
+          <span className="ip-var neutro">{pct}% das pessoas</span>
+          <span className="pd-progresso" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
+        </div>
+        <div className="ip-numero"><span className="ip-rotulo">Em revisão</span><span className="ip-valor">{revisao}</span><span className="ip-var neutro">a pessoa confere e aprova</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Sem lista ainda</span><span className={semLista ? "ip-valor cf-alerta" : "ip-valor"}>{semLista}</span><span className="ip-var neutro">pedido no grupo até segunda</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Análise de terça</span><span className="ip-valor">{Object.values(analises).filter((a) => a.status === "ok").length}</span><span className="ip-var neutro">listas sugeridas pelo Claude</span></div>
       </div>
       <div className="cp-unidades">
-        {porUnidade.map(({ u, pessoas: ps }) => (
-          <section key={u} className="es-bloco">
-            <h2>{UNIDADES[u]}</h2>
-            <ul className="cp-pessoas">
-              {ps.map((p) => {
-                const l = listas.find((x) => x.pessoa_id === p.id);
-                return (
-                  <li key={p.id}>
-                    <button className="cp-pessoa" onClick={() => setAberta(aberta === p.id ? null : p.id)} aria-expanded={aberta === p.id}>
-                      <span><strong>{p.nome}</strong><small>{SETORES[p.setor ?? ""]}{!p.wa_nome ? " · sem nome no WhatsApp" : analises[p.id] ? ` · ${ANALISE[analises[p.id].status] ?? analises[p.id].status}` : ""}</small></span>
-                      <span className={`estado ${l?.status === "aprovada" ? "tv-ok" : l?.status === "em_revisao" ? "tv-revisar" : ""}`}>{l ? STATUS[l.status] : "sem lista"}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))}
+        {porUnidade.map(({ u, pessoas: ps }) => {
+          const ok = ps.filter((p) => listas.find((x) => x.pessoa_id === p.id)?.status === "aprovada").length;
+          return (
+            <section key={u} className="cp-unidade">
+              <header className="cp-unidade-cabeca">
+                <span className="nf-grupo-icone" aria-hidden="true">{UNIDADES[u].slice(0, 1)}</span>
+                <div><h2>{UNIDADES[u]}</h2><small>{ok} de {ps.length} aprovadas</small></div>
+              </header>
+              <ul className="cp-pessoas">
+                {ps.map((p) => {
+                  const l = listas.find((x) => x.pessoa_id === p.id);
+                  return (
+                    <li key={p.id}>
+                      <button className={aberta === p.id ? "cp-pessoa on" : "cp-pessoa"} onClick={() => setAberta(aberta === p.id ? null : p.id)} aria-expanded={aberta === p.id}>
+                        <span className="cp-avatar" aria-hidden="true">{p.nome.slice(0, 1)}</span>
+                        <span className="cp-pessoa-nome"><strong>{p.nome}</strong><small>{SETORES[p.setor ?? ""]}{!p.wa_nome ? " · sem nome no WhatsApp" : analises[p.id] ? ` · ${ANALISE[analises[p.id].status] ?? analises[p.id].status}` : ""}</small></span>
+                        <span className={`estado ${l?.status === "aprovada" ? "tv-ok" : l?.status === "em_revisao" ? "tv-revisar" : ""}`}>{l ? STATUS[l.status] : "sem lista"}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          );
+        })}
       </div>
-      {aberta && <ListaDaPessoa semana={semana} pessoa={pessoas.find((p) => p.id === aberta)!} />}
+      {aberta && <ListaDaPessoa semana={semana} pessoa={pessoas.find((p) => p.id === aberta)!} onFechar={() => setAberta(null)} />}
     </>
   );
 }
 
-function ListaDaPessoa({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
+function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: Pessoa; onFechar: () => void }) {
   const { lista, itens, carregar } = useLista(semana.id, pessoa.id);
   return (
     <div className="cp-da-pessoa">
-      <h3>{pessoa.nome} · {SETORES[pessoa.setor ?? ""]} · {UNIDADES[pessoa.unidade ?? ""]}</h3>
+      <header className="cp-da-pessoa-cabeca">
+        <span className="cp-avatar grande" aria-hidden="true">{pessoa.nome.slice(0, 1)}</span>
+        <div><h3>{pessoa.nome}</h3><small>{SETORES[pessoa.setor ?? ""]} · {UNIDADES[pessoa.unidade ?? ""]}</small></div>
+        <button className="ghost small" onClick={onFechar}>Fechar</button>
+      </header>
       {lista === undefined ? <p className="muted">Carregando…</p>
         : !lista || !itens.length ? <p className="muted">Ainda sem lista nesta semana. A análise de terça grava a lista sugerida aqui.</p>
         : <EditorLista lista={lista} itens={itens} podeEditar={semana.status === "aberta"} onMudou={carregar} gestor />}
@@ -362,9 +414,15 @@ function ListaUnica({ semana }: { semana: Semana }) {
   const total = vivas.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0);
 
   return (
-    <section className="es-bloco cp-final">
-      <div className="es-bloco-cabeca no-print">
-        <h2>Lista única por fornecedor <span className="muted">· {vivas.length} itens · {brl(total)}</span></h2>
+    <section className="cp-final">
+      <div className="ip-numeros no-print">
+        <div className="ip-numero"><span className="ip-rotulo">Itens</span><span className="ip-valor">{vivas.length}</span><span className="ip-var neutro">na lista única</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Fornecedores</span><span className="ip-valor">{grupos.length}</span><span className="ip-var neutro">um pedido para cada</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Total estimado</span><span className="ip-valor">{brl(total)}</span><span className="ip-var neutro">pelo último preço pago</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Semana</span><span className="ip-valor">{aberta ? "aberta" : "fechada"}</span><span className="ip-var neutro">{diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</span></div>
+      </div>
+      <div className="es-bloco-cabeca no-print cp-final-acoes">
+        <h2>Lista única por fornecedor</h2>
         <div className="nf-acoes">
           {aberta && <button className="ghost small" onClick={juntar}>Juntar listas aprovadas</button>}
           <button className="small" onClick={() => window.print()} disabled={!vivas.length}>Gerar PDF</button>
@@ -456,8 +514,8 @@ function Pessoas() {
   }
 
   return (
-    <section className="es-bloco">
-      <div className="es-bloco-cabeca"><h2>Pessoas e acesso</h2><span className="muted">quem pede no grupo e a Fernanda</span></div>
+    <section className="av-bloco">
+      <header className="av-bloco-cabeca"><div><h3>Pessoas e acesso</h3><p className="muted">quem pede no grupo e a Fernanda</p></div></header>
       <p className="muted cp-ajuda">Cadastre o e-mail e clique em Dar acesso. A pessoa entra pela tela de login, em “Link por e-mail”, e só vê a área de Compras.
         O nome no WhatsApp é como ela aparece no grupo COMPRAS, para o pedido cair na lista certa.</p>
       {msg && <p className="es-aviso">{msg}</p>}
