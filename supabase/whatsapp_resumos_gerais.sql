@@ -1,6 +1,8 @@
 -- =====================================================================
 -- WhatsApp: um resumo por pedido, com todos os grupos juntos.
--- Não há resumo automático. Quando um sócio pede, o Claude lê as mensagens
+-- Desde 28/10/2026 há também o resumo automático diário (sem criado_por),
+-- feito pela Edge Function whatsapp-resumo (supabase/whatsapp_resumo_diario.sql).
+-- Quando um sócio pede outro período, o Claude lê as mensagens
 -- (whatsapp_mensagens), escreve um resumo único e grava com
 -- whatsapp_salvar_resumo. O site mostra cada resumo em Menu → WhatsApp → Resumos.
 -- A tabela antiga wa_resumos (um resumo por grupo e dia) ficou sem uso.

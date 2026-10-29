@@ -23,7 +23,17 @@ type Conversa = {
   foto_arquivo: string;
 };
 // Um resumo por pedido, com todos os grupos juntos (escrito pelo Claude pelo conector)
-type Resumo = { id: string; de: string; ate: string; resumo: string; total_mensagens: number; total_grupos: number; created_at: string };
+// Sem criado_por = resumo automático do dia (Edge Function whatsapp-resumo, todo dia às 7h)
+type Resumo = {
+  id: string;
+  de: string;
+  ate: string;
+  resumo: string;
+  total_mensagens: number;
+  total_grupos: number;
+  created_at: string;
+  criado_por: string | null;
+};
 type Mensagem = {
   grupo_id: string;
   id: string;
@@ -160,30 +170,111 @@ function Avatar({ nome, foto, grupo, tamanho = 48 }: { nome: string; foto: strin
 
 // O resumo vem do Claude a partir de mensagens de terceiros: mostrado como texto,
 // com só títulos, listas e negrito (nada de HTML).
+// Formato do resumo diário (supabase/functions/whatsapp-resumo): "## Em poucas palavras" vira o destaque,
+// "## Pede atenção" a caixa de alerta, cada "### Grupo" um cartão com a foto e "Sem novidades:" a nota do fim.
+// Resumos antigos, com outros títulos, aparecem nas mesmas peças.
 function negrito(t: string) {
   return t.split(/\*\*(.+?)\*\*/g).map((p, i) => (i % 2 ? <strong key={i}>{p}</strong> : <Fragment key={i}>{p}</Fragment>));
 }
-function TextoResumo({ md }: { md: string }) {
-  const blocos: React.ReactNode[] = [];
-  let itens: string[] = [];
-  const fecharLista = () => {
-    if (itens.length) blocos.push(<ul key={blocos.length}>{itens.map((t, i) => <li key={i}>{negrito(t)}</li>)}</ul>);
-    itens = [];
+type Bloco = { tipo: "p" | "ul"; linhas: string[] };
+type Cartao = { titulo: string; blocos: Bloco[] };
+type Secao = { titulo: string; blocos: Bloco[]; cartoes: Cartao[] };
+const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+function lerResumo(md: string) {
+  const secoes: Secao[] = [];
+  const nota: string[] = [];
+  let secao: Secao | null = null;
+  let cartao: Cartao | null = null;
+  const destino = () => {
+    if (!secao) secoes.push((secao = { titulo: "", blocos: [], cartoes: [] }));
+    return cartao ? cartao.blocos : secao.blocos;
   };
   for (const linha of md.replace(/\r/g, "").split("\n")) {
     const l = linha.trim();
-    const item = l.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
-    if (item) {
-      itens.push(item[1]);
+    if (!l) continue;
+    const titulo = l.match(/^(#{1,6})\s+(.*)$/);
+    if (titulo) {
+      const texto = titulo[2].replace(/\*\*/g, "");
+      if (titulo[1].length <= 2) {
+        secoes.push((secao = { titulo: texto, blocos: [], cartoes: [] }));
+        cartao = null;
+      } else {
+        if (!secao) secoes.push((secao = { titulo: "", blocos: [], cartoes: [] }));
+        secao.cartoes.push((cartao = { titulo: texto, blocos: [] }));
+      }
       continue;
     }
-    fecharLista();
-    if (!l) continue;
-    const titulo = l.match(/^#{1,6}\s+(.*)$/);
-    blocos.push(titulo ? <h3 key={blocos.length}>{titulo[1]}</h3> : <p key={blocos.length}>{negrito(l)}</p>);
+    if (/^\**sem novidades/i.test(semAcento(l))) {
+      nota.push(l.replace(/\*\*/g, ""));
+      continue;
+    }
+    const item = l.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
+    const blocos = destino();
+    const ultimo = blocos[blocos.length - 1];
+    if (item && ultimo?.tipo === "ul") ultimo.linhas.push(item[1]);
+    else blocos.push({ tipo: item ? "ul" : "p", linhas: [item ? item[1] : l] });
   }
-  fecharLista();
-  return <div className="wa-resumo">{blocos}</div>;
+  return { secoes, nota };
+}
+
+function Blocos({ blocos }: { blocos: Bloco[] }) {
+  return (
+    <>
+      {blocos.map((b, i) =>
+        b.tipo === "ul" ? (
+          <ul key={i}>
+            {b.linhas.map((t, j) => (
+              <li key={j}>{negrito(t)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p key={i}>{negrito(b.linhas[0])}</p>
+        ),
+      )}
+    </>
+  );
+}
+
+function TextoResumo({ md, fotoDoGrupo }: { md: string; fotoDoGrupo: (nome: string) => string }) {
+  const { secoes, nota } = lerResumo(md);
+  return (
+    <div className="wa-resumo">
+      {secoes.map((s, i) => {
+        const t = semAcento(s.titulo);
+        const tipo = /aten|alert|problema/.test(t) ? "alerta" : /poucas palavras|^em resumo/.test(t) ? "destaque" : "";
+        return (
+          <section key={i} className={`wa-r-secao ${tipo ? `wa-r-${tipo}` : ""}`}>
+            {s.titulo && (
+              <h3>
+                {tipo === "alerta" && <span aria-hidden>⚠️ </span>}
+                {s.titulo}
+              </h3>
+            )}
+            <Blocos blocos={s.blocos} />
+            {s.cartoes.length > 0 && (
+              <div className="wa-r-grupos">
+                {s.cartoes.map((c, j) => (
+                  <article key={j} className="wa-r-grupo">
+                    <header>
+                      <Avatar nome={c.titulo} foto={fotoDoGrupo(c.titulo)} grupo tamanho={28} />
+                      <h4>{c.titulo}</h4>
+                    </header>
+                    <Blocos blocos={c.blocos} />
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {nota.map((n, i) => (
+        <p key={i} className="wa-r-nota">
+          {n}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 // Links clicáveis dentro do texto (só http/https)
@@ -352,7 +443,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
       supabase.rpc("wa_painel_grupos"),
       supabase
         .from("wa_resumos_gerais")
-        .select("id,de,ate,resumo,total_mensagens,total_grupos,created_at")
+        .select("id,de,ate,resumo,total_mensagens,total_grupos,created_at,criado_por")
         .order("created_at", { ascending: false })
         .limit(200),
       supabase.from("wa_ajustes").select("envio_ativo").eq("id", 1).maybeSingle(),
@@ -450,6 +541,9 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
 
   // Foto guardada no Supabase (não expira); o link do WhatsApp só enquanto não houver a guardada
   const fotoDe = (c: Conversa | undefined) => (!c ? "" : c.foto_arquivo ? (urls[c.foto_arquivo] ?? "") : c.foto);
+  // Foto do grupo citado no resumo, pelo nome
+  const fotoDoGrupo = (nome: string) =>
+    fotoDe(conversas.find((c) => c.tipo === "grupo" && semAcento(nomeValido(c.nome)) === semAcento(nome.trim())));
 
   useEffect(() => {
     if (!ampliada) return;
@@ -625,7 +719,9 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                           <strong>{periodo(r)}</strong>
                           <span className="wa-item-hora">{l.quandoCurto(r.created_at)}</span>
                         </span>
-                        <span className="wa-item-previa">{l.resumoDe(r.total_grupos)}</span>
+                        <span className="wa-item-previa">
+                          {r.criado_por ? l.resumoPedido : l.resumoAutomatico} · {l.resumoDe(r.total_grupos)}
+                        </span>
                       </span>
                     </button>
                   ))
@@ -685,8 +781,16 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                   </div>
                 </header>
                 <div className="wa-corpo wa-corpo-resumo">
-                  <article className="wa-cartao">
-                    <TextoResumo md={resumo.resumo} />
+                  <article className="wa-r">
+                    <header className="wa-r-capa">
+                      <span className="wa-r-selo">{resumo.criado_por ? l.resumoPedido : l.resumoAutomatico}</span>
+                      <h2>{periodo(resumo)}</h2>
+                      <div className="wa-r-numeros">
+                        <span>{l.mensagens(resumo.total_mensagens, l.lang)}</span>
+                        <span>{l.grupos(resumo.total_grupos)}</span>
+                      </div>
+                    </header>
+                    <TextoResumo md={resumo.resumo} fotoDoGrupo={fotoDoGrupo} />
                   </article>
                 </div>
               </>

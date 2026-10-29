@@ -153,6 +153,7 @@ revoke execute on function public.wa_conferir_segredo(text) from public, anon, a
 grant execute on function public.wa_conferir_segredo(text) to service_role;
 
 -- Sem resumo automático: os sócios pedem o resumo direto ao Claude (conector: whatsapp_mensagens).
+-- (Religado em 28/10/2026, um resumo só por dia com todos os grupos: supabase/whatsapp_resumo_diario.sql.)
 -- A Edge Function whatsapp-resumo continua publicada e pode ser chamada à mão (veja whatsapp/LEIA-ME.md).
 select cron.unschedule('whatsapp-resumo-diario') where exists (select 1 from cron.job where jobname = 'whatsapp-resumo-diario');
 
