@@ -99,7 +99,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 
 ## Compras (lista semanal e produção de fim de ano)
 - A compra semanal segue a rotina da página **Compras** do site (seção Operação acima): pedidos no grupo COMPRAS, lista sugerida na terça, aprovação de cada pessoa, lista única da Fernanda e PDF. O projeto **Compras** do Brasico foi para a **Lixeira** em 29/10/2026, a pedido do dono: não o recrie.
-- As compras da **produção de fim de ano** (o que já foi comprado, a lista da semana 2 e o que falta das semanas 3 a 6) ficam no projeto Produção Sempre Vivo, aba **05 · Compras da produção**; o cronograma está na aba 03 e as listas antigas no Arquivo (87 e 91).
+- As compras da **produção de fim de ano** (o que já foi comprado, a lista da semana 2 e o que falta das semanas 3 a 6) ficam no projeto Produção Sempre Vivo, aba **05 · Compras** (no mesmo visual das outras abas); o cronograma está na aba 03 e a lista antiga no Arquivo (87).
 - Método da lista (3 partes: Cicchetti Centro = notas das últimas 4 semanas ÷ 4 × porcentagem da semana; Produção → Cicchetti = vendas TOTVS × fichas − câmara fria; produção de fim de ano) na skill .claude/skills/compras. **A lista é sempre entregue em PDF** (nunca só no chat), em `privado/<semana>/`.
 
 ## eSocial (leitura direta do governo)
