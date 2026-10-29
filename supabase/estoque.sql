@@ -129,7 +129,7 @@ begin
         'apelidos', (select apelidos from public.estoque_itens where id = s.item_id)) order by s.ordem, s.nome) from public.estoque_saldo s),
     'ultimas_saidas_do_grupo', (select jsonb_agg(jsonb_build_object('item', i.nome, 'quantidade', m.quantidade, 'destino', m.destino, 'quando', m.quando, 'referencia', m.referencia) order by m.quando desc)
       from (select * from public.estoque_movimentos where origem = 'grupo' and not removido order by quando desc limit 30) m join public.estoque_itens i on i.id = m.item_id),
-    'como_fazer', 'Leia o grupo PEDIDOS/PRODUÇÃO (whatsapp_mensagens). Cada pedido de uma unidade ("30 porções chorizo", "6 pacotes de raviole") vira uma saída na unidade do item (pacotes × pacote_tamanho). referencia = "<quando>|<autor>" da mensagem: a mesma mensagem nunca entra duas vezes. Item que não existe: avise em vez de inventar.');
+    'como_fazer', 'Por enquanto o dono lança entradas, saídas e contagens no site (/estoque): use isto só para consultar o saldo. Não registre saídas a partir do grupo PEDIDOS/PRODUÇÃO sem o dono pedir (fica para o futuro).');
 end $$;
 revoke execute on function public.mcp_estoque_situacao(text) from public, authenticated;
 grant execute on function public.mcp_estoque_situacao(text) to anon;

@@ -6,8 +6,8 @@ import Topo from "./Topo";
 import { TopoSimples } from "./Compras";
 
 // Estoque da câmara fria (Operação · fase 4): o saldo se calcula sozinho.
-// Entrada: quem guarda a produção registra aqui. Saída: pedidos do grupo PEDIDOS/PRODUÇÃO (o Claude registra
-// pelo conector) ou à mão. Contagem: de vez em quando, substitui o saldo. Tabelas e funções em supabase/estoque.sql.
+// Entrada e saída: lançadas à mão nesta tela (por enquanto; ler os pedidos do grupo PEDIDOS/PRODUÇÃO pelo
+// conector fica para o futuro). Contagem: de vez em quando, substitui o saldo. Tabelas e funções em supabase/estoque.sql.
 type Saldo = { item_id: string; nome: string; unidade: string; pacote_nome: string; pacote_tamanho: number | null; minimo: number | null;
   ordem: number; contagem: number | null; contada_em: string | null; entradas: number; saidas: number; saldo: number; ultimo_movimento: string | null };
 type Mov = { id: number; item_id: string; tipo: "entrada" | "saida" | "contagem"; quantidade: number; destino: string | null; origem: string;
@@ -90,7 +90,7 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
           <div>
             <span className="es-sobre">Operação</span>
             <h1>Estoque da câmara fria</h1>
-            <p>O saldo se calcula sozinho: a última contagem, mais o que entrou da produção, menos os pedidos das unidades. Uma contagem de vez em quando acerta a diferença.</p>
+            <p>O saldo se calcula sozinho: a última contagem, mais o que entrou da produção, menos o que saiu para as unidades. Tudo é lançado aqui, na aba Registrar. Uma contagem de vez em quando acerta a diferença.</p>
           </div>
         </div>
 
@@ -126,7 +126,7 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
               </table>
             </div>
             <p className="muted es-nota">Itens sem contagem começam do zero e só somam o que entrar. Em vermelho: abaixo do mínimo.
-              As saídas pelos pedidos do grupo PEDIDOS/PRODUÇÃO são registradas pelo Claude e aparecem em Movimentos.</p>
+              Entradas, saídas e contagens são lançadas na aba Registrar e aparecem em Movimentos.</p>
           </section>
         )}
 
