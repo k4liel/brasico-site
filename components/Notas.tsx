@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cssDoProjeto } from "@/lib/livre";
 import Topo from "./Topo";
@@ -241,15 +241,27 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
                       <table className="nf-tabela nf-lista">
                         <thead><tr><th>Emissão</th><th>Número</th><th>Fornecedor</th><th className="n">Valor</th><th>Situação</th></tr></thead>
                         <tbody>
-                          {e.notas.map((n) => (
-                            <tr key={n.chave} onClick={() => setAberta(n)} tabIndex={0} onKeyDown={(k) => k.key === "Enter" && setAberta(n)}>
-                              <td>{dia(n.emissao)}</td>
-                              <td>{n.origem === "avulsa" ? "avulsa" : <>{numeroNota(n.chave)}<small>série {serieNota(n.chave)}</small></>}</td>
-                              <td><strong>{n.emitente_nome ?? "—"}</strong><small>{n.origem === "avulsa" ? n.observacao ?? "" : cnpjMask(n.emitente_cnpj)}</small></td>
-                              <td className="n">{brl(n.valor)}</td>
-                              <td><Selo n={n} /></td>
-                            </tr>
-                          ))}
+                          {e.notas.map((n) => {
+                            const esta = aberta?.chave === n.chave;
+                            const alternar = () => setAberta(esta ? null : n);
+                            return (
+                              <Fragment key={n.chave}>
+                                <tr className={esta ? "nf-linha-aberta" : ""} onClick={alternar} tabIndex={0} aria-expanded={esta}
+                                  onKeyDown={(k) => (k.key === "Enter" || k.key === " ") && (k.preventDefault(), alternar())}>
+                                  <td>{dia(n.emissao)}</td>
+                                  <td>{n.origem === "avulsa" ? "avulsa" : <>{numeroNota(n.chave)}<small>série {serieNota(n.chave)}</small></>}</td>
+                                  <td><strong>{n.emitente_nome ?? "—"}</strong><small>{n.origem === "avulsa" ? n.observacao ?? "" : cnpjMask(n.emitente_cnpj)}</small></td>
+                                  <td className="n">{brl(n.valor)}</td>
+                                  <td><Selo n={n} /></td>
+                                </tr>
+                                {esta && (
+                                  <tr className="nf-detalhe-linha">
+                                    <td colSpan={5}><NotaAberta nota={n} empresa={nomeEmpresa[n.empresa_cnpj]} onFechar={() => setAberta(null)} /></td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -266,7 +278,6 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
         </>
       )}
 
-      {aberta && <NotaAberta nota={aberta} empresa={nomeEmpresa[aberta.empresa_cnpj]} onFechar={() => setAberta(null)} />}
     </>
   );
 }
@@ -320,6 +331,7 @@ function NotaAberta({ nota, empresa, onFechar }: { nota: Nota; empresa?: string;
   const [extra, setExtra] = useState<Extra | null>(null);
   const [xmlTexto, setXmlTexto] = useState<string | null>(null);
   const [foto, setFoto] = useState<string | null>(null);
+  const [verPdf, setVerPdf] = useState(false);
   const painel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -339,13 +351,13 @@ function NotaAberta({ nota, empresa, onFechar }: { nota: Nota; empresa?: string;
     })();
   }, [supabase, nota]);
 
+  // Abre embaixo da linha clicada: rola até a nota e o Esc fecha (quando o PDF não está aberto)
   useEffect(() => {
-    painel.current?.focus();
-    const f = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    painel.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const f = (e: KeyboardEvent) => e.key === "Escape" && !verPdf && onFechar();
     window.addEventListener("keydown", f);
-    document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", f); document.body.style.overflow = ""; };
-  }, [onFechar]);
+    return () => window.removeEventListener("keydown", f);
+  }, [onFechar, verPdf]);
 
   function baixarXml() {
     if (!xmlTexto) return;
@@ -359,9 +371,8 @@ function NotaAberta({ nota, empresa, onFechar }: { nota: Nota; empresa?: string;
 
   const somaItens = (itens ?? []).reduce((s, i) => s + (i.valor_total ?? 0), 0);
   return (
-    <div className="ft-fundo" onClick={onFechar}>
-      <div className="ft-painel es nf-painel" role="dialog" aria-modal="true" aria-label={`Nota de ${nota.emitente_nome ?? "fornecedor"}`} tabIndex={-1} ref={painel} onClick={(e) => e.stopPropagation()}>
-        <header className="ft-painel-cabeca nf-painel-cabeca">
+    <div className="nf-aberta" ref={painel} onClick={(e) => e.stopPropagation()} aria-label={`Nota de ${nota.emitente_nome ?? "fornecedor"}`}>
+        <header className="nf-aberta-cabeca">
           <div className="ft-painel-titulo">
             <span className="es-sobre">{nota.origem === "avulsa" ? "Nota avulsa" : `NF-e nº ${numeroNota(nota.chave)} · série ${serieNota(nota.chave)}`}</span>
             <h2 className="nf-painel-nome">{nota.emitente_nome ?? "Fornecedor"}</h2>
@@ -374,7 +385,7 @@ function NotaAberta({ nota, empresa, onFechar }: { nota: Nota; empresa?: string;
             </div>
           </div>
           <div className="ft-painel-acoes">
-            {nota.origem === "sefaz" && nota.completa && <a className="botao small" href={`/api/notas/danfe/${nota.chave}`} target="_blank" rel="noreferrer">Ver PDF</a>}
+            {nota.origem === "sefaz" && nota.completa && <button className="small" onClick={() => setVerPdf(true)}>Ver PDF</button>}
             {foto && <a className="botao small" href={foto} target="_blank" rel="noreferrer">Ver foto</a>}
             {xmlTexto && <button className="ghost small" onClick={baixarXml}>Baixar XML</button>}
             <button className="ghost small" onClick={onFechar}>Fechar</button>
@@ -440,6 +451,34 @@ function NotaAberta({ nota, empresa, onFechar }: { nota: Nota; empresa?: string;
           )}
           {foto && <a href={foto} target="_blank" rel="noreferrer"><img className="nf-foto" src={foto} alt="Foto do cupom ou recibo" /></a>}
         </div>
+      {verPdf && <VisorPdfNota nota={nota} onFechar={() => setVerPdf(false)} />}
+    </div>
+  );
+}
+
+// O PDF (DANFE) numa janela por cima da tela; Esc ou clicar fora fecha
+function VisorPdfNota({ nota, onFechar }: { nota: Nota; onFechar: () => void }) {
+  const url = `/api/notas/danfe/${nota.chave}`;
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    caixa.current?.focus();
+    const f = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    window.addEventListener("keydown", f);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", f); document.body.style.overflow = ""; };
+  }, [onFechar]);
+  return (
+    <div className="nf-pdf-fundo" onClick={onFechar}>
+      <div className="nf-pdf" role="dialog" aria-modal="true" aria-label={`PDF da nota ${numeroNota(nota.chave)}`} tabIndex={-1} ref={caixa} onClick={(e) => e.stopPropagation()}>
+        <header className="nf-pdf-cabeca">
+          <span><strong>DANFE · NF-e nº {numeroNota(nota.chave)}</strong><small>{nota.emitente_nome ?? ""} · {brl(nota.valor)}</small></span>
+          <span className="nf-pdf-acoes">
+            <a className="botao small" href={url} target="_blank" rel="noreferrer">Abrir em outra aba</a>
+            <a className="botao small ghost" href={url} download={`DANFE-${nota.chave}.pdf`}>Baixar</a>
+            <button className="ghost small" onClick={onFechar} aria-label="Fechar o PDF">Fechar</button>
+          </span>
+        </header>
+        <iframe className="nf-pdf-quadro" src={url} title={`PDF da nota ${numeroNota(nota.chave)}`} />
       </div>
     </div>
   );
