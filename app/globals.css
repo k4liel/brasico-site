@@ -2004,3 +2004,52 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
   .nf-item input:first-child { grid-column: 1 / -1; }
   .nf-item-cabeca { display: none; }
 }
+
+/* =====================================================================
+   Operação · Compras (usa o padrão visual do RH: .es)
+   ===================================================================== */
+.cp-topo { justify-content: space-between; }
+.cp-quem { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--muted); }
+.cp-semana { padding: 8px 10px; }
+.cp-abas { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--border); }
+.cp-abas button { all: unset; cursor: pointer; padding: 10px 14px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.cp-abas button.on { color: var(--strong); border-color: var(--gold); font-weight: 600; }
+.cp-abas button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.cp-unidades { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.cp-unidades .es-bloco { margin: 0; }
+.cp-pessoas { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
+.cp-pessoa { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; }
+.cp-pessoa:hover, .cp-pessoa[aria-expanded="true"] { background: var(--hover-bg); }
+.cp-pessoa small { display: block; font-size: 12.5px; color: var(--muted); }
+.cp-da-pessoa { margin-top: 20px; }
+.cp-da-pessoa h3 { font-family: var(--font-serif), Georgia, serif; font-size: 20px; margin: 0 0 12px; color: var(--strong); }
+.cp-tabela input { width: 100%; min-width: 64px; padding: 6px 8px; font-size: 14px; }
+.cp-tabela input.n { text-align: right; max-width: 96px; }
+.cp-tirado td { opacity: .5; text-decoration: line-through; }
+.cp-motivo { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.cp-motivo.atencao, .cp-difere { color: var(--es-amber-ink); }
+.cp-pedido { margin: 0 0 12px; font-size: 13.5px; }
+.cp-pedido pre { white-space: pre-wrap; font-family: inherit; background: var(--bg); padding: 10px 12px; border-radius: 10px; margin: 8px 0 0; }
+.cp-incluir { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) repeat(3, minmax(0, .8fr)) auto; gap: 6px; margin-top: 12px; }
+.cp-incluir input { padding: 7px 9px; min-width: 0; }
+.cp-rodape { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.cp-ajuda { font-size: 13.5px; margin: 0 0 12px; max-width: 720px; }
+.cp-pdf-cabeca { display: grid; gap: 2px; margin: 0 0 12px; font-size: 13.5px; color: var(--muted); }
+.cp-pdf-cabeca strong { font-size: 16px; color: var(--strong); }
+.cp-forn { margin: 0 0 14px; }
+.cp-forn-cabeca { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 8px; background: var(--soft); font-size: 14px; }
+.cp-caixa { width: 18px; color: var(--muted); }
+.so-print { display: none; }
+@media (max-width: 720px) {
+  .cp-incluir { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cp-incluir button { grid-column: 1 / -1; }
+}
+@media print {
+  .topo, .menu-lateral, .menu-fundo, .cp-abas, .es-topo, .no-print, .no-print-input, #avulsa { display: none !important; }
+  .so-print { display: inline !important; }
+  .miolo { max-width: none !important; padding: 0 !important; }
+  .cp-final { border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+  .nf-tabela { font-size: 10.5px; }
+  .nf-tabela td { padding: 3px 6px; }
+  .cp-forn { break-inside: avoid; }
+}

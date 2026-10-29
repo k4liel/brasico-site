@@ -298,7 +298,7 @@ type Linha = { descricao: string; quantidade: string; unidade: string; valor: st
 const linhaVazia = (): Linha => ({ descricao: "", quantidade: "", unidade: "", valor: "" });
 const numero = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
 
-function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPronto: () => void }) {
+export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPronto: () => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [empresa, setEmpresa] = useState("");
   const [loja, setLoja] = useState("");

@@ -48,6 +48,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Solicitantes e setor de compras (operacao_pessoas) só abrem a área de Compras.
+  // A trava de verdade é a do banco (RLS): aqui é só o caminho certo na tela.
+  if (user && !isPublic && !path.startsWith("/compras")) {
+    const { data: papel } = await supabase.rpc("operacao_papel", { p_user: user.id });
+    if (papel === "solicitante" || papel === "compras") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/compras";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+  }
+
   return response;
 }
 
