@@ -8,6 +8,7 @@ import Topo from "./Topo";
 // com o custo pelo último preço pago de cada insumo e a venda na TOTVS. Duas abas:
 //  - Fichas técnicas: cartões pequenos por local; ao clicar, a ficha abre inteira para editar.
 //  - Menus: o cardápio de cada casa (o que a TOTVS vendeu nos últimos 60 dias), cada item ligado à sua ficha.
+// Foto (envio e retirada) e preço digitado dos insumos em supabase/fichas_fotos_precos.sql.
 // Tabelas e funções em supabase/fichas.sql, fichas_importar.sql e fichas_edicao.sql. Cores e blocos do padrão do sistema (.es).
 type Ficha = { id: string; nome: string; unidade_negocio: string; grupo: string | null; tipo: string; rendimento: number | null;
   rendimento_unidade: string | null; preparo: string | null; observacoes: string | null; foto: string | null; conferida: boolean };
@@ -269,7 +270,7 @@ function FichaAberta({ ficha, custo, vendas, onMudou, onFechar }: { ficha: Ficha
     <div className="ft-fundo" onClick={onFechar}>
       <div className="ft-painel es" role="dialog" aria-modal="true" aria-label={`Ficha técnica: ${ficha.nome}`} tabIndex={-1} ref={painel} onClick={(e) => e.stopPropagation()}>
         <header className="ft-painel-cabeca">
-          {ficha.foto ? <img className={ficha.tipo === "drink" ? "ft-painel-foto drink" : "ft-painel-foto"} src={ficha.foto} alt={`Foto de ${ficha.nome}`} /> : null}
+          <FotoFicha ficha={ficha} feito={feito} avisar={setMsg} />
           <div className="ft-painel-titulo">
             <span className="es-sobre">{LOCAIS[ficha.unidade_negocio]} · {ficha.grupo ?? TIPOS[ficha.tipo]}</span>
             <input className="ft-nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} onBlur={() => form.nome !== ficha.nome && salvarTextos()} aria-label="Nome da ficha" />
@@ -309,7 +310,7 @@ function FichaAberta({ ficha, custo, vendas, onMudou, onFechar }: { ficha: Ficha
                         <td><input className="ft-un" defaultValue={i.unidade ?? ""} onBlur={(e) => e.target.value.trim() !== (i.unidade ?? "") && salvarItem(i, { unidade: e.target.value })} aria-label={`Unidade de ${i.ingrediente}`} /></td>
                         <td><input list="ft-insumos" defaultValue={ins?.nome ?? ""} placeholder="escolha um insumo"
                           onBlur={(e) => e.target.value.trim() !== (ins?.nome ?? "") && salvarItem(i, { insumo: e.target.value })} aria-label={`Insumo de ${i.ingrediente}`} />
-                          {p && <small>{brl(p.preco)} / {ins?.unidade} · {p.fornecedor}</small>}</td>
+                          {ins && <PrecoInsumo insumo={ins} preco={p} feito={feito} avisar={setMsg} />}</td>
                         <td className="n">{c != null ? brl(c) : i.quantidade == null ? <span className="muted">q.b.</span> : <span className="muted">sem preço</span>}</td>
                         <td><button className="ghost small ft-tirar" onClick={() => salvarItem(i, { removido: true })} aria-label={`Tirar ${i.ingrediente}`} title="Tirar da ficha">×</button></td>
                       </tr>
@@ -348,6 +349,112 @@ function FichaAberta({ ficha, custo, vendas, onMudou, onFechar }: { ficha: Ficha
         </div>
       </div>
     </div>
+  );
+}
+
+// Foto da ficha: enviar (a foto é reduzida no navegador antes de subir), trocar ou tirar.
+// Tirar só desliga a foto da ficha: o arquivo fica guardado e a troca vai para o histórico.
+type Feito = (p: PromiseLike<{ error: { message: string } | null }>, texto?: string) => Promise<void>;
+
+function FotoFicha({ ficha, feito, avisar }: { ficha: Ficha; feito: Feito; avisar: (m: string) => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const entrada = useRef<HTMLInputElement>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  async function enviar(arquivo: File | undefined) {
+    if (!arquivo) return;
+    if (!arquivo.type.startsWith("image/")) return avisar("Escolha uma imagem (JPG, PNG ou WebP).");
+    setEnviando(true);
+    try {
+      const foto = await reduzir(arquivo);
+      const nome = `${ficha.id}-${Date.now()}.jpg`;
+      const up = await supabase.storage.from("fichas-fotos").upload(nome, foto, { contentType: "image/jpeg" });
+      if (up.error) return avisar(`Não foi possível enviar a foto: ${up.error.message}`);
+      await feito(supabase.rpc("fichas_foto_definir", { p_ficha: ficha.id, p_foto: `/api/fichas/foto/${nome}` }), "Foto salva.");
+    } catch {
+      avisar("Não foi possível ler essa imagem. Tente outra foto.");
+    } finally {
+      setEnviando(false);
+      if (entrada.current) entrada.current.value = "";
+    }
+  }
+  function tirar() {
+    if (!confirm(`Tirar a foto da ficha “${ficha.nome}”?`)) return;
+    feito(supabase.rpc("fichas_foto_definir", { p_ficha: ficha.id, p_foto: null }), "Foto tirada.");
+  }
+
+  return (
+    <div className="ft-foto-bloco">
+      {ficha.foto
+        ? <img className={ficha.tipo === "drink" ? "ft-painel-foto drink" : "ft-painel-foto"} src={ficha.foto} alt={`Foto de ${ficha.nome}`} />
+        : <button className="ft-painel-foto vazia" onClick={() => entrada.current?.click()} disabled={enviando}>{enviando ? "Enviando…" : "+ Adicionar foto"}</button>}
+      <input ref={entrada} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => enviar(e.target.files?.[0])} />
+      {ficha.foto && (
+        <div className="ft-foto-acoes">
+          <button className="ghost small" onClick={() => entrada.current?.click()} disabled={enviando}>{enviando ? "Enviando…" : "Trocar foto"}</button>
+          <button className="ghost small" onClick={tirar} disabled={enviando}>Tirar foto</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Reduz a foto para no máximo 1200 px no lado maior, em JPEG (fotos de celular chegam a 5 MB)
+async function reduzir(arquivo: File): Promise<Blob> {
+  const img = await createImageBitmap(arquivo);
+  const escala = Math.min(1, 1200 / Math.max(img.width, img.height));
+  const tela = document.createElement("canvas");
+  tela.width = Math.round(img.width * escala);
+  tela.height = Math.round(img.height * escala);
+  const ctx = tela.getContext("2d");
+  if (!ctx) throw new Error("sem canvas");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, tela.width, tela.height);
+  ctx.drawImage(img, 0, 0, tela.width, tela.height);
+  return await new Promise<Blob>((ok, erro) => tela.toBlob((b) => (b ? ok(b) : erro(new Error("sem foto"))), "image/jpeg", 0.85));
+}
+
+// Preço do insumo: mostra o último preço (nota ou digitado) e deixa digitar outro.
+// O preço vale para todas as fichas que usam o insumo; uma nota mais nova passa a valer depois.
+function PrecoInsumo({ insumo, preco, feito, avisar }: { insumo: Insumo; preco: Preco | null; feito: Feito; avisar: (m: string) => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState("");
+
+  function abrir() {
+    setValor(preco ? preco.preco.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) : "");
+    setEditando(true);
+  }
+  async function salvar() {
+    const v = numero(valor.replace(/r\$\s*/i, ""));
+    if (v == null || Number.isNaN(v) || v <= 0) return avisar("Preço inválido: use, por exemplo, 12,50.");
+    await feito(supabase.rpc("insumos_preco_definir", { p_insumo: insumo.id, p_preco: v, p_fornecedor: null }),
+      `Preço de ${insumo.nome} salvo. Vale para todas as fichas que usam este insumo.`);
+    setEditando(false);
+  }
+
+  if (editando)
+    return (
+      <span className="ft-preco-editar">
+        <span>R$</span>
+        <input className="n" inputMode="decimal" autoFocus value={valor} onChange={(e) => setValor(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") salvar(); if (e.key === "Escape") { e.stopPropagation(); setEditando(false); } }}
+          aria-label={`Preço de ${insumo.nome} por ${insumo.unidade}`} />
+        <span>/ {insumo.unidade}</span>
+        <button className="small" onClick={salvar}>Salvar</button>
+        <button className="ghost small" onClick={() => setEditando(false)}>Cancelar</button>
+      </span>
+    );
+  return (
+    <span className="ft-preco">
+      <button className="ft-preco-botao" onClick={abrir} title="Clique para mudar o preço">
+        {preco ? `${brl(preco.preco)} / ${insumo.unidade} · ${preco.fonte === "manual" ? "digitado" : preco.fornecedor}` : "+ informar preço"}
+      </button>
+      {preco?.fonte === "manual" && (
+        <button className="ft-preco-botao" onClick={() => feito(supabase.rpc("insumos_preco_voltar", { p_insumo: insumo.id }), `${insumo.nome} voltou ao preço das notas.`)}
+          title="Desligar o preço digitado e usar o da última nota">usar preço da nota</button>
+      )}
+    </span>
   );
 }
 
