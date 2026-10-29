@@ -2120,3 +2120,5 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
   .pd-tarefa-cabeca { grid-template-columns: minmax(0, 1fr) auto; }
   .pd-tarefa-cabeca .estado { grid-column: 1 / -1; justify-self: start; }
 }
+.doc-escopo .ficha-corpo .ft-acoes { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--fx-linha2, var(--border)); }
+.doc-escopo .ficha > .nf-detalhe { margin: 0; border: 0; border-top: 1px solid var(--fx-linha, var(--border)); border-radius: 0; }

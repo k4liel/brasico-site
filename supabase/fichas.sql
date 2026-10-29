@@ -290,3 +290,34 @@ cross join lateral jsonb_array_elements(d.produtos) p
 where ft.porcoes_por_venda > 0 and p->>'nome' = ft.produto
 group by ft.ficha_id, ft.unidade_totvs, ft.produto;
 grant select on public.fichas_venda to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Página /fichas no visual do projeto Fichas técnicas (migration fichas_visual_do_projeto):
+-- o CSS do projeto e o cabeçalho de cada capítulo (etiqueta, título, abertura), lidos sem alterar o projeto.
+-- ---------------------------------------------------------------------
+create or replace function public.fichas_capitulos()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_proj uuid;
+begin
+  if not public.notas_pode_ver(auth.uid()) then raise exception 'Sem acesso às fichas' using errcode = '42501'; end if;
+  select n.workspace_id into v_proj from public.fichas f join public.notes n on n.id = f.origem_nota_id where f.ativa limit 1;
+  return jsonb_build_object(
+    'css', (select doc_css from public.workspaces where id = v_proj),
+    'capitulos', (select jsonb_agg(jsonb_build_object('id', n.id, 'titulo', n.title,
+        'rotulo', substring(n.content from '^\*\*([^*\n]+)\*\*'),
+        'h1', substring(n.content from '\n# ([^\n]+)'),
+        'abertura', substring(n.content from '\n\*([^*\n][^\n]*[^*\n])\*\s*\n')) order by n.title)
+      from public.notes n where n.workspace_id = v_proj and n.archived_at is null
+        and exists (select 1 from public.fichas f where f.origem_nota_id = n.id and f.ativa)));
+end $$;
+revoke execute on function public.fichas_capitulos() from public, anon;
+grant execute on function public.fichas_capitulos() to authenticated;
+
+-- Custo de cada ingrediente (mesma conta de fichas_custo)
+create or replace view public.fichas_itens_custo with (security_invoker = true) as
+select fi.id item_id, fi.ficha_id, round(public.insumos_converter(fi.quantidade, fi.unidade, i.unidade) * p.preco, 2) custo
+from public.fichas_itens fi
+left join public.insumos i on i.id = fi.insumo_id
+left join public.insumos_precos p on p.insumo_id = fi.insumo_id
+where not fi.removido;
+grant select on public.fichas_itens_custo to authenticated;

@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
+import Abas, { numeroDe, semNumero } from "./Abas";
+import { cssDoProjeto } from "@/lib/livre";
 
 // Fichas técnicas (Operação · fase 3): fichas copiadas do projeto "Fichas técnicas" para tabelas,
 // com o custo calculado pelo último preço pago de cada insumo e a margem frente à venda na TOTVS.
+// A página usa o mesmo visual do projeto: o CSS dele (fichas_capitulos), as abas e o desenho de cada ficha.
 // Tabelas e funções em supabase/fichas.sql e fichas_importar.sql.
 type Ficha = { id: string; nome: string; unidade_negocio: string; grupo: string | null; tipo: string; rendimento: number | null;
   rendimento_unidade: string | null; preparo: string | null; observacoes: string | null; foto: string | null; conferida: boolean };
@@ -33,25 +36,30 @@ const converter = (q: number | null, de: string | null, para: string) => {
   return null;
 };
 
+// Capítulos do projeto Fichas técnicas (cabeçalho lido do projeto, que continua como está)
+type Cap = { id: string; titulo: string; rotulo: string | null; h1: string | null; abertura: string | null };
+const INICIO = "inicio";
+const REVISAR = "revisar";
+const CURTO: Record<string, string> = { midway: "Midway", cicchetti_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", producao: "Produção central" };
+
 export default function Fichas({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [acesso, setAcesso] = useState<boolean | null>(null);
-  const [fichas, setFichas] = useState<Ficha[]>([]);
+  const [fichas, setFichas] = useState<(Ficha & { origem_nota_id: string | null })[]>([]);
   const [custos, setCustos] = useState<Record<string, Custo>>({});
   const [vendas, setVendas] = useState<Record<string, Venda[]>>({});
-  const [unidade, setUnidade] = useState("");
-  const [tipo, setTipo] = useState("");
-  const [busca, setBusca] = useState("");
+  const [css, setCss] = useState("");
+  const [caps, setCaps] = useState<Cap[]>([]);
+  const [aba, setAba] = useState(INICIO);
   const [aberta, setAberta] = useState<string | null>(null);
-  const [aba, setAba] = useState<"fichas" | "insumos">("fichas");
 
   const carregar = useCallback(async () => {
     const [f, c, v] = await Promise.all([
-      supabase.from("fichas").select("id,nome,unidade_negocio,grupo,tipo,rendimento,rendimento_unidade,preparo,observacoes,foto,conferida").eq("ativa", true).order("nome"),
+      supabase.from("fichas").select("id,nome,unidade_negocio,grupo,tipo,rendimento,rendimento_unidade,preparo,observacoes,foto,conferida,origem_nota_id").eq("ativa", true).order("nome"),
       supabase.from("fichas_custo").select("*"),
       supabase.from("fichas_venda").select("ficha_id,produto,vendidos_30d,preco_medio"),
     ]);
-    setFichas((f.data ?? []) as Ficha[]);
+    setFichas((f.data ?? []) as (Ficha & { origem_nota_id: string | null })[]);
     setCustos(Object.fromEntries(((c.data ?? []) as Custo[]).map((x) => [x.ficha_id, x])));
     const vv: Record<string, Venda[]> = {};
     for (const x of (v.data ?? []) as Venda[]) (vv[x.ficha_id] ??= []).push(x);
@@ -63,21 +71,26 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
       const { data } = await supabase.from("notas_acesso").select("user_id").eq("user_id", userId);
       if (!data?.length) return setAcesso(false);
       setAcesso(true);
+      const { data: p } = await supabase.rpc("fichas_capitulos");
+      const r = (p ?? {}) as { css: string | null; capitulos: Cap[] | null };
+      setCss(r.css ?? "");
+      setCaps(r.capitulos ?? []);
       carregar();
     })();
   }, [supabase, userId, carregar]);
 
-  const visiveis = useMemo(() => {
-    const b = busca.trim().toLowerCase();
-    return fichas.filter((f) => (!unidade || f.unidade_negocio === unidade) && (!tipo || f.tipo === tipo) && (!b || f.nome.toLowerCase().includes(b)));
-  }, [fichas, unidade, tipo, busca]);
-  const resumo = useMemo(() => ({
-    total: fichas.length,
-    conferidas: fichas.filter((f) => f.conferida).length,
-    comCusto: fichas.filter((f) => custos[f.id]?.custo != null).length,
-    completas: fichas.filter((f) => custos[f.id]?.custo != null && custos[f.id]?.sem_preco === 0).length,
-    vendidas: Object.keys(vendas).length,
-  }), [fichas, custos, vendas]);
+  // Abas como no projeto: Início, os capítulos (agrupados pelo nome antes do " · ") e Revisar insumos
+  const abas = useMemo(() => [
+    { id: INICIO, titulo: "00 · Início" },
+    ...caps.map((c) => ({ id: c.id, titulo: c.titulo })),
+    { id: REVISAR, titulo: "90 · Revisar insumos" },
+  ], [caps]);
+  const idx = Math.max(0, abas.findIndex((a) => a.id === aba));
+  function abrir(id: string) {
+    setAba(id);
+    setAberta(null);
+    window.scrollTo({ top: 0 });
+  }
 
   if (acesso === false) {
     return (
@@ -88,71 +101,169 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
     );
   }
 
+  const cap = caps.find((c) => c.id === aba);
+  const doCap = cap ? fichas.filter((f) => f.origem_nota_id === cap.id) : [];
+
   return (
-    <div className="pagina">
+    <div className="pagina pagina-doc modo-pagina">
       <Topo email={userEmail} ativo="fichas" />
-      <main className="miolo tv es ft">
-        <div className="es-topo">
-          <div>
-            <span className="es-sobre">Operação</span>
-            <h1>Fichas técnicas</h1>
-            <p>Cada prato, drink e preparo com os ingredientes e o custo pelo último preço pago. Copiadas do projeto Fichas técnicas, que continua como está.</p>
-          </div>
-        </div>
-
-        <div className="es-numeros">
-          <div className="es-numero"><span className="tv-cartao-rotulo">Fichas</span><span className="es-numero-valor">{resumo.total}</span><span className="tv-cartao-detalhe">{resumo.conferidas} conferidas com a cozinha</span></div>
-          <div className="es-numero"><span className="tv-cartao-rotulo">Com custo</span><span className="es-numero-valor">{resumo.comCusto}</span><span className="tv-cartao-detalhe">{resumo.completas} com todos os ingredientes</span></div>
-          <div className="es-numero"><span className="tv-cartao-rotulo">Ligadas à TOTVS</span><span className="es-numero-valor">{resumo.vendidas}</span><span className="tv-cartao-detalhe">com venda nos últimos 30 dias</span></div>
-        </div>
-
-        <div className="cp-abas" role="tablist">
-          <button role="tab" aria-selected={aba === "fichas"} className={aba === "fichas" ? "on" : ""} onClick={() => setAba("fichas")}>Fichas</button>
-          <button role="tab" aria-selected={aba === "insumos"} className={aba === "insumos" ? "on" : ""} onClick={() => setAba("insumos")}>Revisar insumos</button>
-        </div>
-
-        {aba === "insumos" ? <RevisarInsumos onMudou={carregar} /> : (
-          <section className="es-bloco">
-            <div className="es-filtros nf-filtros">
-              <select value={unidade} onChange={(v) => setUnidade(v.target.value)} aria-label="Unidade">
-                <option value="">Todas as unidades</option>
-                {Object.entries(UNIDADES).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-              </select>
-              <select value={tipo} onChange={(v) => setTipo(v.target.value)} aria-label="Tipo">
-                <option value="">Pratos, drinks e preparos</option>
-                {Object.entries(TIPOS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-              </select>
-              <input value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Nome da ficha" aria-label="Buscar ficha" />
+      {css && <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(css, ".doc-escopo") }} />}
+      <main className="proj-doc doc-escopo">
+        {!caps.length ? <p className="muted vazio">Carregando…</p> : (
+          <>
+            <Abas capitulos={abas} atual={abas[idx].id} grupos abrir={abrir} />
+            <article className="doc doc-pagina">
+              <section className="secao">
+                {aba === INICIO && <Inicio caps={caps} fichas={fichas} custos={custos} abrir={abrir} />}
+                {cap && (
+                  <div>
+                    {cap.rotulo && <div className="rotulo">{cap.rotulo}</div>}
+                    <h1>{cap.h1 ?? semNumero(cap.titulo)}</h1>
+                    {cap.abertura && <p className="abertura">{cap.abertura}</p>}
+                    <div className="bloco-livre">
+                      <div className="fichas">
+                        {doCap.map((f) => (
+                          <FichaCartao key={f.id} ficha={f} custo={custos[f.id]} vendas={vendas[f.id] ?? []}
+                            aberta={aberta === f.id} alternar={() => setAberta(aberta === f.id ? null : f.id)} onMudou={carregar} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {aba === REVISAR && (
+                  <div>
+                    <div className="rotulo">CADASTRO ÚNICO DE INSUMOS</div>
+                    <h1>Revisar insumos</h1>
+                    <p className="abertura">Ligue o nome que vem nas notas de compra ao insumo das fichas. Só depois de confirmado o preço entra no custo.</p>
+                    <RevisarInsumos onMudou={carregar} />
+                  </div>
+                )}
+              </section>
+            </article>
+            <div className="abas-passo">
+              {idx > 0 ? (
+                <button className="passo" onClick={() => abrir(abas[idx - 1].id)}>
+                  <span className="muted small">Anterior</span><b>{semNumero(abas[idx - 1].titulo)}</b>
+                </button>
+              ) : <span />}
+              {idx < abas.length - 1 ? (
+                <button className="passo passo-prox" onClick={() => abrir(abas[idx + 1].id)}>
+                  <span className="muted small">Próximo</span><b>{semNumero(abas[idx + 1].titulo)}</b>
+                </button>
+              ) : <span />}
             </div>
-            <div className="nf-tabela-wrap">
-              <table className="nf-tabela nf-lista">
-                <thead><tr><th>Ficha</th><th>Unidade</th><th className="n">Custo</th><th className="n">Venda (30 dias)</th><th className="n">Custo ÷ preço</th><th /></tr></thead>
-                <tbody>
-                  {visiveis.map((f) => {
-                    const c = custos[f.id];
-                    const v = (vendas[f.id] ?? []).sort((a, b) => b.vendidos_30d - a.vendidos_30d)[0];
-                    const cmv = c?.custo != null && v?.preco_medio ? c.custo / v.preco_medio : null;
-                    return (
-                      <tr key={f.id} onClick={() => setAberta(aberta === f.id ? null : f.id)} tabIndex={0} onKeyDown={(k) => k.key === "Enter" && setAberta(f.id)}>
-                        <td><strong>{f.nome}</strong><small>{f.grupo ?? TIPOS[f.tipo]}</small></td>
-                        <td>{UNIDADES[f.unidade_negocio]}</td>
-                        <td className="n">{brl(c?.custo)}{c && c.sem_preco > 0 && <small>{c.sem_preco} sem preço</small>}</td>
-                        <td className="n">{v ? <>{brl(v.preco_medio)}<small>{qtd(v.vendidos_30d)} vendidos</small></> : "—"}</td>
-                        <td className="n">{cmv != null ? <span className={cmv > 0.35 ? "es-ruim" : ""}>{pct(cmv)}</span> : "—"}</td>
-                        <td>{f.conferida ? <span className="estado tv-ok">conferida</span> : <span className="estado">a conferir</span>}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {aberta && <Detalhe ficha={fichas.find((f) => f.id === aberta)!} vendas={vendas[aberta] ?? []} onMudou={carregar} onFechar={() => setAberta(null)} />}
-            <p className="muted es-nota">O custo usa o último preço pago de cada insumo (notas da SEFAZ, avulsas e Cicchetti Management), só quando o nome da nota
-              já foi ligado ao insumo e a unidade combina (g/kg, ml/L, un). Ingrediente “q.b.” não entra na conta. Custo ÷ preço acima de 35% aparece em vermelho.</p>
-          </section>
+          </>
         )}
       </main>
     </div>
+  );
+}
+
+// Início: sumário por local, com um cartão por capítulo (foto da primeira ficha que tiver foto)
+function Inicio({ caps, fichas, custos, abrir }: { caps: Cap[]; fichas: (Ficha & { origem_nota_id: string | null })[]; custos: Record<string, Custo>; abrir: (id: string) => void }) {
+  const locais: { nome: string; caps: Cap[] }[] = [];
+  for (const c of caps) {
+    const t = semNumero(c.titulo);
+    const nome = t.includes(" · ") ? t.slice(0, t.indexOf(" · ")) : t;
+    const ultimo = locais[locais.length - 1];
+    if (ultimo && ultimo.nome === nome) ultimo.caps.push(c);
+    else locais.push({ nome, caps: [c] });
+  }
+  const comCusto = fichas.filter((f) => custos[f.id]?.custo != null).length;
+  return (
+    <div>
+      <div className="rotulo">FICHAS TÉCNICAS · OPERAÇÃO</div>
+      <h1>Fichas técnicas</h1>
+      <p className="abertura">{fichas.length} fichas copiadas do projeto Fichas técnicas, com o custo pelo último preço pago de cada insumo ({comCusto} já têm custo). Use as abas lá em cima para ir direto a cada parte.</p>
+      {locais.map((l) => (
+        <div key={l.nome}>
+          <div className="grupo-atalhos">{l.nome}</div>
+          <div className="atalhos">
+            {l.caps.map((c) => {
+              const fs = fichas.filter((f) => f.origem_nota_id === c.id);
+              const foto = fs.find((f) => f.foto)?.foto;
+              const t = semNumero(c.titulo);
+              return (
+                <a key={c.id} className="atalho" href={`#${c.id}`} onClick={(e) => { e.preventDefault(); abrir(c.id); }}>
+                  {foto ? <img className={fs[0]?.tipo === "drink" ? "drink" : ""} src={foto} alt="" /> : <span className="sem" />}
+                  <div>
+                    <span className="num">{numeroDe(c.titulo)} · {fs.length} fichas</span>
+                    <b>{t.includes(" · ") ? t.slice(t.indexOf(" · ") + 3) : t}</b>
+                    {c.h1 && <small>{c.h1}</small>}
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Uma ficha no mesmo desenho do projeto: cabeçalho com foto, ingredientes à esquerda e preparo à direita.
+// A mais: o custo de cada ingrediente, o total e a venda na TOTVS.
+type ItemCusto = Item & { custo: number | null };
+function FichaCartao({ ficha, custo, vendas, aberta, alternar, onMudou }: {
+  ficha: Ficha; custo?: Custo; vendas: Venda[]; aberta: boolean; alternar: () => void; onMudou: () => void;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const [itens, setItens] = useState<ItemCusto[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      const [a, b] = await Promise.all([
+        supabase.from("fichas_itens").select("*").eq("ficha_id", ficha.id).eq("removido", false).order("ordem"),
+        supabase.from("fichas_itens_custo").select("item_id,custo").eq("ficha_id", ficha.id),
+      ]);
+      const cs = Object.fromEntries(((b.data ?? []) as { item_id: number; custo: number | null }[]).map((x) => [x.item_id, x.custo]));
+      setItens(((a.data ?? []) as Item[]).map((i) => ({ ...i, custo: cs[i.id] ?? null })));
+    })();
+  }, [supabase, ficha.id, custo?.custo]);
+
+  const v = [...vendas].sort((x, y) => y.vendidos_30d - x.vendidos_30d)[0];
+  const cmv = custo?.custo != null && v?.preco_medio ? custo.custo / v.preco_medio : null;
+  const sub: ReactNode[] = [
+    ficha.rendimento ? `Rende ${qtd(ficha.rendimento)} ${ficha.rendimento_unidade ?? ""}` : "",
+    custo?.custo != null ? `Custo ${brl(custo.custo)}${custo.sem_preco ? ` (${custo.sem_preco} sem preço)` : ""}` : "",
+    v ? `Venda ${brl(v.preco_medio)}` : "",
+    cmv != null ? <span className={cmv > 0.35 ? "es-ruim" : undefined}>Custo ÷ preço {pct(cmv)}</span> : "",
+    ficha.conferida ? "Conferida com a cozinha" : "",
+  ].filter(Boolean);
+  const passos = (ficha.preparo ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const obs = (ficha.observacoes ?? "").replace(/^Obs\.?:\s*/i, "");
+
+  return (
+    <article className="ficha">
+      <div className={ficha.tipo === "drink" ? "ficha-cab drink" : "ficha-cab"}>
+        {ficha.foto ? <img className="ficha-foto" src={ficha.foto} alt="" /> : <span className="ficha-foto vazia" />}
+        <div className="ficha-txt">
+          <span className="ficha-tag">{CURTO[ficha.unidade_negocio] ?? ficha.unidade_negocio} · {ficha.grupo ?? TIPOS[ficha.tipo]}</span>
+          <h3>{ficha.nome}</h3>
+          {sub.length > 0 && <p className="ficha-sub">{sub.map((s, k) => <Fragment key={k}>{k > 0 && " · "}{s}</Fragment>)}</p>}
+        </div>
+      </div>
+      <div className="ficha-corpo">
+        <table className="ficha-tab">
+          <thead><tr><th>Ingrediente</th><th>Un.</th><th>Qtd.</th><th>Custo</th></tr></thead>
+          <tbody>
+            {(itens ?? []).map((i) => (
+              <tr key={i.id}>
+                <td>{i.ingrediente}</td>
+                <td>{i.unidade ?? ""}</td>
+                <td>{i.quantidade != null ? qtd(i.quantidade) : i.quantidade_texto ?? "q.b."}</td>
+                <td>{i.custo != null ? brl(i.custo) : "—"}</td>
+              </tr>
+            ))}
+            {custo?.custo != null && <tr className="total"><td>Custo</td><td /><td /><td>{brl(custo.custo)}</td></tr>}
+          </tbody>
+        </table>
+        {passos.length > 0 && <p><b>Preparo:</b></p>}
+        {passos.length > 0 && <ol>{passos.map((p, k) => <li key={k}>{p}</li>)}</ol>}
+        {obs && <p><b>Obs.:</b> {obs}</p>}
+        <p className="ft-acoes"><button className="ghost small" onClick={alternar}>{aberta ? "Fechar" : "Ajustar quantidades e conferir"}</button></p>
+      </div>
+      {aberta && <Detalhe ficha={ficha} vendas={vendas} onMudou={onMudou} onFechar={alternar} />}
+    </article>
   );
 }
 
