@@ -468,6 +468,21 @@ function buildHandler(token: string) {
           call("mcp_precos", { p_busca: busca ?? null, p_unidade: unidade ?? null, p_fornecedor: fornecedor ?? null, p_de: de ?? null, p_ate: ate ?? null, p_limite: limite ?? null })
       );
 
+      server.tool(
+        "notas_consultar",
+        "Notas fiscais (NF-e) recebidas pelas empresas, baixadas da SEFAZ toda segunda, e notas avulsas (compras sem NF-e lançadas com foto). Sem busca: as notas do período e a situação de cada empresa. Com busca (palavras da descrição do item): os itens comprados, com fornecedor, quantidade e preço efetivo. Só os sócios têm acesso.",
+        {
+          busca: z.string().max(80).optional().describe("palavras da descrição do item, ex.: 'limao'; vazio = lista de notas"),
+          fornecedor: z.string().max(100).optional().describe("nome ou CNPJ do fornecedor"),
+          empresa: z.string().max(100).optional().describe("CNPJ ou parte do nome da empresa que recebeu a nota"),
+          de: DATA.optional(),
+          ate: DATA.optional(),
+          limite: z.number().int().min(1).max(300).optional(),
+        },
+        async ({ busca, fornecedor, empresa, de, ate, limite }) =>
+          call("mcp_notas", { p_busca: busca ?? null, p_fornecedor: fornecedor ?? null, p_empresa: empresa ?? null, p_de: de ?? null, p_ate: ate ?? null, p_limite: limite ?? null })
+      );
+
       // ---------- eSocial (só leitura) ----------
       server.tool(
         "esocial_situacao",
@@ -580,7 +595,8 @@ function buildHandler(token: string) {
         "9. Vendas TOTVS: as vendas das unidades vêm do Chef Web da TOTVS e são puxadas sozinhas todo dia às 4h30 (o dia anterior). Para perguntas sobre faturamento, produtos, pagamentos ou garçons, use totvs_vendas (leia antes guia_vendas); se o dia ainda não estiver lá, peça com totvs_extrair. Dias com status 'revisar' têm conferências que não bateram: avise o usuário em vez de esconder a diferença.\n" +
         "10. eSocial: o Brasico só LÊ do governo os eventos que o contador transmite (esocial_situacao, esocial_eventos); nada é enviado ao eSocial. Os dados são pessoais (LGPD): mostre só o necessário.\n" +
         "11. Cicchetti Management: para vendas, CMV (notas de compra) e RH das unidades midway, pipa_centro e pipa_producao no sistema de gestão, use as ferramentas cicchetti_* (leia antes guia_cicchetti). É só leitura; toda consulta pede unidade (e período em vendas e CMV); mostre as unidades sempre separadas e nunca peça a chave da API no chat. Para preços de compra (cotação, comparar fornecedores, oscilação de um item), use primeiro precos_consultar: é a base do Índice de Preços, com todos os itens de todas as notas já coletados.\n" +
-        "12. Ponto (RHiD): quem bateu ponto, escala, faltas, atrasos e banco de horas vêm dos relógios de ponto, copiados pelo Brasico (rhid_situacao, rhid_equipe, rhid_ponto, rhid_banco_horas, rhid_justificativas; leia antes guia_ponto). É só leitura, em minutos, e dado pessoal (LGPD): mostre só o necessário. Se o período não foi lido, peça com rhid_atualizar.",
+        "12. Ponto (RHiD): quem bateu ponto, escala, faltas, atrasos e banco de horas vêm dos relógios de ponto, copiados pelo Brasico (rhid_situacao, rhid_equipe, rhid_ponto, rhid_banco_horas, rhid_justificativas; leia antes guia_ponto). É só leitura, em minutos, e dado pessoal (LGPD): mostre só o necessário. Se o período não foi lido, peça com rhid_atualizar.\n" +
+        "13. Notas fiscais (Operação): as NF-e recebidas pelas empresas (Brasico77, LAIF, Genesis) vêm da SEFAZ toda segunda, mais as notas avulsas lançadas com foto. Use notas_consultar para ver as notas e os itens comprados (com busca); junte com precos_consultar (Cicchetti Management) para histórico mais antigo. Notas só em resumo ainda não têm itens.",
     },
     { basePath: "/api", maxDuration: 60 }
   );

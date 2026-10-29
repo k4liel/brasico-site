@@ -123,3 +123,80 @@ begin
 end $$;
 revoke execute on function public.notas_worker_concluir(text, uuid, text, int, text, jsonb, jsonb, jsonb, text, text, timestamptz) from public, authenticated;
 grant execute on function public.notas_worker_concluir(text, uuid, text, int, text, jsonb, jsonb, jsonb, text, text, timestamptz) to anon;
+
+-- ---------------------------------------------------------------------
+-- Prazo da ciência: a SEFAZ só aceita até 10 dias depois da emissão (cStat 596 depois disso,
+-- visto no primeiro teste em 28/10/2026). Nota mais velha que isso, ou já recusada, não entra.
+-- ---------------------------------------------------------------------
+create or replace function public.notas_pendentes_ciencia(p_cnpj text)
+returns table (chave text) language sql stable security definer set search_path = public as $$
+  select n.chave from public.notas n
+  where n.empresa_cnpj = p_cnpj and n.origem = 'sefaz' and not n.completa and n.situacao = 'autorizada'
+    and length(n.chave) = 44 and n.emissao > now() - interval '10 days'
+    and not exists (select 1 from public.notas_eventos v where v.chave = n.chave and v.tipo = '210210' and v.sentido = 'enviado'
+                    and (v.cstat in (135, 136, 573, 596) or v.created_at > now() - interval '1 day'))
+  order by n.emissao desc
+$$;
+revoke execute on function public.notas_pendentes_ciencia(text) from public, anon, authenticated;
+
+create or replace function public.notas_worker_pegar(p_segredo text, p_execucao uuid)
+returns jsonb language plpgsql security definer set search_path = public, vault as $$
+declare x public.notas_execucoes; e public.notas_empresas; c public.certificados; v_chaves jsonb;
+begin
+  perform public.notas_conferir_segredo(p_segredo);
+  update public.notas_execucoes set status = 'rodando', inicio = now()
+  where id = p_execucao and status = 'na_fila' returning * into x;
+  if x.id is null then return null; end if;
+  select * into e from public.notas_empresas where cnpj = x.empresa_cnpj;
+  select * into c from public.certificados where cnpj = x.empresa_cnpj;
+  if x.tipo = 'ciencia' then
+    select coalesce(jsonb_agg(p.chave), '[]') into v_chaves from (select chave from public.notas_pendentes_ciencia(e.cnpj) limit 20) p;
+  end if;
+  return jsonb_build_object(
+    'execucao', to_jsonb(x),
+    'empresa', jsonb_build_object('cnpj', e.cnpj, 'nome', e.nome, 'ult_nsu', e.ult_nsu),
+    'chaves', coalesce(v_chaves, '[]'),
+    'certificado', (select decrypted_secret from vault.decrypted_secrets where name = c.cofre));
+end $$;
+revoke execute on function public.notas_worker_pegar(text, uuid) from public, authenticated;
+grant execute on function public.notas_worker_pegar(text, uuid) to anon;
+
+create or replace function public.notas_worker_concluir(p_segredo text, p_execucao uuid, p_status text, p_cstat int,
+  p_erro text, p_resultado jsonb, p_notas jsonb, p_eventos jsonb, p_ult_nsu text, p_max_nsu text, p_bloquear_ate timestamptz)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare x public.notas_execucoes; e public.notas_empresas; r jsonb;
+begin
+  perform public.notas_conferir_segredo(p_segredo);
+  select * into x from public.notas_execucoes where id = p_execucao;
+  if x.id is null or x.status <> 'rodando' then return null; end if;
+  r := public.notas_gravar(x.empresa_cnpj, p_notas, p_eventos);
+
+  update public.notas_empresas set
+    ult_nsu = case when p_ult_nsu ~ '^\d{15}$' and p_ult_nsu > ult_nsu then p_ult_nsu else ult_nsu end,
+    max_nsu = coalesce(p_max_nsu, max_nsu),
+    bloqueado_ate = case when x.tipo = 'distribuicao' then p_bloquear_ate else bloqueado_ate end,
+    ultima_consulta = case when x.tipo = 'distribuicao' then now() else ultima_consulta end,
+    ultimo_status = left(coalesce(nullif(p_erro, ''), p_status), 200),
+    atualizado_em = now()
+  where cnpj = x.empresa_cnpj returning * into e;
+
+  update public.notas_execucoes set status = p_status, cstat = p_cstat, erro = nullif(p_erro, ''), fim = now(),
+    resultado = x.resultado || coalesce(p_resultado, '{}')
+  where id = x.id;
+
+  if (select count(*) from public.notas_execucoes where empresa_cnpj = x.empresa_cnpj and origem = 'encadeada'
+      and created_at > now() - interval '1 day') < 30 then
+    if x.tipo = 'distribuicao' and coalesce((p_resultado->>'continua')::boolean, false) then
+      perform public.notas_pedir(x.empresa_cnpj, 'distribuicao', 'encadeada', null);
+    elsif x.tipo = 'distribuicao' and p_status in ('ok', 'sem_dados') and e.ciencia
+      and exists (select 1 from public.notas_pendentes_ciencia(x.empresa_cnpj)) then
+      perform public.notas_pedir(x.empresa_cnpj, 'ciencia', 'encadeada', null);
+    elsif x.tipo = 'ciencia' and p_status = 'ok' and coalesce((p_resultado->>'pedidas')::int, 0) >= 20
+      and exists (select 1 from public.notas_pendentes_ciencia(x.empresa_cnpj)) then
+      perform public.notas_pedir(x.empresa_cnpj, 'ciencia', 'encadeada', null);
+    end if;
+  end if;
+  return r;
+end $$;
+revoke execute on function public.notas_worker_concluir(text, uuid, text, int, text, jsonb, jsonb, jsonb, text, text, timestamptz) from public, authenticated;
+grant execute on function public.notas_worker_concluir(text, uuid, text, int, text, jsonb, jsonb, jsonb, text, text, timestamptz) to anon;
