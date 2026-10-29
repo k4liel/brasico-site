@@ -1980,7 +1980,6 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
 .nf-tabela td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .nf-tabela td small { display: block; font-size: 12.5px; color: var(--muted); }
 .nf-tabela .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.nf-lista tbody tr { cursor: pointer; }
 .nf-lista tbody tr:hover, .nf-lista tbody tr:focus-visible { background: var(--hover-bg); outline: none; }
 .nf-execucoes { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
 .nf-execucoes li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
@@ -2071,14 +2070,6 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
   border-bottom: 1px solid var(--border); margin: 0 0 12px; }
 .nf-mes-cabeca h2 { font-family: var(--font-serif), Georgia, serif; font-size: 24px; font-weight: 500; color: var(--strong); margin: 0; }
 .nf-mes-cabeca h2::first-letter { text-transform: uppercase; }
-.nf-grupo { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 4px 16px 8px; margin: 0 0 16px; }
-.nf-grupo-cabeca { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding: 12px 0 8px; }
-.nf-grupo-cabeca strong { font-size: 15px; color: var(--strong); }
-.nf-grupo-cabeca small { display: block; font-size: 12.5px; color: var(--muted); }
-.nf-grupo .nf-tabela-wrap { margin: 0; }
-.nf-lista tbody tr { cursor: pointer; }
-.nf-lista tbody tr:hover td { background: var(--soft); }
-.nf-lista tbody tr:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
 .nf-paginas { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 16px 0 8px; font-size: 13.5px; }
 
 .nf-painel-nome { font-family: var(--font-serif), Georgia, serif; font-size: 26px; font-weight: 500; color: var(--strong); margin: 0; }
@@ -2117,10 +2108,6 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
 }
 
 /* Nota aberta embaixo da linha (letra menor para caber mais informação) */
-.nf-lista tbody tr.nf-linha-aberta td { background: var(--soft); border-bottom-color: transparent; }
-.nf-lista tbody tr.nf-detalhe-linha { cursor: default; }
-.nf-lista tbody tr.nf-detalhe-linha:hover td { background: transparent; }
-.nf-lista tbody tr.nf-detalhe-linha > td { padding: 0 0 12px; white-space: normal; }
 .nf-aberta { background: var(--bg); border: 1px solid var(--soft-line); border-radius: 12px; overflow: hidden; font-size: 12.5px; scroll-margin: 80px; }
 .nf-aberta-cabeca { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 16px; align-items: start; padding: 12px 16px; background: var(--panel);
   border-bottom: 1px solid var(--border); }
@@ -2172,6 +2159,144 @@ a.botao:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   .nf-aberta .nf-dados { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nf-pdf-fundo { padding: 0; }
   .nf-pdf { width: 100%; height: 100%; border-radius: 0; }
+}
+
+/* Notas: página em largura total, notas em cards que abrem no lugar */
+.miolo.nf-larga { max-width: 1600px; padding: 28px clamp(16px, 3vw, 40px) 64px; }
+.nf-grupo { margin: 0 0 24px; }
+.nf-grupo-cabeca { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 16px; padding: 4px 4px 10px; }
+.nf-grupo-nome strong { display: block; font-size: 15px; color: var(--strong); }
+.nf-grupo-nome small, .nf-grupo-total small { display: block; font-size: 12px; color: var(--muted); }
+.nf-grupo-total { text-align: right; }
+.nf-grupo-total b { font-size: 15px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.nf-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.nf-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.nf-card:hover { border-color: var(--soft-line); box-shadow: 0 4px 16px var(--shadow); }
+.nf-card.aberto { border-color: var(--gold); box-shadow: 0 8px 28px var(--shadow); }
+.nf-card-linha { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; align-items: center; gap: 16px; padding: 12px 18px;
+  grid-template-columns: 10px minmax(0, 2.4fr) minmax(110px, 1fr) minmax(90px, .8fr) minmax(110px, 1fr) 104px 14px; }
+.nf-card-linha:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; border-radius: 12px; }
+.nf-card-marca { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.nf-card-marca.completa { background: var(--ok); }
+.nf-card-marca.resumo { background: var(--gold); }
+.nf-card-marca.cancelada { background: var(--danger); }
+.nf-card-forn, .nf-card-num, .nf-card-data { min-width: 0; }
+.nf-card-forn strong { display: block; font-size: 14px; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nf-card-linha small { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nf-card-num b, .nf-card-data b { display: block; font-size: 13px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.nf-card-valor { text-align: right; font-size: 15px; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; }
+.nf-card-selo { text-align: right; }
+.ip-seta { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform .2s; justify-self: end; }
+.aberto > button .ip-seta, .nf-card.aberto .ip-seta { transform: rotate(-135deg) translate(-2px, -2px); }
+.nf-card .nf-aberta { border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg); }
+.nf-card .nf-aberta-cabeca { background: transparent; }
+.nf-card .nf-aberta .es-sobre, .nf-card .nf-aberta .nf-painel-nome { display: none; }
+
+/* Cores das séries dos gráficos (paleta validada para daltonismo) */
+:root { --serie-1: #2a78d6; --serie-2: #eb6834; --serie-3: #1baf7a; --serie-4: #eda100; }
+:root[data-theme="dark"] { --serie-1: #3987e5; --serie-2: #d95926; --serie-3: #199e70; --serie-4: #c98500; }
+
+/* Gráficos (components/Graficos.tsx) */
+.gr { display: grid; gap: 8px; }
+.gr-legenda { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; font-size: 12.5px; color: var(--muted); }
+.gr-legenda li { display: inline-flex; align-items: center; gap: 6px; }
+.gr-legenda i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.gr-legenda i.gr-tracejado { height: 0; border-top: 2px dashed var(--muted); border-radius: 0; width: 14px; }
+.gr-area { position: relative; }
+.gr-area svg { display: block; width: 100%; height: auto; overflow: visible; }
+.gr-grade { stroke: var(--border); stroke-width: 1; }
+.gr-base { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; opacity: .7; }
+.gr-mira { stroke: var(--muted); stroke-width: 1; opacity: .6; }
+.gr-media { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 5; }
+.gr-trilha { stroke: var(--border); stroke-width: 1.5; }
+.gr-eixo { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.gr-rotulo { font-size: 12px; font-weight: 600; fill: var(--strong); font-variant-numeric: tabular-nums; }
+.gr-ponto { stroke: var(--panel); stroke-width: 2; }
+.gr-barra { fill: var(--soft-line); transition: fill .15s; }
+.gr-barra.ultima { fill: var(--gold); }
+.gr-barra.on { fill: var(--strong); }
+.gr-dica { position: absolute; top: 4px; transform: translateX(-50%); min-width: 150px; max-width: 260px; pointer-events: none; display: grid; gap: 3px;
+  padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 20px var(--shadow); font-size: 12px; color: var(--text); z-index: 2; }
+.gr-dica b { font-size: 12.5px; color: var(--strong); }
+.gr-dica span { display: flex; align-items: center; gap: 6px; }
+.gr-dica i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.gr-dica em { margin-left: auto; font-style: normal; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; padding-left: 10px; }
+.gr-faisca { display: block; flex: none; }
+
+/* Índice de preços (components/IndicePrecos.tsx) */
+.ip { display: grid; gap: 20px; }
+.ip-cabeca { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.ip-cabeca h2 { font-family: var(--font-serif), Georgia, serif; font-size: 26px; font-weight: 500; color: var(--strong); margin: 2px 0 4px; }
+.ip-cabeca p { margin: 0; font-size: 13px; }
+.ip-numeros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ip-numero { position: relative; display: grid; gap: 4px; padding: 16px 18px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.ip-numero .gr-faisca { position: absolute; right: 14px; top: 16px; opacity: .9; }
+.ip-rotulo { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.ip-valor { font-family: var(--font-serif), Georgia, serif; font-size: 30px; line-height: 1.1; color: var(--strong); font-variant-numeric: tabular-nums; }
+.ip-var { font-size: 12.5px; color: var(--muted); }
+.ip-var.sobe { color: var(--danger); }
+.ip-var.desce { color: var(--ok); }
+.ip-grade { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+.ip-cartao { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; min-width: 0; display: grid; gap: 12px; align-content: start; }
+.ip-cartao-cabeca { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.ip-cartao-cabeca h3 { font-size: 15px; font-weight: 600; color: var(--strong); margin: 0; }
+.ip-cartao-cabeca p { margin: 2px 0 0; font-size: 12.5px; }
+.ip-chips button i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.ip-tabela { font-size: 13px; }
+.ip-barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ip-barras li { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.ip-barras-nome { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-barras-trilho { height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; }
+.ip-barras-trilho span { display: block; height: 100%; border-radius: 999px; background: var(--gold); }
+.ip-barras-valor { font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; }
+.ip-busca { width: 100%; padding: 10px 14px; font-size: 14px; }
+.ip-dica { margin: 0; font-size: 12.5px; }
+.ip-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.ip-lista > li { border-top: 1px solid var(--border); }
+.ip-lista > li:first-child { border-top: 0; }
+.ip-lista > li.aberto { background: var(--bg); border-radius: 12px; border-top-color: transparent; }
+.ip-lista > li.aberto + li { border-top-color: transparent; }
+.ip-linha { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; align-items: center; gap: 16px; padding: 12px 12px;
+  grid-template-columns: minmax(0, 2fr) 96px minmax(120px, 1fr) 110px 14px; border-radius: 12px; }
+.ip-linha:hover { background: var(--soft); }
+.ip-linha:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.ip-linha-nome strong, .ip-linha-preco strong { display: block; font-size: 14px; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-linha small { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-linha-preco { text-align: right; font-variant-numeric: tabular-nums; }
+.ip-selo { justify-self: end; font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--bg); color: var(--muted); white-space: nowrap; }
+.ip-selo.sobe { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.ip-selo.desce { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.ip-sinais .ip-linha { grid-template-columns: minmax(0, 2fr) 96px minmax(120px, 1fr) 90px 14px; }
+.ip-detalhe { display: grid; gap: 16px; padding: 4px 12px 16px; }
+.ip-destaque td { background: var(--soft); }
+.ip-melhor { color: var(--ok) !important; font-weight: 600; }
+.ip-carregando { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ip-carregando span { height: 104px; border-radius: 16px; background: linear-gradient(90deg, var(--panel), var(--soft), var(--panel)); background-size: 200% 100%;
+  animation: ip-brilho 1.2s ease-in-out infinite; border: 1px solid var(--border); }
+@keyframes ip-brilho { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .ip-carregando span { animation: none; } .ip-seta, .nf-card, .ft-card { transition: none; } }
+
+@media (max-width: 1000px) {
+  .ip-grade { grid-template-columns: 1fr; }
+  .ip-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .nf-card-linha { grid-template-columns: 10px minmax(0, 1fr) auto 14px; grid-template-areas: "m f v s" "m n d e"; gap: 4px 12px; padding: 12px 14px; }
+  .nf-card-marca { grid-area: m; align-self: start; margin-top: 5px; }
+  .nf-card-forn { grid-area: f; }
+  .nf-card-valor { grid-area: v; }
+  .nf-card-num { grid-area: n; }
+  .nf-card-data { grid-area: d; text-align: right; }
+  .nf-card-selo { display: none; }
+  .nf-card-linha .ip-seta { grid-area: s; }
+  .ip-linha, .ip-sinais .ip-linha { grid-template-columns: minmax(0, 1fr) auto 14px; gap: 4px 12px; }
+  .ip-linha .gr-faisca { display: none; }
+  .ip-linha-preco { grid-column: 1; text-align: left; }
+  .ip-selo { grid-column: 2; grid-row: 1; }
+  .ip-linha .ip-seta { grid-column: 3; grid-row: 1; }
+  .ip-numeros, .ip-carregando { grid-template-columns: 1fr; }
+  .ip-cartao { padding: 14px; }
 }
 /* Barra de escolha (local, grupo, casa): chips no tom do sistema */
 .ft-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 0 0 12px; }

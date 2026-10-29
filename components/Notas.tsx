@@ -1,10 +1,9 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { cssDoProjeto } from "@/lib/livre";
 import Topo from "./Topo";
-import DocView from "./DocView";
+import IndicePrecos from "./IndicePrecos";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
 // Abas: Notas (por mês e por CNPJ, com a nota aberta e o PDF), Índice de preços, Nota avulsa e Leitura da SEFAZ.
@@ -74,7 +73,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="notas" />
-      <main className="miolo tv es nf">
+      <main className="miolo tv es nf nf-larga">
         <div className="es-topo">
           <div>
             <span className="es-sobre">Operação</span>
@@ -234,37 +233,28 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
                 return (
                   <div key={e.cnpj} className="nf-grupo">
                     <div className="nf-grupo-cabeca">
-                      <span><strong>{nomeEmpresa[e.cnpj] ?? "Empresa"}</strong><small>CNPJ {cnpjMask(e.cnpj)}</small></span>
-                      <span className="muted">{t ? `${t.notas} notas · ${brl(Number(t.valor))} no mês` : ""}</span>
+                      <span className="nf-grupo-nome"><strong>{nomeEmpresa[e.cnpj] ?? "Empresa"}</strong><small>CNPJ {cnpjMask(e.cnpj)}</small></span>
+                      <span className="nf-grupo-total">{t ? <><b>{brl(Number(t.valor))}</b><small>{t.notas} notas no mês</small></> : null}</span>
                     </div>
-                    <div className="nf-tabela-wrap">
-                      <table className="nf-tabela nf-lista">
-                        <thead><tr><th>Emissão</th><th>Número</th><th>Fornecedor</th><th className="n">Valor</th><th>Situação</th></tr></thead>
-                        <tbody>
-                          {e.notas.map((n) => {
-                            const esta = aberta?.chave === n.chave;
-                            const alternar = () => setAberta(esta ? null : n);
-                            return (
-                              <Fragment key={n.chave}>
-                                <tr className={esta ? "nf-linha-aberta" : ""} onClick={alternar} tabIndex={0} aria-expanded={esta}
-                                  onKeyDown={(k) => (k.key === "Enter" || k.key === " ") && (k.preventDefault(), alternar())}>
-                                  <td>{dia(n.emissao)}</td>
-                                  <td>{n.origem === "avulsa" ? "avulsa" : <>{numeroNota(n.chave)}<small>série {serieNota(n.chave)}</small></>}</td>
-                                  <td><strong>{n.emitente_nome ?? "—"}</strong><small>{n.origem === "avulsa" ? n.observacao ?? "" : cnpjMask(n.emitente_cnpj)}</small></td>
-                                  <td className="n">{brl(n.valor)}</td>
-                                  <td><Selo n={n} /></td>
-                                </tr>
-                                {esta && (
-                                  <tr className="nf-detalhe-linha">
-                                    <td colSpan={5}><NotaAberta nota={n} empresa={nomeEmpresa[n.empresa_cnpj]} onFechar={() => setAberta(null)} /></td>
-                                  </tr>
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    <ul className="nf-cards">
+                      {e.notas.map((n) => {
+                        const esta = aberta?.chave === n.chave;
+                        return (
+                          <li key={n.chave} className={esta ? "nf-card aberto" : "nf-card"}>
+                            <button className="nf-card-linha" onClick={() => setAberta(esta ? null : n)} aria-expanded={esta}>
+                              <span className={`nf-card-marca ${n.situacao === "cancelada" ? "cancelada" : n.origem === "avulsa" ? "avulsa" : n.completa ? "completa" : "resumo"}`} aria-hidden="true" />
+                              <span className="nf-card-forn"><strong>{n.emitente_nome ?? "—"}</strong><small>{n.origem === "avulsa" ? n.observacao ?? "nota avulsa" : cnpjMask(n.emitente_cnpj)}</small></span>
+                              <span className="nf-card-num">{n.origem === "avulsa" ? <><b>Avulsa</b><small>sem NF-e</small></> : <><b>Nº {numeroNota(n.chave)}</b><small>série {serieNota(n.chave)}</small></>}</span>
+                              <span className="nf-card-data"><b>{dia(n.emissao)}</b><small>emissão</small></span>
+                              <span className="nf-card-valor">{brl(n.valor)}</span>
+                              <span className="nf-card-selo"><Selo n={n} /></span>
+                              <span className="ip-seta" aria-hidden="true" />
+                            </button>
+                            {esta && <NotaAberta nota={n} empresa={nomeEmpresa[n.empresa_cnpj]} onFechar={() => setAberta(null)} />}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 );
               })}
@@ -485,71 +475,6 @@ function VisorPdfNota({ nota, onFechar }: { nota: Nota; onFechar: () => void }) 
 }
 
 // ---------------------------------------------------------------------
-// Aba Índice de preços: o mesmo conteúdo do projeto Índice de Preços, nas cores do sistema
-// ---------------------------------------------------------------------
-type CapIndice = { numero: number; titulo: string; conteudo: string };
-// As cores do projeto trocadas pelas do sistema (as de unidade e de alta/queda continuam)
-const CORES_SISTEMA = `:root .ip-escopo .doc.doc-pagina, .ip-escopo .doc.doc-pagina {
-  --doc-navy: var(--strong); --doc-heading: var(--strong); --doc-gold: var(--gold); --doc-ink: var(--text); --doc-muted: var(--muted);
-  --doc-line: var(--border); --doc-line-soft: var(--border); --doc-paper: var(--panel);
-  --ip-ink: var(--strong); --ip-txt: var(--text); --ip-mut: var(--muted); --ip-fraco: var(--muted); --ip-linha: var(--border);
-  --ip-linha2: var(--border); --ip-suave: var(--soft); --ip-papel: var(--panel); --ip-acento: var(--gold);
-  background: transparent;
-}`;
-
-function IndicePrecos() {
-  const supabase = useMemo(() => createClient(), []);
-  const [dados, setDados] = useState<{ css: string | null; atualizado_em: string | null; capitulos: CapIndice[] } | null>(null);
-  const [num, setNum] = useState(1);
-  const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState("");
-
-  const carregar = useCallback(async (aoVivo: boolean) => {
-    setCarregando(true); setErro("");
-    const { data, error } = await supabase.rpc("notas_indice_precos", { p_ao_vivo: aoVivo });
-    setCarregando(false);
-    if (error) return setErro(error.message);
-    setDados(data as { css: string | null; atualizado_em: string | null; capitulos: CapIndice[] });
-  }, [supabase]);
-  useEffect(() => { carregar(false); }, [carregar]);
-
-  const caps = dados?.capitulos ?? [];
-  const principais = caps.filter((c) => !c.titulo.includes("Catálogo"));
-  const catalogo = caps.filter((c) => c.titulo.includes("Catálogo"));
-  const nome = (t: string) => t.replace(/^\s*\d+\s*·\s*/, "").replace(/^Catálogo · /, "");
-  const atual = caps.find((c) => c.numero === num) ?? caps[0];
-  const noCatalogo = atual ? catalogo.includes(atual) : false;
-
-  return (
-    <>
-      <AlertasPreco />
-      <section className="es-bloco">
-        <div className="es-bloco-cabeca">
-          <h2>Índice de preços</h2>
-          <span className="muted">{dados?.atualizado_em ? `atualizado em ${dia(dados.atualizado_em)} às ${hora(dados.atualizado_em)}` : ""}
-            <button className="ghost small nf-atualizar" disabled={carregando} onClick={() => carregar(true)}>{carregando ? "Calculando…" : "Atualizar agora"}</button></span>
-        </div>
-        <p className="muted cp-ajuda">As compras de todas as notas do Cicchetti Management, recalculadas todo dia às 6h: índice do mês, altas e quedas, oscilação, fornecedores e o catálogo de cada produto.</p>
-        {erro && <p className="es-aviso tv-alerta">{erro}</p>}
-        <div className="ft-chips" role="tablist" aria-label="Parte do índice">
-          {principais.map((c) => <button key={c.numero} role="tab" aria-selected={atual?.numero === c.numero} className={atual?.numero === c.numero ? "on" : ""} onClick={() => setNum(c.numero)}>{nome(c.titulo)}</button>)}
-          {catalogo.length > 0 && <button role="tab" aria-selected={noCatalogo} className={noCatalogo ? "on" : ""} onClick={() => setNum(catalogo[0].numero)}>Catálogo</button>}
-        </div>
-        {noCatalogo && (
-          <div className="ft-chips ft-chips-sub nf-sub" role="tablist" aria-label="Catálogo">
-            {catalogo.map((c) => <button key={c.numero} role="tab" aria-selected={atual?.numero === c.numero} className={atual?.numero === c.numero ? "on" : ""} onClick={() => setNum(c.numero)}>{nome(c.titulo)}</button>)}
-          </div>
-        )}
-      </section>
-      {dados?.css && <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(dados.css, ".ip-escopo") + "\n" + CORES_SISTEMA }} />}
-      <div className="ip-escopo nf-indice">
-        {!dados ? <p className="muted">Carregando o índice…</p> : atual && <DocView key={atual.numero} capitulos={[{ titulo: atual.titulo, conteudo: atual.conteudo }]} modo="pagina" />}
-      </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------
 // Aba Leitura da SEFAZ: empresas, rotina, ciência e o andamento
 // ---------------------------------------------------------------------
 function LeituraSefaz({ empresas, onMudou }: { empresas: Empresa[]; onMudou: () => void }) {
@@ -711,44 +636,3 @@ export function NotaAvulsa({ empresas, onPronto }: { empresas: Empresa[]; onPron
     </section>
   );
 }
-
-// Índice de Preços: itens das notas da SEFAZ e avulsas junto com a base do Cicchetti Management
-// Alertas de preço (fase 6): compra dos últimos 14 dias 15% ou mais acima da média das compras anteriores
-// do mesmo item no mesmo fornecedor (view precos_alertas, supabase/automacao.sql)
-type Alerta = { chave: string; emissao: string; fornecedor: string | null; descricao: string; unidade: string | null; quantidade: number;
-  preco: number; media_anterior: number; compras_anteriores: number; alta_pct: number };
-function AlertasPreco() {
-  const supabase = useMemo(() => createClient(), []);
-  const [alertas, setAlertas] = useState<Alerta[] | null>(null);
-  const [todos, setTodos] = useState(false);
-  useEffect(() => {
-    supabase.from("precos_alertas").select("*").order("alta_pct", { ascending: false }).limit(200)
-      .then(({ data }) => setAlertas((data ?? []) as Alerta[]));
-  }, [supabase]);
-  if (!alertas?.length) return null;
-  const vistos = todos ? alertas : alertas.slice(0, 8);
-  return (
-    <section className="es-bloco">
-      <div className="es-bloco-cabeca"><h2>Alertas de preço</h2><span className="muted">{alertas.length} itens subiram 15% ou mais nos últimos 14 dias</span></div>
-      <div className="nf-tabela-wrap">
-        <table className="nf-tabela">
-          <thead><tr><th>Item</th><th>Fornecedor</th><th className="n">Pago</th><th className="n">Média antes</th><th className="n">Alta</th></tr></thead>
-          <tbody>
-            {vistos.map((a) => (
-              <tr key={a.chave + a.descricao}>
-                <td><strong>{a.descricao}</strong><small>{a.emissao ? new Date(a.emissao).toLocaleDateString("pt-BR") : ""} · {a.unidade ?? ""}</small></td>
-                <td>{a.fornecedor ?? "—"}</td>
-                <td className="n">{brl(a.preco)}</td>
-                <td className="n">{brl(a.media_anterior)}<small>{a.compras_anteriores} compras</small></td>
-                <td className="n"><span className="es-ruim">+{a.alta_pct.toLocaleString("pt-BR")}%</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {alertas.length > 8 && <button className="ghost small" onClick={() => setTodos((t) => !t)}>{todos ? "Mostrar menos" : `Ver todos os ${alertas.length}`}</button>}
-      <p className="muted es-nota">Compara com a média das compras do mesmo item, na mesma unidade e no mesmo fornecedor, nos 120 dias anteriores (pelo menos 2 compras).</p>
-    </section>
-  );
-}
-
