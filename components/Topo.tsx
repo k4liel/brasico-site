@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "notas" | "compras" | "fichas" | "estoque" }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "notas" | "compras" | "fichas" | "estoque" | "producao" }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -129,6 +129,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           <a className={ativo === "estoque" ? "ativo" : ""} href="/estoque" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" /></svg>
             Estoque
+          </a>
+          <a className={ativo === "producao" ? "ativo" : ""} href="/producao" tabIndex={aberto ? 0 : -1}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4M8 15l2.5 2.5L16 13" /></svg>
+            Produção
           </a>
         </nav>
 

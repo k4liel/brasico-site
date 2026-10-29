@@ -2079,3 +2079,44 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
   .et-registrar > button { justify-self: stretch; text-align: center; }
   .et-incluir { grid-template-columns: 1fr; }
 }
+
+/* Operação · Produção (usa o padrão visual do RH: .es) */
+.pd-dias { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 16px; }
+.pd-dias button { all: unset; cursor: pointer; flex: 0 0 auto; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.pd-dias button.ok { color: var(--strong); background: var(--soft); }
+.pd-dias button.hoje { border-color: var(--gold); }
+.pd-dias button.on { background: var(--strong); color: var(--bg); border-color: var(--strong); }
+.pd-dias button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.pd-tarefas { display: grid; gap: 8px; }
+.pd-rotina { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--soft); font-size: 13.5px; color: var(--muted); }
+.pd-feriado { font-size: 15px; color: var(--muted); }
+.pd-tarefa { border: 1px solid var(--border); border-radius: 12px; }
+.pd-tarefa.atencao { border-color: var(--es-amber-ink, var(--gold)); }
+.pd-tarefa.feito { background: var(--soft); }
+.pd-tarefa-cabeca { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 12px 14px; }
+.pd-tarefa-cabeca:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 12px; }
+.pd-tarefa-cabeca small { display: block; font-size: 12.5px; color: var(--muted); }
+.pd-tarefa-cabeca .pd-obs { font-style: italic; }
+.pd-qtd { font-weight: 600; color: var(--strong); white-space: nowrap; }
+.pd-tarefa.feito .pd-tarefa-cabeca strong { text-decoration: line-through; opacity: .7; }
+.pd-marcar { display: grid; gap: 12px; padding: 0 14px 14px; }
+.pd-botoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.pd-semana { margin-bottom: 24px; }
+.pd-semana h3 { font-family: var(--font-serif), Georgia, serif; font-size: 20px; margin: 0 0 8px; color: var(--strong); }
+.pd-semana h3 small { display: block; font-family: inherit; font-size: 12.5px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.pd-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.pd-dia { border: 1px solid var(--border); border-radius: 12px; padding: 8px; display: grid; gap: 4px; align-content: start; }
+.pd-dia.hoje { border-color: var(--gold); }
+.pd-dia-cabeca { all: unset; cursor: pointer; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.pd-mini { margin: 0; font-size: 12.5px; display: flex; justify-content: space-between; gap: 6px; }
+.pd-mini b { white-space: nowrap; color: var(--strong); }
+.pd-mini.rotina, .pd-mini.feriado { color: var(--muted); font-style: italic; }
+.pd-mini.feito span { text-decoration: line-through; opacity: .6; }
+.pd-mini.nao_feito span { color: var(--danger); }
+.pd-cat td { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--soft); }
+.pd-destino { display: inline-block; margin: 0 10px 2px 0; font-size: 13px; color: var(--muted); }
+.pd-destino b { color: var(--strong); font-weight: 600; }
+@media (max-width: 640px) {
+  .pd-tarefa-cabeca { grid-template-columns: minmax(0, 1fr) auto; }
+  .pd-tarefa-cabeca .estado { grid-column: 1 / -1; justify-self: start; }
+}

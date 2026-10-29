@@ -66,7 +66,7 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
 
   const socio = papel === "socio";
   const topo = socio ? <Topo email={userEmail} ativo="estoque" />
-    : <TopoSimples email={userEmail} nome={nome} area="Estoque" outra={compras ? { href: "/compras", nome: "Compras" } : undefined} />;
+    : <TopoSimples email={userEmail} nome={nome} area="Estoque" outra={compras ? { href: "/compras", nome: "Compras" } : { href: "/producao", nome: "Produção" }} />;
 
   if (papel === undefined) return <div className="pagina"><main className="miolo"><p className="muted vazio">Carregando…</p></main></div>;
   if (papel === null) {
