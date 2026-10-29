@@ -8,14 +8,14 @@ import Topo from "./Topo";
 // com o custo pelo último preço pago de cada insumo e a venda na TOTVS. Duas abas:
 //  - Fichas técnicas: cartões pequenos por local; ao clicar, a ficha abre inteira para editar.
 //  - Menus: o cardápio de cada casa (o que a TOTVS vendeu nos últimos 60 dias), cada item ligado à sua ficha.
-// Foto (envio e retirada) e preço digitado dos insumos em supabase/fichas_fotos_precos.sql.
+// Foto (envio e retirada) em supabase/fichas_fotos_precos.sql; custo digitado de cada ingrediente em supabase/fichas_custo_manual.sql.
 // Tabelas e funções em supabase/fichas.sql, fichas_importar.sql e fichas_edicao.sql. Cores e blocos do padrão do sistema (.es).
 type Ficha = { id: string; nome: string; unidade_negocio: string; grupo: string | null; tipo: string; rendimento: number | null;
   rendimento_unidade: string | null; preparo: string | null; observacoes: string | null; foto: string | null; conferida: boolean };
 type Custo = { ficha_id: string; custo: number | null; ingredientes: number; sem_preco: number };
 type Venda = { ficha_id: string; unidade_totvs: string; produto: string; vendidos_30d: number; preco_medio: number | null };
 type Item = { id: number; ordem: number; ingrediente: string; insumo_id: string | null; sub_ficha_id: string | null;
-  quantidade: number | null; quantidade_texto: string | null; unidade: string | null; removido: boolean };
+  quantidade: number | null; quantidade_texto: string | null; unidade: string | null; removido: boolean; custo_manual: number | null };
 type Insumo = { id: string; nome: string; unidade: string };
 type Preco = { insumo_id: string; data: string; fornecedor: string; preco: number; fonte: string };
 type Apelido = { id: number; insumo_id: string; apelido: string; unidade_compra: string | null; fator: number | null; confirmado: boolean; semelhanca: number | null };
@@ -302,7 +302,7 @@ function FichaAberta({ ficha, custo, vendas, onMudou, onFechar }: { ficha: Ficha
                     const p = i.insumo_id ? precos[i.insumo_id] : null;
                     const c = custoItem[i.id];
                     return (
-                      <tr key={`${i.id}-${i.quantidade}-${i.insumo_id}`}>
+                      <tr key={`${i.id}-${i.quantidade}-${i.insumo_id}-${i.custo_manual}`}>
                         <td><input defaultValue={i.ingrediente} onBlur={(e) => e.target.value.trim() !== i.ingrediente && salvarItem(i, { ingrediente: e.target.value })} aria-label="Ingrediente" />
                           {i.sub_ficha_id && <small>usa outra ficha (preparo)</small>}</td>
                         <td className="n"><input className="n" inputMode="decimal" defaultValue={i.quantidade != null ? qtd(i.quantidade) : i.quantidade_texto ?? ""} placeholder="q.b."
@@ -310,14 +310,14 @@ function FichaAberta({ ficha, custo, vendas, onMudou, onFechar }: { ficha: Ficha
                         <td><input className="ft-un" defaultValue={i.unidade ?? ""} onBlur={(e) => e.target.value.trim() !== (i.unidade ?? "") && salvarItem(i, { unidade: e.target.value })} aria-label={`Unidade de ${i.ingrediente}`} /></td>
                         <td><input list="ft-insumos" defaultValue={ins?.nome ?? ""} placeholder="escolha um insumo"
                           onBlur={(e) => e.target.value.trim() !== (ins?.nome ?? "") && salvarItem(i, { insumo: e.target.value })} aria-label={`Insumo de ${i.ingrediente}`} />
-                          {ins && <PrecoInsumo insumo={ins} preco={p} feito={feito} avisar={setMsg} />}</td>
-                        <td className="n">{c != null ? brl(c) : i.quantidade == null ? <span className="muted">q.b.</span> : <span className="muted">sem preço</span>}</td>
+                          {p && <small>{brl(p.preco)} / {ins?.unidade} · {p.fornecedor}</small>}</td>
+                        <td className="n"><CustoItem item={i} custo={c ?? null} feito={feito} avisar={setMsg} /></td>
                         <td><button className="ghost small ft-tirar" onClick={() => salvarItem(i, { removido: true })} aria-label={`Tirar ${i.ingrediente}`} title="Tirar da ficha">×</button></td>
                       </tr>
                     );
                   })}
                 </tbody>
-                {custo?.custo != null && <tfoot><tr><td colSpan={4}><strong>Custo dos ingredientes com preço</strong></td><td className="n"><strong>{brl(custo.custo)}</strong></td><td /></tr></tfoot>}
+                {custo?.custo != null && <tfoot><tr><td colSpan={4}><strong>Custo da ficha</strong></td><td className="n"><strong>{brl(custo.custo)}</strong></td><td /></tr></tfoot>}
               </table>
             </div>
             <datalist id="ft-insumos">{insumos.map((i) => <option key={i.id} value={i.nome}>{i.unidade}</option>)}</datalist>
@@ -414,46 +414,26 @@ async function reduzir(arquivo: File): Promise<Blob> {
   return await new Promise<Blob>((ok, erro) => tela.toBlob((b) => (b ? ok(b) : erro(new Error("sem foto"))), "image/jpeg", 0.85));
 }
 
-// Preço do insumo: mostra o último preço (nota ou digitado) e deixa digitar outro.
-// O preço vale para todas as fichas que usam o insumo; uma nota mais nova passa a valer depois.
-function PrecoInsumo({ insumo, preco, feito, avisar }: { insumo: Insumo; preco: Preco | null; feito: Feito; avisar: (m: string) => void }) {
+// Custo do ingrediente na ficha: mostra a conta (quantidade × último preço) e deixa digitar o valor em R$.
+// O valor digitado vale no lugar da conta; apagar o campo volta para a conta.
+function CustoItem({ item, custo, feito, avisar }: { item: Item; custo: number | null; feito: Feito; avisar: (m: string) => void }) {
   const supabase = useMemo(() => createClient(), []);
-  const [editando, setEditando] = useState(false);
-  const [valor, setValor] = useState("");
-
-  function abrir() {
-    setValor(preco ? preco.preco.toLocaleString("pt-BR", { maximumFractionDigits: 4 }) : "");
-    setEditando(true);
+  const inicial = item.custo_manual != null ? item.custo_manual.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
+  function salvar(texto: string) {
+    const t = texto.replace(/r\$\s*/i, "").trim();
+    if (t === inicial) return;
+    const v = numero(t);
+    if (v != null && (Number.isNaN(v) || v < 0)) return avisar("Custo inválido: use, por exemplo, 12,50.");
+    feito(supabase.rpc("fichas_item_custo", { p_item: item.id, p_custo: v }),
+      v == null ? `${item.ingrediente}: custo voltou para a conta pelo preço da nota.` : `Custo de ${item.ingrediente} salvo.`);
   }
-  async function salvar() {
-    const v = numero(valor.replace(/r\$\s*/i, ""));
-    if (v == null || Number.isNaN(v) || v <= 0) return avisar("Preço inválido: use, por exemplo, 12,50.");
-    await feito(supabase.rpc("insumos_preco_definir", { p_insumo: insumo.id, p_preco: v, p_fornecedor: null }),
-      `Preço de ${insumo.nome} salvo. Vale para todas as fichas que usam este insumo.`);
-    setEditando(false);
-  }
-
-  if (editando)
-    return (
-      <span className="ft-preco-editar">
-        <span>R$</span>
-        <input className="n" inputMode="decimal" autoFocus value={valor} onChange={(e) => setValor(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") salvar(); if (e.key === "Escape") { e.stopPropagation(); setEditando(false); } }}
-          aria-label={`Preço de ${insumo.nome} por ${insumo.unidade}`} />
-        <span>/ {insumo.unidade}</span>
-        <button className="small" onClick={salvar}>Salvar</button>
-        <button className="ghost small" onClick={() => setEditando(false)}>Cancelar</button>
-      </span>
-    );
   return (
-    <span className="ft-preco">
-      <button className="ft-preco-botao" onClick={abrir} title="Clique para mudar o preço">
-        {preco ? `${brl(preco.preco)} / ${insumo.unidade} · ${preco.fonte === "manual" ? "digitado" : preco.fornecedor}` : "+ informar preço"}
-      </button>
-      {preco?.fonte === "manual" && (
-        <button className="ft-preco-botao" onClick={() => feito(supabase.rpc("insumos_preco_voltar", { p_insumo: insumo.id }), `${insumo.nome} voltou ao preço das notas.`)}
-          title="Desligar o preço digitado e usar o da última nota">usar preço da nota</button>
-      )}
+    <span className="ft-custo">
+      <input className="n" inputMode="decimal" defaultValue={inicial}
+        placeholder={item.custo_manual == null && custo != null ? brl(custo) : item.quantidade == null && item.custo_manual == null ? "q.b." : "R$ 0,00"}
+        onBlur={(e) => salvar(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        aria-label={`Custo de ${item.ingrediente}`} title="Digite o custo em R$; apague para voltar à conta" />
+      <small>{item.custo_manual != null ? "digitado" : custo != null ? "pela nota" : "sem custo"}</small>
     </span>
   );
 }
