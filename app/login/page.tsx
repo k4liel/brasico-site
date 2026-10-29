@@ -25,6 +25,7 @@ export default function LoginPage() {
     if (/rate limit/i.test(msg)) return "Limite de e-mails atingido. Entre com senha ou tente o link mais tarde.";
     if (/password should be at least/i.test(msg)) return "A senha precisa ter pelo menos 8 caracteres.";
     if (/email not confirmed/i.test(msg)) return "E-mail ainda não confirmado.";
+    if (/signups not allowed|user not found/i.test(msg)) return "Este e-mail não tem acesso. Peça o convite a um dos sócios.";
     return msg;
   }
 
@@ -40,28 +41,7 @@ export default function LoginPage() {
     window.location.href = "/";
   }
 
-  async function criarConta() {
-    if (password.length < 8) return setError("A senha precisa ter pelo menos 8 caracteres.");
-    setBusy(true);
-    setError("");
-    setInfo("");
-    const supabase = createClient();
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    });
-    setBusy(false);
-    if (error) return setError(traduz(error.message));
-    if (data.session) {
-      window.location.href = "/";
-    } else if (data.user && data.user.identities?.length === 0) {
-      setError("Este e-mail já tem conta. Use “Entrar”.");
-    } else {
-      setInfo("Conta criada. Confirme pelo e-mail que enviamos e depois entre com sua senha.");
-    }
-  }
-
+  // Contas novas só por convite dos sócios: o login não cria conta
   async function enviarLink(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -70,7 +50,7 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback`, shouldCreateUser: false },
     });
     setBusy(false);
     if (error) return setError(traduz(error.message));
@@ -97,9 +77,7 @@ export default function LoginPage() {
             <input type="password" required placeholder="Senha (mín. 8 caracteres)" autoComplete="current-password"
               minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
             <button disabled={busy}>{busy ? "Aguarde..." : "Entrar"}</button>
-            <button type="button" className="ghost" disabled={busy || !email || !password} onClick={criarConta}>
-              Criar conta com esta senha
-            </button>
+            <p className="muted small">Acesso por convite. Peça o seu a um dos sócios.</p>
           </form>
         ) : (
           <form onSubmit={enviarLink} className="stack">

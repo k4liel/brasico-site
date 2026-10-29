@@ -150,6 +150,7 @@ button.danger { color: var(--danger); }
 .menu-nav a:hover { background: var(--seg); color: var(--strong); }
 .menu-nav a.ativo { background: var(--beige); color: var(--strong); }
 .menu-nav a.ativo svg { color: var(--gold); }
+.menu-grupo { padding: 14px 12px 4px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .menu-rodape { margin-top: auto; padding: 12px 14px 18px; border-top: 1px solid var(--border); display: grid; gap: 12px; }
 .menu-tema { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: 13px; color: var(--muted); }
 .menu-conta { display: flex; align-items: center; gap: 10px; padding: 8px 6px 0; }
@@ -1946,3 +1947,37 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
 .sl-grupo-wrap + .sl-grupo-wrap { margin-top: 4px; }
 .sl-linha .bh-saldo { color: var(--strong); }
 @media (max-width: 640px) { .sl-cabeca, .sl-linha { grid-template-columns: minmax(0, 1fr) 110px; } .sl-cargo, .sl-linha .bh-var, .sl-cabeca span:nth-child(2), .sl-cabeca span:nth-child(4) { display: none; } }
+
+/* =====================================================================
+   Operação · Notas fiscais (usa o padrão visual do RH: .es)
+   ===================================================================== */
+.nf-tabela-wrap { overflow-x: auto; margin: 0 -4px; }
+.nf-tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
+.nf-tabela th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.nf-tabela td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.nf-tabela td small { display: block; font-size: 12.5px; color: var(--muted); }
+.nf-tabela .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nf-lista tbody tr { cursor: pointer; }
+.nf-lista tbody tr:hover, .nf-lista tbody tr:focus-visible { background: var(--hover-bg); outline: none; }
+.nf-execucoes { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.nf-execucoes li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.nf-filtros { justify-content: flex-start; }
+.nf-filtros input, .nf-filtros select { flex: 0 1 220px; min-width: 0; padding: 8px 10px; }
+.nf-detalhe { border-color: var(--gold); }
+.nf-acoes { display: flex; gap: 8px; }
+.nf-chave { font-size: 12.5px; word-break: break-all; margin: -6px 0 12px; }
+.nf-foto { max-width: 260px; max-height: 320px; border-radius: 10px; border: 1px solid var(--border); margin: 0 0 12px; display: block; }
+.nf-avulsa { display: grid; gap: 16px; }
+.nf-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.nf-campos label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.nf-campos input, .nf-campos select { padding: 8px 10px; font-size: 14px; }
+.nf-itens { display: grid; gap: 6px; }
+.nf-item { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr) 32px; gap: 6px; align-items: center; }
+.nf-item input { padding: 7px 9px; min-width: 0; }
+.nf-item-cabeca span { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.nf-itens > button { justify-self: start; }
+@media (max-width: 640px) {
+  .nf-item { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; }
+  .nf-item input:first-child { grid-column: 1 / -1; }
+  .nf-item-cabeca { display: none; }
+}
