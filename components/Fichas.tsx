@@ -1,65 +1,54 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
-import Abas, { numeroDe, semNumero } from "./Abas";
-import { cssDoProjeto } from "@/lib/livre";
 
-// Fichas técnicas (Operação · fase 3): fichas copiadas do projeto "Fichas técnicas" para tabelas,
-// com o custo calculado pelo último preço pago de cada insumo e a margem frente à venda na TOTVS.
-// A página usa o mesmo visual do projeto: o CSS dele (fichas_capitulos), as abas e o desenho de cada ficha.
-// Tabelas e funções em supabase/fichas.sql e fichas_importar.sql.
+// Fichas técnicas (Operação · fase 3): fichas copiadas do projeto "Fichas técnicas" (que continua como está),
+// com o custo pelo último preço pago de cada insumo e a venda na TOTVS. Duas abas:
+//  - Fichas técnicas: cartões pequenos por local; ao clicar, a ficha abre inteira para editar.
+//  - Menus: o cardápio de cada casa (o que a TOTVS vendeu nos últimos 60 dias), cada item ligado à sua ficha.
+// Tabelas e funções em supabase/fichas.sql, fichas_importar.sql e fichas_edicao.sql. Cores e blocos do padrão do sistema (.es).
 type Ficha = { id: string; nome: string; unidade_negocio: string; grupo: string | null; tipo: string; rendimento: number | null;
   rendimento_unidade: string | null; preparo: string | null; observacoes: string | null; foto: string | null; conferida: boolean };
 type Custo = { ficha_id: string; custo: number | null; ingredientes: number; sem_preco: number };
-type Venda = { ficha_id: string; produto: string; vendidos_30d: number; preco_medio: number | null };
+type Venda = { ficha_id: string; unidade_totvs: string; produto: string; vendidos_30d: number; preco_medio: number | null };
 type Item = { id: number; ordem: number; ingrediente: string; insumo_id: string | null; sub_ficha_id: string | null;
   quantidade: number | null; quantidade_texto: string | null; unidade: string | null; removido: boolean };
 type Insumo = { id: string; nome: string; unidade: string };
 type Preco = { insumo_id: string; data: string; fornecedor: string; preco: number; fonte: string };
 type Apelido = { id: number; insumo_id: string; apelido: string; unidade_compra: string | null; fator: number | null; confirmado: boolean; semelhanca: number | null };
+type Produto = { unidade_id: string; grupo: string | null; subgrupo: string | null; categoria: string | null; produto: string;
+  vendidos_60d: number; preco_medio: number | null; ultima_venda: string; ficha_id: string | null };
 
-const UNIDADES: Record<string, string> = { midway: "Cicchetti Midway", cicchetti_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", producao: "Produção central" };
-const TIPOS: Record<string, string> = { prato: "Pratos", drink: "Drinks", preparo: "Preparos" };
+const LOCAIS: Record<string, string> = { midway: "Cicchetti Midway", cicchetti_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", producao: "Produção central" };
+const CASAS: Record<string, string> = { midway: "Cicchetti Midway", pipa_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua" };
+const DA_CASA: Record<string, string> = { midway: "midway", pipa_centro: "cicchetti_centro", filha_da_lua: "filha_da_lua" };
+const TIPOS: Record<string, string> = { prato: "Prato", drink: "Drink", preparo: "Preparo" };
 const brl = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const qtd = (v: number | null) => (v == null ? "" : v.toLocaleString("pt-BR", { maximumFractionDigits: 3 }));
-const converter = (q: number | null, de: string | null, para: string) => {
-  if (q == null || !de) return null;
-  const d = de.toLowerCase();
-  if (d === para.toLowerCase()) return q;
-  if ((d === "g" || d === "gr") && para === "kg") return q / 1000;
-  if (d === "ml" && para === "L") return q / 1000;
-  if ((d === "l" || d === "lt") && para === "L") return q;
-  if (["un", "un.", "und", "unid", "uni"].includes(d) && para === "un") return q;
-  return null;
-};
-
-// Capítulos do projeto Fichas técnicas (cabeçalho lido do projeto, que continua como está)
-type Cap = { id: string; titulo: string; rotulo: string | null; h1: string | null; abertura: string | null };
-const INICIO = "inicio";
-const REVISAR = "revisar";
-const CURTO: Record<string, string> = { midway: "Midway", cicchetti_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", producao: "Produção central" };
+// "0,16" e "1.250,5" (vírgula = decimal) ou "0.16"
+const numero = (s: string) => { const t = s.trim(); if (!t) return null; return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t); };
+const titulo = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+const LIMITE_CMV = 0.35;
 
 export default function Fichas({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [acesso, setAcesso] = useState<boolean | null>(null);
-  const [fichas, setFichas] = useState<(Ficha & { origem_nota_id: string | null })[]>([]);
+  const [fichas, setFichas] = useState<Ficha[]>([]);
   const [custos, setCustos] = useState<Record<string, Custo>>({});
   const [vendas, setVendas] = useState<Record<string, Venda[]>>({});
-  const [css, setCss] = useState("");
-  const [caps, setCaps] = useState<Cap[]>([]);
-  const [aba, setAba] = useState(INICIO);
+  const [aba, setAba] = useState<"fichas" | "menus">("fichas");
   const [aberta, setAberta] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     const [f, c, v] = await Promise.all([
-      supabase.from("fichas").select("id,nome,unidade_negocio,grupo,tipo,rendimento,rendimento_unidade,preparo,observacoes,foto,conferida,origem_nota_id").eq("ativa", true).order("nome"),
+      supabase.from("fichas").select("id,nome,unidade_negocio,grupo,tipo,rendimento,rendimento_unidade,preparo,observacoes,foto,conferida").eq("ativa", true).order("nome"),
       supabase.from("fichas_custo").select("*"),
-      supabase.from("fichas_venda").select("ficha_id,produto,vendidos_30d,preco_medio"),
+      supabase.from("fichas_venda").select("ficha_id,unidade_totvs,produto,vendidos_30d,preco_medio"),
     ]);
-    setFichas((f.data ?? []) as (Ficha & { origem_nota_id: string | null })[]);
+    setFichas((f.data ?? []) as Ficha[]);
     setCustos(Object.fromEntries(((c.data ?? []) as Custo[]).map((x) => [x.ficha_id, x])));
     const vv: Record<string, Venda[]> = {};
     for (const x of (v.data ?? []) as Venda[]) (vv[x.ficha_id] ??= []).push(x);
@@ -71,26 +60,9 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
       const { data } = await supabase.from("notas_acesso").select("user_id").eq("user_id", userId);
       if (!data?.length) return setAcesso(false);
       setAcesso(true);
-      const { data: p } = await supabase.rpc("fichas_capitulos");
-      const r = (p ?? {}) as { css: string | null; capitulos: Cap[] | null };
-      setCss(r.css ?? "");
-      setCaps(r.capitulos ?? []);
       carregar();
     })();
   }, [supabase, userId, carregar]);
-
-  // Abas como no projeto: Início, os capítulos (agrupados pelo nome antes do " · ") e Revisar insumos
-  const abas = useMemo(() => [
-    { id: INICIO, titulo: "00 · Início" },
-    ...caps.map((c) => ({ id: c.id, titulo: c.titulo })),
-    { id: REVISAR, titulo: "90 · Revisar insumos" },
-  ], [caps]);
-  const idx = Math.max(0, abas.findIndex((a) => a.id === aba));
-  function abrir(id: string) {
-    setAba(id);
-    setAberta(null);
-    window.scrollTo({ top: 0 });
-  }
 
   if (acesso === false) {
     return (
@@ -101,254 +73,375 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
     );
   }
 
-  const cap = caps.find((c) => c.id === aba);
-  const doCap = cap ? fichas.filter((f) => f.origem_nota_id === cap.id) : [];
-
-  return (
-    <div className="pagina pagina-doc modo-pagina">
-      <Topo email={userEmail} ativo="fichas" />
-      {css && <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(css, ".doc-escopo") }} />}
-      <main className="proj-doc doc-escopo">
-        {!caps.length ? <p className="muted vazio">Carregando…</p> : (
-          <>
-            <Abas capitulos={abas} atual={abas[idx].id} grupos abrir={abrir} />
-            <article className="doc doc-pagina">
-              <section className="secao">
-                {aba === INICIO && <Inicio caps={caps} fichas={fichas} custos={custos} abrir={abrir} />}
-                {cap && (
-                  <div>
-                    {cap.rotulo && <div className="rotulo">{cap.rotulo}</div>}
-                    <h1>{cap.h1 ?? semNumero(cap.titulo)}</h1>
-                    {cap.abertura && <p className="abertura">{cap.abertura}</p>}
-                    <div className="bloco-livre">
-                      <div className="fichas">
-                        {doCap.map((f) => (
-                          <FichaCartao key={f.id} ficha={f} custo={custos[f.id]} vendas={vendas[f.id] ?? []}
-                            aberta={aberta === f.id} alternar={() => setAberta(aberta === f.id ? null : f.id)} onMudou={carregar} />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {aba === REVISAR && (
-                  <div>
-                    <div className="rotulo">CADASTRO ÚNICO DE INSUMOS</div>
-                    <h1>Revisar insumos</h1>
-                    <p className="abertura">Ligue o nome que vem nas notas de compra ao insumo das fichas. Só depois de confirmado o preço entra no custo.</p>
-                    <RevisarInsumos onMudou={carregar} />
-                  </div>
-                )}
-              </section>
-            </article>
-            <div className="abas-passo">
-              {idx > 0 ? (
-                <button className="passo" onClick={() => abrir(abas[idx - 1].id)}>
-                  <span className="muted small">Anterior</span><b>{semNumero(abas[idx - 1].titulo)}</b>
-                </button>
-              ) : <span />}
-              {idx < abas.length - 1 ? (
-                <button className="passo passo-prox" onClick={() => abrir(abas[idx + 1].id)}>
-                  <span className="muted small">Próximo</span><b>{semNumero(abas[idx + 1].titulo)}</b>
-                </button>
-              ) : <span />}
-            </div>
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// Início: sumário por local, com um cartão por capítulo (foto da primeira ficha que tiver foto)
-function Inicio({ caps, fichas, custos, abrir }: { caps: Cap[]; fichas: (Ficha & { origem_nota_id: string | null })[]; custos: Record<string, Custo>; abrir: (id: string) => void }) {
-  const locais: { nome: string; caps: Cap[] }[] = [];
-  for (const c of caps) {
-    const t = semNumero(c.titulo);
-    const nome = t.includes(" · ") ? t.slice(0, t.indexOf(" · ")) : t;
-    const ultimo = locais[locais.length - 1];
-    if (ultimo && ultimo.nome === nome) ultimo.caps.push(c);
-    else locais.push({ nome, caps: [c] });
-  }
+  const ficha = aberta ? fichas.find((f) => f.id === aberta) : null;
   const comCusto = fichas.filter((f) => custos[f.id]?.custo != null).length;
+  const conferidas = fichas.filter((f) => f.conferida).length;
+
   return (
-    <div>
-      <div className="rotulo">FICHAS TÉCNICAS · OPERAÇÃO</div>
-      <h1>Fichas técnicas</h1>
-      <p className="abertura">{fichas.length} fichas copiadas do projeto Fichas técnicas, com o custo pelo último preço pago de cada insumo ({comCusto} já têm custo). Use as abas lá em cima para ir direto a cada parte.</p>
-      {locais.map((l) => (
-        <div key={l.nome}>
-          <div className="grupo-atalhos">{l.nome}</div>
-          <div className="atalhos">
-            {l.caps.map((c) => {
-              const fs = fichas.filter((f) => f.origem_nota_id === c.id);
-              const foto = fs.find((f) => f.foto)?.foto;
-              const t = semNumero(c.titulo);
-              return (
-                <a key={c.id} className="atalho" href={`#${c.id}`} onClick={(e) => { e.preventDefault(); abrir(c.id); }}>
-                  {foto ? <img className={fs[0]?.tipo === "drink" ? "drink" : ""} src={foto} alt="" /> : <span className="sem" />}
-                  <div>
-                    <span className="num">{numeroDe(c.titulo)} · {fs.length} fichas</span>
-                    <b>{t.includes(" · ") ? t.slice(t.indexOf(" · ") + 3) : t}</b>
-                    {c.h1 && <small>{c.h1}</small>}
-                  </div>
-                </a>
-              );
-            })}
+    <div className="pagina">
+      <Topo email={userEmail} ativo="fichas" />
+      <main className="miolo tv es ft">
+        <div className="es-topo">
+          <div>
+            <span className="es-sobre">Operação</span>
+            <h1>Fichas técnicas</h1>
+            <p>Cada prato, drink e preparo com os ingredientes, o modo de fazer e o custo pelo último preço pago. Clique numa ficha para abrir e editar.</p>
           </div>
         </div>
-      ))}
+
+        <div className="es-numeros">
+          <div className="es-numero"><span className="tv-cartao-rotulo">Fichas</span><span className="es-numero-valor">{fichas.length}</span><span className="tv-cartao-detalhe">{conferidas} conferidas com a cozinha</span></div>
+          <div className="es-numero"><span className="tv-cartao-rotulo">Com custo</span><span className="es-numero-valor">{comCusto}</span><span className="tv-cartao-detalhe">pelo último preço das notas</span></div>
+          <div className="es-numero"><span className="tv-cartao-rotulo">No cardápio</span><span className="es-numero-valor">{Object.keys(vendas).length}</span><span className="tv-cartao-detalhe">vendidas na TOTVS em 30 dias</span></div>
+        </div>
+
+        <div className="cp-abas" role="tablist">
+          <button role="tab" aria-selected={aba === "fichas"} className={aba === "fichas" ? "on" : ""} onClick={() => setAba("fichas")}>Fichas técnicas</button>
+          <button role="tab" aria-selected={aba === "menus"} className={aba === "menus" ? "on" : ""} onClick={() => setAba("menus")}>Menus</button>
+        </div>
+
+        {aba === "fichas"
+          ? <ListaFichas fichas={fichas} custos={custos} vendas={vendas} abrir={setAberta} onMudou={carregar} />
+          : <Menus fichas={fichas} custos={custos} abrir={setAberta} />}
+      </main>
+
+      {ficha && <FichaAberta ficha={ficha} custo={custos[ficha.id]} vendas={vendas[ficha.id] ?? []} onMudou={carregar} onFechar={() => setAberta(null)} />}
     </div>
   );
 }
 
-// Uma ficha no mesmo desenho do projeto: cabeçalho com foto, ingredientes à esquerda e preparo à direita.
-// A mais: o custo de cada ingrediente, o total e a venda na TOTVS.
-type ItemCusto = Item & { custo: number | null };
-function FichaCartao({ ficha, custo, vendas, aberta, alternar, onMudou }: {
-  ficha: Ficha; custo?: Custo; vendas: Venda[]; aberta: boolean; alternar: () => void; onMudou: () => void;
+// ---------------------------------------------------------------------
+// Aba Fichas técnicas: escolhe o local, depois o grupo; cartões pequenos
+// ---------------------------------------------------------------------
+function ListaFichas({ fichas, custos, vendas, abrir, onMudou }: {
+  fichas: Ficha[]; custos: Record<string, Custo>; vendas: Record<string, Venda[]>; abrir: (id: string) => void; onMudou: () => void;
 }) {
-  const supabase = useMemo(() => createClient(), []);
-  const [itens, setItens] = useState<ItemCusto[] | null>(null);
-  useEffect(() => {
-    (async () => {
-      const [a, b] = await Promise.all([
-        supabase.from("fichas_itens").select("*").eq("ficha_id", ficha.id).eq("removido", false).order("ordem"),
-        supabase.from("fichas_itens_custo").select("item_id,custo").eq("ficha_id", ficha.id),
-      ]);
-      const cs = Object.fromEntries(((b.data ?? []) as { item_id: number; custo: number | null }[]).map((x) => [x.item_id, x.custo]));
-      setItens(((a.data ?? []) as Item[]).map((i) => ({ ...i, custo: cs[i.id] ?? null })));
-    })();
-  }, [supabase, ficha.id, custo?.custo]);
+  const [local, setLocal] = useState("midway");
+  const [grupo, setGrupo] = useState("");
+  const [busca, setBusca] = useState("");
+  const [revisar, setRevisar] = useState(false);
 
-  const v = [...vendas].sort((x, y) => y.vendidos_30d - x.vendidos_30d)[0];
-  const cmv = custo?.custo != null && v?.preco_medio ? custo.custo / v.preco_medio : null;
-  const sub: ReactNode[] = [
-    ficha.rendimento ? `Rende ${qtd(ficha.rendimento)} ${ficha.rendimento_unidade ?? ""}` : "",
-    custo?.custo != null ? `Custo ${brl(custo.custo)}${custo.sem_preco ? ` (${custo.sem_preco} sem preço)` : ""}` : "",
-    v ? `Venda ${brl(v.preco_medio)}` : "",
-    cmv != null ? <span className={cmv > 0.35 ? "es-ruim" : undefined}>Custo ÷ preço {pct(cmv)}</span> : "",
-    ficha.conferida ? "Conferida com a cozinha" : "",
-  ].filter(Boolean);
-  const passos = (ficha.preparo ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
-  const obs = (ficha.observacoes ?? "").replace(/^Obs\.?:\s*/i, "");
+  const doLocal = fichas.filter((f) => f.unidade_negocio === local);
+  const grupos = [...new Set(doLocal.map((f) => f.grupo ?? TIPOS[f.tipo]))];
+  const b = busca.trim().toLowerCase();
+  const visiveis = (b ? fichas.filter((f) => f.nome.toLowerCase().includes(b)) : doLocal.filter((f) => !grupo || (f.grupo ?? TIPOS[f.tipo]) === grupo));
+  const porGrupo = [...new Set(visiveis.map((f) => (b ? LOCAIS[f.unidade_negocio] : f.grupo ?? TIPOS[f.tipo])))]
+    .map((g) => ({ g, fs: visiveis.filter((f) => (b ? LOCAIS[f.unidade_negocio] : f.grupo ?? TIPOS[f.tipo]) === g) }));
+
+  if (revisar) {
+    return (
+      <>
+        <button className="ghost small ft-voltar" onClick={() => setRevisar(false)}>← Voltar para as fichas</button>
+        <RevisarInsumos onMudou={onMudou} />
+      </>
+    );
+  }
 
   return (
-    <article className="ficha">
-      <div className={ficha.tipo === "drink" ? "ficha-cab drink" : "ficha-cab"}>
-        {ficha.foto ? <img className="ficha-foto" src={ficha.foto} alt="" /> : <span className="ficha-foto vazia" />}
-        <div className="ficha-txt">
-          <span className="ficha-tag">{CURTO[ficha.unidade_negocio] ?? ficha.unidade_negocio} · {ficha.grupo ?? TIPOS[ficha.tipo]}</span>
-          <h3>{ficha.nome}</h3>
-          {sub.length > 0 && <p className="ficha-sub">{sub.map((s, k) => <Fragment key={k}>{k > 0 && " · "}{s}</Fragment>)}</p>}
+    <>
+      <div className="ft-barra">
+        <div className="ft-chips" role="tablist" aria-label="Local">
+          {Object.entries(LOCAIS).map(([k, n]) => (
+            <button key={k} role="tab" aria-selected={local === k && !b} className={local === k && !b ? "on" : ""} onClick={() => { setLocal(k); setGrupo(""); setBusca(""); }}>
+              {n}<span>{fichas.filter((f) => f.unidade_negocio === k).length}</span>
+            </button>
+          ))}
+        </div>
+        <div className="ft-ferramentas">
+          <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar ficha" aria-label="Buscar ficha" />
+          <button className="ghost small" onClick={() => setRevisar(true)}>Revisar insumos</button>
         </div>
       </div>
-      <div className="ficha-corpo">
-        <table className="ficha-tab">
-          <thead><tr><th>Ingrediente</th><th>Un.</th><th>Qtd.</th><th>Custo</th></tr></thead>
-          <tbody>
-            {(itens ?? []).map((i) => (
-              <tr key={i.id}>
-                <td>{i.ingrediente}</td>
-                <td>{i.unidade ?? ""}</td>
-                <td>{i.quantidade != null ? qtd(i.quantidade) : i.quantidade_texto ?? "q.b."}</td>
-                <td>{i.custo != null ? brl(i.custo) : "—"}</td>
-              </tr>
-            ))}
-            {custo?.custo != null && <tr className="total"><td>Custo</td><td /><td /><td>{brl(custo.custo)}</td></tr>}
-          </tbody>
-        </table>
-        {passos.length > 0 && <p><b>Preparo:</b></p>}
-        {passos.length > 0 && <ol>{passos.map((p, k) => <li key={k}>{p}</li>)}</ol>}
-        {obs && <p><b>Obs.:</b> {obs}</p>}
-        <p className="ft-acoes"><button className="ghost small" onClick={alternar}>{aberta ? "Fechar" : "Ajustar quantidades e conferir"}</button></p>
-      </div>
-      {aberta && <Detalhe ficha={ficha} vendas={vendas} onMudou={onMudou} onFechar={alternar} />}
-    </article>
+      {!b && grupos.length > 1 && (
+        <div className="ft-chips ft-chips-sub" role="tablist" aria-label="Grupo">
+          <button role="tab" aria-selected={!grupo} className={!grupo ? "on" : ""} onClick={() => setGrupo("")}>Todos</button>
+          {grupos.map((g) => <button key={g} role="tab" aria-selected={grupo === g} className={grupo === g ? "on" : ""} onClick={() => setGrupo(g)}>{g}</button>)}
+        </div>
+      )}
+
+      {porGrupo.map(({ g, fs }) => (
+        <section key={g} className="ft-secao">
+          <h2>{g}<span className="muted">{fs.length} {fs.length === 1 ? "ficha" : "fichas"}</span></h2>
+          <div className="ft-cards">
+            {fs.map((f) => <Cartao key={f.id} ficha={f} custo={custos[f.id]} venda={(vendas[f.id] ?? [])[0]} abrir={() => abrir(f.id)} />)}
+          </div>
+        </section>
+      ))}
+      {!visiveis.length && <p className="muted vazio">Nenhuma ficha encontrada.</p>}
+    </>
   );
 }
 
-function Detalhe({ ficha, vendas, onMudou, onFechar }: { ficha: Ficha; vendas: Venda[]; onMudou: () => void; onFechar: () => void }) {
+function Cartao({ ficha, custo, venda, abrir }: { ficha: Ficha; custo?: Custo; venda?: Venda; abrir: () => void }) {
+  const cmv = custo?.custo != null && venda?.preco_medio ? custo.custo / venda.preco_medio : null;
+  return (
+    <button className="ft-card" onClick={abrir}>
+      {ficha.foto
+        ? <img className={ficha.tipo === "drink" ? "ft-card-foto drink" : "ft-card-foto"} src={ficha.foto} alt="" loading="lazy" />
+        : <span className="ft-card-foto vazia" aria-hidden="true">{ficha.nome.slice(0, 1)}</span>}
+      <span className="ft-card-txt">
+        <b>{ficha.nome}</b>
+        <small>
+          {custo?.custo != null ? `Custo ${brl(custo.custo)}` : "Sem custo ainda"}
+          {cmv != null && <> · <span className={cmv > LIMITE_CMV ? "es-ruim" : ""}>{pct(cmv)} do preço</span></>}
+        </small>
+      </span>
+      {ficha.conferida && <span className="estado tv-ok ft-card-selo">conferida</span>}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Ficha aberta: a ficha inteira, grande, para editar
+// ---------------------------------------------------------------------
+function FichaAberta({ ficha, custo, vendas, onMudou, onFechar }: { ficha: Ficha; custo?: Custo; vendas: Venda[]; onMudou: () => void; onFechar: () => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [itens, setItens] = useState<Item[]>([]);
-  const [insumos, setInsumos] = useState<Record<string, Insumo>>({});
+  const [custoItem, setCustoItem] = useState<Record<number, number | null>>({});
+  const [insumos, setInsumos] = useState<Insumo[]>([]);
   const [precos, setPrecos] = useState<Record<string, Preco>>({});
-  const [subs, setSubs] = useState<Record<string, string>>({});
-  const [erro, setErro] = useState("");
+  const [form, setForm] = useState({ nome: ficha.nome, grupo: ficha.grupo ?? "", rendimento: ficha.rendimento != null ? qtd(ficha.rendimento) : "",
+    rendimento_unidade: ficha.rendimento_unidade ?? "", preparo: ficha.preparo ?? "", observacoes: ficha.observacoes ?? "" });
+  const [novo, setNovo] = useState({ ingrediente: "", quantidade: "", unidade: "", insumo: "" });
+  const [msg, setMsg] = useState("");
+  const [salvo, setSalvo] = useState("");
+  const painel = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async () => {
-    const { data } = await supabase.from("fichas_itens").select("*").eq("ficha_id", ficha.id).eq("removido", false).order("ordem");
-    const its = (data ?? []) as Item[];
-    setItens(its);
-    const ids = [...new Set(its.map((i) => i.insumo_id).filter(Boolean))] as string[];
-    const sids = [...new Set(its.map((i) => i.sub_ficha_id).filter(Boolean))] as string[];
-    const [a, b, s] = await Promise.all([
-      ids.length ? supabase.from("insumos").select("id,nome,unidade").in("id", ids) : Promise.resolve({ data: [] }),
-      ids.length ? supabase.from("insumos_precos").select("*").in("insumo_id", ids) : Promise.resolve({ data: [] }),
-      sids.length ? supabase.from("fichas").select("id,nome").in("id", sids) : Promise.resolve({ data: [] }),
+    const [a, b, c, d] = await Promise.all([
+      supabase.from("fichas_itens").select("*").eq("ficha_id", ficha.id).eq("removido", false).order("ordem"),
+      supabase.from("fichas_itens_custo").select("item_id,custo").eq("ficha_id", ficha.id),
+      supabase.from("insumos").select("id,nome,unidade").eq("ativo", true).order("nome"),
+      supabase.from("insumos_precos").select("*"),
     ]);
-    setInsumos(Object.fromEntries(((a.data ?? []) as Insumo[]).map((x) => [x.id, x])));
-    setPrecos(Object.fromEntries(((b.data ?? []) as Preco[]).map((x) => [x.insumo_id, x])));
-    setSubs(Object.fromEntries(((s.data ?? []) as { id: string; nome: string }[]).map((x) => [x.id, x.nome])));
+    setItens((a.data ?? []) as Item[]);
+    setCustoItem(Object.fromEntries(((b.data ?? []) as { item_id: number; custo: number | null }[]).map((x) => [x.item_id, x.custo])));
+    setInsumos((c.data ?? []) as Insumo[]);
+    setPrecos(Object.fromEntries(((d.data ?? []) as Preco[]).map((x) => [x.insumo_id, x])));
   }, [supabase, ficha.id]);
   useEffect(() => { carregar(); }, [carregar]);
 
-  async function conferir(sim: boolean) {
-    const { error } = await supabase.rpc("fichas_conferir", { p_ficha: ficha.id, p_conferida: sim });
-    if (error) setErro(error.message);
-    onMudou();
-  }
-  async function salvarQtd(i: Item, valor: string) {
-    const q = valor.trim() === "" ? null : Number(valor.replace(",", "."));
-    if (q !== null && Number.isNaN(q)) return setErro("Quantidade inválida.");
-    const { error } = await supabase.rpc("fichas_item_salvar", { p_item: i.id, p_quantidade: q, p_unidade: i.unidade ?? "", p_insumo: i.insumo_id, p_removido: false });
-    if (error) return setErro(error.message);
+  // Esc fecha; o foco vai para o painel ao abrir
+  useEffect(() => {
+    painel.current?.focus();
+    const f = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    window.addEventListener("keydown", f);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", f); document.body.style.overflow = ""; };
+  }, [onFechar]);
+
+  const porNome = useMemo(() => Object.fromEntries(insumos.map((i) => [i.nome.toLowerCase(), i])), [insumos]);
+  const porId = useMemo(() => Object.fromEntries(insumos.map((i) => [i.id, i])), [insumos]);
+  const v = [...vendas].sort((x, y) => y.vendidos_30d - x.vendidos_30d)[0];
+  const cmv = custo?.custo != null && v?.preco_medio ? custo.custo / v.preco_medio : null;
+
+  async function feito(p: PromiseLike<{ error: { message: string } | null }>, texto = "Salvo.") {
+    setMsg(""); setSalvo("");
+    const { error } = await p;
+    if (error) return setMsg(error.message);
+    setSalvo(texto);
     carregar(); onMudou();
   }
+  function salvarItem(i: Item, m: Partial<{ ingrediente: string; quantidade: string; unidade: string; insumo: string; removido: boolean }>) {
+    const q = m.quantidade !== undefined ? numero(m.quantidade) : i.quantidade;
+    if (q !== null && Number.isNaN(q)) return setMsg("Quantidade inválida.");
+    const insumo = m.insumo !== undefined ? (porNome[m.insumo.trim().toLowerCase()]?.id ?? (m.insumo.trim() ? undefined : null)) : i.insumo_id;
+    if (insumo === undefined) return setMsg(`“${m.insumo}” não está no cadastro de insumos. Escolha um nome da lista.`);
+    feito(supabase.rpc("fichas_item_atualizar", { p_item: i.id, p_ingrediente: m.ingrediente ?? i.ingrediente, p_quantidade: q,
+      p_unidade: m.unidade ?? i.unidade ?? "", p_insumo: insumo, p_removido: m.removido ?? false }), m.removido ? "Ingrediente tirado." : "Salvo.");
+  }
+  function incluir() {
+    const q = numero(novo.quantidade);
+    if (q !== null && Number.isNaN(q)) return setMsg("Quantidade inválida.");
+    const insumo = novo.insumo.trim() ? porNome[novo.insumo.trim().toLowerCase()]?.id : null;
+    if (insumo === undefined) return setMsg(`“${novo.insumo}” não está no cadastro de insumos. Escolha um nome da lista.`);
+    feito(supabase.rpc("fichas_item_incluir", { p_ficha: ficha.id, p_ingrediente: novo.ingrediente, p_quantidade: q, p_unidade: novo.unidade, p_insumo: insumo }), "Ingrediente incluído.");
+    setNovo({ ingrediente: "", quantidade: "", unidade: "", insumo: "" });
+  }
+  function salvarTextos() {
+    const r = numero(form.rendimento);
+    if (r !== null && Number.isNaN(r)) return setMsg("Rendimento inválido.");
+    feito(supabase.rpc("fichas_salvar", { p_ficha: ficha.id, p_nome: form.nome, p_grupo: form.grupo, p_rendimento: r,
+      p_rendimento_unidade: form.rendimento_unidade, p_preparo: form.preparo, p_observacoes: form.observacoes }));
+  }
 
-  let total = 0;
   return (
-    <section className="es-bloco nf-detalhe">
-      <div className="es-bloco-cabeca">
-        <h2>{ficha.nome} <span className="muted">· {UNIDADES[ficha.unidade_negocio]}{ficha.rendimento ? ` · rende ${qtd(ficha.rendimento)} ${ficha.rendimento_unidade ?? ""}` : ""}</span></h2>
-        <div className="nf-acoes">
-          {ficha.conferida ? <button className="ghost small" onClick={() => conferir(false)}>Desmarcar conferida</button>
-            : <button className="small" onClick={() => conferir(true)}>Marcar como conferida</button>}
-          <button className="ghost small" onClick={onFechar}>Fechar</button>
+    <div className="ft-fundo" onClick={onFechar}>
+      <div className="ft-painel es" role="dialog" aria-modal="true" aria-label={`Ficha técnica: ${ficha.nome}`} tabIndex={-1} ref={painel} onClick={(e) => e.stopPropagation()}>
+        <header className="ft-painel-cabeca">
+          {ficha.foto ? <img className={ficha.tipo === "drink" ? "ft-painel-foto drink" : "ft-painel-foto"} src={ficha.foto} alt={`Foto de ${ficha.nome}`} /> : null}
+          <div className="ft-painel-titulo">
+            <span className="es-sobre">{LOCAIS[ficha.unidade_negocio]} · {ficha.grupo ?? TIPOS[ficha.tipo]}</span>
+            <input className="ft-nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} onBlur={() => form.nome !== ficha.nome && salvarTextos()} aria-label="Nome da ficha" />
+            <div className="ft-indicadores">
+              <span><small>Custo</small><b>{brl(custo?.custo)}</b>{custo && custo.sem_preco > 0 && <em>{custo.sem_preco} sem preço</em>}</span>
+              <span><small>Venda na TOTVS</small><b>{v ? brl(v.preco_medio) : "—"}</b>{v && <em>{qtd(v.vendidos_30d)} em 30 dias</em>}</span>
+              <span><small>Custo ÷ preço</small><b className={cmv != null && cmv > LIMITE_CMV ? "es-ruim" : ""}>{cmv != null ? pct(cmv) : "—"}</b></span>
+            </div>
+          </div>
+          <div className="ft-painel-acoes">
+            {ficha.conferida
+              ? <button className="ghost small" onClick={() => feito(supabase.rpc("fichas_conferir", { p_ficha: ficha.id, p_conferida: false }))}>Desmarcar conferida</button>
+              : <button className="small" onClick={() => feito(supabase.rpc("fichas_conferir", { p_ficha: ficha.id, p_conferida: true }), "Marcada como conferida.")}>Marcar como conferida</button>}
+            <button className="ghost small" onClick={onFechar} aria-label="Fechar a ficha">Fechar</button>
+          </div>
+        </header>
+
+        {(msg || salvo) && <p className={msg ? "es-aviso tv-alerta" : "es-aviso"} role="status">{msg || salvo}</p>}
+
+        <div className="ft-painel-corpo">
+          <section className="ft-ingredientes">
+            <h3>Ingredientes</h3>
+            <div className="nf-tabela-wrap">
+              <table className="nf-tabela ft-tabela">
+                <thead><tr><th>Ingrediente</th><th className="n">Qtd.</th><th>Un.</th><th>Insumo (para o custo)</th><th className="n">Custo</th><th /></tr></thead>
+                <tbody>
+                  {itens.map((i) => {
+                    const ins = i.insumo_id ? porId[i.insumo_id] : null;
+                    const p = i.insumo_id ? precos[i.insumo_id] : null;
+                    const c = custoItem[i.id];
+                    return (
+                      <tr key={`${i.id}-${i.quantidade}-${i.insumo_id}`}>
+                        <td><input defaultValue={i.ingrediente} onBlur={(e) => e.target.value.trim() !== i.ingrediente && salvarItem(i, { ingrediente: e.target.value })} aria-label="Ingrediente" />
+                          {i.sub_ficha_id && <small>usa outra ficha (preparo)</small>}</td>
+                        <td className="n"><input className="n" inputMode="decimal" defaultValue={i.quantidade != null ? qtd(i.quantidade) : i.quantidade_texto ?? ""} placeholder="q.b."
+                          onBlur={(e) => e.target.value !== (i.quantidade != null ? qtd(i.quantidade) : i.quantidade_texto ?? "") && salvarItem(i, { quantidade: e.target.value })} aria-label={`Quantidade de ${i.ingrediente}`} /></td>
+                        <td><input className="ft-un" defaultValue={i.unidade ?? ""} onBlur={(e) => e.target.value.trim() !== (i.unidade ?? "") && salvarItem(i, { unidade: e.target.value })} aria-label={`Unidade de ${i.ingrediente}`} /></td>
+                        <td><input list="ft-insumos" defaultValue={ins?.nome ?? ""} placeholder="escolha um insumo"
+                          onBlur={(e) => e.target.value.trim() !== (ins?.nome ?? "") && salvarItem(i, { insumo: e.target.value })} aria-label={`Insumo de ${i.ingrediente}`} />
+                          {p && <small>{brl(p.preco)} / {ins?.unidade} · {p.fornecedor}</small>}</td>
+                        <td className="n">{c != null ? brl(c) : i.quantidade == null ? <span className="muted">q.b.</span> : <span className="muted">sem preço</span>}</td>
+                        <td><button className="ghost small ft-tirar" onClick={() => salvarItem(i, { removido: true })} aria-label={`Tirar ${i.ingrediente}`} title="Tirar da ficha">×</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {custo?.custo != null && <tfoot><tr><td colSpan={4}><strong>Custo dos ingredientes com preço</strong></td><td className="n"><strong>{brl(custo.custo)}</strong></td><td /></tr></tfoot>}
+              </table>
+            </div>
+            <datalist id="ft-insumos">{insumos.map((i) => <option key={i.id} value={i.nome}>{i.unidade}</option>)}</datalist>
+            <div className="ft-incluir">
+              <input value={novo.ingrediente} onChange={(e) => setNovo({ ...novo, ingrediente: e.target.value })} placeholder="Novo ingrediente" aria-label="Novo ingrediente" />
+              <input className="n" inputMode="decimal" value={novo.quantidade} onChange={(e) => setNovo({ ...novo, quantidade: e.target.value })} placeholder="Qtd." aria-label="Quantidade" />
+              <input value={novo.unidade} onChange={(e) => setNovo({ ...novo, unidade: e.target.value })} placeholder="Un." aria-label="Unidade" />
+              <input list="ft-insumos" value={novo.insumo} onChange={(e) => setNovo({ ...novo, insumo: e.target.value })} placeholder="Insumo" aria-label="Insumo" />
+              <button className="ghost small" disabled={!novo.ingrediente.trim()} onClick={incluir}>Incluir</button>
+            </div>
+          </section>
+
+          <section className="ft-preparo-bloco">
+            <h3>Modo de preparo</h3>
+            <textarea rows={Math.max(6, form.preparo.split("\n").length + 1)} value={form.preparo} onChange={(e) => setForm({ ...form, preparo: e.target.value })}
+              placeholder="Um passo por linha" aria-label="Modo de preparo" />
+            <h3>Observações</h3>
+            <textarea rows={3} value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} aria-label="Observações" />
+            <div className="ft-linha">
+              <label>Grupo<input value={form.grupo} onChange={(e) => setForm({ ...form, grupo: e.target.value })} /></label>
+              <label>Rende<input inputMode="decimal" value={form.rendimento} onChange={(e) => setForm({ ...form, rendimento: e.target.value })} /></label>
+              <label>Unidade<input value={form.rendimento_unidade} onChange={(e) => setForm({ ...form, rendimento_unidade: e.target.value })} placeholder="porções, kg…" /></label>
+            </div>
+            <button onClick={salvarTextos}>Salvar preparo e observações</button>
+            {vendas.length > 0 && (
+              <p className="muted ft-totvs">Na TOTVS: {vendas.map((x) => `${titulo(x.produto)} (${CASAS[x.unidade_totvs] ?? x.unidade_totvs}) · ${qtd(x.vendidos_30d)} vendidos a ${brl(x.preco_medio)}`).join(" | ")}</p>
+            )}
+          </section>
         </div>
       </div>
-      {ficha.foto && <img className="nf-foto" src={ficha.foto} alt={`Foto de ${ficha.nome}`} />}
-      <div className="nf-tabela-wrap">
-        <table className="nf-tabela">
-          <thead><tr><th>Ingrediente</th><th className="n">Quantidade</th><th>Insumo</th><th className="n">Último preço</th><th className="n">Custo</th></tr></thead>
-          <tbody>
-            {itens.map((i) => {
-              const ins = i.insumo_id ? insumos[i.insumo_id] : null;
-              const p = i.insumo_id ? precos[i.insumo_id] : null;
-              const q = ins ? converter(i.quantidade, i.unidade, ins.unidade) : null;
-              const c = q != null && p ? q * p.preco : null;
-              if (c != null) total += c;
-              return (
-                <tr key={i.id}>
-                  <td>{i.ingrediente}{i.sub_ficha_id && <small>preparo: {subs[i.sub_ficha_id] ?? ""}</small>}</td>
-                  <td className="n"><input className="n ft-qtd" defaultValue={i.quantidade != null ? String(i.quantidade).replace(".", ",") : i.quantidade_texto ?? ""}
-                    onBlur={(v) => v.target.value.replace(",", ".") !== String(i.quantidade ?? "") && salvarQtd(i, v.target.value)} aria-label={`Quantidade de ${i.ingrediente}`} /> {i.unidade ?? ""}</td>
-                  <td>{ins ? ins.nome : i.sub_ficha_id ? "—" : <span className="muted">sem insumo</span>}</td>
-                  <td className="n">{p ? <>{brl(p.preco)} / {ins?.unidade}<small>{p.fornecedor}</small></> : "—"}</td>
-                  <td className="n">{c != null ? brl(c) : i.quantidade == null ? <span className="muted">q.b.</span> : <span className="muted">sem preço</span>}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot><tr><td colSpan={4}><strong>Custo dos ingredientes com preço</strong></td><td className="n"><strong>{brl(total)}</strong></td></tr></tfoot>
-        </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Aba Menus: o cardápio de cada casa, ligado às fichas
+// ---------------------------------------------------------------------
+function Menus({ fichas, custos, abrir }: { fichas: Ficha[]; custos: Record<string, Custo>; abrir: (id: string) => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [produtos, setProdutos] = useState<Produto[] | null>(null);
+  const [casa, setCasa] = useState("midway");
+  const [categoria, setCategoria] = useState("comida");
+  const [ligando, setLigando] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const carregar = useCallback(async () => {
+    const { data, error } = await supabase.from("menus_produtos").select("*").neq("grupo", "TAXAS").order("subgrupo").order("produto");
+    if (error) setMsg(error.message);
+    setProdutos((data ?? []) as Produto[]);
+  }, [supabase]);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function ligar(p: Produto, fichaId: string) {
+    setMsg("");
+    const { error } = await supabase.rpc("fichas_totvs_ligar", { p_ficha: fichaId, p_unidade: p.unidade_id, p_produto: p.produto, p_ligar: true });
+    if (error) return setMsg(error.message);
+    setLigando(null);
+    carregar();
+  }
+
+  if (!produtos) return <p className="muted">Carregando o cardápio…</p>;
+  const daCasa = produtos.filter((p) => p.unidade_id === casa);
+  const lista = daCasa.filter((p) => (p.categoria ?? "").toLowerCase() === categoria);
+  const secoes = [...new Set(lista.map((p) => p.subgrupo ?? "Outros"))].map((s) => ({ s, ps: lista.filter((p) => (p.subgrupo ?? "Outros") === s) }));
+  const ligados = lista.filter((p) => p.ficha_id).length;
+  const fichasDaCasa = fichas.filter((f) => f.unidade_negocio === DA_CASA[casa] || f.unidade_negocio === "producao");
+
+  return (
+    <>
+      <div className="ft-barra">
+        <div className="ft-chips" role="tablist" aria-label="Casa">
+          {Object.entries(CASAS).map(([k, n]) => (
+            <button key={k} role="tab" aria-selected={casa === k} className={casa === k ? "on" : ""} onClick={() => setCasa(k)}>
+              {n}<span>{produtos.filter((p) => p.unidade_id === k).length}</span>
+            </button>
+          ))}
+        </div>
+        <div className="ft-chips" role="tablist" aria-label="Comida ou bebida">
+          {["comida", "bebida"].map((c) => (
+            <button key={c} role="tab" aria-selected={categoria === c} className={categoria === c ? "on" : ""} onClick={() => setCategoria(c)}>{c === "comida" ? "Comida" : "Bebida"}</button>
+          ))}
+        </div>
       </div>
-      {vendas.length > 0 && (
-        <p className="muted ft-venda">Na TOTVS: {vendas.map((v) => `${v.produto} · ${qtd(v.vendidos_30d)} vendidos em 30 dias a ${brl(v.preco_medio)}`).join(" | ")}</p>
-      )}
-      {ficha.preparo && (<><h3>Preparo</h3><ol className="ft-preparo">{ficha.preparo.split("\n").map((l, k) => <li key={k}>{l}</li>)}</ol></>)}
-      {ficha.observacoes && <p className="muted es-nota">{ficha.observacoes}</p>}
-      {erro && <p className="tv-alerta">{erro}</p>}
-    </section>
+      <p className="muted cp-ajuda">O cardápio é o que a TOTVS vendeu nos últimos 60 dias. {ligados} de {lista.length} itens já estão ligados a uma ficha:
+        clique para abrir a ficha, ou ligue os que faltam.</p>
+      {msg && <p className="es-aviso tv-alerta">{msg}</p>}
+
+      {secoes.map(({ s, ps }) => (
+        <section key={s} className="ft-secao">
+          <h2>{titulo(s)}<span className="muted">{ps.length} {ps.length === 1 ? "item" : "itens"}</span></h2>
+          <div className="nf-tabela-wrap">
+            <table className="nf-tabela ft-menu">
+              <thead><tr><th>Item</th><th className="n">Preço</th><th className="n">Vendidos em 60 dias</th><th className="n">Custo</th><th className="n">Custo ÷ preço</th><th>Ficha</th></tr></thead>
+              <tbody>
+                {ps.map((p) => {
+                  const f = p.ficha_id ? fichas.find((x) => x.id === p.ficha_id) : null;
+                  const c = f ? custos[f.id]?.custo ?? null : null;
+                  const cmv = c != null && p.preco_medio ? c / p.preco_medio : null;
+                  const chave = `${p.unidade_id}|${p.produto}`;
+                  return (
+                    <tr key={chave} className={f ? "ft-menu-ligado" : ""} onClick={f ? () => abrir(f.id) : undefined}>
+                      <td><strong>{titulo(p.produto)}</strong></td>
+                      <td className="n">{brl(p.preco_medio)}</td>
+                      <td className="n">{qtd(p.vendidos_60d)}</td>
+                      <td className="n">{c != null ? brl(c) : "—"}</td>
+                      <td className="n">{cmv != null ? <span className={cmv > LIMITE_CMV ? "es-ruim" : ""}>{pct(cmv)}</span> : "—"}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {f ? <button className="ft-link" onClick={() => abrir(f.id)}>{f.nome}</button>
+                          : ligando === chave
+                            ? <select autoFocus defaultValue="" onChange={(e) => e.target.value && ligar(p, e.target.value)} onBlur={() => setLigando(null)} aria-label={`Ficha de ${p.produto}`}>
+                                <option value="">Escolha a ficha…</option>
+                                {fichasDaCasa.map((x) => <option key={x.id} value={x.id}>{x.nome} · {LOCAIS[x.unidade_negocio]}</option>)}
+                              </select>
+                            : <button className="ghost small" onClick={() => setLigando(chave)}>Ligar ficha</button>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+      {!lista.length && <p className="muted vazio">Nada vendido nesta casa nos últimos 60 dias.</p>}
+    </>
   );
 }
 

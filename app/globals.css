@@ -2059,6 +2059,99 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
 .ft-preparo { margin: 0 0 12px; padding-left: 20px; font-size: 14px; display: grid; gap: 4px; }
 .ft-venda { font-size: 13.5px; margin: 12px 0 0; }
 
+/* Barra de escolha (local, grupo, casa): chips no tom do sistema */
+.ft-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 0 0 12px; }
+.ft-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ft-chips button { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel); font-size: 13.5px; color: var(--muted); }
+.ft-chips button span { font-size: 11px; font-weight: 600; color: var(--muted); }
+.ft-chips button:hover { color: var(--strong); border-color: var(--soft-line); }
+.ft-chips button.on { background: var(--strong); border-color: var(--strong); color: var(--panel); }
+.ft-chips button.on span { color: var(--gold); }
+.ft-chips button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.ft-chips-sub { margin: 0 0 8px; }
+.ft-chips-sub button { padding: 5px 12px; font-size: 12.5px; }
+.ft-chips-sub button.on { background: var(--soft); border-color: var(--soft-line); color: var(--strong); font-weight: 600; }
+.ft-ferramentas { display: flex; gap: 8px; align-items: center; }
+.ft-ferramentas input { padding: 8px 12px; min-width: 220px; }
+.ft-voltar { margin: 0 0 12px; }
+.ft-secao { margin: 24px 0 0; }
+.ft-secao > h2 { display: flex; align-items: baseline; gap: 10px; font-family: var(--font-serif), Georgia, serif; font-size: 20px; font-weight: 500; color: var(--strong); margin: 0 0 12px; }
+.ft-secao > h2 .muted { font-family: inherit; font-size: 12.5px; font-weight: 400; }
+
+/* Cartões pequenos das fichas */
+.ft-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 16px; }
+.ft-card { all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: flex; flex-direction: column; border: 1px solid var(--border);
+  border-radius: 16px; background: var(--panel); overflow: hidden; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.ft-card:hover { border-color: var(--soft-line); box-shadow: 0 6px 20px var(--shadow); transform: translateY(-1px); }
+.ft-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.ft-card-foto { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--soft); }
+.ft-card-foto.drink { object-fit: contain; background: #fff; padding: 8px; }
+.ft-card-foto.vazia { display: grid; place-items: center; font-family: var(--font-serif), Georgia, serif; font-size: 34px; color: var(--gold); }
+.ft-card-txt { display: grid; gap: 4px; padding: 12px 14px 14px; }
+.ft-card-txt b { font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--strong); }
+.ft-card-txt small { font-size: 12.5px; color: var(--muted); }
+.ft-card-selo { position: absolute; top: 10px; left: 10px; }
+
+/* Ficha aberta: painel grande por cima da página */
+.ft-fundo { position: fixed; inset: 0; z-index: 60; background: rgba(15, 20, 30, .45); display: flex; justify-content: center; align-items: flex-start;
+  padding: 32px 16px; overflow-y: auto; }
+.ft-painel { width: min(1080px, 100%); background: var(--bg); border-radius: 16px; box-shadow: 0 24px 64px var(--shadow); outline: none; }
+.ft-painel-cabeca { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 24px; align-items: start; padding: 24px; background: var(--panel);
+  border-bottom: 1px solid var(--border); border-radius: 16px 16px 0 0; }
+.ft-painel-foto { width: 160px; height: 120px; object-fit: cover; border-radius: 12px; background: var(--soft); }
+.ft-painel-foto.drink { object-fit: contain; background: #fff; }
+.ft-painel-titulo { display: grid; gap: 8px; min-width: 0; }
+.ft-nome { font-family: var(--font-serif), Georgia, serif; font-size: 28px; color: var(--strong); padding: 2px 8px; margin-left: -8px; border: 1px solid transparent;
+  background: transparent; border-radius: 8px; width: 100%; }
+.ft-nome:hover { border-color: var(--border); }
+.ft-nome:focus { border-color: var(--gold); background: var(--panel); outline: none; }
+.ft-indicadores { display: flex; flex-wrap: wrap; gap: 8px 32px; }
+.ft-indicadores span { display: grid; gap: 2px; }
+.ft-indicadores small { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ft-indicadores b { font-size: 18px; color: var(--strong); }
+.ft-indicadores em { font-style: normal; font-size: 12.5px; color: var(--muted); }
+.ft-painel-acoes { display: flex; gap: 8px; }
+.ft-painel > .es-aviso { margin: 16px 24px 0; }
+.ft-painel-corpo { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 24px; padding: 24px; }
+.ft-painel-corpo h3 { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); margin: 0 0 8px; }
+.ft-ingredientes, .ft-preparo-bloco { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; min-width: 0; }
+.ft-preparo-bloco { display: grid; gap: 8px; align-content: start; }
+.ft-preparo-bloco h3:not(:first-child) { margin-top: 8px; }
+.ft-preparo-bloco textarea { width: 100%; padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.6; resize: vertical; }
+.ft-preparo-bloco > button { justify-self: start; margin-top: 4px; }
+.ft-tabela input { width: 100%; min-width: 0; padding: 5px 7px; font-size: 13.5px; border-color: transparent; background: transparent; }
+.ft-tabela input:hover { border-color: var(--border); }
+.ft-tabela input:focus { border-color: var(--gold); background: var(--panel); }
+.ft-tabela input.n { text-align: right; max-width: 80px; }
+.ft-tabela .ft-un { max-width: 64px; }
+.ft-tirar { padding: 2px 8px; font-size: 16px; line-height: 1; color: var(--muted); }
+.ft-incluir { display: grid; grid-template-columns: minmax(0, 2fr) 72px 64px minmax(0, 1.6fr) auto; gap: 6px; margin-top: 12px; }
+.ft-incluir input { padding: 7px 9px; min-width: 0; }
+.ft-linha { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.ft-linha label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.ft-linha input { padding: 7px 9px; }
+.ft-totvs { font-size: 12.5px; margin: 8px 0 0; }
+
+/* Menus */
+.ft-menu-ligado { cursor: pointer; }
+.ft-link { all: unset; cursor: pointer; color: var(--strong); font-weight: 600; border-bottom: 1px solid var(--soft-line); }
+.ft-link:hover { border-color: var(--gold); }
+.ft-link:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.ft-menu select { padding: 5px 8px; max-width: 260px; }
+
+@media (max-width: 860px) {
+  .ft-painel-corpo { grid-template-columns: 1fr; padding: 16px; }
+  .ft-painel-cabeca { grid-template-columns: 1fr; padding: 16px; gap: 12px; }
+  .ft-painel-foto { width: 100%; height: 180px; }
+  .ft-fundo { padding: 0; }
+  .ft-painel { border-radius: 0; min-height: 100%; }
+  .ft-incluir { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ft-incluir input:first-child, .ft-incluir button { grid-column: 1 / -1; }
+  .ft-ferramentas, .ft-ferramentas input { width: 100%; min-width: 0; }
+  .ft-cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+}
+
 /* Operação · Estoque da câmara fria (usa o padrão visual do RH: .es) */
 .et-registrar { display: grid; gap: 16px; max-width: 640px; }
 .et-tipos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
@@ -2120,5 +2213,3 @@ table.pe-grade { width: max-content; min-width: 100%; border-collapse: separate;
   .pd-tarefa-cabeca { grid-template-columns: minmax(0, 1fr) auto; }
   .pd-tarefa-cabeca .estado { grid-column: 1 / -1; justify-self: start; }
 }
-.doc-escopo .ficha-corpo .ft-acoes { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--fx-linha2, var(--border)); }
-.doc-escopo .ficha > .nf-detalhe { margin: 0; border: 0; border-top: 1px solid var(--fx-linha, var(--border)); border-radius: 0; }
