@@ -185,7 +185,7 @@ end $$;
 revoke execute on function public.estoque_pessoa_ligar(uuid, boolean) from public, anon;
 grant execute on function public.estoque_pessoa_ligar(uuid, boolean) to authenticated;
 
-create or replace function public.estoque_pessoa_trg() returns trigger language plpgsql as $$
+create or replace function public.estoque_pessoa_trg() returns trigger language plpgsql set search_path = public as $$
 begin
   if new.papel = 'estoque' then new.registra_estoque := true; end if;
   return new;
