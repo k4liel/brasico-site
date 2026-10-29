@@ -10,7 +10,7 @@ import { NotaAvulsa } from "./Notas";
 // fornecedor e gera o PDF. Tabelas e funções em supabase/compras.sql.
 type Papel = "socio" | "compras" | "solicitante" | null;
 type Pessoa = { id: string; nome: string; unidade: string | null; setor: string | null; papel: string; email?: string | null;
-  user_id: string | null; wa_nome: string | null; ativo: boolean; convidado_em: string | null };
+  user_id: string | null; wa_nome: string | null; ativo: boolean; convidado_em: string | null; registra_estoque?: boolean };
 type Semana = { id: string; inicio: string; status: string };
 type Lista = { id: string; semana_id: string; pessoa_id: string; status: string; pedido_texto: string | null; analisada_em: string | null; aprovada_em: string | null };
 type Item = { id: number; lista_id: string; ordem: number; nome: string; fornecedor: string | null; unidade: string | null;
@@ -81,7 +81,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 
   return (
     <div className="pagina">
-      {gestor ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} />}
+      {gestor ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={eu?.registra_estoque ? { href: "/estoque", nome: "Estoque" } : undefined} />}
       <main className="miolo tv es cp-area">
         {cabecalho}
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
@@ -109,15 +109,16 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 }
 
 // Para quem só tem a área de Compras: sem o menu do Brasico
-function TopoSimples({ email, nome }: { email: string; nome: string }) {
+// Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
+export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
   async function sair() {
     await createClient().auth.signOut();
     window.location.href = "/login";
   }
   return (
     <header className="topo cp-topo">
-      <span className="marca">Brasico · Compras</span>
-      <span className="cp-quem">{nome || email}<button className="ghost small" onClick={sair}>Sair</button></span>
+      <span className="marca">Brasico · {area}</span>
+      <span className="cp-quem">{outra && <a href={outra.href}>{outra.nome}</a>}{nome || email}<button className="ghost small" onClick={sair}>Sair</button></span>
     </header>
   );
 }
@@ -458,7 +459,7 @@ function Pessoas() {
           <tbody>
             {pessoas.map((p) => (
               <tr key={p.id} className={p.ativo ? "" : "cp-tirado"}>
-                <td><strong>{p.nome}</strong><small>{p.papel === "compras" ? "Setor de compras" : `${SETORES[p.setor ?? ""] ?? ""} · ${UNIDADES[p.unidade ?? ""] ?? ""}`}</small></td>
+                <td><strong>{p.nome}</strong><small>{p.papel === "compras" ? "Setor de compras" : p.papel === "estoque" ? "Câmara fria" : `${SETORES[p.setor ?? ""] ?? ""} · ${UNIDADES[p.unidade ?? ""] ?? ""}`}</small></td>
                 <td><input type="email" defaultValue={p.email ?? ""} onBlur={(v) => v.target.value !== (p.email ?? "") && salvar(p, { email: v.target.value })} placeholder="nome@email.com" aria-label={`E-mail de ${p.nome}`} /></td>
                 <td><input defaultValue={p.wa_nome ?? ""} onBlur={(v) => v.target.value !== (p.wa_nome ?? "") && salvar(p, { wa_nome: v.target.value })} placeholder="Como aparece no grupo" aria-label={`Nome no WhatsApp de ${p.nome}`} /></td>
                 <td>{p.user_id ? <span className="estado tv-ok">com acesso</span> : <span className="estado">sem acesso</span>}</td>

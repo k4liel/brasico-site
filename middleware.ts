@@ -48,13 +48,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Solicitantes e setor de compras (operacao_pessoas) só abrem a área de Compras.
+  // Solicitantes e setor de compras (operacao_pessoas) só abrem as Compras e o Estoque;
+  // quem é só da câmara fria (papel estoque), só o Estoque.
   // A trava de verdade é a do banco (RLS): aqui é só o caminho certo na tela.
-  if (user && !isPublic && !path.startsWith("/compras")) {
+  if (user && !isPublic && !path.startsWith("/estoque")) {
     const { data: papel } = await supabase.rpc("operacao_papel", { p_user: user.id });
-    if (papel === "solicitante" || papel === "compras") {
+    const destino = papel === "estoque" ? "/estoque" : papel === "solicitante" || papel === "compras" ? "/compras" : null;
+    if (destino && !path.startsWith(destino)) {
       const url = request.nextUrl.clone();
-      url.pathname = "/compras";
+      url.pathname = destino;
       url.search = "";
       return NextResponse.redirect(url);
     }

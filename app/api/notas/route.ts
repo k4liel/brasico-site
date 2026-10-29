@@ -21,7 +21,8 @@ function db() {
 type Execucao = { id: string; empresa_cnpj: string; tipo: "distribuicao" | "ciencia" };
 type Pego = { execucao: Execucao; empresa: { cnpj: string; nome: string; ult_nsu: string }; chaves: string[]; certificado: string | null };
 
-const UMA_HORA = 60 * 60 * 1000;
+// Regra de 1 hora da SEFAZ, com 5 min de folga: no dia 28/10 uma consulta 12 s depois da hora exata levou 656.
+const UMA_HORA = 65 * 60 * 1000;
 const LIMITE_MS = 45000; // deixa folga para gravar antes dos 60 s da Vercel
 
 async function processar(segredo: string, id: string) {
