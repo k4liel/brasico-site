@@ -341,13 +341,18 @@ function buildHandler(token: string) {
 
       server.tool(
         "whatsapp_salvar_resumo",
-        "Salva um resumo do WhatsApp na aba Resumos do site. Grave UM resumo por pedido, com todos os grupos juntos: um título '## <grupo>' por grupo que teve mensagens, com as decisões, pedidos, pendências, problemas, números e datas. Sem telefones nem links. de/ate = período resumido (padrão: hoje). Mensagens e grupos são contados sozinhos.",
+        "Salva um resumo do WhatsApp na aba Resumos do site. Grave UM resumo por pedido, com todos os grupos juntos: um título '## <grupo>' por grupo que teve mensagens, com as decisões, pedidos, pendências, problemas, números e datas. Sem telefones nem links. de/ate = período resumido (padrão: hoje). Mensagens e grupos são contados sozinhos. Envie também as traduções (en, pl, fr, de) do mesmo Markdown, com os nomes de grupos e pessoas sem traduzir; se faltar alguma, o site traduz depois sozinho.",
         {
           resumo: z.string().min(1).describe("Markdown: títulos (##), listas (-) e negrito (**)"),
           de: DATA.optional(),
           ate: DATA.optional(),
+          traducoes: z
+            .object({ en: z.string().optional(), pl: z.string().optional(), fr: z.string().optional(), de: z.string().optional() })
+            .optional()
+            .describe("O mesmo resumo traduzido para inglês, polonês, francês e alemão"),
         },
-        async ({ resumo, de, ate }) => call("mcp_wa_salvar_resumo", { p_resumo: resumo, p_de: de ?? null, p_ate: ate ?? null })
+        async ({ resumo, de, ate, traducoes }) =>
+          call("mcp_wa_salvar_resumo", { p_resumo: resumo, p_de: de ?? null, p_ate: ate ?? null, p_traducoes: traducoes ?? null })
       );
 
       server.tool(

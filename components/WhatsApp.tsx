@@ -24,6 +24,7 @@ type Conversa = {
 };
 // Um resumo por pedido, com todos os grupos juntos (escrito pelo Claude pelo conector)
 // Sem criado_por = resumo automático do dia (Edge Function whatsapp-resumo, todo dia às 7h)
+// traducoes = o mesmo resumo em en, pl, fr e de (feitas pela mesma Edge Function)
 type Resumo = {
   id: string;
   de: string;
@@ -33,6 +34,7 @@ type Resumo = {
   total_grupos: number;
   created_at: string;
   criado_por: string | null;
+  traducoes: Partial<Record<Idioma, string>> | null;
 };
 type Mensagem = {
   grupo_id: string;
@@ -172,6 +174,7 @@ function Avatar({ nome, foto, grupo, tamanho = 48 }: { nome: string; foto: strin
 // com só títulos, listas e negrito (nada de HTML).
 // Formato do resumo diário (supabase/functions/whatsapp-resumo): "## Em poucas palavras" vira o destaque,
 // "## Pede atenção" a caixa de alerta, cada "### Grupo" um cartão com a foto e "Sem novidades:" a nota do fim.
+// As traduções usam os mesmos títulos em cada idioma (TITULOS em supabase/functions/whatsapp-resumo).
 // Resumos antigos, com outros títulos, aparecem nas mesmas peças.
 function negrito(t: string) {
   return t.split(/\*\*(.+?)\*\*/g).map((p, i) => (i % 2 ? <strong key={i}>{p}</strong> : <Fragment key={i}>{p}</Fragment>));
@@ -205,7 +208,7 @@ function lerResumo(md: string) {
       }
       continue;
     }
-    if (/^\**sem novidades/i.test(semAcento(l))) {
+    if (/^\**(sem novidades|no news|bez nowosci|rien de nouveau|keine neuigkeiten)/i.test(semAcento(l))) {
       nota.push(l.replace(/\*\*/g, ""));
       continue;
     }
@@ -242,7 +245,11 @@ function TextoResumo({ md, fotoDoGrupo }: { md: string; fotoDoGrupo: (nome: stri
     <div className="wa-resumo">
       {secoes.map((s, i) => {
         const t = semAcento(s.titulo);
-        const tipo = /aten|alert|problema/.test(t) ? "alerta" : /poucas palavras|^em resumo/.test(t) ? "destaque" : "";
+        const tipo = /aten|attention|alert|problema|uwagi|aufmerksam/.test(t)
+          ? "alerta"
+          : /poucas palavras|^em resumo|few words|kilku s|quelques mots|wenigen worten/.test(t)
+            ? "destaque"
+            : "";
         return (
           <section key={i} className={`wa-r-secao ${tipo ? `wa-r-${tipo}` : ""}`}>
             {s.titulo && (
@@ -443,7 +450,7 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
       supabase.rpc("wa_painel_grupos"),
       supabase
         .from("wa_resumos_gerais")
-        .select("id,de,ate,resumo,total_mensagens,total_grupos,created_at,criado_por")
+        .select("id,de,ate,resumo,total_mensagens,total_grupos,created_at,criado_por,traducoes")
         .order("created_at", { ascending: false })
         .limit(200),
       supabase.from("wa_ajustes").select("envio_ativo").eq("id", 1).maybeSingle(),
@@ -634,6 +641,8 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
   }, [conversas, aba, filtro, l]);
 
   const resumo = resumos.find((r) => r.id === resumoAberto);
+  // Texto no idioma escolhido; sem tradução ainda, o original em português com um aviso
+  const traduzido = resumo && idioma !== "pt" ? resumo.traducoes?.[idioma] : undefined;
   const periodo = (r: Resumo) => (r.de === r.ate ? l.rotuloDia(r.de) : `${l.rotuloDia(r.de)} – ${l.rotuloDia(r.ate)}`);
 
   const conversa = conversas.find((c) => c.id === aberta);
@@ -790,7 +799,8 @@ export default function WhatsApp({ userId, userEmail }: { userId: string; userEm
                         <span>{l.grupos(resumo.total_grupos)}</span>
                       </div>
                     </header>
-                    <TextoResumo md={resumo.resumo} fotoDoGrupo={fotoDoGrupo} />
+                    {idioma !== "pt" && !traduzido && <p className="wa-r-nota">{l.semTraducao}</p>}
+                    <TextoResumo md={traduzido || resumo.resumo} fotoDoGrupo={fotoDoGrupo} />
                   </article>
                 </div>
               </>
