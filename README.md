@@ -79,6 +79,8 @@ O número no começo do título (`03 · Cardápio`) define a ordem. Cada projeto
 | `guia_formatacao`, `ver_estilo`, `definir_estilo` | Formatação e CSS do projeto |
 | `resumo_espaco`, `listar_membros`, `ver_atividade` | Visão geral, equipe, histórico |
 
+Toda ferramenta de projeto exige `projeto_id` (o id de `listar_projetos`) em cada chamada: o mesmo link do conector é usado por várias conversas, e o "projeto ativo" de `usar_projeto` podia ser trocado por outra conversa no meio do trabalho.
+
 Tudo o que o Claude faz aparece em *Mudanças* com o selo **via Claude**.
 
 ---

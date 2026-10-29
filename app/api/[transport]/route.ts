@@ -18,6 +18,11 @@ function db() {
   });
 }
 
+const PROJETO = z
+  .string()
+  .uuid()
+  .describe("id do projeto em que esta chamada age (de listar_projetos). Obrigatório em toda chamada: outras conversas usam o mesmo conector e podem trocar o projeto ativo a qualquer momento.");
+
 const text = (value: unknown) => ({
   content: [
     {
@@ -35,33 +40,41 @@ function buildHandler(token: string) {
     return text(error ? `Erro: ${error.message}` : data);
   }
 
+  // Ferramentas de projeto: o mesmo link do conector é usado por várias conversas
+  // ao mesmo tempo, então cada chamada diz o projeto em vez de confiar no "ativo",
+  // que outra conversa pode trocar (supabase/mcp_projeto_por_chamada.sql).
+  async function callP(projeto: string, fn: string, args: Record<string, unknown> = {}) {
+    const { data, error } = await supabase.rpc(fn, { ...args, p_token: `${token}|${projeto}` });
+    return text(error ? `Erro: ${error.message}` : data);
+  }
+
   return createMcpHandler(
     (server) => {
       server.tool(
         "resumo_espaco",
-        "Visão geral do projeto ativo: equipe, número de capítulos e mudanças recentes.",
-        {},
-        async () => call("mcp_resumo")
+        "Visão geral do projeto (projeto_id): equipe, número de capítulos e mudanças recentes.",
+        { projeto_id: PROJETO },
+        async ({ projeto_id }) => callP(projeto_id, "mcp_resumo")
       );
 
       server.tool(
         "listar_membros",
         "Lista a equipe do projeto (user_id, e-mail, nome).",
-        {},
-        async () => call("mcp_membros")
+        { projeto_id: PROJETO },
+        async ({ projeto_id }) => callP(projeto_id, "mcp_membros")
       );
 
       // ---------- Projetos ----------
       server.tool(
         "listar_projetos",
-        "Lista os projetos do Brasico e indica qual está ativo nesta conversa, e também os que estão na Lixeira. Use primeiro, antes de ler ou editar.",
+        "Lista os projetos do Brasico e mostra o id de cada um (use esse id como projeto_id em toda ferramenta de projeto), e também os que estão na Lixeira. Use primeiro, antes de ler ou editar.",
         {},
         async () => call("mcp_listar_projetos")
       );
 
       server.tool(
         "usar_projeto",
-        "Escolhe o projeto em que você vai trabalhar (as demais ferramentas passam a agir nele). Use o id de listar_projetos.",
+        "Marca o projeto padrão deste link do conector. Não é preciso para trabalhar: toda ferramenta de projeto recebe projeto_id em cada chamada (o projeto ativo é o mesmo para todas as conversas e outra pode trocá-lo).",
         { projeto_id: z.string().uuid() },
         async ({ projeto_id }) => call("mcp_usar_projeto", { p_projeto: projeto_id })
       );
@@ -75,9 +88,9 @@ function buildHandler(token: string) {
 
       server.tool(
         "renomear_projeto",
-        "Muda o nome do projeto ativo.",
-        { nome: z.string().min(1) },
-        async ({ nome }) => call("mcp_renomear_projeto", { p_nome: nome })
+        "Muda o nome do projeto (projeto_id).",
+        { projeto_id: PROJETO, nome: z.string().min(1) },
+        async ({ projeto_id, nome }) => callP(projeto_id, "mcp_renomear_projeto", { p_nome: nome })
       );
 
       server.tool(
@@ -96,52 +109,53 @@ function buildHandler(token: string) {
 
       server.tool(
         "ver_documento",
-        "Mostra o documento completo do projeto ativo: todos os capítulos em ordem (id, título, conteúdo), o rodapé e os capítulos removidos. Com idioma \"en\", \"pl\", \"fr\" ou \"de\", mostra a versão em inglês, polonês, francês ou alemão (tem_ingles, tem_polones, tem_frances e tem_alemao dizem quais capítulos já têm tradução).",
-        { idioma: z.enum(["pt", "en", "pl", "fr", "de"]).optional().describe("pt (padrão, o original), en (inglês), pl (polonês), fr (francês) ou de (alemão)") },
-        async ({ idioma }) => call("mcp_documento", { p_idioma: idioma ?? "pt" })
+        "Mostra o documento completo do projeto (projeto_id): todos os capítulos em ordem (id, título, conteúdo), o rodapé e os capítulos removidos. Com idioma \"en\", \"pl\", \"fr\" ou \"de\", mostra a versão em inglês, polonês, francês ou alemão (tem_ingles, tem_polones, tem_frances e tem_alemao dizem quais capítulos já têm tradução).",
+        { projeto_id: PROJETO, idioma: z.enum(["pt", "en", "pl", "fr", "de"]).optional().describe("pt (padrão, o original), en (inglês), pl (polonês), fr (francês) ou de (alemão)") },
+        async ({ projeto_id, idioma }) => callP(projeto_id, "mcp_documento", { p_idioma: idioma ?? "pt" })
       );
 
       server.tool(
         "definir_rodape",
-        "Define o texto do rodapé das páginas do documento do projeto ativo. Com idioma \"en\", \"pl\", \"fr\" ou \"de\", define o rodapé da versão em inglês, polonês, francês ou alemão.",
-        { rodape: z.string(), idioma: z.enum(["pt", "en", "pl", "fr", "de"]).optional() },
-        async ({ rodape, idioma }) => call("mcp_definir_rodape", { p_rodape: rodape, p_idioma: idioma ?? "pt" })
+        "Define o texto do rodapé das páginas do documento do projeto (projeto_id). Com idioma \"en\", \"pl\", \"fr\" ou \"de\", define o rodapé da versão em inglês, polonês, francês ou alemão.",
+        { projeto_id: PROJETO, rodape: z.string(), idioma: z.enum(["pt", "en", "pl", "fr", "de"]).optional() },
+        async ({ projeto_id, rodape, idioma }) => callP(projeto_id, "mcp_definir_rodape", { p_rodape: rodape, p_idioma: idioma ?? "pt" })
       );
 
       // ---------- Notas ----------
       server.tool(
         "listar_notas",
-        "Lista os capítulos do documento do projeto ativo (sem o conteúdo). Pode filtrar por texto.",
-        { busca: z.string().optional() },
-        async ({ busca }) => call("mcp_listar_notas", { p_busca: busca ?? null })
+        "Lista os capítulos do documento do projeto (projeto_id) (sem o conteúdo). Pode filtrar por texto.",
+        { projeto_id: PROJETO, busca: z.string().optional() },
+        async ({ projeto_id, busca }) => callP(projeto_id, "mcp_listar_notas", { p_busca: busca ?? null })
       );
 
       server.tool(
         "ler_nota",
         "Lê o conteúdo completo de um capítulo (Markdown): title e content em português (o original) e, se houver, title_en/content_en (inglês), title_pl/content_pl (polonês), title_fr/content_fr (francês) e title_de/content_de (alemão).",
-        { id: z.string().uuid() },
-        async ({ id }) => call("mcp_ler_nota", { p_id: id })
+        { projeto_id: PROJETO, id: z.string().uuid() },
+        async ({ projeto_id, id }) => callP(projeto_id, "mcp_ler_nota", { p_id: id })
       );
 
       server.tool(
         "criar_nota",
-        "Cria um capítulo no documento do projeto ativo (em português; em seguida grave as versões em inglês, polonês, francês e alemão com atualizar_nota e idioma \"en\" / \"pl\" / \"fr\" / \"de\"). Cada nota é um capítulo do documento; o número no início do título define a ordem (ex.: \"03 · Cardápio\"). Conteúdo em Markdown: 1ª linha **N · SEÇÃO** vira a etiqueta dourada; # Título; tabelas com | (1ª célula em negrito = linha de total); linha toda em *itálico* = frase de abertura; > aviso; blocos :::cards (Rótulo | Valor | Descrição, ! no início = cartão azul), :::colunas (duas colunas), :::capa (chaves marca, sobretitulo, titulo, subtitulo, info: Rótulo | Valor, lema), :::escala (grade de escala em quadradinhos coloridos: titulo: …; dias: Dom 01 | Seg 02 | …; ## grupo; linhas Nome | F/M | 08-17 | F | 09-13/17-21 | 19-07 | - …, onde F = folga e - = descanso; o intervalo pode vir entre parênteses, como 08-17 (12-13), e aparece ao passar o mouse) e :::checks (status ok ou alerta | título | detalhe); :::editavel (id: nome-unico; editaveis: 1, 5; depois uma tabela Markdown) cria uma tabela cujas colunas indicadas os sócios editam no site; fechados com :::.",
-        { title: z.string().min(1), content: z.string() },
-        async ({ title, content }) => call("mcp_criar_nota", { p_title: title, p_content: content })
+        "Cria um capítulo no documento do projeto (projeto_id) (em português; em seguida grave as versões em inglês, polonês, francês e alemão com atualizar_nota e idioma \"en\" / \"pl\" / \"fr\" / \"de\"). Cada nota é um capítulo do documento; o número no início do título define a ordem (ex.: \"03 · Cardápio\"). Conteúdo em Markdown: 1ª linha **N · SEÇÃO** vira a etiqueta dourada; # Título; tabelas com | (1ª célula em negrito = linha de total); linha toda em *itálico* = frase de abertura; > aviso; blocos :::cards (Rótulo | Valor | Descrição, ! no início = cartão azul), :::colunas (duas colunas), :::capa (chaves marca, sobretitulo, titulo, subtitulo, info: Rótulo | Valor, lema), :::escala (grade de escala em quadradinhos coloridos: titulo: …; dias: Dom 01 | Seg 02 | …; ## grupo; linhas Nome | F/M | 08-17 | F | 09-13/17-21 | 19-07 | - …, onde F = folga e - = descanso; o intervalo pode vir entre parênteses, como 08-17 (12-13), e aparece ao passar o mouse) e :::checks (status ok ou alerta | título | detalhe); :::editavel (id: nome-unico; editaveis: 1, 5; depois uma tabela Markdown) cria uma tabela cujas colunas indicadas os sócios editam no site; fechados com :::.",
+        { projeto_id: PROJETO, title: z.string().min(1), content: z.string() },
+        async ({ projeto_id, title, content }) => callP(projeto_id, "mcp_criar_nota", { p_title: title, p_content: content })
       );
 
       server.tool(
         "atualizar_nota",
         "Atualiza o título e/ou o conteúdo de um capítulo. O conteúdo enviado substitui o anterior (a versão antiga fica guardada; veja versoes_capitulo). Leia antes com ler_nota (ou ver_documento) e envie a 'versao' que veio na leitura: se outra pessoa mudou o capítulo depois disso, nada é gravado e você precisa ler de novo e juntar as mudanças. Cada nota é um capítulo do documento; o número no início do título define a ordem (ex.: \"03 · Cardápio\"). Conteúdo em Markdown: 1ª linha **N · SEÇÃO** vira a etiqueta dourada; # Título; tabelas com | (1ª célula em negrito = linha de total); linha toda em *itálico* = frase de abertura; > aviso; blocos :::cards (Rótulo | Valor | Descrição, ! no início = cartão azul), :::colunas (duas colunas), :::capa (chaves marca, sobretitulo, titulo, subtitulo, info: Rótulo | Valor, lema), :::escala (grade de escala em quadradinhos coloridos: titulo: …; dias: Dom 01 | Seg 02 | …; ## grupo; linhas Nome | F/M | 08-17 | F | 09-13/17-21 | 19-07 | - …, onde F = folga e - = descanso; o intervalo pode vir entre parênteses, como 08-17 (12-13), e aparece ao passar o mouse) e :::checks (status ok ou alerta | título | detalhe); :::editavel (id: nome-unico; editaveis: 1, 5; depois uma tabela Markdown) cria uma tabela cujas colunas indicadas os sócios editam no site; fechados com :::.",
         {
+          projeto_id: PROJETO,
           id: z.string().uuid(),
           versao: z.string().min(1).describe("O campo 'versao' que ler_nota ou ver_documento devolveu para este capítulo"),
           title: z.string().optional(),
           content: z.string().optional(),
           idioma: z.enum(["pt", "en", "pl", "fr", "de"]).optional().describe("pt (padrão) grava o original; en grava a versão em inglês (title_en / content_en); pl grava a versão em polonês (title_pl / content_pl); fr grava a versão em francês (title_fr / content_fr); de grava a versão em alemão (title_de / content_de)"),
         },
-        async ({ id, versao, title, content, idioma }) =>
-          call("mcp_atualizar_nota", {
+        async ({ projeto_id, id, versao, title, content, idioma }) =>
+          callP(projeto_id, "mcp_atualizar_nota", {
             p_id: id,
             p_versao: versao,
             p_title: title ?? null,
@@ -153,29 +167,29 @@ function buildHandler(token: string) {
       server.tool(
         "versoes_capitulo",
         "Lista as versões anteriores de um capítulo (as 50 mais recentes): quando foram trocadas, por quem e o tamanho. Use para desfazer uma mudança errada.",
-        { id: z.string().uuid() },
-        async ({ id }) => call("mcp_listar_versoes", { p_ref: id })
+        { projeto_id: PROJETO, id: z.string().uuid() },
+        async ({ projeto_id, id }) => callP(projeto_id, "mcp_listar_versoes", { p_ref: id })
       );
 
       server.tool(
         "versoes_estilo",
-        "Lista as versões anteriores do CSS do projeto ativo.",
-        {},
-        async () => call("mcp_listar_versoes", { p_ref: null })
+        "Lista as versões anteriores do CSS do projeto (projeto_id).",
+        { projeto_id: PROJETO },
+        async ({ projeto_id }) => callP(projeto_id, "mcp_listar_versoes", { p_ref: null })
       );
 
       server.tool(
         "ler_versao",
         "Mostra o conteúdo de uma versão anterior (de versoes_capitulo ou versoes_estilo).",
-        { versao_id: z.number().int() },
-        async ({ versao_id }) => call("mcp_ler_versao", { p_versao: versao_id })
+        { projeto_id: PROJETO, versao_id: z.number().int() },
+        async ({ projeto_id, versao_id }) => callP(projeto_id, "mcp_ler_versao", { p_versao: versao_id })
       );
 
       server.tool(
         "restaurar_versao",
         "Volta um capítulo (ou o CSS do projeto) para uma versão anterior. O estado atual também fica guardado, então dá para desfazer. Confirme com o usuário antes.",
-        { versao_id: z.number().int() },
-        async ({ versao_id }) => call("mcp_restaurar_versao", { p_versao: versao_id })
+        { projeto_id: PROJETO, versao_id: z.number().int() },
+        async ({ projeto_id, versao_id }) => callP(projeto_id, "mcp_restaurar_versao", { p_versao: versao_id })
       );
 
       server.tool(
@@ -187,51 +201,51 @@ function buildHandler(token: string) {
 
       server.tool(
         "ver_estilo",
-        "Mostra o CSS próprio do projeto ativo (o visual e a estrutura da página deste projeto).",
-        {},
-        async () => call("mcp_ver_estilo")
+        "Mostra o CSS próprio do projeto (projeto_id) (o visual e a estrutura da página deste projeto).",
+        { projeto_id: PROJETO },
+        async ({ projeto_id }) => callP(projeto_id, "mcp_ver_estilo")
       );
 
       server.tool(
         "definir_estilo",
-        "Substitui o CSS próprio do projeto ativo. Vale só dentro do documento deste projeto, nos modos Página e PDF. Leia antes com ver_estilo e mande o CSS completo. Veja as classes em guia_formatacao. Envie vazio para voltar ao visual padrão.",
-        { css: z.string() },
-        async ({ css }) => call("mcp_definir_estilo", { p_css: css })
+        "Substitui o CSS próprio do projeto (projeto_id). Vale só dentro do documento deste projeto, nos modos Página e PDF. Leia antes com ver_estilo e mande o CSS completo. Veja as classes em guia_formatacao. Envie vazio para voltar ao visual padrão.",
+        { projeto_id: PROJETO, css: z.string() },
+        async ({ projeto_id, css }) => callP(projeto_id, "mcp_definir_estilo", { p_css: css })
       );
 
       server.tool(
         "definir_abas",
-        "Liga ou desliga as abas de capítulos no projeto ativo. Com abas, o modo Página mostra um capítulo por vez, com uma faixa de abas numeradas e botões de anterior/próximo; sem abas, o documento corre inteiro. grupos=true junta numa aba só os capítulos seguidos com o mesmo nome antes do \" · \" (ex.: \"15 · Sempre Vivo · Seg 28/12\" e \"16 · Sempre Vivo · Ter 29/12\" viram a aba Sempre Vivo, com uma segunda faixa Seg 28/12 | Ter 29/12); sem enviar grupos, fica como estava. Vale só para este projeto. O PDF continua sempre com o documento inteiro.",
-        { ativar: z.boolean(), grupos: z.boolean().optional() },
-        async ({ ativar, grupos }) => call("mcp_definir_abas", { p_ativar: ativar, p_grupos: grupos ?? null })
+        "Liga ou desliga as abas de capítulos no projeto (projeto_id). Com abas, o modo Página mostra um capítulo por vez, com uma faixa de abas numeradas e botões de anterior/próximo; sem abas, o documento corre inteiro. grupos=true junta numa aba só os capítulos seguidos com o mesmo nome antes do \" · \" (ex.: \"15 · Sempre Vivo · Seg 28/12\" e \"16 · Sempre Vivo · Ter 29/12\" viram a aba Sempre Vivo, com uma segunda faixa Seg 28/12 | Ter 29/12); sem enviar grupos, fica como estava. Vale só para este projeto. O PDF continua sempre com o documento inteiro.",
+        { projeto_id: PROJETO, ativar: z.boolean(), grupos: z.boolean().optional() },
+        async ({ projeto_id, ativar, grupos }) => callP(projeto_id, "mcp_definir_abas", { p_ativar: ativar, p_grupos: grupos ?? null })
       );
 
       server.tool(
         "compartilhar_projeto",
-        "Gera, troca ou desativa o link público do projeto ativo (só leitura, sem login). Quem tem o link vê apenas o documento deste projeto, em PT/EN/PL; vê também os documentos (PDFs) do projeto; não vê outros projetos, equipe nem mudanças. Antes de ativar, confirme com o usuário. novo=true troca o código e o link antigo para de funcionar. O link completo é https://brasico.vercel.app + caminho.",
-        { ativar: z.boolean(), novo: z.boolean().optional() },
-        async ({ ativar, novo }) => call("mcp_compartilhar", { p_publico: ativar, p_novo: novo ?? false })
+        "Gera, troca ou desativa o link público do projeto (projeto_id) (só leitura, sem login). Quem tem o link vê apenas o documento deste projeto, em PT/EN/PL; vê também os documentos (PDFs) do projeto; não vê outros projetos, equipe nem mudanças. Antes de ativar, confirme com o usuário. novo=true troca o código e o link antigo para de funcionar. O link completo é https://brasico.vercel.app + caminho.",
+        { projeto_id: PROJETO, ativar: z.boolean(), novo: z.boolean().optional() },
+        async ({ projeto_id, ativar, novo }) => callP(projeto_id, "mcp_compartilhar", { p_publico: ativar, p_novo: novo ?? false })
       );
 
       server.tool(
         "ver_celulas",
-        "Mostra o que os sócios digitaram no site nas tabelas editáveis (blocos :::editavel) do projeto ativo: bloco (id do :::editavel), linha (0 = primeira linha de dados), coluna (0 = primeira coluna) e valor. Esses valores substituem os do Markdown na tela; leia antes de reescrever um capítulo com :::editavel.",
-        {},
-        async () => call("mcp_celulas", {})
+        "Mostra o que os sócios digitaram no site nas tabelas editáveis (blocos :::editavel) do projeto (projeto_id): bloco (id do :::editavel), linha (0 = primeira linha de dados), coluna (0 = primeira coluna) e valor. Esses valores substituem os do Markdown na tela; leia antes de reescrever um capítulo com :::editavel.",
+        { projeto_id: PROJETO },
+        async ({ projeto_id }) => callP(projeto_id, "mcp_celulas", {})
       );
 
       server.tool(
         "remover_capitulo",
         "Tira um capítulo do documento (fica guardado e pode voltar com restaurar_capitulo).",
-        { id: z.string().uuid() },
-        async ({ id }) => call("mcp_arquivar_capitulo", { p_id: id, p_remover: true })
+        { projeto_id: PROJETO, id: z.string().uuid() },
+        async ({ projeto_id, id }) => callP(projeto_id, "mcp_arquivar_capitulo", { p_id: id, p_remover: true })
       );
 
       server.tool(
         "restaurar_capitulo",
         "Devolve ao documento um capítulo removido (veja capitulos_removidos em ver_documento).",
-        { id: z.string().uuid() },
-        async ({ id }) => call("mcp_arquivar_capitulo", { p_id: id, p_remover: false })
+        { projeto_id: PROJETO, id: z.string().uuid() },
+        async ({ projeto_id, id }) => callP(projeto_id, "mcp_arquivar_capitulo", { p_id: id, p_remover: false })
       );
 
       // ---------- Brainstorm: quadro de colunas (listas) e cards (itens) ----------
@@ -634,19 +648,20 @@ function buildHandler(token: string) {
       // ---------- Atividade ----------
       server.tool(
         "ver_atividade",
-        "Mostra quem mudou o quê no projeto ativo, do mais recente ao mais antigo.",
-        { limite: z.number().int().min(1).max(300).optional() },
-        async ({ limite }) => call("mcp_ver_atividade", { p_limite: limite ?? 50 })
+        "Mostra quem mudou o quê no projeto (projeto_id), do mais recente ao mais antigo.",
+        { projeto_id: PROJETO, limite: z.number().int().min(1).max(300).optional() },
+        async ({ projeto_id, limite }) => callP(projeto_id, "mcp_ver_atividade", { p_limite: limite ?? 50 })
       );
     },
     {
       instructions:
-        "Brasico é a central de projetos compartilhada da equipe. Cada projeto é um documento (capítulos em Markdown) mostrado no site como página ou como PDF no visual de uma proposta, com o histórico de mudanças. Comece com listar_projetos e usar_projeto. Para ler tudo, use ver_documento. Edite capítulos com atualizar_nota (leia antes e envie a 'versao' lida), crie com criar_nota e tire com remover_capitulo. Os projetos são totalmente editáveis: além dos blocos prontos, cada capítulo aceita HTML livre em blocos :::html e cada projeto tem seu próprio CSS (ver_estilo / definir_estilo), então qualquer layout pode ser feito sem mudar o código do site. Antes de criar ou reestruturar, leia guia_formatacao. Tudo o que você muda aparece na hora para toda a equipe, com o selo 'via Claude'.\n\n" +
+        "Brasico é a central de projetos compartilhada da equipe. Cada projeto é um documento (capítulos em Markdown) mostrado no site como página ou como PDF no visual de uma proposta, com o histórico de mudanças. Comece com listar_projetos e passe o id do projeto em projeto_id em TODA ferramenta de projeto (o projeto ativo é o mesmo para todas as conversas que usam este conector, e outra pode trocá-lo no meio do seu trabalho). Para ler tudo, use ver_documento. Edite capítulos com atualizar_nota (leia antes e envie a 'versao' lida), crie com criar_nota e tire com remover_capitulo. Os projetos são totalmente editáveis: além dos blocos prontos, cada capítulo aceita HTML livre em blocos :::html e cada projeto tem seu próprio CSS (ver_estilo / definir_estilo), então qualquer layout pode ser feito sem mudar o código do site. Antes de criar ou reestruturar, leia guia_formatacao. Tudo o que você muda aparece na hora para toda a equipe, com o selo 'via Claude'.\n\n" +
         "Regras da equipe (duas pessoas, cada uma com o próprio Claude, mexem nos mesmos projetos):\n" +
         "1. Sempre leia o capítulo antes de alterar. Se atualizar_nota disser que o capítulo mudou, leia de novo e junte as mudanças; nunca apague o trabalho do outro.\n" +
         "2. Antes de uma mudança grande, olhe ver_atividade para saber o que o outro fez há pouco.\n" +
         "3. Antes de reestruturar um projeto (renomear, reordenar, remover ou reescrever vários capítulos, trocar o CSS), mostre o plano ao usuário e espere a confirmação.\n" +
         "4. Errou? Toda mudança guarda a versão anterior: versoes_capitulo, ler_versao e restaurar_versao.\n" +
+        "4b. Projeto certo: toda ferramenta de projeto exige projeto_id. Use sempre o id do projeto em que o usuário pediu para trabalhar e confira o nome do projeto que vem na resposta.\n" +
         "5. Idiomas: todo projeto tem português (o original), inglês, polonês, francês e alemão; o site mostra o seletor PT | EN | PL | FR | DE. Sempre que criar ou alterar um capítulo em português, grave também a tradução em inglês, em polonês, em francês e em alemão (atualizar_nota com idioma \"en\", \"pl\", \"fr\" e \"de\", com o título traduzido), mantendo os mesmos blocos e os números no formato de cada idioma. Faça o mesmo com o rodapé (definir_rodape).\n" +
         "6. Arquivos de clientes (PDFs, planilhas, documentos) ficam só no bucket privado workspace-files do Supabase, na pasta <projeto>/<pasta>/, nunca no GitHub.\n" +
         "7. Brainstorm: tarefas, ideias e checklists da equipe ficam num quadro de colunas (listas) e cards (itens) (listar_listas, ver_lista, adicionar_item, atualizar_item, criar_lista). Quando o usuário soltar uma tarefa ou ideia, anote. Para conduzir um brainstorm ou a revisão da semana, leia antes guia_brainstorm.\n" +
