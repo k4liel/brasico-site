@@ -224,7 +224,7 @@ begin
   if p_ambiente not in ('demonstracao', 'producao') then
     raise exception 'Ambiente inválido (demonstracao ou producao).';
   end if;
-  if p_tipo not in ('caixa_postal', 'situacao_fiscal', 'pagamentos', 'eventos') then
+  if p_tipo not in ('caixa_postal', 'situacao_fiscal', 'pagamentos', 'eventos', 'servico') then
     raise exception 'Tipo de pedido desconhecido: %', p_tipo;
   end if;
 

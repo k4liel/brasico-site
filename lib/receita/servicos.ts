@@ -3,6 +3,7 @@
 // Na demonstração o SERPRO só aceita os dados exatos dos "Cenários de demonstração" da documentação,
 // por isso cada serviço tem a sua identificação de mentira em DEMO.
 import { Cliente, deuCerto, erroDe, type Endpoint, type Pedido } from "./serpro";
+import { textoDoPdf } from "./pdf";
 
 type Id = { numero: string; tipo: 1 | 2 | 3 | 4 };
 type Ident = { contratante: Id; autorPedidoDados: Id; contribuinte: Id };
@@ -23,6 +24,30 @@ const DEMO: Record<string, Ident> = {
 const DEMO_ISN_DETALHE = "0000082838";
 // Eventos de atualização: DCTFWeb, Caixa Postal e Pagamentos
 const EVENTOS = ["E0301", "E0601", "E0701"];
+
+// Serviços de leitura liberados para o pedido em lote (tipo "servico"). Declarar e transmitir nunca:
+// isso é do contador. O formato de "dados" de cada um segue o catálogo do Integra Contador.
+export const LIBERADOS: Record<string, { endpoint: Endpoint; sistema: string; servico: string; versao: string }> = {
+  "DCTFWEB/CONSRECIBO32": { endpoint: "Consultar", sistema: "DCTFWEB", servico: "CONSRECIBO32", versao: "1.0" },
+  "DCTFWEB/CONSDECCOMPLETA33": { endpoint: "Consultar", sistema: "DCTFWEB", servico: "CONSDECCOMPLETA33", versao: "1.0" },
+  "MIT/LISTAAPURACOES317": { endpoint: "Consultar", sistema: "MIT", servico: "LISTAAPURACOES317", versao: "1.0" },
+  "MIT/CONSAPURACAO316": { endpoint: "Consultar", sistema: "MIT", servico: "CONSAPURACAO316", versao: "1.0" },
+  "PGDASD/CONSDECLARACAO13": { endpoint: "Consultar", sistema: "PGDASD", servico: "CONSDECLARACAO13", versao: "1.0" },
+  "PGDASD/CONSEXTRATO16": { endpoint: "Consultar", sistema: "PGDASD", servico: "CONSEXTRATO16", versao: "1.0" },
+  "PARCSN/PEDIDOSPARC163": { endpoint: "Consultar", sistema: "PARCSN", servico: "PEDIDOSPARC163", versao: "1.0" },
+  "PARCSN/OBTERPARC164": { endpoint: "Consultar", sistema: "PARCSN", servico: "OBTERPARC164", versao: "1.0" },
+  "PARCSN-ESP/PEDIDOSPARC173": { endpoint: "Consultar", sistema: "PARCSN-ESP", servico: "PEDIDOSPARC173", versao: "1.0" },
+  "PERTSN/PEDIDOSPARC183": { endpoint: "Consultar", sistema: "PERTSN", servico: "PEDIDOSPARC183", versao: "1.0" },
+  "RELPSN/PEDIDOSPARC193": { endpoint: "Consultar", sistema: "RELPSN", servico: "PEDIDOSPARC193", versao: "1.0" },
+  "DTE/CONSULTASITUACAODTE111": { endpoint: "Consultar", sistema: "DTE", servico: "CONSULTASITUACAODTE111", versao: "1.0" },
+};
+// Campos muito grandes (PDF e XML em base64) não vão para o banco: fica só o tamanho
+function enxugar(v: unknown): unknown {
+  if (typeof v === "string") return v.length > 20000 ? `[${v.length} caracteres omitidos]` : v;
+  if (Array.isArray(v)) return v.map(enxugar);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, enxugar(x)]));
+  return v;
+}
 // O "dados" do pedido de eventos às vezes vem como JSON sem a última chave: lê do jeito que der
 function lerDados(d: unknown): Record<string, unknown> {
   if (d && typeof d === "object") return d as Record<string, unknown>;
@@ -69,6 +94,24 @@ export class Receita {
 
   private chamar(endpoint: Endpoint, idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: Id) {
     return this.cli.chamar(endpoint, this.pedido(idSistema, idServico, versao, dados, contribuinte));
+  }
+
+  // Leitura em lote: vários serviços liberados numa execução só (até ~45 s). Cada item volta com o que a Receita respondeu.
+  async lote(itens: { servico: string; dados?: unknown }[]): Promise<Conclusao> {
+    const limite = Date.now() + 45000;
+    const respostas: Record<string, unknown>[] = [];
+    for (const it of itens.slice(0, 40)) {
+      const s = LIBERADOS[it.servico];
+      if (!s) { respostas.push({ servico: it.servico, dados_pedido: it.dados ?? null, ok: false, erro: "Serviço não liberado para leitura." }); continue; }
+      if (Date.now() > limite) { respostas.push({ servico: it.servico, dados_pedido: it.dados ?? null, ok: false, erro: "Ficou para o próximo pedido (tempo)." }); continue; }
+      const r = await this.chamar(s.endpoint, s.sistema, s.servico, s.versao, it.dados === undefined ? "" : it.dados);
+      respostas.push({
+        servico: it.servico, dados_pedido: it.dados ?? null, ok: deuCerto(r), http: r.http,
+        dados: enxugar(r.dados), mensagens: r.mensagens.map((m) => `${m.codigo} ${m.texto}`.trim()),
+      });
+    }
+    const ok = respostas.filter((x) => x.ok).length;
+    return { status: ok ? "ok" : "falha", resultado: { respostas, ok, total: respostas.length }, ...(ok ? {} : { erro: "Nenhum serviço do lote respondeu certo." }) };
   }
 
   // Eventos de atualização (Monitorar, grátis): a Receita diz em que dia mudou algo na DCTFWeb (E0301),
@@ -194,9 +237,16 @@ export class Receita {
       const rel = await this.chamar("Emitir", "SITFIS", "RELATORIOSITFIS92", "2.0", { protocoloRelatorio: s.protocoloRelatorio });
       const d = rel.dados as { pdf?: string; tempoEspera?: number } | null;
       if (deuCerto(rel) && d?.pdf) {
+        // O texto vai junto no resultado: é dele que saem as pendências mostradas na tela (fiscal_pendencias)
+        let texto = "";
+        try {
+          texto = await textoDoPdf(d.pdf);
+        } catch {
+          // sem texto, fica só o PDF
+        }
         return {
           status: "ok",
-          resultado: { tamanho: Math.round((d.pdf.length * 3) / 4) },
+          resultado: { tamanho: Math.round((d.pdf.length * 3) / 4), texto },
           relatorios: [{ tipo: "situacao_fiscal", pdf_base64: d.pdf }],
         };
       }

@@ -62,6 +62,9 @@ async function processar(segredo: string, id: string) {
           dataFinal: typeof p.dataFinal === "string" ? p.dataFinal : undefined,
         });
         break;
+      case "servico":
+        c = await receita.lote(Array.isArray(p.itens) ? (p.itens as { servico: string; dados?: unknown }[]) : []);
+        break;
       case "eventos":
         c = await receita.eventos({
           pendentes: Array.isArray(p.pendentes) ? (p.pendentes as { evento: string; protocolo: string }[]) : undefined,
