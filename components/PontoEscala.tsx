@@ -86,6 +86,17 @@ function tituloPeriodo(visao: Visao, dias: string[]) {
   const d = (x: string) => `${Number(x.slice(8, 10))} de ${MESES_CURTOS[Number(x.slice(5, 7)) - 1]}`;
   return `${d(a)} a ${d(b)}${a.slice(0, 4) !== hoje().slice(0, 4) || b.slice(0, 4) !== a.slice(0, 4) ? ` de ${b.slice(0, 4)}` : ""}`;
 }
+// Nome que cabe na coluna: "Maria Eduarda Trajano do Nascimento" → "Maria E. T. Nascimento"; se ainda
+// for longo, "Maria Nascimento". O nome completo aparece ao passar o mouse.
+const LIGACOES = new Set(["de", "da", "do", "das", "dos", "e"]);
+export function nomeCurto(nome: string, max = 22) {
+  const partes = nome.trim().split(/\s+/).filter((p) => !LIGACOES.has(p.toLowerCase()));
+  if (nome.length <= max || partes.length <= 2) return nome;
+  const [primeiro, ...resto] = partes;
+  const ultimo = resto.pop()!;
+  const meio = `${primeiro} ${resto.map((p) => `${p[0].toUpperCase()}.`).join(" ")} ${ultimo}`;
+  return meio.length <= max ? meio : `${primeiro} ${ultimo}`;
+}
 // Origem "O" = batida original do relógio; "I" = incluída/alterada no RHiD (justificativa, ajuste do gestor)
 const ajustada = (b: BatidaEscala) => !!b.justificada || b.classificacao === "J" || b.origem === "I";
 
@@ -351,9 +362,11 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
         const folgas = ts.filter((t) => t.tipo === "folga").length;
         return (
           <tr key={p.chave} className="pe-pessoa">
-            <th className="pe-nome" scope="row">
-              {p.hoje && dias.includes(agora) && <i className={`pe-agora ${p.hoje.classe}`} title={`Hoje: ${p.hoje.texto}`} aria-label={`Hoje: ${p.hoje.texto}`} />}
-              {onAbrir ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.chave)}>{p.nome}</button> : <span className="esc-pessoa">{p.nome}</span>}
+            <th className="pe-nome" scope="row" title={[p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : ""].filter(Boolean).join("\n")}>
+              {p.hoje && dias.includes(agora) && <i className={`pe-agora ${p.hoje.classe}`} aria-label={`Hoje: ${p.hoje.texto}`} />}
+              {onAbrir
+                ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>
+                : <span className="esc-pessoa">{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</span>}
               {p.cargo && <small className="pe-cargo">{p.cargo}</small>}
             </th>
             {dias.map((d, i) => {

@@ -18,8 +18,9 @@ const nomeBonito = (s: string) =>
 export function localESetor(departamento: string, unidadeRH = "", centroCusto = ""): { local: string; setor: string } {
   const d = (departamento ?? "").trim();
   const m = d.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
-  // A cozinha de produção da Pipa é um local próprio (unidade pipa_producao no Cicchetti Management)
-  if (/^PRODU[ÇC][ÃA]O$/i.test(m ? m[1] : d)) return { local: "Produção Pipa", setor: "Produção" };
+  // A equipe da produção trabalha no Sempre Vivo: entra na cozinha de lá (pedido do dono, 30/10/2026;
+  // a separação entre cozinha e produção ainda vai ser definida)
+  if (/^PRODU[ÇC][ÃA]O$/i.test(m ? m[1] : d)) return { local: "Sempre Vivo", setor: "Cozinha" };
   if (m) {
     const sigla = m[2].trim().toUpperCase();
     return { local: SIGLAS[sigla] ?? nomeBonito(m[2]), setor: nomeBonito(m[1]) };
