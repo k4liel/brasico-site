@@ -420,7 +420,7 @@ begin
     -- 4) Situação fiscal: a cada 7 dias
     if v_tipo is null and coalesce((ligada->>'situacao_fiscal')::boolean, false)
        and not exists (select 1 from public.receita_execucoes where empresa_id = e.id and ambiente = 'producao'
-                       and tipo = 'situacao_fiscal' and (status = 'ok' and created_at > now() - interval '7 days' or created_at >= v_ini)) then
+                       and tipo = 'situacao_fiscal' and (status = 'ok' and resultado ? 'texto' and created_at > now() - interval '7 days' or created_at >= v_ini)) then
       v_tipo := 'situacao_fiscal';
     end if;
 
