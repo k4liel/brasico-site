@@ -1,5 +1,8 @@
 // Texto de um PDF (o relatório de situação fiscal da Receita), linha a linha, para virar lista de pendências.
+// No servidor não há Web Worker: carrega o worker do pdf.js no mesmo processo (globalThis.pdfjsWorker).
 export async function textoDoPdf(base64: string): Promise<string> {
+  const g = globalThis as { pdfjsWorker?: unknown };
+  if (!g.pdfjsWorker) g.pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await getDocument({ data: new Uint8Array(Buffer.from(base64, "base64")), useSystemFonts: false, isEvalSupported: false }).promise;
   const linhas: string[] = [];

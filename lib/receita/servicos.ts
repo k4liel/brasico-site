@@ -239,14 +239,16 @@ export class Receita {
       if (deuCerto(rel) && d?.pdf) {
         // O texto vai junto no resultado: é dele que saem as pendências mostradas na tela (fiscal_pendencias)
         let texto = "";
+        let erroTexto = "";
         try {
           texto = await textoDoPdf(d.pdf);
-        } catch {
-          // sem texto, fica só o PDF
+        } catch (e) {
+          // sem texto, fica só o PDF (e o motivo, para corrigir)
+          erroTexto = e instanceof Error ? e.message.slice(0, 200) : "erro";
         }
         return {
           status: "ok",
-          resultado: { tamanho: Math.round((d.pdf.length * 3) / 4), texto },
+          resultado: { tamanho: Math.round((d.pdf.length * 3) / 4), texto, ...(erroTexto ? { erroTexto } : {}) },
           relatorios: [{ tipo: "situacao_fiscal", pdf_base64: d.pdf }],
         };
       }
