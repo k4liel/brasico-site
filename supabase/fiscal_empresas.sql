@@ -93,3 +93,28 @@ grant execute on function public.receita_resposta_pdf(uuid, int) to authenticate
 
 -- receita_pedir aceita também 'servico' (lote de leituras; ver LIBERADOS em lib/receita/servicos.ts).
 -- A rotina refaz a situação fiscal quando a última que deu certo não tem o texto lido (resultado ? 'texto').
+
+-- Dívidas do grupo (painel central da /receita, components/PainelDividas.tsx). Os lançamentos do levantamento de
+-- 20/10/2026 (Receita da Brasico77, prefeitura de Tibau do Sul, FGTS) foram cadastrados direto no banco: não vão para o GitHub.
+-- Na tela, o relatório de situação fiscal de hoje de cada empresa substitui o levantamento da Receita e da PGFN daquela empresa.
+create table if not exists public.fiscal_dividas (
+  id bigserial primary key,
+  cnpj text not null references public.fiscal_empresas(cnpj),
+  orgao text not null check (orgao in ('Receita Federal', 'PGFN', 'Prefeitura', 'FGTS')),
+  categoria text not null,
+  detalhe text not null default '',
+  competencia text,
+  vencimento date,
+  principal numeric, multa numeric, juros numeric, total numeric,
+  situacao text not null check (situacao in ('vencido', 'a_vencer', 'parcela_atraso', 'parcelado')),
+  sensivel boolean not null default false,      -- dinheiro de terceiros: INSS descontado, IRRF, CSRF, FGTS
+  fonte text not null,
+  data_base date not null,
+  origem text not null default 'levantamento',
+  criado_em timestamptz not null default now(),
+  arquivado_em timestamptz                      -- nada se apaga: pago ou corrigido = arquivado
+);
+alter table public.fiscal_dividas enable row level security;
+drop policy if exists "ver dividas" on public.fiscal_dividas;
+create policy "ver dividas" on public.fiscal_dividas for select using (public.receita_pode_ver(auth.uid()));
+create index if not exists fiscal_dividas_cnpj on public.fiscal_dividas (cnpj) where arquivado_em is null;

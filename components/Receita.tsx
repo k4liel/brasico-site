@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { lerSitfis, type Sitfis } from "@/lib/receita/sitfis";
 import Topo from "./Topo";
+import Gaveta from "./Gaveta";
+import PainelDividas, { type Divida } from "./PainelDividas";
 import { Acervo, type Capitulo, type Fonte, SITUACAO_FONTE } from "./ReceitaGuia";
 
 // Fiscal do grupo numa tela só: o que pede atenção, as 14 inscrições do grupo e o detalhe de cada uma num painel ao lado.
@@ -99,6 +101,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const [rotinas, setRotinas] = useState<Rotina[]>([]);
   const [acervo, setAcervo] = useState<Capitulo[]>([]);
   const [fontes, setFontes] = useState<Fonte[]>([]);
+  const [levantamento, setLevantamento] = useState<Divida[]>([]);
   const [aberta, setAberta] = useState<string | null>(null); // cnpj no painel
   const [aba, setAba] = useState("resumo");
   const [leitor, setLeitor] = useState<string | null>(null); // seção do acervo aberta
@@ -116,7 +119,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
 
   const carregar = useCallback(async () => {
     const desde = new Date(Date.now() - 400 * 86400000).toISOString();
-    const [fe, cf, ce, x, sf, m, rl, pg, rs, ch, ro] = await Promise.all([
+    const [fe, cf, ce, x, sf, m, rl, pg, rs, ch, ro, dv] = await Promise.all([
       supabase.from("fiscal_empresas").select("cnpj,raiz,ordem,apelido,papel,grupo,unidades,observacao,razao,fantasia,situacao,municipio,uf,cnae,natureza,porte,capital,abertura,simples,simples_desde,simples_exclusao,regime,regime_ano,socios,socios_exterior,atualizado_em").order("ordem"),
       supabase.from("receita_empresas").select("id,producao_ligada,limite_diario_cobradas,orcamento_ciclo"),
       supabase.from("certificados").select("cnpj,validade"),
@@ -128,6 +131,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       supabase.from("receita_respostas").select("empresa_id,servico,pedido,dados,tem_pdf,execucao_id,indice,created_at"),
       supabase.from("receita_chamadas").select("id,execucao_id,empresa_id,id_servico,cobrada,custo,created_at").eq("ambiente", "producao").gte("created_at", desde).order("created_at", { ascending: false }).limit(5000),
       supabase.from("receita_rotinas").select("id,nome,quando,ligada,ultima_vez").order("ordem"),
+      supabase.from("fiscal_dividas").select("id,cnpj,orgao,categoria,detalhe,competencia,vencimento,principal,multa,juros,total,situacao,sensivel,fonte,data_base").is("arquivado_em", null),
     ]);
     setEmpresas((fe.data ?? []) as FiscalEmpresa[]);
     setConfigs(((cf.data ?? []) as Config[]).map((c) => ({ ...c, orcamento_ciclo: Number(c.orcamento_ciclo) })));
@@ -140,6 +144,11 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
     setRespostas((rs.data ?? []) as Resposta[]);
     setChamadas(((ch.data ?? []) as Chamada[]).map((k) => ({ ...k, custo: Number(k.custo) })));
     setRotinas((ro.data ?? []) as Rotina[]);
+    setLevantamento(((dv.data ?? []) as (Omit<Divida, "aoVivo" | "dataBase" | "id"> & { id: number; data_base: string })[]).map((d) => ({
+      ...d, id: String(d.id), dataBase: d.data_base, aoVivo: false,
+      principal: d.principal == null ? null : Number(d.principal), multa: d.multa == null ? null : Number(d.multa),
+      juros: d.juros == null ? null : Number(d.juros), total: d.total == null ? null : Number(d.total),
+    })));
     setCarregado(true);
   }, [supabase]);
 
@@ -327,6 +336,16 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const comAcesso = empresas.filter((e) => ligadas.has(e.raiz));
   const semAcesso = empresas.filter((e) => !ligadas.has(e.raiz));
   const empresaAberta = empresas.find((e) => e.cnpj === aberta) ?? null;
+  // Dívidas do painel central: o relatório de hoje da Receita substitui o levantamento da Receita e da PGFN daquela empresa
+  const dividas: Divida[] = [];
+  const releu = new Set<string>();
+  for (const e of empresas.filter((x) => x.cnpj.slice(8, 12) === "0001")) {
+    const l = leituras.get(e.raiz);
+    if (!l?.sit || !l.sitEm) continue;
+    releu.add(e.raiz);
+    dividas.push(...sitfisParaDividas(e.cnpj, l.sit, l.sitEm));
+  }
+  dividas.push(...levantamento.filter((d) => !(releu.has(d.cnpj.slice(0, 8)) && (d.orgao === "Receita Federal" || d.orgao === "PGFN"))));
   const totalDebitos = [...leituras.values()].reduce((s, l) => s + (l.sit?.totalDebitos ?? 0), 0);
   const certVencidas = [...leituras.values()].filter((l) => l.sit?.certidao?.vencida).length;
   const naoLidasTotal = [...leituras.values()].reduce((s, l) => s + l.naoLidas.length, 0);
@@ -357,6 +376,8 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
           <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
         ) : (
           <>
+            <PainelDividas dividas={dividas} empresas={empresas} />
+
             {/* Números do grupo, num relance */}
             <div className="fx-numeros">
               <div><span>Débitos em aberto na Receita</span><b className={totalDebitos ? "fx-perigo" : ""}>{reaisCurto(totalDebitos)}</b><small>situação fiscal de hoje, {comAcesso.length > 0 ? "empresas ligadas" : "—"}</small></div>
@@ -491,30 +512,6 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
           </div>
         )}
       </main>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------
-// Gaveta lateral (painel por cima da página)
-// ---------------------------------------------------------------------
-function Gaveta({ titulo, sub, fechar, children, topo }: { titulo: string; sub?: string; fechar: () => void; children: React.ReactNode; topo?: React.ReactNode }) {
-  useEffect(() => {
-    const f = (ev: KeyboardEvent) => ev.key === "Escape" && fechar();
-    window.addEventListener("keydown", f);
-    document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", f); document.body.style.overflow = ""; };
-  }, [fechar]);
-  return (
-    <div className="fx-fundo" onClick={fechar}>
-      <aside className="fx-gaveta" role="dialog" aria-label={titulo} onClick={(ev) => ev.stopPropagation()}>
-        <header className="fx-gaveta-topo">
-          <div><h2>{titulo}</h2>{sub && <p>{sub}</p>}</div>
-          <button className="fx-fechar" onClick={fechar} aria-label="Fechar">×</button>
-        </header>
-        {topo}
-        <div className="fx-gaveta-corpo">{children}</div>
-      </aside>
     </div>
   );
 }
@@ -759,4 +756,62 @@ function Acessos({ fontes }: { fontes: Fonte[] }) {
       })}
     </>
   );
+}
+
+// ---------------------------------------------------------------------
+// Relatório de situação fiscal de hoje → lançamentos do painel de dívidas
+// ---------------------------------------------------------------------
+const numero = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
+function categoriaDe(receita: string): { categoria: string; sensivel: boolean } {
+  const r = receita.toUpperCase();
+  if (/IRRF/.test(r)) return { categoria: "IRRF retido", sensivel: true };
+  if (/CP.?SEGUR|SEGURADO/.test(r)) return { categoria: "INSS descontado dos funcionários", sensivel: true };
+  if (/CSRF|PIS.COFINS.CSLL/.test(r)) return { categoria: "CSRF retida", sensivel: true };
+  if (/TERCEIROS|OUTRAS ENT/.test(r)) return { categoria: "INSS de terceiros", sensivel: false };
+  if (/CP.?PATRONAL|PATRONAL|CP-EMPRESA/.test(r)) return { categoria: "INSS patronal", sensivel: false };
+  if (/SIMPLES/.test(r)) return { categoria: "Simples Nacional", sensivel: false };
+  if (/IRPJ/.test(r)) return { categoria: "IRPJ", sensivel: false };
+  if (/CSLL/.test(r)) return { categoria: "CSLL", sensivel: false };
+  if (/COFINS/.test(r)) return { categoria: "COFINS", sensivel: false };
+  if (/PIS/.test(r)) return { categoria: "PIS", sensivel: false };
+  return { categoria: receita.replace(/^\d{4}-\d{2}\s*-\s*/, "") || "Outros", sensivel: false };
+}
+function sitfisParaDividas(cnpj: string, sit: Sitfis, em: string): Divida[] {
+  const fonte = `Situação fiscal da Receita · ${dataHora(em)}`;
+  const base = { cnpj, fonte, dataBase: em.slice(0, 10), aoVivo: true };
+  const hoje = hojeSP();
+  const out: Divida[] = sit.debitos.map((d, i) => {
+    const c = categoriaDe(d.receita);
+    const compet = /^\d{2}\/\d{4}$/.test(d.periodo) ? `${d.periodo.slice(3)}-${d.periodo.slice(0, 2)}` : d.periodo;
+    return {
+      ...base, id: `v${cnpj}d${i}`, orgao: "Receita Federal", categoria: c.categoria, sensivel: c.sensivel, detalhe: d.receita,
+      competencia: compet, vencimento: d.vencimento, principal: d.saldo, multa: d.multa, juros: d.juros, total: d.total,
+      situacao: d.vencimento < hoje ? "vencido" : "a_vencer",
+    };
+  });
+  sit.secoes.forEach((s, k) => {
+    if (/Débito|Processo/i.test(s.titulo) && !s.suspensa) return;
+    const orgao = s.orgao === "PGFN" ? "PGFN" : "Receita Federal";
+    const numeros = [...s.texto.matchAll(/(?:Parcelamento:|Conta|Inscrição)\s*([\d.-]+)/g)];
+    const vazio = { competencia: null, vencimento: null, principal: null, multa: null, juros: null };
+    if (s.suspensa) {
+      // Em parcelamento ou negociado, sem atraso: entra como "parcelado em dia"
+      const categoria = orgao === "PGFN" ? "Dívida ativa negociada" : "Parcelamento (em dia)";
+      const valores = [...s.texto.matchAll(/Valor Suspenso:\s*([\d.]+,\d{2})/gi)];
+      if (valores.length) valores.forEach((v, i) => out.push({ ...base, ...vazio, id: `v${cnpj}s${k}${i}`, orgao, categoria, sensivel: false,
+        detalhe: `${s.titulo} · ${numeros[i]?.[1] ?? ""}`, total: numero(v[1]), situacao: "parcelado" }));
+      else out.push({ ...base, ...vazio, id: `v${cnpj}s${k}`, orgao, categoria, sensivel: false,
+        detalhe: `${s.titulo} · ${s.texto.slice(0, 160)}`, total: null, situacao: "parcelado" });
+      return;
+    }
+    if (/Parcelamento/i.test(s.titulo)) {
+      const valores = [...s.texto.matchAll(/Valor em Atraso:\s*([\d.]+,\d{2})/gi)];
+      const parcelas = [...s.texto.matchAll(/Parcelas em atraso:?\s*(\d+)/gi)];
+      parcelas.forEach((p, i) => out.push({ ...base, ...vazio, id: `v${cnpj}p${k}${i}`, orgao, sensivel: false,
+        categoria: /PARCSN|SIMPLES/i.test(s.titulo + s.texto) && !valores[i] ? "Parcelamento do Simples" : "Parcelamento simplificado",
+        detalhe: `${numeros[i]?.[1] ?? s.texto.slice(0, 60)} · ${p[1]} parcelas em atraso${valores[i] ? "" : " (valor não informado no relatório)"}`,
+        total: valores[i] ? numero(valores[i][1]) : null, situacao: "parcela_atraso" }));
+    }
+  });
+  return out;
 }

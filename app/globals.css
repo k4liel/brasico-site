@@ -3065,3 +3065,117 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
   .et-incluir { grid-template-columns: 1fr; }
 }
 
+/* =====================================================================
+   Painel central de dívidas (/receita, components/PainelDividas.tsx)
+   Órgãos: paleta categórica validada (slots 1–4). Situação: cores de status, sempre com o nome escrito.
+   ===================================================================== */
+.dv { --dv-1: #2a78d6; --dv-2: #eb6834; --dv-3: #1baf7a; --dv-4: #eda100;
+  --dv-vencido: var(--danger); --dv-avencer: #8a94a6; --dv-parcelado: var(--ok); margin-bottom: 36px; }
+:root[data-theme="dark"] .dv { --dv-1: #3987e5; --dv-2: #d95926; --dv-3: #199e70; --dv-4: #c98500; --dv-avencer: #7d8799; }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .dv { --dv-1: #3987e5; --dv-2: #d95926; --dv-3: #199e70; --dv-4: #c98500; --dv-avencer: #7d8799; } }
+.dv-cabeca { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 10px 20px; margin-bottom: 14px; }
+.dv-cabeca h2 { margin: 0; font-family: var(--font-serif), Georgia, serif; font-size: 24px; font-weight: 600; color: var(--strong); }
+.dv-cabeca p { margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.dv-fonte { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; background: var(--seg); color: var(--muted); }
+.dv-fonte.vivo { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--ok); }
+.dv-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.dv-cartao { background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 22px 24px; min-width: 0; margin-bottom: 16px; }
+.dv-grade .dv-cartao { margin-bottom: 0; }
+.dv-rotulo { display: block; margin-bottom: 14px; font-size: 11.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+/* Total */
+.dv-total { display: flex; flex-direction: column; }
+.dv-heroi { all: unset; cursor: pointer; font-size: clamp(34px, 5vw, 48px); font-weight: 650; letter-spacing: -.03em; line-height: 1.05; color: var(--strong); font-variant-numeric: tabular-nums; }
+.dv-heroi:hover { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
+.dv-sub { margin: 8px 0 18px; font-size: 14px; color: var(--muted); }
+.dv-sub b { color: var(--danger); font-variant-numeric: tabular-nums; }
+.dv-pilha { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; margin-bottom: 16px; }
+.dv-seg { all: unset; cursor: pointer; display: block; min-width: 4px; height: 100%; }
+.dv-seg:hover { filter: brightness(1.1); }
+.dv .s-vencido { background: var(--dv-vencido); }
+.dv .s-parcela_atraso { background: repeating-linear-gradient(135deg, var(--dv-vencido) 0 4px, color-mix(in srgb, var(--dv-vencido) 55%, var(--panel)) 4px 7px); }
+.dv .s-a_vencer { background: var(--dv-avencer); }
+.dv .s-parcelado { background: var(--dv-parcelado); }
+.dv-legenda { list-style: none; margin: auto 0 0; padding: 0; display: grid; gap: 2px; }
+.dv-legenda button { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: 12px 1fr auto; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; font-size: 14px; color: var(--text); }
+.dv-legenda button:hover:not(:disabled) { background: var(--hover-bg); }
+.dv-legenda button:disabled { opacity: .45; cursor: default; }
+.dv-legenda i { width: 12px; height: 12px; border-radius: 3px; }
+.dv-legenda b { font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; }
+
+/* Barras horizontais (órgão e tributo) */
+.dv-barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dv-barras button { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 8px 8px 10px; border-radius: 10px; }
+.dv-barras button:hover:not(:disabled) { background: var(--hover-bg); }
+.dv-barras button:disabled { cursor: default; opacity: .55; }
+.dv-barra-nome { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--strong); font-weight: 500; min-width: 0; }
+.dv-barra-nome i { flex: none; width: 10px; height: 10px; border-radius: 3px; }
+.dv-barra-valor { font-size: 14px; font-weight: 600; color: var(--strong); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dv-barra-valor small { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.dv-trilho { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--seg); overflow: hidden; }
+.dv-trilho i { display: block; height: 100%; border-radius: 4px; min-width: 3px; transition: width .4s; }
+.dv-barras.compactas { gap: 2px; }
+.dv-barras.compactas button { padding: 6px 8px 8px; }
+.dv-barras.compactas .dv-barra-nome, .dv-barras.compactas .dv-barra-valor { font-size: 13.5px; }
+.dv-barras.compactas .dv-trilho { height: 6px; }
+.dv-sensivel { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 4px; margin-top: 16px; padding: 14px 16px; border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); }
+.dv-sensivel b { font-size: 18px; color: var(--danger); font-variant-numeric: tabular-nums; }
+.dv-sensivel span { font-size: 13px; color: var(--text); line-height: 1.45; }
+.dv-sensivel:hover { border-color: var(--danger); }
+
+/* Matriz empresa × órgão */
+.dv-matriz-caixa { overflow-x: auto; margin: 0 -8px; }
+.dv-matriz { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.dv-matriz th, .dv-matriz td { padding: 0; text-align: right; border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); white-space: nowrap; }
+.dv-matriz thead th { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.dv-matriz thead th i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+.dv-matriz th:first-child { text-align: left; }
+.dv-matriz tbody th, .dv-matriz td { height: 44px; }
+.dv-matriz button { all: unset; box-sizing: border-box; cursor: pointer; display: block; width: 100%; padding: 10px 12px; border-radius: 8px; }
+.dv-matriz button:hover { background: var(--hover-bg); color: var(--strong); }
+.dv-matriz tbody th button { font-weight: 600; color: var(--strong); }
+.dv-matriz td .muted { display: block; padding: 10px 12px; }
+.dv-matriz tfoot th, .dv-matriz tfoot td { padding: 12px; font-weight: 700; color: var(--strong); border-bottom: 0; border-top: 1px solid var(--border); }
+.dv-forte { font-weight: 700; color: var(--strong); }
+
+/* Colunas por ano */
+.dv-colunas { display: flex; align-items: flex-end; gap: 10px; height: 210px; padding-top: 8px; }
+.dv-coluna { all: unset; box-sizing: border-box; cursor: pointer; flex: 1; min-width: 0; height: 100%; display: grid; grid-template-rows: auto 1fr auto; gap: 6px; text-align: center; border-radius: 10px; padding: 4px; }
+.dv-coluna:hover { background: var(--hover-bg); }
+.dv-coluna-valor { font-size: 12px; font-weight: 600; color: var(--strong); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dv-coluna-barra { display: flex; align-items: flex-end; justify-content: center; }
+.dv-coluna-barra i { display: block; width: min(44px, 80%); border-radius: 4px 4px 0 0; background: var(--dv-1); }
+.dv-coluna-ano { font-size: 12.5px; color: var(--muted); }
+
+/* Detalhe */
+.dv-detalhe-barra { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+.dv-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dv-chip { all: unset; cursor: pointer; padding: 5px 11px; border-radius: 999px; font-size: 12.5px; border: 1px solid var(--border); color: var(--text); background: var(--panel); }
+.dv-chip:hover { border-color: var(--gold); }
+.dv-chip.on { background: var(--soft); border-color: var(--gold); color: var(--strong); font-weight: 600; }
+.dv-grupo { margin-bottom: 20px; }
+.dv-grupo-topo { display: flex; justify-content: space-between; gap: 12px; padding: 0 2px 8px; border-bottom: 2px solid var(--strong); }
+.dv-grupo-topo strong { font-size: 15px; color: var(--strong); }
+.dv-grupo-topo span { font-size: 15px; font-weight: 700; color: var(--strong); font-variant-numeric: tabular-nums; }
+.dv-tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.dv-tabela th { padding: 8px 6px; text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
+.dv-tabela td { padding: 10px 6px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.dv-tabela th:last-child, .dv-valor { text-align: right; }
+.dv-valor { font-weight: 600; color: var(--strong); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dv-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--strong); white-space: nowrap; }
+.dv .dv-status { background: none; }
+.dv-status::before { content: ""; width: 9px; height: 9px; border-radius: 50%; }
+.dv-status.s-vencido::before { background: var(--dv-vencido); }
+.dv-status.s-parcela_atraso::before { background: repeating-linear-gradient(135deg, var(--dv-vencido) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--dv-vencido); }
+.dv-status.s-a_vencer::before { background: var(--dv-avencer); }
+.dv-status.s-parcelado::before { background: var(--dv-parcelado); }
+.dv-marca-sensivel { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+@media (max-width: 640px) {
+  .dv-cartao { padding: 18px 16px; }
+  .dv-grade { grid-template-columns: 1fr; }
+  .dv-colunas { gap: 4px; }
+  .dv-tabela th:nth-child(2), .dv-tabela td:nth-child(2) { display: none; }
+}
+
