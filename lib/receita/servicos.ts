@@ -84,10 +84,15 @@ export class Receita {
       const pedidos = await Promise.all(EVENTOS.map(async (evento) => {
         const r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "SOLICEVENTOSPJ132", "1.0", { evento }, lista4);
         const d = lerDados(r.dados);
-        return { evento, ok: deuCerto(r) && !!d.protocolo, protocolo: String(d.protocolo ?? ""), espera: Number(d.TempoEsperaMedioEmMs ?? d.tempoEsperaMedioEmMs ?? 5000), erro: erroDe(r) };
+        return {
+          evento, ok: deuCerto(r) && !!d.protocolo, protocolo: String(d.protocolo ?? ""),
+          espera: Number(d.TempoEsperaMedioEmMs ?? d.tempoEsperaMedioEmMs ?? 5000), erro: erroDe(r),
+          amostra: JSON.stringify(r.dados ?? null).slice(0, 300),
+        };
       }));
       const falhas = pedidos.filter((x) => !x.ok);
-      if (falhas.length === pedidos.length) return { status: "falha", resultado: {}, erro: falhas[0].erro };
+      // A amostra (só protocolo e tempos) ajuda a entender um formato de resposta novo
+      if (falhas.length === pedidos.length) return { status: "falha", resultado: { amostra: falhas[0].amostra }, erro: falhas[0].erro };
       pendentes = pedidos.filter((x) => x.ok).map((x) => ({ evento: x.evento, protocolo: x.protocolo }));
       const maior = Math.max(...pedidos.filter((x) => x.ok).map((x) => x.espera));
       if (maior > 35000) return { status: "ok", resultado: { pendentes, esperaMs: maior } };
