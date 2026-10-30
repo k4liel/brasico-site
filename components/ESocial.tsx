@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
@@ -10,7 +10,8 @@ import {
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
-import Ponto from "./Ponto";
+import { EscalaSecao, HojeNoPonto, Justificativas, PontoGoverno, PontoMes } from "./Ponto";
+import { usePonto } from "./PontoDados";
 import BancoHoras from "./BancoHoras";
 import Salarios from "./Salarios";
 
@@ -30,22 +31,23 @@ const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
 // Segundo filtro: o que o governo já entregou de cada pessoa
 const LEITURAS = ["Todas", "Já lidas", "Ainda não lidas"] as const;
 type FiltroLeitura = (typeof LEITURAS)[number];
-// Seções do sistema de RH (navegação à esquerda; no celular, em linha)
-// Cada seção tem um grupo (no menu), um título e uma linha que explica o que ela mostra
+// Seções do RH: cinco abas no topo da página (antes eram dez itens num menu lateral). Os endereços antigos
+// (#pessoas, #ponto, #banco…) continuam funcionando e abrem a aba nova certa.
 const SECOES = [
-  { id: "visao", grupo: "Equipe", rotulo: "Visão geral", icone: "inicio", titulo: "Visão geral", texto: "O que precisa da sua atenção, os números da equipe, os próximos prazos e as últimas movimentações." },
-  { id: "pessoas", grupo: "Equipe", rotulo: "Pessoas", icone: "equipe", titulo: "Pessoas", texto: "Toda a equipe por unidade e situação. Clique numa pessoa para ver a ficha e a linha do tempo." },
-  { id: "ponto", grupo: "Equipe", rotulo: "Ponto e escalas", icone: "ponto", titulo: "Ponto e escalas", texto: "A escala de cada pessoa, quem bateu ponto hoje e o resumo dos últimos 30 dias, direto dos relógios de ponto (RHiD)." },
-  { id: "banco", grupo: "Equipe", rotulo: "Banco de horas", icone: "banco", titulo: "Banco de horas", texto: "O saldo de horas de cada pessoa segundo o RHiD: quem está positivo, quem está negativo e como mudou no último mês." },
-  { id: "salarios", grupo: "Obrigações", rotulo: "Salários", icone: "salario", titulo: "Salários", texto: "O salário de contrato de cada pessoa, como o contador informou ao eSocial, por local e setor. Dado sensível: fica escondido até você mostrar." },
-  { id: "ausencias", grupo: "Contratos", rotulo: "Férias e afastamentos", icone: "ausencias", titulo: "Férias e afastamentos", texto: "Quem está fora agora e o histórico de ausências lido do governo." },
-  { id: "movimentacoes", grupo: "Contratos", rotulo: "Admissões e saídas", icone: "movimentacoes", titulo: "Admissões e saídas", texto: "Contratos de experiência a vencer e as entradas e saídas dos últimos meses, com os prazos do eSocial." },
-  { id: "folha", grupo: "Obrigações", rotulo: "Folha e prazos", icone: "folha", titulo: "Folha e prazos", texto: "Se o contador fechou a folha de cada mês e o calendário de obrigações do empregador." },
-  { id: "integracao", grupo: "Obrigações", rotulo: "Leitura do governo", icone: "leitura", titulo: "Leitura do governo", texto: "O andamento da leitura do eSocial, as configurações de cada empresa e os registros técnicos." },
-  { id: "ajuda", grupo: "Apoio", rotulo: "Ajuda", icone: "livro", titulo: "Ajuda", texto: "Como esta área funciona e o que quer dizer cada termo." },
+  { id: "inicio", rotulo: "Início", icone: "inicio", titulo: "Início", texto: "O que pede atenção hoje: o ponto, os alertas, os números da equipe e os próximos prazos." },
+  { id: "escala", rotulo: "Escala", icone: "ponto", titulo: "Escala", texto: "Quem trabalha em cada dia, por local e setor, e o que foi batido no relógio (RHiD)." },
+  { id: "equipe", rotulo: "Equipe", icone: "equipe", titulo: "Equipe", texto: "Todas as pessoas com a ficha de cada uma, o ponto do mês, o banco de horas e os salários." },
+  { id: "contratos", rotulo: "Ausências e contratos", icone: "ausencias", titulo: "Ausências e contratos", texto: "Quem está fora, atestados e férias lançados no ponto, contratos de experiência a vencer e as entradas e saídas." },
+  { id: "folha", rotulo: "Folha e governo", icone: "folha", titulo: "Folha e governo", texto: "O fechamento da folha, o calendário de obrigações, a leitura do eSocial, o ponto × eSocial e a ajuda." },
 ] as const;
 type Secao = (typeof SECOES)[number]["id"];
-const SECAO_PADRAO: Secao = "visao";
+const SECAO_PADRAO: Secao = "inicio";
+const VISOES_EQUIPE = [["pessoas", "Pessoas"], ["ponto", "Ponto do mês"], ["banco", "Banco de horas"], ["salarios", "Salários"]] as const;
+type VisaoEquipe = (typeof VISOES_EQUIPE)[number][0];
+const ALIAS: Record<string, [Secao, VisaoEquipe?]> = {
+  visao: ["inicio"], pessoas: ["equipe", "pessoas"], ponto: ["escala"], banco: ["equipe", "banco"], salarios: ["equipe", "salarios"],
+  ausencias: ["contratos"], movimentacoes: ["contratos"], integracao: ["folha"], ajuda: ["folha"],
+};
 
 const TIPO_PEDIDO: Record<string, string> = {
   teste_conexao: "Teste de conexão", identificadores_tabela: "Consulta de tabela", identificadores_empregador: "Consulta da empresa",
@@ -99,32 +101,28 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [filtroLeitura, setFiltroLeitura] = useState<FiltroLeitura>("Todas");
   const [filtroUnidade, setFiltroUnidade] = useState("");
   const [secao, setSecao] = useState<Secao>(SECAO_PADRAO);
+  const [visaoEquipe, setVisaoEquipe] = useState<VisaoEquipe>("pessoas");
   // A seção fica no endereço (#pessoas, #folha…) para dar para voltar e compartilhar
   useEffect(() => {
     const ler = () => {
       const h = window.location.hash.replace("#", "");
-      setSecao(SECOES.some((s) => s.id === h) ? (h as Secao) : SECAO_PADRAO);
+      const a = ALIAS[h];
+      if (a?.[1]) setVisaoEquipe(a[1]);
+      setSecao(SECOES.some((s) => s.id === h) ? (h as Secao) : a ? a[0] : SECAO_PADRAO);
       window.scrollTo({ top: 0 });
     };
     ler();
     window.addEventListener("hashchange", ler);
     return () => window.removeEventListener("hashchange", ler);
   }, []);
-  function irPara(s: Secao) {
+  function irPara(s: Secao, v?: VisaoEquipe) {
     setSecao(s);
+    if (v) setVisaoEquipe(v);
     window.history.replaceState(null, "", `#${s}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   const [aberta, setAberta] = useState<string | null>(null);
   const [verCpf, setVerCpf] = useState(false);
-  // Menu lateral retrátil: fechado, só os ícones, e o conteúdo ocupa a tela toda
-  const [navFechada, setNavFechada] = useState(false);
-  function alternarNav() {
-    setNavFechada((v) => {
-      gravarLocal("brasico-esocial-nav", v ? "aberta" : "fechada");
-      return !v;
-    });
-  }
   const [painel, setPainel] = useState<"cpfs" | "historico" | null>(null);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState("");
@@ -132,7 +130,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 
   useEffect(() => {
     setVerCpf(lerLocal("brasico-esocial-ver-cpf") === "1");
-    setNavFechada(lerLocal("brasico-esocial-nav") === "fechada");
     const e = lerLocal("brasico-esocial-empresa");
     if (e) setFiltroEmpresa(e);
   }, []);
@@ -228,6 +225,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const pessoaAberta = pessoas.find((p) => p.chave === aberta) ?? null;
   const chavesRH = useMemo(() => new Set(pessoas.map((p) => p.chave)), [pessoas]);
   const bloqueado = diaDoMes() <= 7;
+  const ponto = usePonto(supabase, filtroEmpresa);
+  const atrasadosPonto = ponto.vistas.filter((l) => l.estado === "Atrasado").length;
 
   const termo = busca.trim().toLowerCase();
   const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
@@ -294,7 +293,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     if (a.pessoa) return setAberta(a.pessoa);
     if (a.acao === "certificado") return (window.location.href = "/certificados");
     if (a.acao === "leitura") return rodar(() => supabase.rpc("esocial_configurar", { p_empresa: a.empresa_id, p_leitura: true, p_limite: null, p_historico_desde: null }), "Leitura automática ligada.");
-    if (a.acao === "tecnico") irPara("integracao");
+    if (a.acao === "tecnico") irPara("folha");
   }
 
   if (acesso === false) {
@@ -313,7 +312,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="esocial" />
-      <main className="miolo es es-sistema">
+      <main className={secao === "escala" ? "miolo es es-sistema es-largo" : "miolo es es-sistema"}>
         {/* Cabeçalho do sistema de RH */}
         <div className="es-topo">
           <div>
@@ -351,25 +350,18 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             <button className="small" onClick={() => (window.location.href = "/certificados")}>Enviar certificado</button>
           </section>
         ) : (
-          <div className={navFechada ? "es-layout fechado" : "es-layout"}>
-            {/* Navegação do sistema de RH */}
-            <nav className="es-nav" aria-label="Seções do RH">
-              <button className="es-nav-alternar" onClick={alternarNav} title={navFechada ? "Abrir o menu" : "Recolher o menu"} aria-label={navFechada ? "Abrir o menu" : "Recolher o menu"} aria-expanded={!navFechada}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={navFechada ? "M9 6l6 6-6 6" : "M15 6l-6 6 6 6"} /></svg>
-                <span>Recolher</span>
-              </button>
-              {SECOES.map((s, i) => {
-                const n = s.id === "visao" ? alertas.length : s.id === "pessoas" ? numeros.ativos : s.id === "ausencias" ? foraAgora.length
-                  : s.id === "movimentacoes" ? movimentacoes.filter((m) => m.quando.startsWith(hoje().slice(0, 7))).length : s.id === "integracao" ? leituras.reduce((t, l) => t + l.esperandoDownload, 0) : 0;
+          <div className="es-layout">
+            {/* Abas do RH */}
+            <nav className="es-abas" aria-label="Seções do RH">
+              {SECOES.map((s) => {
+                const vence = emExperiencia.filter((p) => diasEntre(hoje(), p.fimContrato!) <= 10).length;
+                const n = s.id === "inicio" ? alertas.length : s.id === "escala" ? atrasadosPonto : s.id === "equipe" ? numeros.ativos : s.id === "contratos" ? vence : 0;
                 return (
-                  <Fragment key={s.id}>
-                    {(i === 0 || SECOES[i - 1].grupo !== s.grupo) && <div className="es-nav-grupo">{s.grupo}</div>}
-                    <button className={secao === s.id ? "es-nav-item on" : "es-nav-item"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined} title={navFechada ? s.rotulo : undefined}>
-                      <Icone nome={s.icone} />
-                      <span>{s.rotulo}</span>
-                      {n > 0 && <b className={s.id === "visao" ? "es-nav-n atencao" : "es-nav-n"}>{n}</b>}
-                    </button>
-                  </Fragment>
+                  <button key={s.id} className={secao === s.id ? "es-aba on" : "es-aba"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
+                    <Icone nome={s.icone} />
+                    <span>{s.rotulo}</span>
+                    {n > 0 && <b className={s.id === "equipe" ? "es-nav-n" : "es-nav-n atencao"} title={s.id === "escala" ? "atrasados agora" : undefined}>{n}</b>}
+                  </button>
                 );
               })}
             </nav>
@@ -379,8 +371,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 const s = SECOES.find((x) => x.id === secao)!;
                 return <header className="es-secao"><h2>{s.titulo}</h2><p>{s.texto}</p></header>;
               })()}
-              {/* ===================== Visão geral ===================== */}
-              {secao === "visao" && (
+              {/* ===================== Início ===================== */}
+              {secao === "inicio" && (
                 <>
                   {proximo && (
                     <section className="es-bloco">
@@ -420,19 +412,21 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     )}
                   </section>
 
+                  <HojeNoPonto ponto={ponto} icone={(n) => <Icone nome={n} />} onAbrirEscala={() => irPara("escala")} />
+
                   <div className="es-numeros">
                     <Numero rotulo="Trabalhando" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}
-                      ajuda="Pessoas com admissão informada e sem desligamento. Inclui quem está de férias ou afastado." onClick={() => { setFiltro("Trabalhando"); irPara("pessoas"); }} />
+                      ajuda="Pessoas com admissão informada e sem desligamento. Inclui quem está de férias ou afastado." onClick={() => { setFiltro("Trabalhando"); irPara("equipe", "pessoas"); }} />
                     <Numero rotulo="Fora hoje" valor={String(foraAgora.length)} detalhe={`${numeros.ferias} de férias · ${numeros.afastados} afastados`}
-                      ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => irPara("ausencias")} />
+                      ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => irPara("contratos")} />
                     <Numero rotulo="Em experiência" valor={String(emExperiencia.length)} detalhe={emExperiencia[0] ? `próximo acaba ${dataBR(emExperiencia[0].fimContrato)}` : "nenhum contrato a vencer"}
-                      ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("movimentacoes")} />
+                      ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("contratos")} />
                     <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
                       detalhe={numeros.rotatividade != null ? (empresasVistas.every((e) => !ehAssociacao(e.nome)) ? "Restaurantes: 73% a 78% ao ano" : "Troca da equipe no último ano") : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
                       ajuda="Quanto da equipe foi trocada nos últimos 12 meses: (entradas + saídas) ÷ 2 ÷ pessoas trabalhando hoje. Falecimento, transferência e aposentadoria não contam, porque não são troca de equipe. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
                     <Numero rotulo="Saíram antes de 90 dias" valor={String(numeros.cedo)}
                       detalhe={numeros.saidasAno ? `de ${numeros.saidasAno} saídas no ano · ${numeros.pediram} pediram para sair` : "nenhuma saída lida neste ano"}
-                      ajuda="Quem saiu ainda no período de experiência, neste ano. Muitas saídas cedo costumam indicar problema na contratação ou no acolhimento." onClick={() => { setFiltro("Saíram"); irPara("pessoas"); }} />
+                      ajuda="Quem saiu ainda no período de experiência, neste ano. Muitas saídas cedo costumam indicar problema na contratação ou no acolhimento." onClick={() => { setFiltro("Saíram"); irPara("equipe", "pessoas"); }} />
                   </div>
 
                   <div className="es-duas">
@@ -449,7 +443,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       </ol>
                     </section>
                     <section className="es-bloco">
-                      <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Movimentações recentes</h2><button className="ghost small" onClick={() => irPara("movimentacoes")}>Ver todas</button></div>
+                      <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Movimentações recentes</h2><button className="ghost small" onClick={() => irPara("contratos")}>Ver todas</button></div>
                       {movimentacoes.length === 0 ? (
                         <p className="muted tv-nada">Nenhuma admissão ou saída lida nos últimos 3 meses.</p>
                       ) : (
@@ -466,29 +460,29 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     </section>
                   </div>
 
-                  <section className="es-bloco es-leitura-resumo">
-                    <div className="es-bloco-cabeca"><h2><Icone nome="leitura" />Leitura do governo</h2><button className="ghost small" onClick={() => irPara("integracao")}>Ver detalhes</button></div>
-                    <ul className="es-lista">
-                      {leituras.map((l) => (
-                        <li key={l.empresa_id} className="es-leitura-curta">
-                          <strong>{nomeCurto(l.nome)}</strong>
-                          <span>{l.lidas} de {l.pessoas} pessoas com o último mês lido</span>
-                          <span className="muted">· {l.usadosHoje} de {l.limite} acessos hoje · próxima: {l.proxima}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
                 </>
               )}
 
-              {/* ===================== Pessoas ===================== */}
-              {secao === "pessoas" && (
+              {/* ===================== Escala ===================== */}
+              {secao === "escala" && <EscalaSecao ponto={ponto} chavesRH={chavesRH} onAbrirPessoa={setAberta} />}
+
+              {/* ===================== Equipe ===================== */}
+              {secao === "equipe" && (
+                <div className="es-visoes">
+                  <div className="es-segmentos" role="tablist" aria-label="O que ver da equipe">
+                    {VISOES_EQUIPE.map(([v, r]) => (
+                      <button key={v} role="tab" aria-selected={visaoEquipe === v} className={visaoEquipe === v ? "on" : ""} onClick={() => setVisaoEquipe(v)}>{r}</button>
+                    ))}
+                  </div>
+                  <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
+                    <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
+                  </button>
+                </div>
+              )}
+              {secao === "equipe" && visaoEquipe === "pessoas" && (
                 <section className="es-bloco" id="es-equipe">
                   <div className="es-bloco-cabeca">
                     <h2><Icone nome="equipe" />Pessoas <span className="muted">{pessoasVistas.length}</span></h2>
-                    <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
-                      <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
-                    </button>
                   </div>
                   <div className="es-filtros">
                     <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar na equipe" />
@@ -558,66 +552,18 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 </section>
               )}
 
-              {/* ===================== Ponto (RHiD) ===================== */}
-              {secao === "ponto" && (
-                <Ponto supabase={supabase} filtroEmpresa={filtroEmpresa} verCpf={verCpf} alternarCpf={alternarCpf}
-                  chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} olho={<Olho aberto={verCpf} />} />
-              )}
-
-              {/* ===================== Banco de horas (RHiD) ===================== */}
-              {secao === "banco" && (
+              {secao === "equipe" && visaoEquipe === "ponto" && <PontoMes ponto={ponto} verCpf={verCpf} />}
+              {secao === "equipe" && visaoEquipe === "banco" && (
                 <BancoHoras supabase={supabase} filtroEmpresa={filtroEmpresa} chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
               )}
-
-              {/* ===================== Salários (eSocial) ===================== */}
-              {secao === "salarios" && (
+              {secao === "equipe" && visaoEquipe === "salarios" && (
                 <Salarios pessoas={pessoasVistas} empresas={empresas} verCpf={verCpf} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
               )}
 
-              {/* ===================== Férias e afastamentos ===================== */}
-              {secao === "ausencias" && (
+              {/* ===================== Ausências e contratos ===================== */}
+              {secao === "contratos" && (
                 <>
-                  <section className="es-bloco">
-                    <div className="es-bloco-cabeca"><h2><Icone nome="ausencias" />Fora agora</h2><span className="muted">{foraAgora.length}</span></div>
-                    {foraAgora.length === 0 ? (
-                      <p className="muted tv-nada">Ninguém de férias ou afastado neste momento, pelo que o governo já entregou.</p>
-                    ) : (
-                      <ul className="es-lista">
-                        {foraAgora.map((p) => (
-                          <li key={p.chave}><button className="es-linha-botao" onClick={() => setAberta(p.chave)}>
-                            <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
-                            <span className="es-lista-texto"><strong>{nomeProprio(p.nome)}</strong><span className="muted">{p.unidade}{p.unidade ? " · " : ""}{titulo(p.cargo)}</span></span>
-                            <span className={`es-selo ${p.situacao}`}>{p.situacao === "ferias" ? "Férias" : "Afastado"}</span>
-                            <span className="muted">{p.afastamento ? `desde ${dataBR(p.afastamento.desde)} (${diasEntre(p.afastamento.desde, hoje())} dias)` : ""}</span>
-                          </button></li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                  <section className="es-bloco">
-                    <div className="es-bloco-cabeca"><h2><Icone nome="calendario" />Férias e afastamentos lidos</h2><span className="muted">{ausencias.length}</span></div>
-                    {ausencias.length === 0 ? (
-                      <div className="es-vazio">
-                        <p><strong>Ainda sem férias ou afastamentos lidos.</strong></p>
-                        <p className="muted">Eles chegam com a leitura de cada pessoa no governo (evento S-2230). Férias programadas e saldo de férias dependem do histórico completo, que vem dos arquivos do contador.</p>
-                      </div>
-                    ) : (
-                      <ul className="es-lista">
-                        {ausencias.map((a, i) => (
-                          <li key={i}><button className="es-linha-botao" onClick={() => setAberta(a.pessoa.chave)}>
-                            <span className="es-lista-texto"><strong>{nomeProprio(a.pessoa.nome)}</strong><span className="muted">{a.texto}</span></span>
-                            <span className="muted">{dataBR(a.inicio)}{a.fim ? ` → ${dataBR(a.fim)}` : " → em aberto"}</span>
-                          </button></li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                </>
-              )}
-
-              {/* ===================== Admissões e saídas ===================== */}
-              {secao === "movimentacoes" && (
-                <>
+                  <Justificativas ponto={ponto} icone={(n) => <Icone nome={n} />} />
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca"><h2><Icone nome="passos" />Contratos de experiência</h2><span className="muted">{emExperiencia.length}</span></div>
                     {emExperiencia.length === 0 ? (
@@ -654,10 +600,47 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       </ul>
                     )}
                   </section>
+                  <div className="es-duas">
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="ausencias" />Fora agora, pelo governo</h2><span className="muted">{foraAgora.length}</span></div>
+                    {foraAgora.length === 0 ? (
+                      <p className="muted tv-nada">Ninguém de férias ou afastado neste momento, pelo que o governo já entregou.</p>
+                    ) : (
+                      <ul className="es-lista">
+                        {foraAgora.map((p) => (
+                          <li key={p.chave}><button className="es-linha-botao" onClick={() => setAberta(p.chave)}>
+                            <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
+                            <span className="es-lista-texto"><strong>{nomeProprio(p.nome)}</strong><span className="muted">{p.unidade}{p.unidade ? " · " : ""}{titulo(p.cargo)}</span></span>
+                            <span className={`es-selo ${p.situacao}`}>{p.situacao === "ferias" ? "Férias" : "Afastado"}</span>
+                            <span className="muted">{p.afastamento ? `desde ${dataBR(p.afastamento.desde)} (${diasEntre(p.afastamento.desde, hoje())} dias)` : ""}</span>
+                          </button></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="calendario" />Férias e afastamentos lidos do governo</h2><span className="muted">{ausencias.length}</span></div>
+                    {ausencias.length === 0 ? (
+                      <div className="es-vazio">
+                        <p><strong>Ainda sem férias ou afastamentos lidos.</strong></p>
+                        <p className="muted">Eles chegam com a leitura de cada pessoa no governo (evento S-2230). Férias programadas e saldo de férias dependem do histórico completo, que vem dos arquivos do contador.</p>
+                      </div>
+                    ) : (
+                      <ul className="es-lista">
+                        {ausencias.map((a, i) => (
+                          <li key={i}><button className="es-linha-botao" onClick={() => setAberta(a.pessoa.chave)}>
+                            <span className="es-lista-texto"><strong>{nomeProprio(a.pessoa.nome)}</strong><span className="muted">{a.texto}</span></span>
+                            <span className="muted">{dataBR(a.inicio)}{a.fim ? ` → ${dataBR(a.fim)}` : " → em aberto"}</span>
+                          </button></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                  </div>
                 </>
               )}
 
-              {/* ===================== Folha e prazos ===================== */}
+              {/* ===================== Folha e governo ===================== */}
               {secao === "folha" && (
                 <>
                   <section className="es-bloco">
@@ -716,12 +699,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       ))}
                     </ol>
                   </section>
-                </>
-              )}
-
-              {/* ===================== Leitura do governo (integração) ===================== */}
-              {secao === "integracao" && (
-                <>
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
                       <h2><Icone nome="leitura" />Andamento da leitura</h2>
@@ -755,22 +732,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     <p className="muted es-nota">Como funciona: 9 consultas por dia buscam os eventos de um funcionário cada (o mês mais recente de todos primeiro, depois o histórico para trás) e o último acesso do dia baixa tudo o que foi encontrado. Para ter o histórico completo de uma vez, importe os arquivos do contador.</p>
                   </section>
 
-                  {proximo && (
-                    <section className="es-bloco">
-                      <div className="es-bloco-cabeca"><h2><Icone nome="passos" />Primeiros passos</h2><span className="muted">{feitos} de {passos.length} feitos</span></div>
-                      <ul className="es-passos">
-                        {passos.map((p) => (
-                          <li key={p.id} className={p.feito ? "feito" : p === proximo ? "proximo" : ""}>
-                            <span className="es-caixa" aria-hidden="true">{p.feito ? "✓" : ""}</span>
-                            <span>{p.texto}</span>
-                            {!p.feito && <button className={p === proximo ? "small" : "ghost small"} disabled={ocupado} onClick={() => agirPasso(p.id)}>{p.acao}</button>}
-                          </li>
-                        ))}
-                      </ul>
-                      {painelCpfs}
-                      {painelHistorico}
-                    </section>
-                  )}
+                  <PontoGoverno ponto={ponto} icone={(n) => <Icone nome={n} />} verCpf={verCpf} onAbrirPessoa={setAberta} />
 
                   <section className="es-bloco" id="es-tecnico">
                     <div className="es-bloco-cabeca"><h2><Icone nome="tecnico" />Configurações e registros</h2><span className="muted">certificado, leitura automática, eventos do jeito que o governo guarda</span></div>
@@ -779,28 +741,18 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       ocupado={ocupado} emAndamento={emAndamento} bloqueado={bloqueado} rodar={rodar} supabase={supabase} />
                     <RegistroConsultas consultas={consultas} meuId={userId} />
                   </section>
-                </>
-              )}
-
-              {/* ===================== Ajuda ===================== */}
-              {secao === "ajuda" && (
-                <>
-                  <section className="es-bloco">
-                    <h2><Icone nome="livro" />Como esta área funciona</h2>
+                  <details className="es-bloco es-glossario">
+                    <summary><Icone nome="livro" /><strong>Como esta área funciona</strong> <span className="muted">· o que tem em cada aba</span></summary>
                     <ul className="es-ajuda-lista">
-                      <li><strong>Visão geral</strong>: o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
-                      <li><strong>Pessoas</strong>: toda a equipe, por unidade e situação, com a ficha e a linha do tempo de cada um.</li>
-                      <li><strong>Ponto e escalas</strong>: a escala de cada pessoa, quem bateu ponto hoje, faltas e atrasos dos últimos 30 dias, vindos dos relógios (RHiD), e o cruzamento com o eSocial.</li>
-                      <li><strong>Banco de horas</strong>: o saldo de horas de cada pessoa (positivo ou negativo) e como mudou no último mês.</li>
-                      <li><strong>Salários</strong>: o salário de contrato de cada pessoa informado ao eSocial, por local e setor, escondido até você mostrar.</li>
-                      <li><strong>Férias e afastamentos</strong>: quem está fora agora e o histórico de ausências lido do governo.</li>
-                      <li><strong>Admissões e saídas</strong>: contratos de experiência a vencer e as movimentações dos últimos meses, com os prazos do eSocial.</li>
-                      <li><strong>Folha e prazos</strong>: se o contador fechou a folha de cada mês e o calendário de obrigações.</li>
-                      <li><strong>Leitura do governo</strong>: o andamento da leitura, as configurações e os registros técnicos.</li>
+                      <li><strong>Início</strong>: o ponto de hoje (quem está trabalhando, quem está atrasado), o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
+                      <li><strong>Escala</strong>: a escala de todo mundo na página inteira (semana, 2 semanas ou mês), por local e setor, com o previsto e o batido de cada dia.</li>
+                      <li><strong>Equipe</strong>: as pessoas (com a ficha e a linha do tempo), o ponto do mês (faltas, atrasos, horas), o banco de horas e os salários de contrato (escondidos até você mostrar).</li>
+                      <li><strong>Ausências e contratos</strong>: atestados, férias e licenças lançados no ponto, contratos de experiência a vencer, admissões e saídas com os prazos do eSocial, e os afastamentos que o governo registra.</li>
+                      <li><strong>Folha e governo</strong>: o fechamento da folha, o calendário de obrigações, o andamento da leitura do eSocial, o cruzamento ponto × eSocial, os relógios e os registros técnicos.</li>
                     </ul>
-                    <p className="muted">O cadastro inicial (nome, cargo, admissão, unidade) veio da relação do contador. O resto chega aos poucos do governo, 10 consultas por dia por empresa.</p>
-                  </section>
-                  <Glossario aberto />
+                    <p className="muted">O cadastro inicial (nome, cargo, admissão, unidade) veio da relação do contador. O ponto vem do RHiD ao longo do dia; o governo (eSocial) libera 10 consultas por dia por empresa e os dados chegam aos poucos.</p>
+                  </details>
+                  <Glossario />
                 </>
               )}
             </div>

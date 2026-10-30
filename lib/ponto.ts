@@ -5,7 +5,7 @@ PONTO (RHiD) DO BRASICO — COMO TRABALHAR
 
 De onde vêm os dados
 - Do RHiD (ponto em nuvem da Control iD), copiados pelo Brasico: pessoas ativas no relógio (com cargo, local = centro de custo, setor = departamento, escala vigente, admissão), a apuração de cada dia (escala prevista, batidas, horas trabalhadas, extras, atrasos, faltas, banco de horas), as escalas cadastradas, os tipos de justificativa e os relógios.
-- Cadastros são lidos às 5h; o ponto a cada 10 min das 5h às 7h50 e de novo às 12h e 17h (Fortaleza). Os dias futuros (até 13 dias) trazem a ESCALA prevista; os passados trazem o que foi batido.
+- Cadastros são lidos às 5h. O dia de hoje (quem bateu, quem está atrasado) é atualizado a cada 10 min das 6h à meia-noite; a semana e a escala futura às 5h, 12h, 17h e 22h (Fortaleza). Os dias futuros (até 5 semanas) trazem a ESCALA prevista; os passados trazem o que foi batido.
 - Os sócios veem tudo também no site: Menu → RH · eSocial → Ponto e escalas / Banco de horas.
 - O cadastro de ponto se liga ao RH (eSocial) pelo CPF. Pessoa "sem ficha no RH" = CPF fora do cadastro do eSocial (ou sem CPF no RHiD).
 

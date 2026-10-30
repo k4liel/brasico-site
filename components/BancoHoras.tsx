@@ -152,7 +152,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
           <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} rotulo="locais" contar={(u) => daEmpresa.filter((l) => l.local === u).length} />
         </div>
         {vistas.length === 0 ? (
-          <p className="muted tv-nada">{pessoas.length ? "Ninguém neste filtro." : "O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h."}</p>
+          <p className="muted tv-nada">{pessoas.length ? "Ninguém neste filtro." : "O ponto ainda não foi lido. A leitura roda sozinha de madrugada e ao longo do dia."}</p>
         ) : (
           <>
             <div className="bh-cabeca" aria-hidden="true"><span>Pessoa</span><span>Devendo · Crédito</span><span>Saldo</span><span>30 dias</span></div>

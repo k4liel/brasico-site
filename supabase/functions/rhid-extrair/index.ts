@@ -1,5 +1,6 @@
 // Copia do RHiD (ponto em nuvem da Control iD), somente leitura, de cada cliente que o login enxerga:
-// tipo "cadastros": empresas, departamentos, relógios e pessoas; tipo "batidas": a apuração do ponto.
+// tipo "cadastros": empresas, departamentos, relógios e pessoas; tipo "batidas": a apuração do ponto
+// (semana e escala futura); tipo "agora": o dia de hoje de quem acabou de bater ou tem escala hoje.
 // Chamada pelo banco (rhid_pedir, via pg_net) com o segredo no cabeçalho x-segredo.
 // Corpo: { "execucao": "<id em rhid_execucoes>" }. Responde na hora e trabalha em segundo plano.
 // E-mail e senha ficam no Vault (rhid_email, rhid_senha). Nada de segredo nos logs.
@@ -286,7 +287,7 @@ async function copiarCliente(cliente: number, token: string, inicio: number) {
 // ---------------------------------------------------------------------
 const ORCAMENTO_MS = 110_000;
 const RECENTES = 7; // dias refeitos a cada leitura (justificativas e ajustes mudam a apuração)
-const FUTUROS = 13; // dias à frente: a escala prevista (a apuração traz o horário contratual)
+const FUTUROS = 34; // dias à frente: a escala prevista das próximas 5 semanas (a apuração traz o horário contratual)
 const HISTORICO_DIAS = 365; // até onde o histórico volta
 const REFAZER_MS = 2 * 3600_000; // a apuração recente de uma pessoa vale por 2 horas
 
@@ -355,11 +356,17 @@ async function copiarPonto(cliente: number, token: string, inicio: number, fase:
     r.erros++;
     if (!r.exemplo_erro) r.exemplo_erro = e instanceof Error ? e.message.slice(0, 160) : "erro desconhecido";
   };
-  // Justificativas recentes mudam a apuração (atestado lançado hoje vale para ontem): relê 45 dias para trás
-  if (fase === "recentes") {
-    try {
-      r.justificativas = await copiarJustificativas(cliente, token, somarDias(hoje, -45), somarDias(hoje, 120));
-    } catch (e) { falhou(e); }
+  // Justificativas recentes mudam a apuração (atestado lançado hoje vale para ontem): relê 45 dias para trás,
+  // mas só quando alguém vai ser apurado e a última leitura delas tem mais de 1 hora
+  const vaiApurar = (pessoas ?? []).some((p) => !p.apuracao_em || Date.now() - new Date(p.apuracao_em).getTime() >= REFAZER_MS);
+  if (fase === "recentes" && vaiApurar) {
+    const { data: cl } = await supabase.from("rhid_clientes").select("justificativas_em").eq("id", cliente).maybeSingle();
+    if (!cl?.justificativas_em || Date.now() - new Date(cl.justificativas_em).getTime() > 3600_000) {
+      try {
+        r.justificativas = await copiarJustificativas(cliente, token, somarDias(hoje, -45), somarDias(hoje, 120));
+        await supabase.from("rhid_clientes").update({ justificativas_em: new Date().toISOString() }).eq("id", cliente);
+      } catch (e) { falhou(e); }
+    }
   }
   for (const p of fase === "recentes" ? pessoas ?? [] : []) {
     if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
@@ -384,6 +391,66 @@ async function copiarPonto(cliente: number, token: string, inicio: number, fase:
       r.dias += await apurar(token, cliente, Number(p.id), ini, fim);
       await supabase.from("rhid_pessoas").update({ historico_ate: ini, historico_fim: ini <= limite })
         .eq("cliente_id", cliente).eq("id", p.id);
+      r.pessoas++;
+    } catch (e) { falhou(e); }
+  }
+  return r;
+}
+
+// Tipo "agora" (a cada 10 min, de dia): o dia de hoje de quem acabou de bater e de quem tem escala hoje.
+// 1. As 10 últimas batidas da empresa (util.svc/ultimasmarcacoes, uma chamada): quem bateu e a batida ainda
+//    não está no dia guardado é apurado de novo (ontem e hoje: a batida da madrugada é do turno de ontem).
+// 2. De hora em hora, quem tem escala hoje e não foi conferido na última hora (hoje_em).
+// Não mexe em apuracao_em: a semana e a escala futura continuam com o tipo "batidas".
+async function copiarAgora(cliente: number, token: string, inicio: number) {
+  const hoje = diaFortaleza();
+  const ontem = somarDias(hoje, -1);
+  const r = { ultimas: 0, pessoas: 0, dias: 0, faltou_tempo: false, erros: 0, exemplo_erro: "" };
+  const falhou = (e: unknown) => {
+    r.erros++;
+    if (!r.exemplo_erro) r.exemplo_erro = e instanceof Error ? e.message.slice(0, 160) : "erro desconhecido";
+  };
+  let ultimas: J[] = [];
+  try {
+    const p = await pedir("https://www.rhid.com.br/v2/util.svc/ultimasmarcacoes", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    ultimas = Array.isArray(p) ? p : [];
+  } catch (e) { falhou(e); }
+  r.ultimas = ultimas.length;
+  // "30/10/2026 - 12:38:00" → dia e hora de cada batida recente
+  const recentes = new Map<number, string[]>();
+  for (const x of ultimas) {
+    const m = txt(x?.data).match(/^(\d{2})\/(\d{2})\/(\d{4})\D+(\d{2}):(\d{2})/);
+    const id = Number(x?.id);
+    if (!m || !Number.isFinite(id) || `${m[3]}-${m[2]}-${m[1]}` < ontem) continue;
+    recentes.set(id, [...(recentes.get(id) ?? []), `${m[4]}:${m[5]}`]);
+  }
+
+  const { data: pessoas } = await supabase.from("rhid_pessoas").select("id,hoje_em")
+    .eq("cliente_id", cliente).eq("situacao", 1).eq("presente", true);
+  const { data: dias } = await supabase.from("rhid_dias").select("pessoa_id,dia,horario,folga,batidas")
+    .eq("cliente_id", cliente).in("dia", [ontem, hoje]);
+  const batidasDe = new Map<number, Set<string>>();
+  for (const d of dias ?? []) {
+    const s = batidasDe.get(Number(d.pessoa_id)) ?? new Set<string>();
+    for (const b of (d.batidas ?? []) as { hora: string }[]) s.add(b.hora);
+    batidasDe.set(Number(d.pessoa_id), s);
+  }
+  const ativos = new Map((pessoas ?? []).map((p) => [Number(p.id), p.hoje_em as string | null]));
+  const alvo = new Map<number, string>(); // pessoa → primeiro dia a apurar
+  for (const [id, hs] of recentes) {
+    if (ativos.has(id) && hs.some((h) => !batidasDe.get(id)?.has(h))) alvo.set(id, ontem);
+  }
+  for (const d of dias ?? []) {
+    const id = Number(d.pessoa_id);
+    if (d.dia !== hoje || !d.horario || d.folga || !ativos.has(id) || alvo.has(id)) continue;
+    const visto = ativos.get(id);
+    if (!visto || Date.now() - new Date(visto).getTime() > 3600_000) alvo.set(id, hoje);
+  }
+  for (const [id, desde] of alvo) {
+    if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
+    try {
+      r.dias += await apurar(token, cliente, id, desde, hoje);
+      await supabase.from("rhid_pessoas").update({ hoje_em: new Date().toISOString() }).eq("cliente_id", cliente).eq("id", id);
       r.pessoas++;
     } catch (e) { falhou(e); }
   }
@@ -417,7 +484,8 @@ async function processar(execucaoId: string) {
     const inicio = Date.now();
     const falhas: string[] = [];
     const tokens = new Map<number, string>();
-    for (const fase of ex.tipo === "batidas" ? ["recentes", "historico"] as const : ["cadastros"] as const) {
+    const fases = ex.tipo === "batidas" ? ["recentes", "historico"] as const : ex.tipo === "agora" ? ["agora"] as const : ["cadastros"] as const;
+    for (const fase of fases) {
       for (const cl of clientes) {
         if (!ligados.has(cl.id)) continue;
         const nome = fase === "historico" ? `${cl.nome || cl.id} (histórico)` : cl.nome || String(cl.id);
@@ -429,7 +497,9 @@ async function processar(execucaoId: string) {
             if (!token) throw new ErroRhid("login sem token");
             tokens.set(cl.id, token);
           }
-          resumo[nome] = fase === "cadastros" ? await copiarCliente(cl.id, token, inicio) : await copiarPonto(cl.id, token, inicio, fase);
+          resumo[nome] = fase === "cadastros" ? await copiarCliente(cl.id, token, inicio)
+            : fase === "agora" ? await copiarAgora(cl.id, token, inicio)
+            : await copiarPonto(cl.id, token, inicio, fase);
         } catch (e) {
           const msg = e instanceof Error ? e.message : "erro desconhecido";
           falhas.push(`${nome}: ${msg}`);

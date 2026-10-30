@@ -1,456 +1,316 @@
 "use client";
 
-// Seção Ponto do RH: o que o RHiD (relógios de ponto da Control iD) registrou, cruzado com o RH do eSocial.
-// Dados copiados pelo Brasico (supabase/rhid.sql): pessoas, apuração do dia (batidas, horas, faltas,
-// atrasos, banco de horas) e relógios. Só leitura.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { cpfVisivel, dataBR, hoje, somarDias } from "@/lib/esocial/rh";
+// Partes do RH que vêm do ponto (RHiD, relógios da Control iD), cruzadas com o RH do eSocial. Os dados são
+// lidos uma vez pela página do RH (usePonto, components/PontoDados.ts) e cada aba mostra a sua parte:
+// Escala (a grade na página toda), Início (hoje no ponto), Equipe (ponto do mês), Ausências e contratos
+// (justificativas) e Folha e governo (ponto × eSocial e relógios). Só leitura.
+import { useState, type ReactNode } from "react";
+import { cpfVisivel, dataBR, somarDias } from "@/lib/esocial/rh";
 import PontoEscala, { type PessoaEscala } from "./PontoEscala";
-import { localESetor } from "@/lib/esocial/locais";
+import {
+  ESTADOS, chave, diaFortaleza, horaCurta, horas, iniciais, nomeProprio,
+  type Estado, type Ponto,
+} from "./PontoDados";
 
-type PessoaPonto = {
-  cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null;
-  cargo_id: number | null; centro_custo_id: number | null; escala_id: number | null;
-};
-type Batida = { hora: string; tipo: string; origem?: string; classificacao?: string; justificada?: boolean };
-type DiaPonto = {
-  cliente_id: number; pessoa_id: number; dia: string; horario: string; folga: boolean; feriado: boolean; falta: boolean; justificado: boolean;
-  minutos_trabalhados: number; minutos_atraso: number; minutos_falta: number; saldo_banco: number | null; alerta: string; batidas: Batida[];
-};
-type EmpresaPonto = { cliente_id: number; id: number; cnpj: string };
-type Departamento = { cliente_id: number; id: number; nome: string };
-type Relogio = { cliente_id: number; id: number; nome: string; situacao: string; ultima_conexao: string | null; rep_p: boolean };
-type Execucao = { id: string; status: string; created_at: string; fim: string | null; erro: string };
-type Justificativa = {
-  cliente_id: number; id: number; pessoa_id: number | null; tipo_id: number | null; texto: string; descricao: string;
-  inicio: string | null; fim: string | null; aprovacao: number | null; tem_arquivo: boolean; inserido_em: string | null;
-};
-// Tipo de justificativa que afasta (férias, atestado, licença, auxílio, suspensão), como rhid_tipo_afasta no banco
-const afasta = (nome: string) => /afast|f[ée]rias|licen[çc]a|aux[íi]lio|atestado|maternidade|paternidade|suspens/i.test(nome);
-const diaFortaleza = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600_000).toISOString().slice(0, 10) : "");
-type Cruzamento = { empresa_id: string; cpf: string; nome: string; unidade: string; ponto_situacao: string; ponto_ultima_batida: string | null; ativo: boolean };
-
-const ESTADOS = ["Trabalhando", "Saiu", "Ainda sem batida", "Folga", "Sem escala"] as const;
-type Estado = (typeof ESTADOS)[number];
-const CLASSE_ESTADO: Record<Estado, string> = {
-  Trabalhando: "trabalhando", Saiu: "ferias", "Ainda sem batida": "afastado", Folga: "", "Sem escala": "",
+// Bolinha da situação de hoje (grade e listas)
+const BOLINHA: Record<Estado, string> = {
+  Trabalhando: "ok", Atrasado: "atraso", "Entra mais tarde": "espera", "Já saiu": "saiu", Afastado: "afastado", Folga: "folga", "Sem escala": "",
 };
 const CRUZAMENTO: Record<string, { rotulo: string; texto: string }> = {
-  batendo: { rotulo: "Batendo ponto", texto: "Bateu nos últimos 3 dias. O eSocial relê a cada 7 dias em vez de 2." },
+  batendo: { rotulo: "Batendo ponto", texto: "Bateu nos últimos 3 dias. O eSocial relê a cada 21 dias." },
   parou: { rotulo: "Parou de bater", texto: "Ativo no relógio, mas sem batida há mais de 7 dias. Lido primeiro no eSocial: pode ser afastamento ou saída." },
   inativo: { rotulo: "Inativo no relógio", texto: "Desativado no RHiD. Lido primeiro no eSocial para confirmar a saída." },
-  afastado: { rotulo: "Afastado pelo RHiD", texto: "Férias, atestado ou licença lançados no RHiD cobrindo hoje. O eSocial relê a cada 7 dias em vez de 2." },
+  afastado: { rotulo: "Afastado pelo RHiD", texto: "Férias, atestado ou licença lançados no RHiD cobrindo hoje. O eSocial relê a cada 21 dias." },
   sem_ponto: { rotulo: "Sem ponto", texto: "CPF não encontrado no RHiD (sem CPF no cadastro do relógio, ou não bate ponto)." },
 };
 
-const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
-const nomeProprio = (s: string) =>
-  s.toLowerCase().split(/\s+/).map((p, i) => (i > 0 && MINUSCULAS.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(" ");
-const iniciais = (nome: string) => (nome ? nome.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase() : "?");
-// 436 → "7h16"; −1047 → "−17h27"
-const horas = (min: number) => {
-  const m = Math.abs(Math.round(min));
-  return `${min < 0 ? "−" : ""}${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
-};
-const horaCurta = (iso: string) =>
-  new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Fortaleza", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-const chave = (cliente: number, id: number) => `${cliente}:${id}`;
-
-// O banco devolve no máximo 1000 linhas por pedido: busca em páginas
-async function tudo<T>(pedir: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
-  const linhas: T[] = [];
-  for (let de = 0; ; de += 1000) {
-    const { data, error } = await pedir(de, de + 999);
-    if (error) throw new Error(error.message);
-    linhas.push(...(data ?? []));
-    if (!data || data.length < 1000) return linhas;
-  }
+function Aguarde({ ponto }: { ponto: Ponto }) {
+  if (ponto.acesso === false) return <section className="es-bloco"><p className="muted">Você não tem acesso ao ponto (RHiD).</p></section>;
+  return <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>;
 }
+const pronto = (p: Ponto) => p.acesso === true && p.carregado;
+const atualizadoEm = (p: Ponto) => (p.lendo ? "Lendo o RHiD…" : p.ultima ? `atualizado ${horaCurta(p.ultima.fim!)}` : "ainda não lido");
 
-export default function Ponto({ supabase, filtroEmpresa, verCpf, alternarCpf, chavesRH, onAbrirPessoa, icone, olho }: {
-  supabase: SupabaseClient; filtroEmpresa: string; verCpf: boolean; alternarCpf: () => void;
-  chavesRH: Set<string>; onAbrirPessoa: (chave: string) => void; icone: (nome: string) => ReactNode; olho: ReactNode;
-}) {
-  const [acesso, setAcesso] = useState<boolean | null>(null);
-  const [pessoas, setPessoas] = useState<PessoaPonto[]>([]);
-  const [dias, setDias] = useState<DiaPonto[]>([]);
-  const [empresas, setEmpresas] = useState<EmpresaPonto[]>([]);
-  const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
-  const [cargos, setCargos] = useState<Departamento[]>([]);
-  const [centros, setCentros] = useState<Departamento[]>([]);
-  const [escalas, setEscalas] = useState<Departamento[]>([]);
-  const [tiposJust, setTiposJust] = useState<Departamento[]>([]);
-  const [justificativas, setJustificativas] = useState<Justificativa[]>([]);
-  const [relogios, setRelogios] = useState<Relogio[]>([]);
-  const [execucoes, setExecucoes] = useState<Execucao[]>([]);
-  const [cruzamento, setCruzamento] = useState<Cruzamento[]>([]);
-  const [carregado, setCarregado] = useState(false);
-  const [erro, setErro] = useState("");
+// =====================================================================
+// Escala: a grade na página toda, com filtros por local, setor, busca e situação de hoje
+// =====================================================================
+export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; chavesRH: Set<string>; onAbrirPessoa: (chave: string) => void }) {
   const [local, setLocal] = useState("");
-  const [unidade, setUnidade] = useState("");
+  const [setor, setSetor] = useState("");
   const [estado, setEstado] = useState<Estado | "">("");
   const [busca, setBusca] = useState("");
+  if (!pronto(ponto)) return <Aguarde ponto={ponto} />;
 
-  const carregar = useCallback(async () => {
-    try {
-      const desde = somarDias(hoje(), -30);
-      const [pe, em, de, cg, cc, es, tj, ju, re, ex, cr, di] = await Promise.all([
-        tudo<PessoaPonto>((a, b) => supabase.from("rhid_pessoas").select("cliente_id,id,nome,cpf,empresa_id,departamento_id,cargo_id,centro_custo_id,escala_id")
-          .eq("situacao", 1).eq("presente", true).order("nome").range(a, b)),
-        supabase.from("rhid_empresas").select("cliente_id,id,cnpj"),
-        supabase.from("rhid_departamentos").select("cliente_id,id,nome"),
-        supabase.from("rhid_cargos").select("cliente_id,id,nome"),
-        supabase.from("rhid_centros_custo").select("cliente_id,id,nome"),
-        supabase.from("rhid_escalas").select("cliente_id,id,nome"),
-        supabase.from("rhid_justificativa_tipos").select("cliente_id,id,nome"),
-        supabase.from("rhid_justificativas").select("cliente_id,id,pessoa_id,tipo_id,texto,descricao,inicio,fim,aprovacao,tem_arquivo,inserido_em")
-          .gte("fim", `${desde}T00:00:00`).order("inicio", { ascending: false }).limit(1000),
-        supabase.from("rhid_relogios").select("cliente_id,id,nome,situacao,ultima_conexao,rep_p").order("nome"),
-        supabase.from("rhid_execucoes").select("id,status,created_at,fim,erro").eq("tipo", "batidas").order("created_at", { ascending: false }).limit(5),
-        tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,unidade,ponto_situacao,ponto_ultima_batida,ativo")
-          .eq("ativo", true).order("nome").range(a, b)),
-        tudo<DiaPonto>((a, b) => supabase.from("rhid_dias")
-          .select("cliente_id,pessoa_id,dia,horario,folga,feriado,falta,justificado,minutos_trabalhados,minutos_atraso,minutos_falta,saldo_banco,alerta,batidas")
-          .gte("dia", desde).order("dia").range(a, b)),
-      ]);
-      // Cadastros sem departamento nem cargo e sem nenhuma batida (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
-      // Marcações previstas da escala (classificação "F") não são batidas (linhas antigas podem trazê-las)
-      for (const d of di) d.batidas = d.batidas.filter((b) => b.classificacao !== "F");
-      const comPonto = new Set(di.filter((d) => d.batidas.length).map((d) => chave(d.cliente_id, d.pessoa_id)));
-      setPessoas(pe.filter((p) => (p.cpf && (p.departamento_id != null || p.cargo_id != null)) || comPonto.has(chave(p.cliente_id, p.id))));
-      setEmpresas((em.data ?? []) as EmpresaPonto[]);
-      setDepartamentos((de.data ?? []) as Departamento[]);
-      setCargos((cg.data ?? []) as Departamento[]);
-      setCentros((cc.data ?? []) as Departamento[]);
-      setEscalas((es.data ?? []) as Departamento[]);
-      setTiposJust((tj.data ?? []) as Departamento[]);
-      setJustificativas((ju.data ?? []) as Justificativa[]);
-      setRelogios(((re.data ?? []) as Relogio[]).filter((r) => !r.rep_p));
-      setExecucoes((ex.data ?? []) as Execucao[]);
-      setCruzamento(cr);
-      setDias(di);
-      setErro("");
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não deu para ler o ponto.");
-    }
-    setCarregado(true);
-  }, [supabase]);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      const { data: a } = await supabase.from("rhid_acesso").select("user_id").eq("user_id", data.user?.id ?? "");
-      if (!a?.length) return setAcesso(false);
-      setAcesso(true);
-      carregar();
-    })();
-  }, [supabase, carregar]);
-
-  // Atualiza sozinho quando uma leitura do ponto termina
-  useEffect(() => {
-    if (!acesso) return;
-    const ch = supabase.channel("rhid-ponto")
-      .on("postgres_changes", { event: "*", schema: "public", table: "rhid_execucoes" }, () => carregar())
-      .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, [supabase, acesso, carregar]);
-
-  const lendo = execucoes.some((x) => ["na_fila", "rodando"].includes(x.status) && Date.now() - new Date(x.created_at).getTime() < 10 * 60 * 1000);
-  useEffect(() => {
-    if (!lendo) return;
-    const t = setInterval(carregar, 5000);
-    return () => clearInterval(t);
-  }, [lendo, carregar]);
-
-  async function atualizar() {
-    const { error } = await supabase.rpc("rhid_atualizar_ponto");
-    if (error) setErro(error.message);
-    else carregar();
-  }
-
-  // Empresa do RH (raiz do CNPJ) de cada pessoa do relógio
-  const raizDe = useMemo(() => new Map(empresas.map((e) => [chave(e.cliente_id, e.id), e.cnpj.slice(0, 8)])), [empresas]);
-  const nomeDepto = useMemo(() => new Map(departamentos.map((d) => [chave(d.cliente_id, d.id), d.nome])), [departamentos]);
-  const nomeCargo = useMemo(() => new Map(cargos.map((d) => [chave(d.cliente_id, d.id), d.nome])), [cargos]);
-  const nomeCentro = useMemo(() => new Map(centros.map((d) => [chave(d.cliente_id, d.id), d.nome])), [centros]);
-  const nomeEscala = useMemo(() => new Map(escalas.map((d) => [chave(d.cliente_id, d.id), d.nome])), [escalas]);
-  const diasDe = useMemo(() => {
-    const m = new Map<string, DiaPonto[]>();
-    for (const d of dias) {
-      const k = chave(d.cliente_id, d.pessoa_id);
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(d);
-    }
-    return m;
-  }, [dias]);
-
-  const unidadeRH = useMemo(() => new Map(cruzamento.map((c) => [`${c.empresa_id}:${c.cpf}`, c.unidade])), [cruzamento]);
-  const agora = hoje();
-  const linhas = useMemo(() => pessoas.map((p) => {
-    const raiz = p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "";
-    const depto = p.departamento_id != null ? nomeDepto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "";
-    const centro = p.centro_custo_id != null ? nomeCentro.get(chave(p.cliente_id, p.centro_custo_id)) ?? "" : "";
-    const { local, setor } = localESetor(depto, unidadeRH.get(`${raiz}:${p.cpf}`) ?? "", centro);
-    const cargo = p.cargo_id != null ? nomeProprio(nomeCargo.get(chave(p.cliente_id, p.cargo_id)) ?? "") : "";
-    const escala = p.escala_id != null ? nomeEscala.get(chave(p.cliente_id, p.escala_id)) ?? "" : "";
-    const ds = diasDe.get(chave(p.cliente_id, p.id)) ?? [];
-    const dHoje = ds.find((d) => d.dia === agora);
-    const batidasHoje = dHoje?.batidas ?? [];
-    const est: Estado = batidasHoje.length ? (batidasHoje.length % 2 ? "Trabalhando" : "Saiu")
-      : !dHoje ? "Sem escala" : dHoje.horario && !dHoje.folga && !dHoje.feriado ? "Ainda sem batida" : "Folga";
-    // Hoje fica de fora das faltas: o dia ainda não acabou
-    const passados = ds.filter((d) => d.dia < agora);
-    const saldo = [...ds].reverse().find((d) => d.saldo_banco != null)?.saldo_banco ?? null;
-    return {
-      p, raiz, unidade: setor, local, setor, cargo, escala,
-      estado: est, batidasHoje, horarioHoje: dHoje?.horario ?? "",
-      diasTrabalhados: passados.filter((d) => d.minutos_trabalhados > 0).length,
-      minutos: passados.reduce((t, d) => t + d.minutos_trabalhados, 0),
-      faltas: passados.filter((d) => d.falta && !d.justificado).length,
-      atraso: passados.reduce((t, d) => t + d.minutos_atraso, 0),
-      saldo, chaveRH: `${raiz}:${p.cpf}`,
-    };
-  }), [pessoas, raizDe, diasDe, nomeDepto, nomeCargo, nomeCentro, nomeEscala, unidadeRH, agora]);
-
-  if (acesso === false) return <section className="es-bloco"><p className="muted">Você não tem acesso ao ponto (RHiD).</p></section>;
-  if (!carregado) return <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>;
-
-  const daEmpresa = linhas.filter((l) => filtroEmpresa === "todas" || l.raiz === filtroEmpresa);
-  const locais = [...new Set(daEmpresa.map((l) => l.local || "Sem local"))].sort();
-  const doLocal = daEmpresa.filter((l) => !local || (l.local || "Sem local") === local);
-  const unidades = [...new Set(doLocal.map((l) => l.setor).filter(Boolean))].sort();
+  const { vistas } = ponto;
+  const locais = [...new Set(vistas.map((l) => l.local || "Sem local"))].sort();
+  const doLocal = vistas.filter((l) => !local || (l.local || "Sem local") === local);
+  const setores = [...new Set(doLocal.map((l) => l.setor).filter(Boolean))].sort();
   const termo = busca.trim().toLowerCase();
-  const vistas = doLocal.filter((l) => !unidade || l.setor === unidade)
+  const filtradas = doLocal.filter((l) => !setor || l.setor === setor)
     .filter((l) => !termo || l.p.nome.toLowerCase().includes(termo) || l.cargo.toLowerCase().includes(termo) || l.p.cpf.includes(termo.replace(/\D/g, "") || "#"));
-  const hojeLista = vistas.filter((l) => !estado || l.estado === estado)
-    .sort((a, b) => ESTADOS.indexOf(a.estado) - ESTADOS.indexOf(b.estado) || a.p.nome.localeCompare(b.p.nome));
-
-  const bateram = vistas.filter((l) => l.batidasHoje.length > 0).length;
-  const semBatida = vistas.filter((l) => l.estado === "Ainda sem batida").length;
-  const faltas = vistas.reduce((t, l) => t + l.faltas, 0);
-  const atrasos = vistas.reduce((t, l) => t + l.atraso, 0);
-  const relogiosVistos = relogios.filter((r) => filtroEmpresa === "todas"
-    || empresas.some((e) => e.cliente_id === r.cliente_id && e.cnpj.startsWith(filtroEmpresa)));
-  const relogiosOk = relogiosVistos.filter((r) => r.ultima_conexao && Date.now() - new Date(r.ultima_conexao).getTime() < 24 * 3600 * 1000);
-  const ultima = execucoes.find((x) => x.status === "ok" && x.fim);
-  const cruz = cruzamento.filter((c) => filtroEmpresa === "todas" || c.empresa_id === filtroEmpresa);
-  const atencao = cruz.filter((c) => c.ponto_situacao === "parou" || c.ponto_situacao === "inativo");
-
-  // Justificativas das pessoas vistas (filtros de empresa, local, setor e busca), com o nome do tipo
-  const nomeTipoJust = new Map(tiposJust.map((t) => [chave(t.cliente_id, t.id), t.nome]));
-  const linhaDe = new Map(vistas.map((l) => [chave(l.p.cliente_id, l.p.id), l]));
-  const justVistas = justificativas.flatMap((j) => {
-    const l = j.pessoa_id != null ? linhaDe.get(chave(j.cliente_id, j.pessoa_id)) : undefined;
-    if (!l) return [];
-    const tipo = j.tipo_id != null ? nomeTipoJust.get(chave(j.cliente_id, j.tipo_id)) ?? "" : "";
-    const inicio = diaFortaleza(j.inicio), fim = diaFortaleza(j.fim);
-    return [{ j, l, tipo, inicio, fim, afasta: afasta(tipo || j.texto), hoje: inicio <= agora && fim >= agora }];
-  });
-  const afastadosHoje = justVistas.filter((x) => x.afasta && x.hoje).sort((a, b) => a.fim.localeCompare(b.fim));
-  const justRecentes = justVistas.filter((x) => !(x.afasta && x.hoje)).slice(0, 60);
+  const mostradas = filtradas.filter((l) => !estado || l.estado === estado);
 
   return (
-    <>
-      <section className="es-bloco">
-        <div className="es-bloco-cabeca">
-          <h2>{icone("ponto")}Escala e ponto <span className="muted">{dataBR(agora)}</span></h2>
-          <span className="pt-acoes">
-            <span className="muted">{lendo ? "Lendo o RHiD…" : ultima ? `atualizado ${horaCurta(ultima.fim!)}` : "ainda não lido"}</span>
-            <button className="ghost small" onClick={atualizar} disabled={lendo}>Atualizar</button>
-          </span>
-        </div>
-        {erro && <p className="tv-alerta">{erro}</p>}
-        <div className="es-numeros">
-          <Cartao rotulo="Bateram hoje" valor={`${bateram}`} detalhe={`de ${vistas.length} pessoas ativas no relógio`} />
-          <Cartao rotulo="Ainda sem batida" valor={`${semBatida}`} detalhe="com escala hoje e nenhuma batida" />
-          <Cartao rotulo="Faltas em 30 dias" valor={`${faltas}`} detalhe="sem justificativa no RHiD" />
-          <Cartao rotulo="Atrasos em 30 dias" valor={horas(atrasos)} detalhe="somando a equipe" />
-          <Cartao rotulo="Relógios conectados" valor={`${relogiosOk.length} de ${relogiosVistos.length}`} detalhe="falaram com o RHiD nas últimas 24h" />
-        </div>
-        <div className="es-filtros">
-          <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar no ponto" />
-          <div className="tv-unidades" role="group" aria-label="Situação hoje">
-            <button className={estado === "" ? "botao-painel on" : "botao-painel"} onClick={() => setEstado("")}>Todos <span className="muted">{vistas.length}</span></button>
-            {ESTADOS.map((e) => {
-              const n = vistas.filter((l) => l.estado === e).length;
-              return n ? <button key={e} className={estado === e ? "botao-painel on" : "botao-painel"} onClick={() => setEstado(e)}>{e} <span className="muted">{n}</span></button> : null;
-            })}
+    <section className="es-bloco pt-escala-bloco">
+      {ponto.erro && <p className="tv-alerta">{ponto.erro}</p>}
+      <div className="pt-agora" role="group" aria-label="Situação de hoje">
+        <button className={estado === "" ? "on" : ""} onClick={() => setEstado("")}><b>{filtradas.length}</b> todos</button>
+        {ESTADOS.map((e) => {
+          const n = filtradas.filter((l) => l.estado === e).length;
+          return n ? (
+            <button key={e} className={estado === e ? "on" : ""} onClick={() => setEstado(estado === e ? "" : e)}>
+              <i className={`pe-agora ${BOLINHA[e]}`} aria-hidden="true" /><b>{n}</b> {e.toLowerCase()}
+            </button>
+          ) : null;
+        })}
+        <span className="pt-agora-hora muted">agora, {ponto.relogio}</span>
+      </div>
+      <div className="pt-filtros">
+        <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar na escala" />
+        {locais.length > 1 && (
+          <div className="tv-unidades" role="group" aria-label="Local">
+            <button className={local === "" ? "botao-painel on" : "botao-painel"} onClick={() => { setLocal(""); setSetor(""); }}>Todos os locais</button>
+            {locais.map((u) => (
+              <button key={u} className={local === u ? "botao-painel on" : "botao-painel"} onClick={() => { setLocal(u); setSetor(""); }}>
+                {u} <span className="muted">{vistas.filter((l) => (l.local || "Sem local") === u).length}</span>
+              </button>
+            ))}
           </div>
-        </div>
-        <div className="es-filtros pt-locais">
-          {locais.length > 1 && (
-            <div className="tv-unidades" role="group" aria-label="Local">
-              <button className={local === "" ? "botao-painel on" : "botao-painel"} onClick={() => { setLocal(""); setUnidade(""); }}>Todos os locais</button>
-              {locais.map((u) => (
-                <button key={u} className={local === u ? "botao-painel on" : "botao-painel"} onClick={() => { setLocal(u); setUnidade(""); }}>
-                  {u} <span className="muted">{daEmpresa.filter((l) => (l.local || "Sem local") === u).length}</span>
-                </button>
-              ))}
-            </div>
+        )}
+        <FiltroUnidade unidades={setores} valor={setor} onMudar={setSetor} rotulo="setores" contar={(u) => doLocal.filter((l) => l.setor === u).length} />
+      </div>
+      {ponto.linhas.length === 0 ? (
+        <p className="muted tv-nada">O ponto ainda não foi lido. A leitura roda sozinha de madrugada e ao longo do dia.</p>
+      ) : mostradas.length === 0 ? (
+        <p className="muted tv-nada">Ninguém neste filtro.</p>
+      ) : (
+        <PontoEscala garantir={ponto.garantir} onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
+          extra={(
+            <span className="pt-acoes">
+              <span className="muted">{atualizadoEm(ponto)}</span>
+              <button className="ghost small" onClick={ponto.atualizar} disabled={ponto.lendo}>Atualizar</button>
+            </span>
           )}
-          <FiltroUnidade unidades={unidades} valor={unidade} onMudar={setUnidade} rotulo="setores" contar={(u) => doLocal.filter((l) => l.setor === u).length} />
-        </div>
-        {pessoas.length === 0 ? (
-          <p className="muted tv-nada">O ponto ainda não foi lido. A leitura roda sozinha às 5h, 12h e 17h.</p>
-        ) : (
-          <PontoEscala onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
-            pessoas={vistas.map<PessoaEscala>((l) => ({
-              chave: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, setor: l.setor,
-              dias: new Map((diasDe.get(chave(l.p.cliente_id, l.p.id)) ?? []).map((d) => [d.dia, d])),
-            }))} />
+          pessoas={mostradas.map<PessoaEscala>((l) => ({
+            chave: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, setor: l.setor, dias: l.dias,
+            hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
+          }))} />
+      )}
+    </section>
+  );
+}
+
+// =====================================================================
+// Início: hoje no ponto (resumo e quem está atrasado)
+// =====================================================================
+export function HojeNoPonto({ ponto, icone, onAbrirEscala }: { ponto: Ponto; icone: (nome: string) => ReactNode; onAbrirEscala: () => void }) {
+  if (ponto.acesso === false) return null;
+  if (!ponto.carregado) return <div className="es-esqueleto" aria-hidden="true"><i /></div>;
+  const { vistas } = ponto;
+  const atrasados = vistas.filter((l) => l.estado === "Atrasado").sort((a, b) => a.entradaHoje.localeCompare(b.entradaHoje));
+  return (
+    <section className="es-bloco">
+      <div className="es-bloco-cabeca">
+        <h2>{icone("ponto")}Hoje no ponto <span className="muted">{ponto.relogio}</span></h2>
+        <span className="pt-acoes"><span className="muted">{atualizadoEm(ponto)}</span><button className="ghost small" onClick={onAbrirEscala}>Abrir a escala</button></span>
+      </div>
+      <div className="pt-agora estatico">
+        {ESTADOS.map((e) => {
+          const n = vistas.filter((l) => l.estado === e).length;
+          return n ? <span key={e}><i className={`pe-agora ${BOLINHA[e]}`} aria-hidden="true" /><b>{n}</b> {e.toLowerCase()}</span> : null;
+        })}
+      </div>
+      {atrasados.length > 0 && (
+        <ul className="pt-atrasados">
+          {atrasados.slice(0, 8).map((l) => (
+            <li key={l.k}><b>{nomeProprio(l.p.nome)}</b><span className="muted">{[l.local, l.setor].filter(Boolean).join(" · ")} · entrada {l.entradaHoje}</span></li>
+          ))}
+          {atrasados.length > 8 && <li className="muted">e mais {atrasados.length - 8}</li>}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// =====================================================================
+// Equipe › Ponto do mês: dias, horas, faltas, atrasos e banco de horas de cada pessoa (30 dias)
+// =====================================================================
+export function PontoMes({ ponto, verCpf }: { ponto: Ponto; verCpf: boolean }) {
+  const [busca, setBusca] = useState("");
+  const [local, setLocal] = useState("");
+  if (!pronto(ponto)) return <Aguarde ponto={ponto} />;
+  const { vistas } = ponto;
+  const locais = [...new Set(vistas.map((l) => l.local || "Sem local"))].sort();
+  const termo = busca.trim().toLowerCase();
+  const linhas = vistas.filter((l) => !local || (l.local || "Sem local") === local)
+    .filter((l) => !termo || l.p.nome.toLowerCase().includes(termo) || l.cargo.toLowerCase().includes(termo))
+    .sort((a, b) => b.faltas - a.faltas || b.atraso - a.atraso || a.p.nome.localeCompare(b.p.nome));
+  const faltas = linhas.reduce((t, l) => t + l.faltas, 0);
+  const atrasos = linhas.reduce((t, l) => t + l.atraso, 0);
+  return (
+    <section className="es-bloco">
+      <div className="es-numeros">
+        <Cartao rotulo="Faltas em 30 dias" valor={`${faltas}`} detalhe="sem justificativa no RHiD" />
+        <Cartao rotulo="Atrasos em 30 dias" valor={horas(atrasos)} detalhe="somando quem está na lista" />
+        <Cartao rotulo="Pessoas no relógio" valor={`${linhas.length}`} detalhe="ativas no RHiD" />
+      </div>
+      <div className="es-filtros">
+        <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome ou cargo" aria-label="Buscar no ponto do mês" />
+        {locais.length > 1 && (
+          <div className="tv-unidades" role="group" aria-label="Local">
+            <button className={local === "" ? "botao-painel on" : "botao-painel"} onClick={() => setLocal("")}>Todos os locais</button>
+            {locais.map((u) => <button key={u} className={local === u ? "botao-painel on" : "botao-painel"} onClick={() => setLocal(u)}>{u}</button>)}
+          </div>
         )}
-        {hojeLista.length > 0 && (
-          <details className="pt-lista-hoje">
-          <summary>Lista de hoje <span className="muted">{hojeLista.length}</span></summary>
-          <ul className="es-equipe">
-            {hojeLista.map((l) => {
-              const temRH = chavesRH.has(l.chaveRH);
-              return (
-                <li key={chave(l.p.cliente_id, l.p.id)}>
-                  <button className={temRH ? "es-pessoa" : "es-pessoa sem-ficha"} onClick={() => temRH && onAbrirPessoa(l.chaveRH)} aria-disabled={!temRH}
-                    title={temRH ? "Ver a ficha no RH" : "Sem ficha no RH (CPF fora do cadastro do eSocial)"}>
-                    <span className="es-avatar" aria-hidden="true">{iniciais(l.p.nome)}</span>
-                    <span className="es-pessoa-nome">
-                      <strong>{nomeProprio(l.p.nome)}</strong>
-                      <span className="muted">
-                        {l.local && <span className="es-unidade">{l.local}</span>}{l.setor && <span className="es-unidade">{l.setor}</span>}
-                        {[l.cargo, l.horarioHoje ? `escala ${l.horarioHoje.replace(/\s+/g, " · ")}` : "", l.p.cpf ? cpfVisivel(l.p.cpf, verCpf) : "sem CPF no relógio"].filter(Boolean).join(" · ")}
-                      </span>
-                    </span>
-                    <span className="pt-batidas">{l.batidasHoje.map((b) => b.hora).join(" · ")}</span>
-                    <span className={`es-selo ${CLASSE_ESTADO[l.estado]}`}>{l.estado}</span>
-                  </button>
-                </li>
-              );
-            })}
+      </div>
+      <div className="tv-rolagem">
+        <table className="tv-tabela pt-tabela">
+          <thead><tr><th>Pessoa</th><th>Cargo</th><th>Local</th><th>Setor</th><th>Escala</th><th>Dias</th><th>Horas</th><th>Faltas</th><th>Atrasos</th><th>Banco de horas</th></tr></thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.k}>
+                <td>{nomeProprio(l.p.nome)}{verCpf && l.p.cpf ? <small className="muted"> · {cpfVisivel(l.p.cpf, true)}</small> : null}</td>
+                <td>{l.cargo || "—"}</td>
+                <td>{l.local}</td>
+                <td>{l.setor}</td>
+                <td className="pt-escala-nome" title={l.escala}>{l.escala || "—"}</td>
+                <td>{l.diasTrabalhados}</td>
+                <td>{horas(l.minutos)}</td>
+                <td className={l.faltas ? "es-ruim" : ""}>{l.faltas}</td>
+                <td>{l.atraso ? horas(l.atraso) : "—"}</td>
+                <td className={l.saldo != null && l.saldo < 0 ? "es-ruim" : ""}>{l.saldo == null ? "—" : horas(l.saldo)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted pt-nota">Contas do RHiD (apuração do ponto), dos últimos 30 dias sem contar hoje. Banco de horas: saldo no último dia lido.</p>
+    </section>
+  );
+}
+
+// =====================================================================
+// Ausências e contratos › Justificativas do RHiD (afastados hoje e as últimas lançadas)
+// =====================================================================
+export function Justificativas({ ponto, icone }: { ponto: Ponto; icone: (nome: string) => ReactNode }) {
+  if (ponto.acesso === false) return null;
+  if (!ponto.carregado) return <div className="es-esqueleto" aria-hidden="true"><i /></div>;
+  const { just, agora } = ponto;
+  const afastadosHoje = just.filter((x) => x.afasta && x.hoje).sort((a, b) => a.fim.localeCompare(b.fim));
+  const recentes = just.filter((x) => !(x.afasta && x.hoje) && x.inicio <= agora && x.inicio >= somarDias(agora, -45)).slice(0, 60);
+  const proximas = just.filter((x) => x.inicio > agora).sort((a, b) => a.inicio.localeCompare(b.inicio));
+  const periodo = (a: string, b: string) => (a === b ? dataBR(a) : `${dataBR(a)} a ${dataBR(b)}`);
+  return (
+    <section className="es-bloco">
+      <div className="es-bloco-cabeca">
+        <h2>{icone("ausencias")}Justificativas do ponto</h2>
+        <span className="muted">lançadas no RHiD</span>
+      </div>
+      <h3 className="pt-sub">Afastados hoje <span className="muted">{afastadosHoje.length}</span></h3>
+      {afastadosHoje.length === 0 ? <p className="muted tv-nada">Ninguém com férias, atestado ou licença lançados no RHiD para hoje.</p> : (
+        <ul className="es-equipe pt-just">
+          {afastadosHoje.map(({ j, l, tipo, inicio, fim }) => (
+            <li key={chave(j.cliente_id, j.id)}>
+              <span className="es-pessoa">
+                <span className="es-avatar" aria-hidden="true">{iniciais(l.p.nome)}</span>
+                <span className="es-pessoa-nome"><strong>{nomeProprio(l.p.nome)}</strong><span className="muted">{[l.local, l.setor, l.cargo].filter(Boolean).join(" · ")}</span></span>
+                <span className="pt-just-texto"><b>{tipo || j.texto}</b><span className="muted">{periodo(inicio, fim)}{j.tem_arquivo ? " · com arquivo" : ""}</span></span>
+                <span className="es-selo afastado">volta {dataBR(somarDias(fim, 1))}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {proximas.length > 0 && (
+        <>
+          <h3 className="pt-sub">Já marcadas para os próximos dias <span className="muted">{proximas.length}</span></h3>
+          <ul className="es-lista">
+            {proximas.slice(0, 20).map(({ j, l, tipo, inicio, fim }) => (
+              <li key={chave(j.cliente_id, j.id)} className="pt-just-linha">
+                <strong>{nomeProprio(l.p.nome)}</strong><span>{tipo || j.texto}</span><span className="muted">{periodo(inicio, fim)}</span>
+              </li>
+            ))}
           </ul>
-          </details>
-        )}
-      </section>
+        </>
+      )}
+      {recentes.length > 0 && (
+        <>
+          <h3 className="pt-sub">Últimas justificativas <span className="muted">45 dias</span></h3>
+          <div className="tv-rolagem">
+            <table className="tv-tabela pt-tabela">
+              <thead><tr><th>Pessoa</th><th>Tipo</th><th>Período</th><th>Texto</th><th>Arquivo</th><th>Lançada em</th></tr></thead>
+              <tbody>
+                {recentes.map(({ j, l, tipo, inicio, fim }) => (
+                  <tr key={chave(j.cliente_id, j.id)}>
+                    <td>{nomeProprio(l.p.nome)}</td>
+                    <td>{tipo || "—"}</td>
+                    <td>{periodo(inicio, fim)}</td>
+                    <td className="pt-just-livre" title={j.descricao || j.texto}>{j.texto && j.texto !== tipo ? j.texto : j.descricao}</td>
+                    <td>{j.tem_arquivo ? "Sim" : "—"}</td>
+                    <td>{j.inserido_em ? dataBR(diaFortaleza(j.inserido_em)) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <p className="muted pt-nota">Atestados, férias, licenças, abonos e ajustes de banco lançados no RHiD. Os arquivos anexados ficam só lá.</p>
+    </section>
+  );
+}
 
+// =====================================================================
+// Folha e governo › Ponto × RH (eSocial) e relógios
+// =====================================================================
+export function PontoGoverno({ ponto, icone, verCpf, onAbrirPessoa }: {
+  ponto: Ponto; icone: (nome: string) => ReactNode; verCpf: boolean; onAbrirPessoa: (chave: string) => void;
+}) {
+  if (!pronto(ponto)) return ponto.acesso === false ? null : <Aguarde ponto={ponto} />;
+  const { cruz, relogiosVistos, relogiosOk } = ponto;
+  const atencao = cruz.filter((c) => c.ponto_situacao === "parou" || c.ponto_situacao === "inativo");
+  return (
+    <div className="es-duas">
       <section className="es-bloco">
-        <div className="es-bloco-cabeca">
-          <h2>{icone("calendario")}Últimos 30 dias</h2>
-          <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf}>{olho} {verCpf ? "Esconder CPF" : "Mostrar CPF"}</button>
-        </div>
-        <div className="tv-rolagem">
-          <table className="tv-tabela pt-tabela">
-            <thead><tr><th>Pessoa</th><th>Cargo</th><th>Local</th><th>Setor</th><th>Escala</th><th>Dias</th><th>Horas</th><th>Faltas</th><th>Atrasos</th><th>Banco de horas</th></tr></thead>
-            <tbody>
-              {[...vistas].sort((a, b) => b.faltas - a.faltas || b.atraso - a.atraso || a.p.nome.localeCompare(b.p.nome)).map((l) => (
-                <tr key={chave(l.p.cliente_id, l.p.id)}>
-                  <td>{nomeProprio(l.p.nome)}</td>
-                  <td>{l.cargo || "—"}</td>
-                  <td>{l.local}</td>
-                  <td>{l.setor}</td>
-                  <td className="pt-escala-nome" title={l.escala}>{l.escala || "—"}</td>
-                  <td>{l.diasTrabalhados}</td>
-                  <td>{horas(l.minutos)}</td>
-                  <td className={l.faltas ? "es-ruim" : ""}>{l.faltas}</td>
-                  <td>{l.atraso ? horas(l.atraso) : "—"}</td>
-                  <td className={l.saldo != null && l.saldo < 0 ? "es-ruim" : ""}>{l.saldo == null ? "—" : horas(l.saldo)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted pt-nota">Contas do RHiD (apuração do ponto). O dia de hoje não entra nas faltas. Banco de horas: saldo no último dia lido.</p>
-      </section>
-
-      <section className="es-bloco">
-        <div className="es-bloco-cabeca">
-          <h2>{icone("ausencias")}Justificativas e afastamentos</h2>
-          <span className="muted">lançadas no RHiD · {justVistas.length} nos últimos 30 dias</span>
-        </div>
-        {afastadosHoje.length > 0 && (
+        <div className="es-bloco-cabeca"><h2>{icone("leitura")}Ponto × eSocial</h2></div>
+        <ul className="es-lista pt-cruzamento">
+          {Object.entries(CRUZAMENTO).map(([k, c]) => (
+            <li key={k}><strong>{cruz.filter((x) => x.ponto_situacao === k).length}</strong><span><b>{c.rotulo}</b><span className="muted"> · {c.texto}</span></span></li>
+          ))}
+        </ul>
+        {atencao.length > 0 && (
           <>
-            <h3 className="pt-sub">Afastados hoje <span className="muted">{afastadosHoje.length}</span></h3>
-            <ul className="es-equipe pt-just">
-              {afastadosHoje.map(({ j, l, tipo, inicio, fim }) => (
-                <li key={chave(j.cliente_id, j.id)}>
-                  <span className="es-pessoa">
-                    <span className="es-avatar" aria-hidden="true">{iniciais(l.p.nome)}</span>
-                    <span className="es-pessoa-nome">
-                      <strong>{nomeProprio(l.p.nome)}</strong>
-                      <span className="muted">{[l.local, l.setor, l.cargo].filter(Boolean).join(" · ")}</span>
-                    </span>
-                    <span className="pt-just-texto"><b>{tipo || j.texto}</b><span className="muted">{inicio === fim ? dataBR(inicio) : `${dataBR(inicio)} a ${dataBR(fim)}`}{j.tem_arquivo ? " · com arquivo" : ""}</span></span>
-                    <span className="es-selo afastado">volta {dataBR(somarDias(fim, 1))}</span>
-                  </span>
+            <h3 className="pt-sub">Vale conferir</h3>
+            <ul className="es-lista">
+              {atencao.map((c) => (
+                <li key={`${c.empresa_id}:${c.cpf}`}>
+                  <button className="es-linha-botao" onClick={() => onAbrirPessoa(`${c.empresa_id}:${c.cpf}`)}>
+                    <span className="es-lista-texto"><strong>{c.nome ? nomeProprio(c.nome) : cpfVisivel(c.cpf, verCpf)}</strong>
+                      <span className="muted">{CRUZAMENTO[c.ponto_situacao]?.rotulo}{c.ponto_ultima_batida ? ` · última batida ${dataBR(c.ponto_ultima_batida)}` : ""}</span></span>
+                  </button>
                 </li>
               ))}
             </ul>
           </>
         )}
-        {justRecentes.length > 0 ? (
-          <>
-            <h3 className="pt-sub">Últimas justificativas</h3>
-            <div className="tv-rolagem">
-              <table className="tv-tabela pt-tabela">
-                <thead><tr><th>Pessoa</th><th>Tipo</th><th>Período</th><th>Texto</th><th>Arquivo</th><th>Lançada em</th></tr></thead>
-                <tbody>
-                  {justRecentes.map(({ j, l, tipo, inicio, fim }) => (
-                    <tr key={chave(j.cliente_id, j.id)}>
-                      <td>{nomeProprio(l.p.nome)}</td>
-                      <td>{tipo || "—"}</td>
-                      <td>{inicio === fim ? dataBR(inicio) : `${dataBR(inicio)} a ${dataBR(fim)}`}</td>
-                      <td className="pt-just-livre" title={j.descricao || j.texto}>{j.texto && j.texto !== tipo ? j.texto : j.descricao}</td>
-                      <td>{j.tem_arquivo ? "Sim" : "—"}</td>
-                      <td>{j.inserido_em ? dataBR(diaFortaleza(j.inserido_em)) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : afastadosHoje.length === 0 && <p className="muted tv-nada">Nenhuma justificativa lançada no RHiD nos últimos 30 dias para as pessoas vistas.</p>}
-        <p className="muted pt-nota">Atestados, férias, licenças, abonos e ajustes de banco lançados no RHiD. Os arquivos anexados ficam só lá.</p>
       </section>
-
-      <div className="es-duas">
-        <section className="es-bloco">
-          <div className="es-bloco-cabeca"><h2>{icone("leitura")}Ponto × RH (eSocial)</h2></div>
-          <ul className="es-lista pt-cruzamento">
-            {Object.entries(CRUZAMENTO).map(([k, c]) => (
-              <li key={k}><strong>{cruz.filter((x) => x.ponto_situacao === k).length}</strong><span><b>{c.rotulo}</b><span className="muted"> · {c.texto}</span></span></li>
-            ))}
-          </ul>
-          {atencao.length > 0 && (
-            <>
-              <h3 className="pt-sub">Vale conferir</h3>
-              <ul className="es-lista">
-                {atencao.map((c) => (
-                  <li key={`${c.empresa_id}:${c.cpf}`}>
-                    <button className="es-linha-botao" onClick={() => onAbrirPessoa(`${c.empresa_id}:${c.cpf}`)}>
-                      <span className="es-lista-texto"><strong>{c.nome ? nomeProprio(c.nome) : cpfVisivel(c.cpf, verCpf)}</strong>
-                        <span className="muted">{CRUZAMENTO[c.ponto_situacao]?.rotulo}{c.ponto_ultima_batida ? ` · última batida ${dataBR(c.ponto_ultima_batida)}` : ""}</span></span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
-        <section className="es-bloco">
-          <div className="es-bloco-cabeca"><h2>{icone("tecnico")}Relógios</h2><span className="muted">{relogiosOk.length} de {relogiosVistos.length} conectados</span></div>
-          <ul className="es-lista">
-            {relogiosVistos.map((r) => {
-              const ok = relogiosOk.includes(r);
-              return (
-                <li key={chave(r.cliente_id, r.id)} className="pt-relogio">
-                  <span className={ok ? "es-ok" : "es-ruim"} aria-hidden="true">●</span>
-                  <span className="es-lista-texto"><strong>{r.nome}</strong>
-                    <span className="muted">{r.ultima_conexao ? `última conexão ${horaCurta(r.ultima_conexao)}` : "nunca conectou"}</span></span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      </div>
-    </>
+      <section className="es-bloco">
+        <div className="es-bloco-cabeca"><h2>{icone("tecnico")}Relógios de ponto</h2><span className="muted">{relogiosOk.length} de {relogiosVistos.length} conectados</span></div>
+        <ul className="es-lista">
+          {relogiosVistos.map((r) => {
+            const ok = relogiosOk.includes(r);
+            return (
+              <li key={chave(r.cliente_id, r.id)} className="pt-relogio">
+                <span className={ok ? "es-ok" : "es-ruim"} aria-hidden="true">●</span>
+                <span className="es-lista-texto"><strong>{r.nome}</strong>
+                  <span className="muted">{r.ultima_conexao ? `última conexão ${horaCurta(r.ultima_conexao)}` : "nunca conectou"}</span></span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="muted pt-nota">Leitura do ponto: a cada 10 minutos (das 6h à meia-noite) o Brasico vê as últimas batidas de cada empresa e atualiza o dia de quem bateu; de hora em hora confere o dia de quem tem escala hoje; às 5h, 12h, 17h e 22h relê a semana e a escala das próximas 5 semanas.</p>
+      </section>
+    </div>
   );
 }
 
@@ -484,3 +344,4 @@ function Cartao({ rotulo, valor, detalhe }: { rotulo: string; valor: string; det
     </div>
   );
 }
+

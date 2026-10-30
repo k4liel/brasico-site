@@ -971,3 +971,35 @@ begin
 end $$;
 revoke execute on function public.mcp_rhid_justificativas(text, text, text, date, date) from public, authenticated;
 grant execute on function public.mcp_rhid_justificativas(text, text, text, date, date) to anon;
+
+-- ---------------------------------------------------------------------
+-- Rotinas do ponto revistas (30/10/2026). Antes: 18 leituras seguidas de manhã (5h–7h50), quase todas sem
+-- nada a fazer, relendo as justificativas a cada uma; e de dia só às 12h e 17h, então "quem está
+-- trabalhando agora" ficava velho por horas. Agora:
+--   rhid-agora (a cada 10 min, das 6h à meia-noite): tipo "agora" — as 10 últimas batidas de cada empresa
+--     (util.svc/ultimasmarcacoes, uma chamada) e o dia de hoje de quem bateu; de hora em hora, o dia de
+--     quem tem escala hoje (rhid_pessoas.hoje_em).
+--   rhid-batidas (5h10 e 5h40) e rhid-batidas-dia (12h, 17h e 22h): tipo "batidas" — a semana que passou e a
+--     escala das próximas 5 semanas (FUTUROS = 34 na Edge Function).
+--   Justificativas: no máximo uma leitura por hora por empresa (rhid_clientes.justificativas_em).
+-- ---------------------------------------------------------------------
+alter table public.rhid_execucoes drop constraint if exists rhid_execucoes_tipo_check;
+alter table public.rhid_execucoes add constraint rhid_execucoes_tipo_check check (tipo in ('cadastros', 'batidas', 'agora'));
+alter table public.rhid_pessoas add column if not exists hoje_em timestamptz;
+alter table public.rhid_clientes add column if not exists justificativas_em timestamptz;
+
+create or replace function public.rhid_agenda_agora()
+returns void language plpgsql security definer set search_path = public, vault as $$
+begin
+  if (select count(*) from vault.secrets where name in ('rhid_email', 'rhid_senha')) < 2 then return; end if;
+  perform public.rhid_pedir('agora', 'agenda', null);
+end $$;
+revoke execute on function public.rhid_agenda_agora() from public, anon, authenticated;
+
+-- Horários em UTC (Fortaleza = UTC−3)
+select cron.unschedule('rhid-batidas') where exists (select 1 from cron.job where jobname = 'rhid-batidas');
+select cron.schedule('rhid-batidas', '10,40 8 * * *', $job$ select public.rhid_agenda_batidas() $job$);
+select cron.unschedule('rhid-batidas-dia') where exists (select 1 from cron.job where jobname = 'rhid-batidas-dia');
+select cron.schedule('rhid-batidas-dia', '0 1,15,20 * * *', $job$ select public.rhid_agenda_batidas() $job$);
+select cron.unschedule('rhid-agora') where exists (select 1 from cron.job where jobname = 'rhid-agora');
+select cron.schedule('rhid-agora', '*/10 0-2,9-23 * * *', $job$ select public.rhid_agenda_agora() $job$);
