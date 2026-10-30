@@ -14,7 +14,7 @@ export type Credenciais = {
   chave: string; // chave privada, em PEM
 };
 
-type Identificacao = { numero: string; tipo: 1 | 2 }; // 1 = CPF, 2 = CNPJ
+type Identificacao = { numero: string; tipo: 1 | 2 | 3 | 4 }; // 1 = CPF, 2 = CNPJ, 3/4 = lista de CPFs/CNPJs (eventos de atualização)
 export type Pedido = {
   contratante: Identificacao;
   autorPedidoDados: Identificacao;

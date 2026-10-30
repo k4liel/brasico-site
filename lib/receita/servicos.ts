@@ -4,7 +4,7 @@
 // por isso cada serviço tem a sua identificação de mentira em DEMO.
 import { Cliente, deuCerto, erroDe, type Endpoint, type Pedido } from "./serpro";
 
-type Id = { numero: string; tipo: 1 | 2 };
+type Id = { numero: string; tipo: 1 | 2 | 3 | 4 };
 type Ident = { contratante: Id; autorPedidoDados: Id; contribuinte: Id };
 
 const pj = (n: string): Id => ({ numero: n, tipo: 2 });
@@ -51,11 +51,11 @@ const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 export class Receita {
   constructor(private cli: Cliente, private cnpj: string) {}
 
-  private pedido(idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: string): Pedido {
+  private pedido(idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: Id): Pedido {
     const eu = pj(this.cnpj);
     const ident = this.cli.ambiente === "demonstracao"
       ? DEMO[idServico]
-      : { contratante: eu, autorPedidoDados: eu, contribuinte: contribuinte ? pj(contribuinte) : eu };
+      : { contratante: eu, autorPedidoDados: eu, contribuinte: contribuinte ?? eu };
     return {
       ...ident,
       pedidoDados: {
@@ -67,7 +67,7 @@ export class Receita {
     };
   }
 
-  private chamar(endpoint: Endpoint, idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: string) {
+  private chamar(endpoint: Endpoint, idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: Id) {
     return this.cli.chamar(endpoint, this.pedido(idSistema, idServico, versao, dados, contribuinte));
   }
 
@@ -77,10 +77,12 @@ export class Receita {
   // devolve os protocolos pendentes e a rotina lê na próxima passada.
   async eventos(p: { pendentes?: { evento: string; protocolo: string }[] }): Promise<Conclusao> {
     if (this.cli.ambiente === "demonstracao") return { status: "falha", resultado: {}, erro: "Os eventos de atualização só existem no modo real." };
+    // Este serviço só aceita o contribuinte como lista de CNPJs (tipo 4), mesmo com um CNPJ só
+    const lista4: Id = { numero: this.cnpj, tipo: 4 };
     let pendentes = p.pendentes ?? [];
     if (!pendentes.length) {
       const pedidos = await Promise.all(EVENTOS.map(async (evento) => {
-        const r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "SOLICEVENTOSPJ132", "1.0", { evento });
+        const r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "SOLICEVENTOSPJ132", "1.0", { evento }, lista4);
         const d = lerDados(r.dados);
         return { evento, ok: deuCerto(r) && !!d.protocolo, protocolo: String(d.protocolo ?? ""), espera: Number(d.TempoEsperaMedioEmMs ?? d.tempoEsperaMedioEmMs ?? 5000), erro: erroDe(r) };
       }));
@@ -96,9 +98,9 @@ export class Receita {
     const ainda: { evento: string; protocolo: string }[] = [];
     const erros: string[] = [];
     for (const x of pendentes) {
-      let r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "OBTEREVENTOSPJ134", "1.0", { protocolo: x.protocolo, evento: x.evento });
-      // Algumas implementações mandam o contribuinte "zerado" na leitura; tenta assim se a primeira for recusada
-      if (!deuCerto(r) && r.http !== 202) r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "OBTEREVENTOSPJ134", "1.0", { protocolo: x.protocolo, evento: x.evento }, Z);
+      let r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "OBTEREVENTOSPJ134", "1.0", { protocolo: x.protocolo, evento: x.evento }, lista4);
+      // Se a leitura recusar o tipo 4, tenta o CNPJ "zerado" (tipo 2), como fazem outras implementações
+      if (!deuCerto(r) && r.http !== 202) r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "OBTEREVENTOSPJ134", "1.0", { protocolo: x.protocolo, evento: x.evento }, pj(Z));
       const lista = Array.isArray(r.dados) ? (r.dados as unknown[]) : null;
       if (deuCerto(r) && lista) {
         const minha = lista.find((l) => Array.isArray(l) && String(l[0]) === this.cnpj) as unknown[] | undefined;
