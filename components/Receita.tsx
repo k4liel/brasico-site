@@ -144,8 +144,12 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
     setRespostas((rs.data ?? []) as Resposta[]);
     setChamadas(((ch.data ?? []) as Chamada[]).map((k) => ({ ...k, custo: Number(k.custo) })));
     setRotinas((ro.data ?? []) as Rotina[]);
+    // Guia do levantamento que já passou do vencimento conta como vencida até a Receita dizer o contrário
+    const hoje = hojeSP();
     setLevantamento(((dv.data ?? []) as (Omit<Divida, "aoVivo" | "dataBase" | "id"> & { id: number; data_base: string })[]).map((d) => ({
       ...d, id: String(d.id), dataBase: d.data_base, aoVivo: false,
+      ...(d.situacao === "a_vencer" && d.vencimento && d.vencimento < hoje
+        ? { situacao: "vencido" as const, detalhe: `${d.detalhe} · venceu em ${dia(d.vencimento)}; confirmar se foi pago` } : {}),
       principal: d.principal == null ? null : Number(d.principal), multa: d.multa == null ? null : Number(d.multa),
       juros: d.juros == null ? null : Number(d.juros), total: d.total == null ? null : Number(d.total),
     })));
