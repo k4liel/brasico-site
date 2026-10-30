@@ -34,7 +34,7 @@ function lerDados(d: unknown): Record<string, unknown> {
   }
   const protocolo = s.match(/"protocolo"\s*:\s*"([^"]+)"/i)?.[1];
   const tempo = s.match(/"TempoEsperaMedioEmMs"\s*:\s*(\d+)/i)?.[1];
-  return { protocolo, TempoEsperaMedioEmMs: tempo };
+  return { Protocolo: protocolo, TempoEsperaMedioEmMs: tempo };
 }
 
 export type Conclusao = {
@@ -85,7 +85,7 @@ export class Receita {
         const r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "SOLICEVENTOSPJ132", "1.0", { evento }, lista4);
         const d = lerDados(r.dados);
         return {
-          evento, ok: deuCerto(r) && !!d.protocolo, protocolo: String(d.protocolo ?? ""),
+          evento, ok: deuCerto(r) && !!(d.Protocolo ?? d.protocolo), protocolo: String(d.Protocolo ?? d.protocolo ?? ""),
           espera: Number(d.TempoEsperaMedioEmMs ?? d.tempoEsperaMedioEmMs ?? 5000), erro: erroDe(r),
           amostra: JSON.stringify(r.dados ?? null).slice(0, 300),
         };
