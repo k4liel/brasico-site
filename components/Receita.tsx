@@ -4,13 +4,14 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { createClient } from "@/lib/supabase/client";
 import { nomeCurto } from "@/lib/esocial/rh";
 import Topo from "./Topo";
+import { Acervo, CatalogoServicos, MapaAcessos, ResumoAcessos, Rotinas, type Capitulo, type Evento, type Fonte, type Rotina, type Servico } from "./ReceitaGuia";
 
 // Receita Federal (Integra Contador do SERPRO): caixa postal, situação fiscal, pagamentos e o gasto de cada empresa.
 // Os pedidos vão por receita_consultar e são feitos pelo site em /api/receita (supabase/receita.sql).
 // Cada empresa tem o próprio contrato, cobrado por chamada, num ciclo do dia 21 ao dia 20 (supabase/receita_custos.sql):
 // o gasto chega ao vivo pelo Realtime (receita_chamadas) e toda consulta cobrada pede confirmação antes.
 type Ambiente = "demonstracao" | "producao";
-type Tipo = "caixa_postal" | "situacao_fiscal" | "pagamentos";
+type Tipo = "caixa_postal" | "situacao_fiscal" | "pagamentos" | "eventos";
 type Empresa = { id: string; nome: string; cnpj: string | null; cert_validade: string | null };
 type Config = { id: string; producao_ligada: boolean; limite_diario_cobradas: number; orcamento_ciclo: number };
 type Execucao = { id: string; empresa_id: string; tipo: Tipo; status: string; erro: string; resultado: Record<string, unknown>; origem: string; created_at: string };
@@ -20,19 +21,30 @@ type Pagamento = { empresa_id: string; numero_documento: string; tipo_documento:
 type Chamada = { id: number; execucao_id: string; empresa_id: string; id_servico: string; categoria: string; cobrada: boolean; custo: number; http_status: number; created_at: string };
 type Confirmar = { empresa: string; tipo: Tipo; parametros: Record<string, unknown>; titulo: string; custo: string };
 
+// Seções em grupos, no padrão do RH. As do grupo "Mapa fiscal" e parte de "Empresas" e "Dívidas" mostram o
+// acervo fiscal (o antigo projeto Organograma Fiscal Brasico, copiado inteiro para receita_acervo).
 const SECOES = [
-  { id: "visao", grupo: "Receita", rotulo: "Visão geral", icone: "inicio", titulo: "Visão geral", texto: "O que a Receita mandou e ainda pede atenção, a situação de cada empresa e quanto já gastamos no ciclo." },
-  { id: "caixa", grupo: "Receita", rotulo: "Caixa postal", icone: "caixa", titulo: "Caixa postal do e-CAC", texto: "As mensagens oficiais da Receita para cada empresa: intimações, avisos de parcelamento, Cadin e comunicados." },
-  { id: "situacao", grupo: "Receita", rotulo: "Situação fiscal", icone: "folha", titulo: "Situação fiscal", texto: "O relatório de pendências do e-CAC (dívidas, declarações em atraso, parcelamentos), em PDF, como a Receita entrega." },
-  { id: "pagamentos", grupo: "Receita", rotulo: "Pagamentos", icone: "salario", titulo: "Pagamentos", texto: "Os impostos federais pagos (DARF, DAS) que já aparecem na Receita." },
-  { id: "gastos", grupo: "Custos", rotulo: "Gastos com o SERPRO", icone: "banco", titulo: "Gastos com o SERPRO", texto: "Cada consulta é cobrada pelo SERPRO na conta da própria empresa. Aqui você acompanha o gasto ao vivo, o teto de cada uma e o que cada serviço custa." },
-  { id: "pedidos", grupo: "Custos", rotulo: "Histórico de consultas", icone: "leitura", titulo: "Histórico de consultas", texto: "Cada pedido feito à Receita, quem pediu, o que voltou e quanto custou." },
-  { id: "ajuda", grupo: "Apoio", rotulo: "Ajuda", icone: "livro", titulo: "Ajuda", texto: "Como esta área funciona, como o SERPRO cobra e o que quer dizer cada termo." },
+  { id: "visao", grupo: "Painel", rotulo: "Visão geral", icone: "inicio", titulo: "Visão geral", texto: "O que a Receita mandou e ainda pede atenção, a situação de cada empresa, o mapa de acessos e quanto já gastamos no ciclo." },
+  { id: "empresas", grupo: "Painel", rotulo: "Empresas do grupo", icone: "predio", titulo: "Empresas do grupo", texto: "Cada CNPJ, regime, certificado e unidade; o mapa societário com as 14 inscrições ativas; e o organograma de órgãos e obrigações." },
+  { id: "caixa", grupo: "Receita Federal", rotulo: "Caixa postal", icone: "caixa", titulo: "Caixa postal do e-CAC", texto: "As mensagens oficiais da Receita para cada empresa: intimações, avisos de parcelamento, Cadin e comunicados." },
+  { id: "situacao", grupo: "Receita Federal", rotulo: "Situação fiscal", icone: "folha", titulo: "Situação fiscal", texto: "O relatório de pendências do e-CAC (dívidas, declarações em atraso, parcelamentos), em PDF, como a Receita entrega." },
+  { id: "dividas", grupo: "Receita Federal", rotulo: "Dívidas e plano", icone: "alvo", titulo: "Dívidas e plano de pagamento", texto: "O levantamento das dívidas fiscais do grupo (Receita, PGFN, prefeitura e FGTS) e o plano de pagamento em curso." },
+  { id: "pagamentos", grupo: "Receita Federal", rotulo: "Pagamentos", icone: "salario", titulo: "Pagamentos", texto: "Os impostos federais pagos (DARF, DAS) que já aparecem na Receita." },
+  { id: "acessos", grupo: "Mapa fiscal", rotulo: "O que temos e o que falta", icone: "mapa", titulo: "O que temos e o que falta", texto: "Toda a área fiscal num lugar só: o que o Brasico já lê sozinho, o que está pronto para ligar, o que falta conseguir e onde, e o que continua manual." },
+  { id: "servicos", grupo: "Mapa fiscal", rotulo: "Serviços do SERPRO", icone: "lista", titulo: "Serviços do SERPRO", texto: "O catálogo do Integra Contador: o que já usamos, o que o contrato de cada empresa já cobre e quanto custa cada consulta." },
+  { id: "calendario", grupo: "Mapa fiscal", rotulo: "Calendário", icone: "calendario", titulo: "Calendário fiscal", texto: "Os prazos de cada mês e as datas que mudam o fiscal do grupo." },
+  { id: "orgaos", grupo: "Mapa fiscal", rotulo: "Órgãos e obrigações", icone: "livro", titulo: "Órgãos e obrigações", texto: "Receita Federal, trabalhista e eSocial, notas fiscais, Estado do RN, prefeituras, certidões, ferramentas e bancos: o que é cada coisa e como chega ao Brasico." },
+  { id: "reforma", grupo: "Mapa fiscal", rotulo: "Reforma tributária", icone: "reforma", titulo: "Reforma tributária", texto: "IBS e CBS: o que muda para restaurantes e hotéis, quando, e o que já precisamos guardar." },
+  { id: "gastos", grupo: "Custos e rotinas", rotulo: "Gastos com o SERPRO", icone: "banco", titulo: "Gastos com o SERPRO", texto: "Cada consulta é cobrada pelo SERPRO na conta da própria empresa. Aqui você acompanha o gasto ao vivo, o teto de cada uma e o que cada serviço custa." },
+  { id: "rotinas", grupo: "Custos e rotinas", rotulo: "Rotinas automáticas", icone: "relogio", titulo: "Rotinas automáticas", texto: "O que o Brasico consulta sozinho todo dia, quando, por quê e quanto custa. Cada rotina pode ser desligada." },
+  { id: "pedidos", grupo: "Custos e rotinas", rotulo: "Histórico de consultas", icone: "leitura", titulo: "Histórico de consultas", texto: "Cada pedido feito à Receita, quem pediu (site, Claude ou rotina), o que voltou e quanto custou." },
+  { id: "roteiro", grupo: "Apoio", rotulo: "Roteiro e perguntas", icone: "passos", titulo: "Roteiro e perguntas", texto: "As fases de integração até a área fiscal ficar completa e as perguntas que ainda dependem do contador." },
+  { id: "ajuda", grupo: "Apoio", rotulo: "Glossário e fontes", icone: "ajuda", titulo: "Glossário e fontes", texto: "Como esta área funciona, como o SERPRO cobra, o que quer dizer cada sigla e de onde vieram os dados." },
 ] as const;
 type Secao = (typeof SECOES)[number]["id"];
 const SECAO_PADRAO: Secao = "visao";
 
-const NOME_TIPO: Record<Tipo, string> = { caixa_postal: "Caixa postal", situacao_fiscal: "Situação fiscal", pagamentos: "Pagamentos" };
+const NOME_TIPO: Record<Tipo, string> = { caixa_postal: "Caixa postal", situacao_fiscal: "Situação fiscal", pagamentos: "Pagamentos", eventos: "Eventos de atualização" };
 const STATUS: Record<string, { texto: string; classe: string }> = {
   na_fila: { texto: "Na fila", classe: "rf-pilula atencao" },
   rodando: { texto: "Consultando…", classe: "rf-pilula atencao" },
@@ -47,6 +59,8 @@ const SERVICOS: Record<string, string> = {
   SOLICITARPROTOCOLO91: "Situação fiscal · pedido do relatório",
   RELATORIOSITFIS92: "Situação fiscal · relatório em PDF",
   PAGAMENTOS71: "Pagamentos · consulta",
+  SOLICEVENTOSPJ132: "Eventos de atualização · pedido",
+  OBTEREVENTOSPJ134: "Eventos de atualização · leitura",
 };
 const CATEGORIA: Record<string, string> = { consulta: "Consulta", emissao: "Emissão", declaracao: "Declaração", gratis: "Grátis" };
 
@@ -150,6 +164,11 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const [filtroCaixa, setFiltroCaixa] = useState<"pendentes" | "importantes" | "todas">("pendentes");
   const [busca, setBusca] = useState("");
   const [ajustando, setAjustando] = useState<{ id: string; limite: string; teto: string } | null>(null);
+  const [acervo, setAcervo] = useState<Capitulo[]>([]);
+  const [fontes, setFontes] = useState<Fonte[]>([]);
+  const [catalogo, setCatalogo] = useState<Servico[]>([]);
+  const [rotinas, setRotinas] = useState<Rotina[]>([]);
+  const [eventos, setEventos] = useState<Evento[]>([]);
 
   const [secao, setSecao] = useState<Secao>(SECAO_PADRAO);
   // A seção fica no endereço (#caixa, #gastos…) para dar para voltar e compartilhar
@@ -195,6 +214,29 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
     setEmpresas(((e.data ?? []) as Empresa[]).filter((x) => cfg.some((k) => k.id === x.id)));
   }, [supabase]);
 
+  // O que não vem de consulta ao governo: acervo, mapa de acessos, catálogo e rotinas (supabase/receita_mapa.sql)
+  const carregarGuia = useCallback(async () => {
+    const [a, f, s, r, ev] = await Promise.all([
+      supabase.from("receita_acervo").select("id,secao,ordem,titulo,conteudo,atualizado_na_origem,titulo_en,conteudo_en,titulo_pl,conteudo_pl,titulo_fr,conteudo_fr,titulo_de,conteudo_de").order("ordem"),
+      supabase.from("fiscal_fontes").select("id,area,nome,o_que_da,situacao,como,falta,custo,prioridade,onde,ordem").order("ordem"),
+      supabase.from("receita_servicos").select("id_sistema,id_servico,endpoint,grupo,nome,para_que,aplica,situacao,rotina,conferido,ordem").order("ordem"),
+      supabase.from("receita_rotinas").select("id,nome,o_que_faz,quando,custo_mes_empresa,ligada,ordem,ultima_vez").order("ordem"),
+      supabase.from("receita_eventos").select("empresa_id,evento,atualizado_em,lido_em"),
+    ]);
+    setAcervo((a.data ?? []) as Capitulo[]);
+    setFontes((f.data ?? []) as Fonte[]);
+    setCatalogo((s.data ?? []) as Servico[]);
+    setRotinas((r.data ?? []) as Rotina[]);
+    setEventos((ev.data ?? []) as Evento[]);
+  }, [supabase]);
+  const capitulos = (secao: string) => acervo.filter((c) => c.secao === secao);
+
+  async function alternarRotina(id: string, ligada: boolean) {
+    const { error } = await supabase.rpc("receita_rotina_ligar", { p_id: id, p_ligada: ligada });
+    if (error) return setAviso(error.message);
+    setRotinas((v) => v.map((r) => (r.id === id ? { ...r, ligada } : r)));
+  }
+
   const carregar = useCallback(async () => {
     const desde = new Date(Date.now() - 120 * 86400000).toISOString();
     const [x, m, r, p, c] = await Promise.all([
@@ -215,14 +257,17 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
     setRelatorios((r.data ?? []) as Relatorio[]);
     setPagamentos((p.data ?? []) as Pagamento[]);
     setChamadas(((c.data ?? []) as Chamada[]).map((k) => ({ ...k, custo: Number(k.custo) })));
+    const ev = await supabase.from("receita_eventos").select("empresa_id,evento,atualizado_em,lido_em");
+    if (ev.data) setEventos(ev.data as Evento[]);
     setCarregado(true);
   }, [supabase, ambiente]);
 
   useEffect(() => {
     if (!acesso) return;
     carregarConfigs();
+    carregarGuia();
     carregar();
-  }, [acesso, carregarConfigs, carregar]);
+  }, [acesso, carregarConfigs, carregarGuia, carregar]);
 
   // Ao vivo: cada chamada cobrada aparece na hora; quando um pedido termina, recarrega os dados
   const carregarRef = useRef(carregar);
@@ -503,6 +548,8 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                     </div>
                   </div>
 
+                  <ResumoAcessos fontes={fontes} irPara={() => irPara("acessos")} />
+
                   <div className="rf-empresas">
                     {empresasVisiveis.map((e) => {
                       const c = config(e.id);
@@ -544,6 +591,44 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                     })}
                   </div>
                 </>
+              )}
+
+              {/* ===================== Empresas (acervo) ===================== */}
+              {secao === "empresas" && <Acervo capitulos={capitulos("empresas")} />}
+
+              {/* ===================== Dívidas (acervo + situação fiscal ao vivo) ===================== */}
+              {secao === "dividas" && (
+                <>
+                  <section className="es-bloco">
+                    <div className="es-bloco-cabeca"><h2><Icone nome="folha" />Situação oficial mais recente</h2><button className="ghost small" onClick={() => irPara("situacao")}>Ver relatórios</button></div>
+                    <p className="rf-explica">O levantamento abaixo é uma fotografia de 20/10/2026, montada à mão. O retrato oficial de hoje está no relatório de situação fiscal de cada empresa, que a rotina gera toda semana:</p>
+                    <ul className="rf-consultas">
+                      {empresasVisiveis.map((e) => {
+                        const rel = relatorios.find((r) => r.empresa_id === e.id);
+                        return (
+                          <li key={e.id}>
+                            <span><strong>{nomeCurto(e.nome)}</strong><span className="muted"> · {rel ? `relatório de ${dataHora(rel.created_at)}` : "sem relatório"}</span></span>
+                            {rel && <button className="botao-painel on" onClick={() => abrirPdf(rel.id)} disabled={abrindo === rel.id}>{abrindo === rel.id ? "Abrindo…" : "Abrir PDF"}</button>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                  <Acervo capitulos={capitulos("dividas")} aviso="Valores de 20/10/2026, reunidos dos relatórios da Receita, da PGFN, da prefeitura e do FGTS. Não é orientação contábil: confirme com o contador antes de pagar." />
+                </>
+              )}
+
+              {/* ===================== Mapa fiscal ===================== */}
+              {secao === "acessos" && <MapaAcessos fontes={fontes} />}
+              {secao === "servicos" && <CatalogoServicos servicos={catalogo} />}
+              {secao === "calendario" && <Acervo capitulos={capitulos("calendario")} />}
+              {secao === "orgaos" && <Acervo capitulos={capitulos("mapa")} />}
+              {secao === "reforma" && <Acervo capitulos={capitulos("reforma")} />}
+              {secao === "roteiro" && <Acervo capitulos={capitulos("roteiro")} />}
+
+              {/* ===================== Rotinas ===================== */}
+              {secao === "rotinas" && (
+                <Rotinas rotinas={rotinas} eventos={eventos} empresas={empresasVisiveis} nomeEmpresa={nomeEmpresa} alternar={alternarRotina} />
               )}
 
               {/* ===================== Caixa postal ===================== */}
@@ -874,7 +959,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                             <tr key={x.id}>
                               <td className="rf-nowrap">{dataHora(x.created_at)}</td>
                               <td>{nomeEmpresa(x.empresa_id)}</td>
-                              <td>{NOME_TIPO[x.tipo] ?? x.tipo}<div className="muted small">{x.origem === "claude" ? "pelo Claude" : "pelo site"}</div></td>
+                              <td>{NOME_TIPO[x.tipo] ?? x.tipo}<div className="muted small">{x.origem === "claude" ? "pelo Claude" : x.origem === "rotina" ? "rotina automática" : "pelo site"}</div></td>
                               <td className="muted">{x.erro || resumo(x)}</td>
                               <td><span className={STATUS[x.status]?.classe ?? "rf-pilula"}>{STATUS[x.status]?.texto ?? x.status}</span></td>
                               <td>{teste ? "grátis" : reais(custoExecucao(x.id))}</td>
@@ -899,10 +984,12 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                     <dt>Intimação (Painel de Conformidade)</dt><dd>A Receita aponta uma divergência e pede que a empresa corrija ou explique. Encaminhe ao contador.</dd>
                     <dt>Cadin</dt><dd>Cadastro de devedores do governo federal. Estar nele trava certidões, financiamentos e alguns pagamentos públicos.</dd>
                     <dt>Situação fiscal</dt><dd>Relatório oficial com as pendências da empresa na Receita e na Procuradoria (dívidas, declarações faltando, parcelamentos).</dd>
+                    <dt>Eventos de atualização</dt><dd>Serviço grátis do SERPRO que diz em que dia mudou a caixa postal, os pagamentos e a DCTFWeb de cada empresa. É o que permite consultar só quando há novidade.</dd>
                     <dt>Ambiente de teste</dt><dd>Dados de mentira do SERPRO para testar a ligação. Não é cobrado. Fica em Histórico de consultas.</dd>
                   </dl>
                 </section>
               )}
+              {secao === "ajuda" && <Acervo capitulos={capitulos("referencias")} />}
             </div>
           </div>
         )}
@@ -941,6 +1028,10 @@ function resumo(x: Execucao): string {
   }
   if (x.tipo === "situacao_fiscal" && r.tamanho) return `PDF de ${Math.round(Number(r.tamanho) / 1024)} KB`;
   if (x.tipo === "pagamentos") return `${r.pagamentos ?? 0} pagamentos`;
+  if (x.tipo === "eventos") {
+    const n = Array.isArray(r.eventos) ? r.eventos.length : 0;
+    return Array.isArray(r.pendentes) && !n ? "Aguardando a Receita responder" : `${n} de 3 eventos lidos`;
+  }
   return "";
 }
 
@@ -955,6 +1046,14 @@ const ICONES: Record<string, string> = {
   livro: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z",
   atencao: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z",
   calendario: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z",
+  predio: "M3 21h18M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M15 9h4a2 2 0 0 1 2 2v10M9 7h2M9 11h2M9 15h2",
+  alvo: "M12 2v4M12 18v4M2 12h4M18 12h4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+  mapa: "M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2ZM9 4v14M15 6v14",
+  lista: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  reforma: "M4 4v6h6M20 20v-6h-6M5.5 15a7.5 7.5 0 0 0 13 2.5M18.5 9A7.5 7.5 0 0 0 5.5 6.5",
+  relogio: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5l3 2",
+  passos: "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",
+  ajuda: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01",
 };
 function Icone({ nome }: { nome: keyof typeof ICONES }) {
   return (

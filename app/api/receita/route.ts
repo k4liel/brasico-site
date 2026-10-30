@@ -62,6 +62,11 @@ async function processar(segredo: string, id: string) {
           dataFinal: typeof p.dataFinal === "string" ? p.dataFinal : undefined,
         });
         break;
+      case "eventos":
+        c = await receita.eventos({
+          pendentes: Array.isArray(p.pendentes) ? (p.pendentes as { evento: string; protocolo: string }[]) : undefined,
+        });
+        break;
       default:
         c = { status: "falha", resultado: {}, erro: `Tipo de pedido ainda não feito pelo site: ${x.tipo}` };
     }

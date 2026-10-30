@@ -21,6 +21,21 @@ const DEMO: Record<string, Ident> = {
   PAGAMENTOS71: { contratante: pj(N), autorPedidoDados: pj(N), contribuinte: pj(N) },
 };
 const DEMO_ISN_DETALHE = "0000082838";
+// Eventos de atualização: DCTFWeb, Caixa Postal e Pagamentos
+const EVENTOS = ["E0301", "E0601", "E0701"];
+// O "dados" do pedido de eventos às vezes vem como JSON sem a última chave: lê do jeito que der
+function lerDados(d: unknown): Record<string, unknown> {
+  if (d && typeof d === "object") return d as Record<string, unknown>;
+  const s = String(d ?? "");
+  for (const t of [s, `${s}}`]) {
+    try {
+      return JSON.parse(t);
+    } catch {}
+  }
+  const protocolo = s.match(/"protocolo"\s*:\s*"([^"]+)"/i)?.[1];
+  const tempo = s.match(/"TempoEsperaMedioEmMs"\s*:\s*(\d+)/i)?.[1];
+  return { protocolo, TempoEsperaMedioEmMs: tempo };
+}
 
 export type Conclusao = {
   status: "ok" | "sem_dados" | "falha";
@@ -36,11 +51,11 @@ const espera = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 export class Receita {
   constructor(private cli: Cliente, private cnpj: string) {}
 
-  private pedido(idSistema: string, idServico: string, versao: string, dados: unknown): Pedido {
+  private pedido(idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: string): Pedido {
     const eu = pj(this.cnpj);
     const ident = this.cli.ambiente === "demonstracao"
       ? DEMO[idServico]
-      : { contratante: eu, autorPedidoDados: eu, contribuinte: eu };
+      : { contratante: eu, autorPedidoDados: eu, contribuinte: contribuinte ? pj(contribuinte) : eu };
     return {
       ...ident,
       pedidoDados: {
@@ -52,8 +67,51 @@ export class Receita {
     };
   }
 
-  private chamar(endpoint: Endpoint, idSistema: string, idServico: string, versao: string, dados: unknown) {
-    return this.cli.chamar(endpoint, this.pedido(idSistema, idServico, versao, dados));
+  private chamar(endpoint: Endpoint, idSistema: string, idServico: string, versao: string, dados: unknown, contribuinte?: string) {
+    return this.cli.chamar(endpoint, this.pedido(idSistema, idServico, versao, dados, contribuinte));
+  }
+
+  // Eventos de atualização (Monitorar, grátis): a Receita diz em que dia mudou algo na DCTFWeb (E0301),
+  // na Caixa Postal (E0601) e nos pagamentos (E0701) da empresa. É o que decide se vale gastar uma consulta.
+  // Duas etapas: pede (devolve um protocolo e o tempo de espera) e depois lê. Se a espera for longa,
+  // devolve os protocolos pendentes e a rotina lê na próxima passada.
+  async eventos(p: { pendentes?: { evento: string; protocolo: string }[] }): Promise<Conclusao> {
+    if (this.cli.ambiente === "demonstracao") return { status: "falha", resultado: {}, erro: "Os eventos de atualização só existem no modo real." };
+    let pendentes = p.pendentes ?? [];
+    if (!pendentes.length) {
+      const pedidos = await Promise.all(EVENTOS.map(async (evento) => {
+        const r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "SOLICEVENTOSPJ132", "1.0", { evento });
+        const d = lerDados(r.dados);
+        return { evento, ok: deuCerto(r) && !!d.protocolo, protocolo: String(d.protocolo ?? ""), espera: Number(d.TempoEsperaMedioEmMs ?? d.tempoEsperaMedioEmMs ?? 5000), erro: erroDe(r) };
+      }));
+      const falhas = pedidos.filter((x) => !x.ok);
+      if (falhas.length === pedidos.length) return { status: "falha", resultado: {}, erro: falhas[0].erro };
+      pendentes = pedidos.filter((x) => x.ok).map((x) => ({ evento: x.evento, protocolo: x.protocolo }));
+      const maior = Math.max(...pedidos.filter((x) => x.ok).map((x) => x.espera));
+      if (maior > 35000) return { status: "ok", resultado: { pendentes, esperaMs: maior } };
+      await espera(Math.max(maior, 2000));
+    }
+
+    const eventos: { evento: string; data: string | null; bruto: string | null }[] = [];
+    const ainda: { evento: string; protocolo: string }[] = [];
+    const erros: string[] = [];
+    for (const x of pendentes) {
+      let r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "OBTEREVENTOSPJ134", "1.0", { protocolo: x.protocolo, evento: x.evento });
+      // Algumas implementações mandam o contribuinte "zerado" na leitura; tenta assim se a primeira for recusada
+      if (!deuCerto(r) && r.http !== 202) r = await this.chamar("Monitorar", "EVENTOSATUALIZACAO", "OBTEREVENTOSPJ134", "1.0", { protocolo: x.protocolo, evento: x.evento }, Z);
+      const lista = Array.isArray(r.dados) ? (r.dados as unknown[]) : null;
+      if (deuCerto(r) && lista) {
+        const minha = lista.find((l) => Array.isArray(l) && String(l[0]) === this.cnpj) as unknown[] | undefined;
+        const bruto = minha && minha[1] && minha[1] !== "x" ? String(minha[1]) : null;
+        eventos.push({ evento: x.evento, bruto, data: bruto && /^\d{6}/.test(bruto) ? `20${bruto.slice(0, 2)}-${bruto.slice(2, 4)}-${bruto.slice(4, 6)}` : null });
+      } else if (r.http === 202 || /process|aguard/i.test(erroDe(r))) {
+        ainda.push(x);
+      } else {
+        erros.push(`${x.evento}: ${erroDe(r)}`);
+      }
+    }
+    if (!eventos.length && !ainda.length) return { status: "falha", resultado: {}, erro: erros.join(" · ") };
+    return { status: "ok", resultado: { eventos, ...(ainda.length ? { pendentes: ainda } : {}), ...(erros.length ? { erros } : {}) } };
   }
 
   // Caixa Postal: pergunta (grátis) se há mensagem nova; se houver, lista e lê o texto das que ainda não temos.
