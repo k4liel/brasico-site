@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import Gaveta from "./Gaveta";
 
-// Painel central de dívidas e impostos do grupo: o total, a divisão por situação, órgão, empresa, tributo e ano,
-// e o detalhe de cada débito ao clicar. Junta o levantamento guardado em fiscal_dividas (prefeitura, FGTS e o que a
-// Receita ainda não releu) com o que o relatório de situação fiscal de hoje mostra (montado em components/Receita.tsx).
-// Cores dos órgãos: paleta categórica validada (slots 1–4); situação usa as cores de status, sempre com o nome escrito.
+// Painel central de dívidas e impostos do grupo. Uma faixa só no topo (o total e o mapa proporcional por órgão e
+// tributo); abaixo, a tabela de calor empresa × órgão, o que é dinheiro de terceiros e a idade da dívida.
+// Tudo abre o detalhe de cada lançamento. Junta o levantamento guardado em fiscal_dividas com o relatório de situação
+// fiscal de hoje (montado em components/Receita.tsx). Cores dos órgãos: paleta categórica validada (slots 1–4);
+// situação usa cores de status, sempre com o nome escrito.
 
 export type Divida = {
   id: string; cnpj: string; orgao: string; categoria: string; detalhe: string; competencia: string | null; vencimento: string | null;
@@ -15,6 +16,7 @@ export type Divida = {
 };
 type Empresa = { cnpj: string; apelido: string };
 type Filtro = { orgao?: string; cnpj?: string; categoria?: string; situacao?: string; ano?: string; sensivel?: boolean };
+type Dica = { x: number; y: number; titulo: string; linhas: string[] } | null;
 
 export const ORGAOS = ["Receita Federal", "Prefeitura", "FGTS", "PGFN"] as const;
 const COR_ORGAO: Record<string, string> = { "Receita Federal": "var(--dv-1)", Prefeitura: "var(--dv-2)", FGTS: "var(--dv-3)", PGFN: "var(--dv-4)" };
@@ -26,7 +28,9 @@ export const SITUACOES: { id: Divida["situacao"]; nome: string; explica: string 
 ];
 
 const reais = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
-const mil = (v: number) => (v >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mi` : `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`);
+const compacto = (v: number) =>
+  v >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mi`
+    : v >= 1e3 ? `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil` : reais(v);
 const pct = (v: number, t: number) => (t ? `${((v / t) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "0%");
 const dia = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "—");
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -44,161 +48,252 @@ const casa = (d: Divida, f: Filtro) =>
   (!f.orgao || d.orgao === f.orgao) && (!f.cnpj || d.cnpj === f.cnpj) && (!f.categoria || d.categoria === f.categoria) &&
   (!f.situacao || d.situacao === f.situacao) && (!f.ano || anoDe(d) === f.ano) && (!f.sensivel || d.sensivel);
 
+// ---------- treemap (algoritmo "squarified": retângulos o mais perto possível de quadrados) ----------
+type Ret = { x: number; y: number; w: number; h: number };
+function squarify(valores: number[], area: Ret): Ret[] {
+  const total = valores.reduce((a, b) => a + b, 0);
+  if (!total) return valores.map(() => ({ x: area.x, y: area.y, w: 0, h: 0 }));
+  const escala = (area.w * area.h) / total;
+  const areas = valores.map((v) => v * escala);
+  const out: Ret[] = [];
+  let resto = { ...area };
+  let linha: number[] = [];
+  const pior = (l: number[], lado: number) => {
+    const s = l.reduce((a, b) => a + b, 0);
+    return Math.max((lado * lado * Math.max(...l)) / (s * s), (s * s) / (lado * lado * Math.min(...l)));
+  };
+  const assentar = (l: number[], r: Ret): Ret => {
+    const s = l.reduce((a, b) => a + b, 0);
+    if (r.w >= r.h) {
+      const larg = s / r.h;
+      let y = r.y;
+      for (const a of l) { out.push({ x: r.x, y, w: larg, h: a / larg }); y += a / larg; }
+      return { x: r.x + larg, y: r.y, w: r.w - larg, h: r.h };
+    }
+    const alt = s / r.w;
+    let x = r.x;
+    for (const a of l) { out.push({ x, y: r.y, w: a / alt, h: alt }); x += a / alt; }
+    return { x: r.x, y: r.y + alt, w: r.w, h: r.h - alt };
+  };
+  for (let i = 0; i < areas.length;) {
+    const lado = Math.min(resto.w, resto.h);
+    if (!linha.length || pior([...linha, areas[i]], lado) <= pior(linha, lado)) { linha.push(areas[i]); i++; }
+    else { resto = assentar(linha, resto); linha = []; }
+  }
+  if (linha.length) assentar(linha, resto);
+  return out;
+}
+
 export default function PainelDividas({ dividas, empresas }: { dividas: Divida[]; empresas: Empresa[] }) {
   const [filtro, setFiltro] = useState<Filtro | null>(null);
+  const [dica, setDica] = useState<Dica>(null);
   const nome = (cnpj: string) => empresas.find((e) => e.cnpj === cnpj)?.apelido ?? cnpj;
+  const abrir = (f: Filtro) => { setDica(null); setFiltro(f); };
+  const mostrar = (ev: React.MouseEvent, titulo: string, linhas: string[]) => {
+    const caixa = (ev.currentTarget as HTMLElement).closest(".dv")!.getBoundingClientRect();
+    setDica({ x: ev.clientX - caixa.left, y: ev.clientY - caixa.top, titulo, linhas });
+  };
 
   const total = soma(dividas);
   const porSituacao = SITUACOES.map((s) => ({ ...s, v: soma(dividas.filter((d) => d.situacao === s.id)) }));
   const emAtraso = porSituacao.filter((s) => s.id === "vencido" || s.id === "parcela_atraso").reduce((x, s) => x + s.v, 0);
-  const porOrgao = ORGAOS.map((o) => ({ o, v: soma(dividas.filter((d) => d.orgao === o)), n: dividas.filter((d) => d.orgao === o).length }));
-  const maxOrgao = Math.max(1, ...porOrgao.map((x) => x.v));
-  const cnpjs = [...new Set(dividas.map((d) => d.cnpj))].sort((a, b) => soma(dividas.filter((d) => d.cnpj === b)) - soma(dividas.filter((d) => d.cnpj === a)));
-  const porTributo = useMemo(() => {
-    const m = new Map<string, { v: number; orgao: string }>();
-    for (const d of dividas) {
-      const x = m.get(d.categoria) ?? { v: 0, orgao: d.orgao };
-      x.v += d.total ?? 0;
-      m.set(d.categoria, x);
-    }
-    return [...m.entries()].map(([c, x]) => ({ c, ...x })).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+  const sensiveis = dividas.filter((d) => d.sensivel);
+  const semValor = dividas.filter((d) => d.total == null);
+  const vivos = [...new Set(dividas.filter((d) => d.aoVivo).map((d) => nome(d.cnpj)))];
+  const levantamento = [...new Set(dividas.filter((d) => !d.aoVivo).map((d) => d.dataBase))].sort();
+
+  // Treemap: órgão → tributo, em unidades de um retângulo 160 × 100
+  const mapa = useMemo(() => {
+    const orgaos = ORGAOS.map((o) => {
+      const m = new Map<string, number>();
+      for (const d of dividas.filter((x) => x.orgao === o)) m.set(d.categoria, (m.get(d.categoria) ?? 0) + (d.total ?? 0));
+      const tributos = [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+      return { o, v: tributos.reduce((s, [, v]) => s + v, 0), tributos };
+    }).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+    const blocos = squarify(orgaos.map((x) => x.v), { x: 0, y: 0, w: 160, h: 100 });
+    return orgaos.flatMap((x, i) => {
+      const b = blocos[i];
+      const dentro = squarify(x.tributos.map(([, v]) => v), b);
+      return x.tributos.map(([c, v], j) => ({ orgao: x.o, totalOrgao: x.v, categoria: c, v, r: dentro[j], primeiro: j === 0 }));
+    });
   }, [dividas]);
-  const maxTributo = Math.max(1, ...porTributo.map((x) => x.v));
+
+  const cnpjs = [...new Set(dividas.map((d) => d.cnpj))].sort((a, b) => soma(dividas.filter((d) => d.cnpj === b)) - soma(dividas.filter((d) => d.cnpj === a)));
+  const celulas = cnpjs.flatMap((c) => ORGAOS.map((o) => soma(dividas.filter((d) => d.cnpj === c && d.orgao === o))));
+  const maxCelula = Math.max(1, ...celulas);
+  const porOrgao = ORGAOS.map((o) => ({ o, v: soma(dividas.filter((d) => d.orgao === o)), n: dividas.filter((d) => d.orgao === o).length }));
+
   const anos = useMemo(() => {
     const m = new Map<string, number>();
     for (const d of dividas) if (d.total) m.set(anoDe(d), (m.get(anoDe(d)) ?? 0) + d.total);
     return [...m.entries()].filter(([a]) => /^\d{4}$/.test(a)).sort((a, b) => a[0].localeCompare(b[0]));
   }, [dividas]);
   const maxAno = Math.max(1, ...anos.map(([, v]) => v));
-  const sensiveis = dividas.filter((d) => d.sensivel);
-  const semValor = dividas.filter((d) => d.total == null);
-  const fontes = [...new Set(dividas.map((d) => `${d.aoVivo ? "ao vivo" : "levantamento"}|${d.fonte}`))];
+  const passo = maxAno > 1e6 ? 500000 : maxAno > 4e5 ? 200000 : 100000;
+  const topo = Math.ceil(maxAno / passo) * passo;
+  const grades = Array.from({ length: Math.round(topo / passo) + 1 }, (_, i) => i * passo);
 
-  const abrir = (f: Filtro) => setFiltro(f);
-  const detalhe = filtro ? dividas.filter((d) => casa(d, filtro)) : [];
+  const sensPorTipo = ["INSS descontado dos funcionários", "IRRF retido", "CSRF retida", "FGTS"].map((c) => ({ c, v: soma(sensiveis.filter((d) => d.categoria === c)) })).filter((x) => x.v);
 
   return (
-    <section className="dv" aria-label="Dívidas e impostos do grupo">
-      <div className="dv-cabeca">
-        <div>
-          <h2>Dívidas e impostos em aberto</h2>
-          <p className="muted">
-            {fontes.map((f) => { const [tipo, fonte] = f.split("|"); return <span key={f} className={tipo === "ao vivo" ? "dv-fonte vivo" : "dv-fonte"}>{tipo === "ao vivo" ? "● " : ""}{fonte}</span>; })}
-          </p>
-        </div>
-        <button className="ghost small" onClick={() => abrir({})}>Ver todos os {dividas.length} lançamentos</button>
-      </div>
+    <section className="dv" aria-label="Dívidas e impostos do grupo" onMouseLeave={() => setDica(null)}>
+      {/* ===== Faixa principal: o total e onde ele está ===== */}
+      <div className="dv-faixa">
+        <div className="dv-resumo">
+          <p className="dv-resumo-rotulo">Total devido pelo grupo</p>
+          <button className="dv-heroi" onClick={() => abrir({})} aria-label={`Total devido: ${reais(total)}. Ver todos os lançamentos`}>
+            <span className="dv-moeda">R$</span>{total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </button>
+          <p className="dv-atraso"><b>{compacto(emAtraso)}</b> já em atraso, {pct(emAtraso, total)} do total</p>
 
-      <div className="dv-grade">
-        {/* Total e situação */}
-        <div className="dv-cartao dv-total">
-          <span className="dv-rotulo">Total devido pelo grupo</span>
-          <button className="dv-heroi" onClick={() => abrir({})}>{reais(total)}</button>
-          <span className="dv-sub"><b>{reais(emAtraso)}</b> já em atraso ({pct(emAtraso, total)})</span>
-          <div className="dv-pilha" role="img" aria-label="Divisão por situação">
+          <div className="dv-medidor" role="img" aria-label="Divisão por situação">
             {porSituacao.filter((s) => s.v > 0).map((s) => (
-              <button key={s.id} className={`dv-seg s-${s.id}`} style={{ flexGrow: s.v }} onClick={() => abrir({ situacao: s.id })} title={`${s.nome}: ${reais(s.v)} (${pct(s.v, total)})`} />
+              <button key={s.id} className={`dv-seg s-${s.id}`} style={{ flexGrow: s.v }} onClick={() => abrir({ situacao: s.id })}
+                onMouseMove={(ev) => mostrar(ev, s.nome, [reais(s.v), `${pct(s.v, total)} do total`, s.explica])} aria-label={`${s.nome}: ${reais(s.v)}`} />
             ))}
           </div>
-          <ul className="dv-legenda">
+          <dl className="dv-situacoes">
             {porSituacao.map((s) => (
-              <li key={s.id}>
-                <button onClick={() => abrir({ situacao: s.id })} disabled={!s.v}>
-                  <i className={`s-${s.id}`} aria-hidden="true" />
-                  <span>{s.nome}</span>
-                  <b>{reais(s.v)}</b>
-                </button>
-              </li>
+              <button key={s.id} onClick={() => abrir({ situacao: s.id })} disabled={!s.v}>
+                <dt><i className={`s-${s.id}`} aria-hidden="true" />{s.nome}</dt>
+                <dd>{reais(s.v)}</dd>
+              </button>
             ))}
-          </ul>
+          </dl>
+          <p className="dv-origem">
+            {vivos.length > 0 && <>Receita de hoje para {vivos.join(" e ")}. </>}
+            {levantamento.length > 0 && <>Prefeitura, FGTS e o restante vêm do levantamento de {levantamento.map(dia).join(", ")}.</>}
+          </p>
         </div>
 
-        {/* Por órgão */}
-        <div className="dv-cartao">
-          <span className="dv-rotulo">Por órgão</span>
-          <ul className="dv-barras">
-            {porOrgao.map((x) => (
-              <li key={x.o}>
-                <button onClick={() => abrir({ orgao: x.o })} disabled={!x.n} title={`${x.o}: ${reais(x.v)}`}>
-                  <span className="dv-barra-nome"><i style={{ background: COR_ORGAO[x.o] }} aria-hidden="true" />{x.o}</span>
-                  <span className="dv-barra-valor">{x.v ? reais(x.v) : x.n ? "sem valor no relatório" : "—"}<small>{x.v ? pct(x.v, total) : ""}</small></span>
-                  <span className="dv-trilho"><i style={{ width: `${(x.v / maxOrgao) * 100}%`, background: COR_ORGAO[x.o] }} /></span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          {sensiveis.length > 0 && (
-            <button className="dv-sensivel" onClick={() => abrir({ sensivel: true })}>
-              <b>{reais(soma(sensiveis))}</b>
-              <span>são dinheiro dos funcionários ou retido de terceiros (INSS descontado, IRRF, CSRF e FGTS): pagar antes do resto.</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Empresa × órgão */}
-      <div className="dv-cartao">
-        <span className="dv-rotulo">Por empresa e órgão</span>
-        <div className="dv-matriz-caixa">
-          <table className="dv-matriz">
-            <thead><tr><th>Empresa</th>{ORGAOS.map((o) => <th key={o}><i style={{ background: COR_ORGAO[o] }} aria-hidden="true" />{o}</th>)}<th>Total</th></tr></thead>
-            <tbody>
-              {cnpjs.map((c) => {
-                const da = dividas.filter((d) => d.cnpj === c);
-                return (
-                  <tr key={c}>
-                    <th scope="row"><button onClick={() => abrir({ cnpj: c })}>{nome(c)}</button></th>
-                    {ORGAOS.map((o) => {
-                      const l = da.filter((d) => d.orgao === o);
-                      const v = soma(l);
-                      return <td key={o}>{l.length ? <button onClick={() => abrir({ cnpj: c, orgao: o })}>{v ? reais(v) : "negociado"}</button> : <span className="muted">—</span>}</td>;
-                    })}
-                    <td className="dv-forte"><button onClick={() => abrir({ cnpj: c })}>{reais(soma(da))}</button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot><tr><th>Total</th>{porOrgao.map((x) => <td key={x.o}>{x.v ? reais(x.v) : "—"}</td>)}<td className="dv-forte">{reais(total)}</td></tr></tfoot>
-          </table>
-        </div>
-      </div>
-
-      <div className="dv-grade">
-        {/* Por tributo */}
-        <div className="dv-cartao">
-          <span className="dv-rotulo">Por tributo</span>
-          <ul className="dv-barras compactas">
-            {porTributo.map((x) => (
-              <li key={x.c}>
-                <button onClick={() => abrir({ categoria: x.c })} title={`${x.c}: ${reais(x.v)}`}>
-                  <span className="dv-barra-nome">{x.c}</span>
-                  <span className="dv-barra-valor">{mil(x.v)}<small>{pct(x.v, total)}</small></span>
-                  <span className="dv-trilho"><i style={{ width: `${(x.v / maxTributo) * 100}%`, background: COR_ORGAO[x.orgao] }} /></span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* Por ano */}
-        <div className="dv-cartao">
-          <span className="dv-rotulo">Por ano da competência</span>
-          <div className="dv-colunas" role="img" aria-label="Valor por ano">
-            {anos.map(([a, v]) => (
-              <button key={a} className="dv-coluna" onClick={() => abrir({ ano: a })} title={`${a}: ${reais(v)}`}>
-                <span className="dv-coluna-valor">{mil(v)}</span>
-                <span className="dv-coluna-barra"><i style={{ height: `${Math.max(2, (v / maxAno) * 100)}%` }} /></span>
-                <span className="dv-coluna-ano">{a}</span>
+        <div className="dv-mapa-caixa">
+          <div className="dv-mapa-legenda">
+            {porOrgao.filter((x) => x.n).map((x) => (
+              <button key={x.o} onClick={() => abrir({ orgao: x.o })}>
+                <i style={{ background: COR_ORGAO[x.o] }} aria-hidden="true" />{x.o}<b>{x.v ? compacto(x.v) : "negociado"}</b>
               </button>
             ))}
           </div>
-          <p className="muted small">Quanto mais antigo, mais multa e juros já correram. A Brasico77 ainda deve Simples de 2021.</p>
-          {semValor.length > 0 && <p className="muted small">{semValor.length} item(ns) sem valor no relatório (dívida ativa negociada, parcelas sem valor informado): aparecem no detalhe.</p>}
+          <div className="dv-mapa" role="img" aria-label="Mapa proporcional da dívida por órgão e tributo">
+            {mapa.map((t) => {
+              const area = t.r.w * t.r.h;
+              // O que cabe no retângulo (o mapa tem ~300 px de altura = 100 unidades)
+              const grande = t.r.w > 24 && t.r.h > 15;
+              const alto = grande && t.r.h > 26;
+              const medio = !grande && t.r.w > 14 && t.r.h > 9;
+              return (
+                <button key={t.orgao + t.categoria} className="dv-bloco"
+                  style={{ left: `${(t.r.x / 160) * 100}%`, top: `${t.r.y}%`, width: `${(t.r.w / 160) * 100}%`, height: `${t.r.h}%`, ["--c" as string]: COR_ORGAO[t.orgao] }}
+                  onClick={() => abrir({ orgao: t.orgao, categoria: t.categoria })}
+                  onMouseMove={(ev) => mostrar(ev, t.categoria, [t.orgao, reais(t.v), `${pct(t.v, total)} do total do grupo`])}
+                  aria-label={`${t.categoria}, ${t.orgao}: ${reais(t.v)}`}>
+                  {(grande || medio) && area > 0 && (
+                    <span className={grande ? (alto ? "dv-bloco-texto alto" : "dv-bloco-texto") : "dv-bloco-texto pequeno"}>
+                      <span className="dv-bloco-nome">{t.categoria}</span>
+                      <span className="dv-bloco-valor">{compacto(t.v)}</span>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
+      {/* ===== Empresa × órgão (calor) ===== */}
+      <div className="dv-linha">
+        <div className="dv-painel dv-painel-largo">
+          <div className="dv-painel-topo">
+            <h3>Quem deve a quem</h3>
+            <span>Quanto mais forte a cor, maior a dívida</span>
+          </div>
+          <div className="dv-matriz-caixa">
+            <table className="dv-matriz">
+              <thead>
+                <tr><th scope="col">Empresa</th>{ORGAOS.map((o) => <th key={o} scope="col"><i style={{ background: COR_ORGAO[o] }} aria-hidden="true" />{o}</th>)}<th scope="col">Total</th></tr>
+              </thead>
+              <tbody>
+                {cnpjs.map((c) => {
+                  const da = dividas.filter((d) => d.cnpj === c);
+                  return (
+                    <tr key={c}>
+                      <th scope="row"><button onClick={() => abrir({ cnpj: c })}>{nome(c)}</button></th>
+                      {ORGAOS.map((o) => {
+                        const l = da.filter((d) => d.orgao === o);
+                        const v = soma(l);
+                        const forca = v ? 10 + Math.round((v / maxCelula) * 55) : 0;
+                        return (
+                          <td key={o}>
+                            {l.length ? (
+                              <button style={{ background: v ? `color-mix(in srgb, ${COR_ORGAO[o]} ${forca}%, transparent)` : undefined }} onClick={() => abrir({ cnpj: c, orgao: o })}
+                                onMouseMove={(ev) => mostrar(ev, `${nome(c)} · ${o}`, [v ? reais(v) : "Negociado, sem saldo no relatório", `${l.length} lançamento${l.length > 1 ? "s" : ""}`])}>
+                                {v ? compacto(v) : "negociado"}
+                              </button>
+                            ) : <span className="dv-vazio">—</span>}
+                          </td>
+                        );
+                      })}
+                      <td className="dv-matriz-total"><button onClick={() => abrir({ cnpj: c })}>{compacto(soma(da))}</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr><th scope="row">Grupo</th>{porOrgao.map((x) => <td key={x.o}>{x.v ? compacto(x.v) : "—"}</td>)}<td className="dv-matriz-total">{compacto(total)}</td></tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div className="dv-painel">
+          <div className="dv-painel-topo"><h3>Dinheiro de terceiros</h3></div>
+          <button className="dv-terceiros" onClick={() => abrir({ sensivel: true })}>
+            <span className="dv-terceiros-valor">{reais(soma(sensiveis))}</span>
+            <span className="dv-terceiros-texto">foram descontados dos funcionários ou retidos de terceiros e não chegaram ao governo. Vêm antes de qualquer outra dívida: o atraso pode virar processo criminal ou trabalhista.</span>
+          </button>
+          <ul className="dv-terceiros-lista">
+            {sensPorTipo.map((x) => (
+              <li key={x.c}><button onClick={() => abrir({ sensivel: true, categoria: x.c })}><span>{x.c}</span><b>{reais(x.v)}</b></button></li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* ===== Idade da dívida ===== */}
+      <div className="dv-painel">
+        <div className="dv-painel-topo">
+          <h3>Idade da dívida</h3>
+          <span>Valor por ano da competência. Quanto mais antigo, mais multa e juros já correram.</span>
+        </div>
+        <div className="dv-grafico">
+          <div className="dv-eixo" aria-hidden="true">
+            {[...grades].reverse().map((g) => <span key={g}>{g ? compacto(g).replace(",00", "") : "0"}</span>)}
+          </div>
+          <div className="dv-area">
+            {grades.map((g) => <i key={g} className="dv-grade-linha" style={{ bottom: `${(g / topo) * 100}%` }} aria-hidden="true" />)}
+            <div className="dv-colunas">
+              {anos.map(([a, v]) => (
+                <button key={a} className="dv-coluna" onClick={() => abrir({ ano: a })}
+                  onMouseMove={(ev) => mostrar(ev, `Competência ${a}`, [reais(v), `${pct(v, total)} do total`])} aria-label={`${a}: ${reais(v)}`}>
+                  <span className="dv-coluna-barra" style={{ height: `${(v / topo) * 100}%` }}><span className="dv-coluna-valor">{compacto(v)}</span></span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="dv-anos" aria-hidden="true">{anos.map(([a]) => <span key={a}>{a}</span>)}</div>
+        </div>
+        {semValor.length > 0 && <p className="dv-nota">{semValor.length === 1 ? "1 lançamento não tem" : `${semValor.length} lançamentos não têm`} valor no relatório (dívida ativa negociada na PGFN, parcelas do Simples sem valor informado) e aparece{semValor.length === 1 ? "" : "m"} só no detalhe.</p>}
+      </div>
+
+      {dica && (
+        <div className="dv-dica" style={{ left: dica.x, top: dica.y }} role="tooltip">
+          <b>{dica.titulo}</b>
+          {dica.linhas.map((l, i) => <span key={i}>{l}</span>)}
+        </div>
+      )}
+
       {filtro && (
-        <Detalhe filtro={filtro} itens={detalhe} nome={nome} fechar={() => setFiltro(null)} limpar={(k) => setFiltro({ ...filtro, [k]: undefined })} />
+        <Detalhe filtro={filtro} itens={dividas.filter((d) => casa(d, filtro))} nome={nome} fechar={() => setFiltro(null)} limpar={(k) => setFiltro({ ...filtro, [k]: undefined })} />
       )}
     </section>
   );
@@ -239,7 +334,7 @@ function Detalhe({ filtro, itens, nome, fechar, limpar }: { filtro: Filtro; iten
   }
 
   return (
-    <Gaveta titulo={chips.length ? chips.map(([, t]) => t).join(" · ") : "Todas as dívidas do grupo"} sub={`${itens.length} lançamentos · ${reais(totalGeral)}`} fechar={fechar}>
+    <Gaveta titulo={chips.length ? chips.map(([, t]) => t).join(" · ") : "Todas as dívidas do grupo"} sub={`${itens.length} ${itens.length === 1 ? "lançamento" : "lançamentos"}, ${reais(totalGeral)}`} fechar={fechar}>
       <div className="dv-detalhe-barra">
         <div className="dv-chips">
           {chips.map(([k, t]) => <button key={k} className="dv-chip" onClick={() => limpar(k)} title="Tirar este filtro">{t} ×</button>)}
