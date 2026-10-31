@@ -44,10 +44,12 @@ export const LIBERADOS: Record<string, { endpoint: Endpoint; sistema: string; se
   "REGIMEAPURACAO/CONSULTAROPCAOREGIME103": { endpoint: "Consultar", sistema: "REGIMEAPURACAO", servico: "CONSULTAROPCAOREGIME103", versao: "1.0" },
 };
 // Campos muito grandes (PDF e XML em base64) não vão para o banco: fica só o tamanho
-function enxugar(v: unknown): unknown {
-  if (typeof v === "string") return v.length > 20000 ? `[${v.length} caracteres omitidos]` : v;
-  if (Array.isArray(v)) return v.map(enxugar);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, enxugar(x)]));
+// PDFs (recibos, declarações, extratos) ficam inteiros até ~300 mil caracteres; outros textos grandes saem
+const CAMPOS_PDF = /pdf/i;
+function enxugar(v: unknown, chave = ""): unknown {
+  if (typeof v === "string") return v.length > (CAMPOS_PDF.test(chave) ? 300000 : 20000) ? `[${v.length} caracteres omitidos]` : v;
+  if (Array.isArray(v)) return v.map((x) => enxugar(x, chave));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, enxugar(x, k)]));
   return v;
 }
 // O "dados" do pedido de eventos às vezes vem como JSON sem a última chave: lê do jeito que der
@@ -107,9 +109,19 @@ export class Receita {
       if (!s) { respostas.push({ servico: it.servico, dados_pedido: it.dados ?? null, ok: false, erro: "Serviço não liberado para leitura." }); continue; }
       if (Date.now() > limite) { respostas.push({ servico: it.servico, dados_pedido: it.dados ?? null, ok: false, erro: "Ficou para o próximo pedido (tempo)." }); continue; }
       const r = await this.chamar(s.endpoint, s.sistema, s.servico, s.versao, it.dados === undefined ? "" : it.dados);
+      // Declaração completa da DCTFWeb vem em PDF: guarda também o texto, para ler os valores
+      let dados = r.dados;
+      const pdf = dados && typeof dados === "object" ? (dados as Record<string, unknown>).PDFByteArrayBase64 : null;
+      if (it.servico === "DCTFWEB/CONSDECCOMPLETA33" && typeof pdf === "string") {
+        try {
+          dados = { ...(dados as Record<string, unknown>), texto: await textoDoPdf(pdf) };
+        } catch {
+          // sem texto, fica só o PDF
+        }
+      }
       respostas.push({
         servico: it.servico, dados_pedido: it.dados ?? null, ok: deuCerto(r), http: r.http,
-        dados: enxugar(r.dados), mensagens: r.mensagens.map((m) => `${m.codigo} ${m.texto}`.trim()),
+        dados: enxugar(dados), mensagens: r.mensagens.map((m) => `${m.codigo} ${m.texto}`.trim()),
       });
     }
     const ok = respostas.filter((x) => x.ok).length;
