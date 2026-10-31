@@ -786,7 +786,8 @@ function sitfisParaDividas(cnpj: string, sit: Sitfis, em: string): Divida[] {
   const hoje = hojeSP();
   const out: Divida[] = sit.debitos.map((d, i) => {
     const c = categoriaDe(d.receita);
-    const compet = /^\d{2}\/\d{4}$/.test(d.periodo) ? `${d.periodo.slice(3)}-${d.periodo.slice(0, 2)}` : d.periodo;
+    const tri = d.periodo.match(/^(\d)º TRIM\/(\d{4})$/i);
+    const compet = /^\d{2}\/\d{4}$/.test(d.periodo) ? `${d.periodo.slice(3)}-${d.periodo.slice(0, 2)}` : tri ? `${tri[2]}-T${tri[1]}` : d.periodo;
     return {
       ...base, id: `v${cnpj}d${i}`, orgao: "Receita Federal", categoria: c.categoria, sensivel: c.sensivel, detalhe: d.receita,
       competencia: compet, vencimento: d.vencimento, principal: d.saldo, multa: d.multa, juros: d.juros, total: d.total,
@@ -796,6 +797,29 @@ function sitfisParaDividas(cnpj: string, sit: Sitfis, em: string): Divida[] {
   sit.secoes.forEach((s, k) => {
     if (/Débito|Processo/i.test(s.titulo) && !s.suspensa) return;
     const orgao = s.orgao === "PGFN" ? "PGFN" : "Receita Federal";
+    // Débito suspenso: "a analisar / a vencer" (guia do mês ainda em processamento) ou em discussão
+    if (s.suspensa && s.debitos.length) {
+      s.debitos.forEach((d, i) => {
+        const c = categoriaDe(d.receita);
+        const tri = d.periodo.match(/^(\d)º TRIM\/(\d{4})$/i);
+        out.push({
+          ...base, id: `v${cnpj}x${k}${i}`, orgao, categoria: c.categoria, sensivel: c.sensivel,
+          detalhe: `${d.receita} · ${d.situacao.toLowerCase()} (suspenso no relatório)`,
+          competencia: tri ? `${tri[2]}-T${tri[1]}` : /^\d{2}\/\d{4}$/.test(d.periodo) ? `${d.periodo.slice(3)}-${d.periodo.slice(0, 2)}` : d.periodo,
+          vencimento: d.vencimento, principal: d.saldo, multa: null, juros: null, total: d.total,
+          situacao: /VENCER/i.test(d.situacao) ? "a_vencer" : "parcelado",
+        });
+      });
+      return;
+    }
+    // Divergência GFIP × GPS: declarado e não recolhido
+    if (/Divergência/i.test(s.titulo)) {
+      const v = [...s.texto.matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)].reduce((x, m) => x + numero(m[1]), 0);
+      if (v) out.push({ ...base, id: `v${cnpj}g${k}`, orgao, categoria: "INSS patronal", sensivel: false, detalhe: `Divergência GFIP × GPS · ${s.texto.slice(0, 120)}`,
+        competencia: s.texto.match(/(\d{2})\/(\d{4})/) ? `${s.texto.match(/(\d{2})\/(\d{4})/)![2]}-${s.texto.match(/(\d{2})\/(\d{4})/)![1]}` : null,
+        vencimento: null, principal: v, multa: null, juros: null, total: v, situacao: "vencido" });
+      return;
+    }
     const numeros = [...s.texto.matchAll(/(?:Parcelamento:|Conta|Inscrição)\s*([\d.-]+)/g)];
     const vazio = { competencia: null, vencimento: null, principal: null, multa: null, juros: null };
     if (s.suspensa) {

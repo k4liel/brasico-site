@@ -90,17 +90,24 @@ function lerDebitos(corpo: string[]): Debito[] {
   const ini = corpo.findIndex((l) => l === "Situação");
   const t = corpo.slice(ini + 1).filter(Boolean);
   const marcas: number[] = [];
-  for (let i = 0; i < t.length - 6; i++) if (ehPA(t[i]) && ehData(t[i + 1]) && ehValor(t[i + 2]) && ehValor(t[i + 6])) marcas.push(i);
+  // Período mensal ("09/2026"), anual ("2025") ou trimestral, que vem em duas linhas ("3º" + "TRIM/2025")
+  const ehTrim = (s: string) => /^TRIM\/\d{4}$/i.test(s);
+  // Linha completa tem 5 valores (original, saldo, multa, juros, total); a de débito suspenso ou "a analisar", só 2
+  for (let i = 0; i < t.length - 3; i++) if ((ehPA(t[i]) || ehTrim(t[i])) && ehData(t[i + 1]) && ehValor(t[i + 2]) && ehValor(t[i + 3])) marcas.push(i);
   const out: Debito[] = [];
   let inicioDesc = 0;
   marcas.forEach((m) => {
+    const trim = ehTrim(t[m]) && /^\dº$/.test(t[m - 1] ?? "");
+    const cinco = ehValor(t[m + 4] ?? "") && ehValor(t[m + 5] ?? "") && ehValor(t[m + 6] ?? "");
+    const fimValores = cinco ? m + 7 : m + 4;
     out.push({
-      receita: t.slice(inicioDesc, m).join(" ").replace(/\s+/g, " "),
-      periodo: t[m], vencimento: iso(t[m + 1]),
-      original: valor(t[m + 2]), saldo: valor(t[m + 3]), multa: valor(t[m + 4]), juros: valor(t[m + 5]), total: valor(t[m + 6]),
-      situacao: t[m + 7] ?? "",
+      receita: t.slice(inicioDesc, trim ? m - 1 : m).join(" ").replace(/\s+/g, " "),
+      periodo: trim ? `${t[m - 1]} ${t[m]}` : t[m], vencimento: iso(t[m + 1]),
+      original: valor(t[m + 2]), saldo: valor(t[m + 3]),
+      multa: cinco ? valor(t[m + 4]) : 0, juros: cinco ? valor(t[m + 5]) : 0, total: cinco ? valor(t[m + 6]) : valor(t[m + 3]),
+      situacao: t[fimValores] ?? "",
     });
-    inicioDesc = m + 8;
+    inicioDesc = fimValores + 1;
   });
   return out;
 }
