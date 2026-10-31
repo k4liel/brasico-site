@@ -30,6 +30,9 @@ type Dica = {
   batidas: BatidaEscala[]; situacao: string; classe: string; alerta: string; futuro: boolean;
 };
 export type Visao = "semana" | "quinzena" | "mes";
+// Onde soltar uma pessoa arrastada: antes ou depois de outra, ou no começo de um grupo (setor/local)
+export type Alvo = { chave: string; lado: "antes" | "depois" } | { local: string; setor: string };
+const mesmoAlvo = (a: Alvo | null, b: Alvo | null) => JSON.stringify(a) === JSON.stringify(b);
 const VISOES: [Visao, string][] = [["semana", "Semana"], ["quinzena", "2 semanas"], ["mes", "Mês"]];
 const dois = (n: number) => String(n).padStart(2, "0");
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -141,10 +144,10 @@ function gravarLocal(k: string, v: string) {
   } catch {}
 }
 
-export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organizar = false, onMover }: {
+export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar }: {
   pessoas: PessoaEscala[]; onAbrir?: (chave: string) => void; garantir?: (de: string, ate: string) => void;
-  // Modo Organizar: ▲ ▼ ao lado de cada nome
-  organizar?: boolean; onMover?: (chave: string, direcao: -1 | 1) => void;
+  // Modo Organizar: segura o nome e arrasta (ou usa as setas do teclado na alça)
+  organizar?: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; onSoltar?: (chave: string, alvo: Alvo) => void;
   // Botões a mais na barra da escala (ex.: Atualizar)
   extra?: React.ReactNode;
 }) {
@@ -154,6 +157,14 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   const [fechados, setFechados] = useState<Set<string>>(new Set());
   const [dica, setDica] = useState<Dica | null>(null);
   const ativo = useRef<HTMLElement | null>(null);
+  const quadro = useRef<HTMLDivElement | null>(null);
+  // Arrastar: quem está sendo levado, o "fantasma" que segue o dedo/mouse e onde vai cair
+  const arrasto = useRef<{ chave: string; x0: number; y0: number; ativo: boolean } | null>(null);
+  const ponteiro = useRef({ x: 0, y: 0 });
+  const quadroRolagem = useRef(0);
+  const soltarRef = useRef<Alvo | null>(null);
+  const [fantasma, setFantasma] = useState<{ chave: string; nome: string; cargo?: string; x: number; y: number } | null>(null);
+  const [soltarEm, setSoltarEm] = useState<Alvo | null>(null);
   const dias = diasDoPeriodo(visao, ref);
   const podeVoltar = dias[0] > somarDias(agora, -VOLTA_DIAS);
   const podeAvancar = diasDoPeriodo(visao, passo(visao, ref, 1))[0] <= somarDias(agora, FRENTE_DIAS);
@@ -205,8 +216,78 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   const corte = min + (max - min) * 0.25;
 
   const locais = locaisDe(pessoas);
-  const primeira = ordemDaGrade(pessoas)[0]?.chave;
-  const ultima = ordemDaGrade(pessoas).at(-1)?.chave;
+
+  // A linha embaixo do ponteiro: outra pessoa (cai antes ou depois, pela metade da linha) ou o título de um grupo
+  function alvoEm(x: number, y: number, eu: string): Alvo | null {
+    const tr = document.elementFromPoint(x, y)?.closest("tr") as HTMLTableRowElement | null;
+    if (!tr || !quadro.current?.contains(tr)) return soltarRef.current;
+    const k = tr.dataset.chave;
+    if (k) {
+      if (k === eu) return null;
+      const r = tr.getBoundingClientRect();
+      return { chave: k, lado: y < r.top + r.height / 2 ? "antes" : "depois" };
+    }
+    if (tr.dataset.grupo != null) return { local: tr.dataset.local ?? "", setor: tr.dataset.setor ?? "" };
+    return soltarRef.current;
+  }
+  function marcar(a: Alvo | null) {
+    if (mesmoAlvo(a, soltarRef.current)) return;
+    soltarRef.current = a;
+    setSoltarEm(a);
+  }
+  function pegar(e: React.PointerEvent, p: PessoaEscala) {
+    if (!organizar || !onSoltar || e.button !== 0) return;
+    e.preventDefault();
+    esconder();
+    arrasto.current = { chave: p.chave, x0: e.clientX, y0: e.clientY, ativo: false };
+    ponteiro.current = { x: e.clientX, y: e.clientY };
+    const mexer = (ev: PointerEvent) => {
+      const a = arrasto.current;
+      if (!a) return;
+      ponteiro.current = { x: ev.clientX, y: ev.clientY };
+      // Só começa a arrastar depois de mexer um pouco (um clique simples não move ninguém)
+      if (!a.ativo) {
+        if (Math.abs(ev.clientX - a.x0) + Math.abs(ev.clientY - a.y0) < 6) return;
+        a.ativo = true;
+        document.body.classList.add("pe-arrastando");
+      }
+      setFantasma({ chave: p.chave, nome: p.nome, cargo: p.cargo, x: ev.clientX, y: ev.clientY });
+      marcar(alvoEm(ev.clientX, ev.clientY, a.chave));
+    };
+    const largar = () => {
+      window.removeEventListener("pointermove", mexer);
+      window.removeEventListener("pointerup", largar);
+      window.removeEventListener("pointercancel", largar);
+      clearInterval(quadroRolagem.current);
+      document.body.classList.remove("pe-arrastando");
+      const a = arrasto.current;
+      const alvo = soltarRef.current;
+      arrasto.current = null;
+      soltarRef.current = null;
+      setFantasma(null);
+      setSoltarEm(null);
+      if (a?.ativo && alvo) onSoltar(a.chave, alvo);
+    };
+    window.addEventListener("pointermove", mexer);
+    window.addEventListener("pointerup", largar);
+    window.addEventListener("pointercancel", largar);
+    // Perto da borda de cima ou de baixo do que se vê da grade, ela rola sozinha; quando a grade chega
+    // ao fim (ou ao começo), rola a página
+    const rolar = () => {
+      const q = quadro.current, a = arrasto.current;
+      if (!q || !a?.ativo) return;
+      const r = q.getBoundingClientRect();
+      const cima = Math.max(r.top, 56) + 64, baixo = Math.min(r.bottom, window.innerHeight) - 40;
+      const y = ponteiro.current.y;
+      const passo = y < cima ? -Math.min(24, Math.ceil((cima - y) / 4)) : y > baixo ? Math.min(24, Math.ceil((y - baixo) / 4)) : 0;
+      if (!passo) return;
+      const antes = q.scrollTop;
+      q.scrollTop += passo;
+      if (q.scrollTop === antes) window.scrollBy(0, passo);
+      marcar(alvoEm(ponteiro.current.x, y, a.chave));
+    };
+    quadroRolagem.current = window.setInterval(rolar, 16);
+  }
   const alternar = (local: string) => setFechados((s) => {
     const n = new Set(s);
     if (n.has(local)) n.delete(local);
@@ -257,7 +338,7 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
         </div>
       </div>
 
-      <div className="pe-quadro" style={{ "--dias": dias.length } as React.CSSProperties}>
+      <div className="pe-quadro" ref={quadro} style={{ "--dias": dias.length } as React.CSSProperties}>
         <table className="pe-grade">
           <colgroup>
             <col className="pe-col-nome" />
@@ -284,7 +365,8 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
             const porDia = contar(doLocal);
             return (
               <tbody key={local} className={fechado ? "fechado" : ""}>
-                <tr className="pe-local">
+                <tr className={`pe-local${soltarEm && !("chave" in soltarEm) && soltarEm.local === doLocal[0].local && soltarEm.setor === setoresDe(doLocal)[0] ? " soltar-grupo" : ""}`}
+                  data-grupo="" data-local={doLocal[0].local} data-setor={setoresDe(doLocal)[0]}>
                   <th className="pe-nome" scope="rowgroup">
                     <button onClick={() => alternar(local)} aria-expanded={!fechado}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={fechado ? "M9 6l6 6-6 6" : "M6 9l6 6 6-6"} /></svg>
@@ -301,7 +383,7 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
                   return (
                     <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(doLocal).length > 1 || !!setor}
                       pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar}
-                      organizar={organizar} onMover={onMover} primeira={primeira} ultima={ultima} />
+                      organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave} />
                   );
                 })}
               </tbody>
@@ -339,6 +421,12 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
         <span className="muted">Passe o mouse (ou toque) num dia para ver o previsto e o batido.</span>
       </div>
 
+      {fantasma && (
+        <div className="pe-fantasma" style={{ left: fantasma.x, top: fantasma.y }} aria-hidden="true">
+          <b>{fantasma.nome}</b>{fantasma.cargo ? <small>{fantasma.cargo}</small> : null}
+        </div>
+      )}
+
       {dica && (
         <div className="esc-dica pt-dica on" role="tooltip" style={{ left: dica.x, top: dica.y, transform: `translate(-50%, ${dica.acima ? "-100%" : "0"})` }}>
           <div className="esc-dica-top">{dica.quem} · {dica.dia}</div>
@@ -366,26 +454,39 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   );
 }
 
-function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, primeira, ultima }: {
+function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, pegar, soltarEm, levando }: {
   setor: string; mostrarSetor: boolean; pessoas: PessoaEscala[]; dias: string[]; agora: string; visao: Visao; turnosDe: Map<string, Turno[]>;
   onAbrir?: (chave: string) => void; colunas: number; mostrar: (td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) => void;
-  organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; primeira?: string; ultima?: string;
+  organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; pegar: (e: React.PointerEvent, p: PessoaEscala) => void;
+  soltarEm: Alvo | null; levando?: string;
 }) {
+  const grupoAlvo = !!soltarEm && !("chave" in soltarEm) && soltarEm.local === pessoas[0]?.local && soltarEm.setor === pessoas[0]?.setor;
   return (
     <>
-      {mostrarSetor && <tr className="pe-grupo"><th className="pe-nome" colSpan={1}>{setor} <span>{pessoas.length}</span></th><td colSpan={colunas - 1} /></tr>}
+      {mostrarSetor && (
+        <tr className={grupoAlvo ? "pe-grupo soltar-grupo" : "pe-grupo"} data-grupo="" data-local={pessoas[0]?.local} data-setor={pessoas[0]?.setor}>
+          <th className="pe-nome" colSpan={1}>{setor} <span>{pessoas.length}</span></th><td colSpan={colunas - 1} />
+        </tr>
+      )}
       {pessoas.map((p) => {
         const ts = turnosDe.get(p.chave)!;
         const trab = ts.filter((t) => t.trabalha).length;
         const folgas = ts.filter((t) => t.tipo === "folga").length;
         return (
-          <tr key={p.chave} className={organizar ? "pe-pessoa organizando" : "pe-pessoa"}>
-            <th className="pe-nome" scope="row" title={[p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : ""].filter(Boolean).join("\n")}>
-              {organizar && onMover ? (
-                <span className="pe-mover">
-                  <button onClick={() => onMover(p.chave, -1)} disabled={p.chave === primeira} aria-label={`Subir ${p.nome}`} title="Subir">▲</button>
-                  <button onClick={() => onMover(p.chave, 1)} disabled={p.chave === ultima} aria-label={`Descer ${p.nome}`} title="Descer">▼</button>
-                </span>
+          <tr key={p.chave} data-chave={p.chave}
+            className={`pe-pessoa${organizar ? " organizando" : ""}${levando === p.chave ? " levando" : ""}${soltarEm && "chave" in soltarEm && soltarEm.chave === p.chave ? ` soltar-${soltarEm.lado}` : ""}`}>
+            <th className="pe-nome" scope="row" onPointerDown={organizar ? (e) => pegar(e, p) : undefined}
+              title={organizar ? "Segure e arraste para mudar de lugar" : [p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : ""].filter(Boolean).join("\n")}>
+              {organizar ? (
+                <button className="pe-pega" aria-label={`Mover ${p.nome}: use as setas para cima e para baixo`}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                      e.preventDefault();
+                      onMover?.(p.chave, e.key === "ArrowUp" ? -1 : 1);
+                    }
+                  }}>
+                  <svg width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.5" /><circle cx="9" cy="3" r="1.5" /><circle cx="3" cy="8" r="1.5" /><circle cx="9" cy="8" r="1.5" /><circle cx="3" cy="13" r="1.5" /><circle cx="9" cy="13" r="1.5" /></g></svg>
+                </button>
               ) : p.hoje && dias.includes(agora) && <i className={`pe-agora ${p.hoje.classe}`} aria-label={`Hoje: ${p.hoje.texto}`} />}
               {onAbrir && !organizar
                 ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.ficha ?? p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>

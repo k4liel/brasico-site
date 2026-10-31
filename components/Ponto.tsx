@@ -6,7 +6,7 @@
 // (justificativas) e Folha e governo (ponto × eSocial e relógios). Só leitura.
 import { useState, type ReactNode } from "react";
 import { cpfVisivel, dataBR, somarDias } from "@/lib/esocial/rh";
-import PontoEscala, { ordemDaGrade, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { ordemDaGrade, type Alvo, type PessoaEscala } from "./PontoEscala";
 import {
   ESTADOS, chave, diaFortaleza, horaCurta, horas, iniciais, nomeProprio,
   type Estado, type ItemOrdem, type LinhaPonto, type Ponto,
@@ -58,19 +58,30 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
     hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
   }));
 
-  // Sobe ou desce uma linha. Na ponta do grupo (setor ou local), a pessoa passa para o grupo vizinho:
-  // subindo, vira a última de cima; descendo, a primeira de baixo. Renumera os grupos que mudaram e grava.
-  function mover(k: string, direcao: -1 | 1) {
+  // Solta a pessoa arrastada: antes ou depois de outra (e fica no grupo dela) ou no começo de um setor/local.
+  // Renumera só os grupos que mudaram e grava; quem trocou de grupo guarda o grupo novo.
+  const grupoDe = (x: PessoaEscala) => `${x.local || "Sem local"}|${x.setor}`;
+  function soltar(k: string, alvo: Alvo) {
     const lista = ordemDaGrade(pessoas);
-    const i = lista.findIndex((x) => x.chave === k);
-    const j = i + direcao;
-    if (i < 0 || j < 0 || j >= lista.length) return;
-    const eu = lista[i], alvo = lista[j];
-    const grupoDe = (x: PessoaEscala) => `${x.local || "Sem local"}|${x.setor}`;
-    const mesmoGrupo = grupoDe(eu) === grupoDe(alvo);
-    const nova = lista.map((x) => (x.chave === k && !mesmoGrupo ? { ...x, local: alvo.local, setor: alvo.setor } : x));
-    if (mesmoGrupo) [nova[i], nova[j]] = [nova[j], nova[i]];
-    const afetados = new Set([grupoDe(eu), grupoDe(alvo)]);
+    const eu = lista.find((x) => x.chave === k);
+    if (!eu) return;
+    const resto = lista.filter((x) => x.chave !== k);
+    let idx: number, local: string, setor: string;
+    if ("chave" in alvo) {
+      const a = resto.findIndex((x) => x.chave === alvo.chave);
+      if (a < 0) return;
+      idx = alvo.lado === "antes" ? a : a + 1;
+      ({ local, setor } = resto[a]);
+    } else {
+      ({ local, setor } = alvo);
+      idx = resto.findIndex((x) => grupoDe(x) === `${local || "Sem local"}|${setor}`);
+      if (idx < 0) idx = resto.length;
+    }
+    const movido = { ...eu, local, setor };
+    const nova = [...resto.slice(0, idx), movido, ...resto.slice(idx)];
+    if (nova.every((x, i) => x.chave === lista[i].chave) && grupoDe(movido) === grupoDe(eu)) return;
+    const trocouGrupo = grupoDe(movido) !== grupoDe(eu);
+    const afetados = new Set([grupoDe(eu), grupoDe(movido)]);
     const conta = new Map<string, number>();
     const itens: ItemOrdem[] = [];
     for (const x of nova) {
@@ -81,13 +92,22 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
       const l: LinhaPonto = linhaDe.get(x.chave)!;
       const it: ItemOrdem = { cliente_id: l.p.cliente_id, pessoa_id: l.p.id, posicao: pos };
       // Quem trocou de grupo guarda o grupo novo (ou volta ao automático, se for o dele)
-      if (x.chave === k && !mesmoGrupo) {
+      if (x.chave === k && trocouGrupo) {
         it.local = x.local === l.localAuto ? null : x.local;
         it.setor = x.setor === l.setorAuto ? null : x.setor;
       }
       itens.push(it);
     }
     ponto.ordenar(itens);
+  }
+  // Setas do teclado na alça: uma linha por vez; na ponta do grupo, passa para o vizinho
+  function mover(k: string, direcao: -1 | 1) {
+    const lista = ordemDaGrade(pessoas);
+    const i = lista.findIndex((x) => x.chave === k);
+    const alvo = lista[i + direcao];
+    if (i < 0 || !alvo) return;
+    const mesmo = grupoDe(alvo) === grupoDe(lista[i]);
+    soltar(k, { chave: alvo.chave, lado: (direcao === -1) === mesmo ? "antes" : "depois" });
   }
 
   return (
@@ -121,8 +141,8 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
       </div>
       {organizar && (
         <p className="pt-organizar">
-          <b>Organizando a escala.</b> Use ▲ e ▼ ao lado de cada nome para mudar a ordem. Na primeira ou na última pessoa de um setor,
-          ela passa para o setor (ou o local) vizinho. Cada mudança é salva na hora e vale para quem vê a escala.
+          <b>Organizando a escala.</b> Segure o nome e arraste para cima ou para baixo; a linha dourada mostra onde a pessoa vai cair.
+          Solte em outro setor ou local para mudar a pessoa de grupo. Perto da borda, a escala rola sozinha. Tudo é salvo na hora e vale para quem vê a escala.
           <button className="ghost small" onClick={() => {
             if (window.confirm("Voltar todo mundo para a ordem e os grupos automáticos (do RHiD)?")) ponto.ordenar([], true);
           }}>Voltar ao automático</button>
@@ -134,7 +154,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
         <p className="muted tv-nada">Ninguém neste filtro.</p>
       ) : (
         <PontoEscala garantir={ponto.garantir} onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
-          organizar={organizar} onMover={mover} pessoas={pessoas}
+          organizar={organizar} onMover={mover} onSoltar={soltar} pessoas={pessoas}
           extra={(
             <span className="pt-acoes">
               <span className="muted">{atualizadoEm(ponto)}</span>

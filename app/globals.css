@@ -2213,15 +2213,24 @@ table.pe-grade { width: 100%; min-width: calc(var(--nome) + var(--dias) * var(--
 .pe-grade thead th.pe-nome { z-index: 4; font-size: 10px; font-weight: 700; letter-spacing: .08em; vertical-align: bottom; padding-bottom: 12px; }
 .pe-grade .pe-pessoa:hover .pe-nome { background: var(--soft); }
 .pe-grade .pe-pessoa .pe-agora { margin-right: 8px; vertical-align: 1px; }
-/* Modo Organizar: ▲ ▼ ao lado do nome */
-.pe-mover { display: inline-flex; gap: 2px; margin-right: 8px; vertical-align: middle; }
-.pe-mover button { all: unset; box-sizing: border-box; cursor: pointer; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
-  border: 1px solid var(--border); background: var(--panel); font-size: 9px; line-height: 1; color: var(--strong); }
-.pe-mover button:hover:not(:disabled) { background: var(--strong); border-color: var(--strong); color: var(--bg); }
-.pe-mover button:disabled { opacity: .3; cursor: default; }
-.pe-mover button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
-.pe-grade .pe-pessoa.organizando .pe-nome { background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
-.pe-grade .pe-mover ~ .pe-cargo { padding-left: 54px; }
+/* Modo Organizar: segura o nome e arrasta. A linha levada fica apagada, um "fantasma" segue o ponteiro
+   e uma linha dourada mostra onde a pessoa vai cair (antes, depois, ou no começo de um setor/local). */
+.pe-grade .pe-pessoa.organizando .pe-nome { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; background: color-mix(in srgb, var(--gold) 5%, var(--panel)); }
+.pe-grade .pe-pessoa.organizando:hover .pe-nome { background: color-mix(in srgb, var(--gold) 12%, var(--panel)); }
+.pe-pega { all: unset; box-sizing: border-box; cursor: grab; display: inline-grid; place-items: center; width: 18px; height: 24px; margin: 0 6px 0 -4px; border-radius: 5px; color: var(--muted); vertical-align: middle; }
+.pe-pessoa.organizando:hover .pe-pega { color: var(--gold); }
+.pe-pega:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; color: var(--gold); }
+.pe-grade .pe-pega ~ .pe-cargo { padding-left: 20px; }
+.pe-grade tr.levando > * { opacity: .28; }
+.pe-grade tr.soltar-antes > * { box-shadow: inset 0 3px 0 var(--gold); }
+.pe-grade tr.soltar-depois > * { box-shadow: inset 0 -3px 0 var(--gold); }
+.pe-grade tr.soltar-grupo > * { background: color-mix(in srgb, var(--gold) 16%, var(--panel)); box-shadow: inset 0 -3px 0 var(--gold); }
+body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-select: none !important; }
+.pe-fantasma { position: fixed; z-index: 60; pointer-events: none; transform: translate(14px, -50%) rotate(-1.5deg); display: flex; flex-direction: column; gap: 1px; min-width: 160px; max-width: 260px;
+  padding: 8px 14px; border-radius: 10px; background: var(--strong); color: var(--bg); box-shadow: 0 12px 28px rgba(0, 0, 0, .28), 0 2px 6px rgba(0, 0, 0, .18); font-size: 13.5px; }
+.pe-fantasma b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-fantasma small { font-size: 11.5px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { .pe-fantasma { transform: translate(14px, -50%); } }
 .pt-organizar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
   border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); background: color-mix(in srgb, var(--gold) 8%, transparent); font-size: 13px; color: var(--text); }
 .pt-organizar button { margin-left: auto; }
