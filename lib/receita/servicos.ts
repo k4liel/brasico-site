@@ -40,6 +40,8 @@ export const LIBERADOS: Record<string, { endpoint: Endpoint; sistema: string; se
   "PERTSN/PEDIDOSPARC183": { endpoint: "Consultar", sistema: "PERTSN", servico: "PEDIDOSPARC183", versao: "1.0" },
   "RELPSN/PEDIDOSPARC193": { endpoint: "Consultar", sistema: "RELPSN", servico: "PEDIDOSPARC193", versao: "1.0" },
   "DTE/CONSULTASITUACAODTE111": { endpoint: "Consultar", sistema: "DTE", servico: "CONSULTASITUACAODTE111", versao: "1.0" },
+  "DEFIS/CONSDECLARACAO142": { endpoint: "Consultar", sistema: "DEFIS", servico: "CONSDECLARACAO142", versao: "1.0" },
+  "REGIMEAPURACAO/CONSULTAROPCAOREGIME103": { endpoint: "Consultar", sistema: "REGIMEAPURACAO", servico: "CONSULTAROPCAOREGIME103", versao: "1.0" },
 };
 // Campos muito grandes (PDF e XML em base64) não vão para o banco: fica só o tamanho
 function enxugar(v: unknown): unknown {
