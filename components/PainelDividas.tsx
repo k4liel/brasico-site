@@ -31,7 +31,7 @@ const reais = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleS
 const compacto = (v: number) =>
   v >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mi`
     : v >= 1e3 ? `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil` : reais(v);
-const pct = (v: number, t: number) => (t ? `${((v / t) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%` : "0%");
+const pct = (v: number, t: number) => (!t ? "0%" : v > 0 && v / t < 0.001 ? "< 0,1%" : `${((v / t) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
 const dia = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "—");
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const comp = (c: string | null) => {
@@ -47,42 +47,6 @@ const soma = (l: Divida[]) => l.reduce((s, d) => s + (d.total ?? 0), 0);
 const casa = (d: Divida, f: Filtro) =>
   (!f.orgao || d.orgao === f.orgao) && (!f.cnpj || d.cnpj === f.cnpj) && (!f.categoria || d.categoria === f.categoria) &&
   (!f.situacao || d.situacao === f.situacao) && (!f.ano || anoDe(d) === f.ano) && (!f.sensivel || d.sensivel);
-
-// ---------- treemap (algoritmo "squarified": retângulos o mais perto possível de quadrados) ----------
-type Ret = { x: number; y: number; w: number; h: number };
-function squarify(valores: number[], area: Ret): Ret[] {
-  const total = valores.reduce((a, b) => a + b, 0);
-  if (!total) return valores.map(() => ({ x: area.x, y: area.y, w: 0, h: 0 }));
-  const escala = (area.w * area.h) / total;
-  const areas = valores.map((v) => v * escala);
-  const out: Ret[] = [];
-  let resto = { ...area };
-  let linha: number[] = [];
-  const pior = (l: number[], lado: number) => {
-    const s = l.reduce((a, b) => a + b, 0);
-    return Math.max((lado * lado * Math.max(...l)) / (s * s), (s * s) / (lado * lado * Math.min(...l)));
-  };
-  const assentar = (l: number[], r: Ret): Ret => {
-    const s = l.reduce((a, b) => a + b, 0);
-    if (r.w >= r.h) {
-      const larg = s / r.h;
-      let y = r.y;
-      for (const a of l) { out.push({ x: r.x, y, w: larg, h: a / larg }); y += a / larg; }
-      return { x: r.x + larg, y: r.y, w: r.w - larg, h: r.h };
-    }
-    const alt = s / r.w;
-    let x = r.x;
-    for (const a of l) { out.push({ x, y: r.y, w: a / alt, h: alt }); x += a / alt; }
-    return { x: r.x, y: r.y + alt, w: r.w, h: r.h - alt };
-  };
-  for (let i = 0; i < areas.length;) {
-    const lado = Math.min(resto.w, resto.h);
-    if (!linha.length || pior([...linha, areas[i]], lado) <= pior(linha, lado)) { linha.push(areas[i]); i++; }
-    else { resto = assentar(linha, resto); linha = []; }
-  }
-  if (linha.length) assentar(linha, resto);
-  return out;
-}
 
 export default function PainelDividas({ dividas, empresas }: { dividas: Divida[]; empresas: Empresa[] }) {
   const [filtro, setFiltro] = useState<Filtro | null>(null);
@@ -102,21 +66,23 @@ export default function PainelDividas({ dividas, empresas }: { dividas: Divida[]
   const vivos = [...new Set(dividas.filter((d) => d.aoVivo).map((d) => nome(d.cnpj)))];
   const levantamento = [...new Set(dividas.filter((d) => !d.aoVivo).map((d) => d.dataBase))].sort();
 
-  // Treemap: órgão → tributo, em unidades de um retângulo 160 × 100
-  const mapa = useMemo(() => {
-    const orgaos = ORGAOS.map((o) => {
-      const m = new Map<string, number>();
-      for (const d of dividas.filter((x) => x.orgao === o)) m.set(d.categoria, (m.get(d.categoria) ?? 0) + (d.total ?? 0));
-      const tributos = [...m.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-      return { o, v: tributos.reduce((s, [, v]) => s + v, 0), tributos };
-    }).filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
-    const blocos = squarify(orgaos.map((x) => x.v), { x: 0, y: 0, w: 160, h: 100 });
-    return orgaos.flatMap((x, i) => {
-      const b = blocos[i];
-      const dentro = squarify(x.tributos.map(([, v]) => v), b);
-      return x.tributos.map(([c, v], j) => ({ orgao: x.o, totalOrgao: x.v, categoria: c, v, r: dentro[j], primeiro: j === 0 }));
-    });
+  // Onde está a dívida: tributo por tributo (cor do órgão), do maior para o menor; os menores viram "outros"
+  const ranking = useMemo(() => {
+    const m = new Map<string, { orgao: string; categoria: string; v: number; n: number }>();
+    for (const d of dividas) {
+      if (!d.total) continue;
+      const k = d.orgao + "|" + d.categoria;
+      const x = m.get(k) ?? { orgao: d.orgao, categoria: d.categoria, v: 0, n: 0 };
+      x.v += d.total; x.n++;
+      m.set(k, x);
+    }
+    return [...m.values()].sort((a, b) => b.v - a.v);
   }, [dividas]);
+  const [verTodos, setVerTodos] = useState(false);
+  const VISIVEIS = 8;
+  const principais = verTodos ? ranking : ranking.slice(0, VISIVEIS);
+  const outros = ranking.slice(VISIVEIS);
+  const maxRanking = Math.max(1, ...ranking.map((x) => x.v));
 
   const cnpjs = [...new Set(dividas.map((d) => d.cnpj))].sort((a, b) => soma(dividas.filter((d) => d.cnpj === b)) - soma(dividas.filter((d) => d.cnpj === a)));
   const celulas = cnpjs.flatMap((c) => ORGAOS.map((o) => soma(dividas.filter((d) => d.cnpj === c && d.orgao === o))));
@@ -166,37 +132,41 @@ export default function PainelDividas({ dividas, empresas }: { dividas: Divida[]
           </p>
         </div>
 
-        <div className="dv-mapa-caixa">
-          <div className="dv-mapa-legenda">
+        <div className="dv-onde">
+          <p className="dv-resumo-rotulo">Por órgão</p>
+          <div className="dv-orgaos-barra" role="img" aria-label="Divisão por órgão">
+            {porOrgao.filter((x) => x.v > 0).map((x) => (
+              <button key={x.o} style={{ flexGrow: x.v, background: COR_ORGAO[x.o] }} onClick={() => abrir({ orgao: x.o })} aria-label={`${x.o}: ${reais(x.v)}`} />
+            ))}
+          </div>
+          <div className="dv-orgaos">
             {porOrgao.filter((x) => x.n).map((x) => (
               <button key={x.o} onClick={() => abrir({ orgao: x.o })}>
-                <i style={{ background: COR_ORGAO[x.o] }} aria-hidden="true" />{x.o}<b>{x.v ? compacto(x.v) : "negociado"}</b>
+                <span className="dv-orgao-nome"><i style={{ background: COR_ORGAO[x.o] }} aria-hidden="true" />{x.o}</span>
+                <span className="dv-orgao-valor">{x.v ? compacto(x.v) : "negociado"}</span>
+                <span className="dv-orgao-pct">{x.v ? pct(x.v, total) : "sem saldo no relatório"}</span>
               </button>
             ))}
           </div>
-          <div className="dv-mapa" role="img" aria-label="Mapa proporcional da dívida por órgão e tributo">
-            {mapa.map((t) => {
-              const area = t.r.w * t.r.h;
-              // O que cabe no retângulo (o mapa tem ~300 px de altura = 100 unidades)
-              const grande = t.r.w > 24 && t.r.h > 15;
-              const alto = grande && t.r.h > 26;
-              const medio = !grande && t.r.w > 14 && t.r.h > 9;
-              return (
-                <button key={t.orgao + t.categoria} className="dv-bloco"
-                  style={{ left: `${(t.r.x / 160) * 100}%`, top: `${t.r.y}%`, width: `${(t.r.w / 160) * 100}%`, height: `${t.r.h}%`, ["--c" as string]: COR_ORGAO[t.orgao] }}
-                  onClick={() => abrir({ orgao: t.orgao, categoria: t.categoria })}
-                  onMouseMove={(ev) => mostrar(ev, t.categoria, [t.orgao, reais(t.v), `${pct(t.v, total)} do total do grupo`])}
-                  aria-label={`${t.categoria}, ${t.orgao}: ${reais(t.v)}`}>
-                  {(grande || medio) && area > 0 && (
-                    <span className={grande ? (alto ? "dv-bloco-texto alto" : "dv-bloco-texto") : "dv-bloco-texto pequeno"}>
-                      <span className="dv-bloco-nome">{t.categoria}</span>
-                      <span className="dv-bloco-valor">{compacto(t.v)}</span>
-                    </span>
-                  )}
+
+          <p className="dv-resumo-rotulo dv-onde-titulo">Onde está a dívida</p>
+          <ol className="dv-ranking">
+            {principais.map((x) => (
+              <li key={x.orgao + x.categoria}>
+                <button onClick={() => abrir({ orgao: x.orgao, categoria: x.categoria })} title={`${x.categoria} · ${x.orgao}`}>
+                  <span className="dv-rk-nome"><i style={{ background: COR_ORGAO[x.orgao] }} aria-hidden="true" />{x.categoria}{x.categoria !== x.orgao && <small>{x.orgao}</small>}</span>
+                  <span className="dv-rk-trilho"><i style={{ width: `${Math.max(1.5, (x.v / maxRanking) * 100)}%`, background: COR_ORGAO[x.orgao] }} /></span>
+                  <span className="dv-rk-valor">{compacto(x.v)}</span>
+                  <span className="dv-rk-pct">{pct(x.v, total)}</span>
                 </button>
-              );
-            })}
-          </div>
+              </li>
+            ))}
+          </ol>
+          {outros.length > 0 && (
+            <button className="dv-rk-mais" onClick={() => setVerTodos(!verTodos)}>
+              {verTodos ? "Mostrar só os maiores" : `Mais ${outros.length} tributos menores: ${compacto(outros.reduce((s, x) => s + x.v, 0))} (${pct(outros.reduce((s, x) => s + x.v, 0), total)})`}
+            </button>
+          )}
         </div>
       </div>
 

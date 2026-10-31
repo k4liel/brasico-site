@@ -3124,24 +3124,39 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
 .dv-situacoes dd { margin: 0; font-size: 14.5px; font-weight: 500; color: var(--dv-claro); font-variant-numeric: tabular-nums; }
 .dv-origem { margin: auto 0 0; padding-top: 18px; font-size: 12.5px; line-height: 1.5; color: var(--dv-apagado); }
 
-/* Mapa proporcional */
-.dv-mapa-caixa { display: flex; flex-direction: column; min-width: 0; }
-.dv-mapa-legenda { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 14px; }
-.dv-mapa-legenda button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--dv-claro); }
-.dv-mapa-legenda i { width: 10px; height: 10px; border-radius: 3px; }
-.dv-mapa-legenda b { font-weight: 500; color: var(--dv-apagado); font-variant-numeric: tabular-nums; }
-.dv-mapa-legenda button:hover b { color: #fff; }
-.dv-mapa { position: relative; flex: 1; min-height: 300px; border-radius: 12px; overflow: hidden; }
-.dv-bloco { all: unset; box-sizing: border-box; cursor: pointer; position: absolute; border: 1.5px solid var(--dv-tinta);
-  background: color-mix(in srgb, var(--c) 82%, #061217); transition: background .15s; overflow: hidden; }
-.dv-bloco:hover { background: color-mix(in srgb, var(--c) 100%, #fff 6%); }
-.dv-bloco-texto { position: absolute; left: 12px; top: 10px; right: 10px; display: grid; gap: 2px; color: #fff; pointer-events: none; }
-.dv-bloco-nome { font-size: 13px; font-weight: 500; line-height: 1.25; opacity: .92; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
-.dv-bloco-texto.alto .dv-bloco-nome { -webkit-line-clamp: 2; }
-.dv-bloco-valor { font-size: 17px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-.dv-bloco-texto.pequeno { left: 7px; top: 5px; right: 5px; }
-.dv-bloco-texto.pequeno .dv-bloco-nome { font-size: 11px; -webkit-line-clamp: 1; }
-.dv-bloco-texto.pequeno .dv-bloco-valor { font-size: 12px; }
+/* Onde está a dívida: barra por órgão e ranking por tributo (tudo escrito, sem depender do mouse) */
+.dv-onde { display: flex; flex-direction: column; min-width: 0; }
+.dv-orgaos-barra { display: flex; gap: 3px; height: 14px; margin-bottom: 14px; }
+.dv-orgaos-barra button { all: unset; cursor: pointer; min-width: 6px; height: 100%; border-radius: 2px; transition: filter .15s; }
+.dv-orgaos-barra button:first-child { border-radius: 7px 2px 2px 7px; }
+.dv-orgaos-barra button:last-child { border-radius: 2px 7px 7px 2px; }
+.dv-orgaos-barra button:hover { filter: brightness(1.15); }
+.dv-orgaos { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 4px 18px; margin-bottom: 26px; }
+.dv-orgaos button { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 1px; padding: 6px 8px; margin: 0 -8px; border-radius: 10px; }
+.dv-orgaos button:hover { background: rgba(255,255,255,.05); }
+.dv-orgao-nome { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dv-apagado); }
+.dv-orgao-nome i { width: 9px; height: 9px; border-radius: 2px; }
+.dv-orgao-valor { font-size: 21px; font-weight: 400; letter-spacing: -.02em; color: #fff; font-variant-numeric: tabular-nums; }
+.dv-orgao-pct { font-size: 12px; color: var(--dv-apagado); font-variant-numeric: tabular-nums; }
+.dv-onde-titulo { margin-bottom: 6px; }
+.dv-ranking { list-style: none; margin: 0; padding: 0; display: grid; }
+.dv-ranking button { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; grid-template-columns: minmax(150px, 1.15fr) minmax(60px, 1fr) 84px 48px;
+  align-items: center; gap: 14px; padding: 8px 8px; margin: 0 -8px; border-radius: 9px; border-bottom: 1px solid var(--dv-fio); }
+.dv-ranking li:last-child button { border-bottom-color: transparent; }
+.dv-ranking button:hover { background: rgba(255,255,255,.05); }
+.dv-rk-nome { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 14px; color: var(--dv-claro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dv-rk-nome i { flex: none; width: 8px; height: 8px; border-radius: 2px; transform: translateY(-1px); }
+.dv-rk-nome small { font-size: 11.5px; color: var(--dv-apagado); overflow: hidden; text-overflow: ellipsis; }
+.dv-rk-trilho { height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; }
+.dv-rk-trilho i { display: block; height: 100%; border-radius: 3px; }
+.dv-rk-valor { font-size: 14px; font-weight: 500; color: #fff; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dv-rk-pct { font-size: 12.5px; color: var(--dv-apagado); text-align: right; font-variant-numeric: tabular-nums; }
+.dv-rk-mais { all: unset; cursor: pointer; margin-top: 10px; font-size: 13px; color: var(--dv-apagado); text-decoration: underline; text-decoration-color: rgba(255,255,255,.2); text-underline-offset: 4px; }
+.dv-rk-mais:hover { color: #fff; }
+@media (max-width: 640px) {
+  .dv-ranking button { grid-template-columns: 1fr 76px 42px; }
+  .dv-rk-trilho { grid-column: 1 / -1; grid-row: 2; }
+}
 
 /* Painéis de baixo */
 .dv-linha { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); gap: 18px; margin-top: 18px; }
@@ -3229,7 +3244,6 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
 @media (max-width: 1180px) { .dv-linha { grid-template-columns: 1fr; } }
 @media (max-width: 900px) {
   .dv-faixa { grid-template-columns: 1fr; padding: 26px 22px; gap: 28px; }
-  .dv-mapa { min-height: 260px; }
 }
 @media (max-width: 640px) {
   .dv-painel { padding: 20px 16px; }
