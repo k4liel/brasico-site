@@ -18,6 +18,8 @@ export type DiaEscala = {
 };
 export type PessoaEscala = {
   chave: string; nome: string; cargo?: string; local: string; setor: string; dias: Map<string, DiaEscala>;
+  // Chave da ficha no RH (quando diferente da chave da linha)
+  ficha?: string;
   // Situação de hoje (bolinha ao lado do nome)
   hoje?: { texto: string; classe: string };
 };
@@ -97,6 +99,19 @@ export function nomeCurto(nome: string, max = 22) {
   const meio = `${primeiro} ${resto.map((p) => `${p[0].toUpperCase()}.`).join(" ")} ${ultimo}`;
   return meio.length <= max ? meio : `${primeiro} ${ultimo}`;
 }
+// Ordem da grade: locais em ordem alfabética ("Sem local" por último), setores em ordem alfabética
+// ("Sem setor" por último) e, dentro do setor, as pessoas na ordem em que chegam (a ordem escolhida à mão).
+// O modo Organizar usa a mesma ordem para saber quem está acima e abaixo de cada pessoa.
+const SEM_LOCAL = "Sem local";
+const localDe = (p: PessoaEscala) => p.local || SEM_LOCAL;
+const locaisDe = (ps: PessoaEscala[]) => [...new Set(ps.map(localDe))].sort((a, b) => (a === SEM_LOCAL ? 1 : b === SEM_LOCAL ? -1 : a.localeCompare(b)));
+const setoresDe = (ps: PessoaEscala[]) => [...new Set(ps.map((p) => p.setor))].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+export function ordemDaGrade(ps: PessoaEscala[]) {
+  return locaisDe(ps).flatMap((l) => {
+    const doLocal = ps.filter((p) => localDe(p) === l);
+    return setoresDe(doLocal).flatMap((s) => doLocal.filter((p) => p.setor === s));
+  });
+}
 // Origem "O" = batida original do relógio; "I" = incluída/alterada no RHiD (justificativa, ajuste do gestor)
 const ajustada = (b: BatidaEscala) => !!b.justificada || b.classificacao === "J" || b.origem === "I";
 
@@ -126,8 +141,10 @@ function gravarLocal(k: string, v: string) {
   } catch {}
 }
 
-export default function PontoEscala({ pessoas, onAbrir, garantir, extra }: {
+export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organizar = false, onMover }: {
   pessoas: PessoaEscala[]; onAbrir?: (chave: string) => void; garantir?: (de: string, ate: string) => void;
+  // Modo Organizar: ▲ ▼ ao lado de cada nome
+  organizar?: boolean; onMover?: (chave: string, direcao: -1 | 1) => void;
   // Botões a mais na barra da escala (ex.: Atualizar)
   extra?: React.ReactNode;
 }) {
@@ -187,10 +204,9 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra }: {
   const max = Math.max(...trabalhando, -Infinity);
   const corte = min + (max - min) * 0.25;
 
-  // Locais e, dentro de cada um, os setores (em ordem alfabética; "Sem setor" por último)
-  const locais = [...new Set(pessoas.map((p) => p.local || "Sem local"))].sort((a, b) => (a === "Sem local" ? 1 : b === "Sem local" ? -1 : a.localeCompare(b)));
-  const setoresDe = (local: string) => [...new Set(pessoas.filter((p) => (p.local || "Sem local") === local).map((p) => p.setor))]
-    .sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+  const locais = locaisDe(pessoas);
+  const primeira = ordemDaGrade(pessoas)[0]?.chave;
+  const ultima = ordemDaGrade(pessoas).at(-1)?.chave;
   const alternar = (local: string) => setFechados((s) => {
     const n = new Set(s);
     if (n.has(local)) n.delete(local);
@@ -264,7 +280,7 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra }: {
           </thead>
           {locais.map((local) => {
             const doLocal = pessoas.filter((p) => (p.local || "Sem local") === local);
-            const fechado = fechados.has(local);
+            const fechado = !organizar && fechados.has(local);
             const porDia = contar(doLocal);
             return (
               <tbody key={local} className={fechado ? "fechado" : ""}>
@@ -280,11 +296,12 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra }: {
                   ))}
                   <td className="pe-tot" /><td className="pe-tot" />
                 </tr>
-                {!fechado && setoresDe(local).map((setor) => {
+                {!fechado && setoresDe(doLocal).map((setor) => {
                   const ps = doLocal.filter((p) => p.setor === setor);
                   return (
-                    <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(local).length > 1 || !!setor}
-                      pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar} />
+                    <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(doLocal).length > 1 || !!setor}
+                      pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar}
+                      organizar={organizar} onMover={onMover} primeira={primeira} ultima={ultima} />
                   );
                 })}
               </tbody>
@@ -349,9 +366,10 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra }: {
   );
 }
 
-function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar }: {
+function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, primeira, ultima }: {
   setor: string; mostrarSetor: boolean; pessoas: PessoaEscala[]; dias: string[]; agora: string; visao: Visao; turnosDe: Map<string, Turno[]>;
   onAbrir?: (chave: string) => void; colunas: number; mostrar: (td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) => void;
+  organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; primeira?: string; ultima?: string;
 }) {
   return (
     <>
@@ -361,11 +379,16 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
         const trab = ts.filter((t) => t.trabalha).length;
         const folgas = ts.filter((t) => t.tipo === "folga").length;
         return (
-          <tr key={p.chave} className="pe-pessoa">
+          <tr key={p.chave} className={organizar ? "pe-pessoa organizando" : "pe-pessoa"}>
             <th className="pe-nome" scope="row" title={[p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : ""].filter(Boolean).join("\n")}>
-              {p.hoje && dias.includes(agora) && <i className={`pe-agora ${p.hoje.classe}`} aria-label={`Hoje: ${p.hoje.texto}`} />}
-              {onAbrir
-                ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>
+              {organizar && onMover ? (
+                <span className="pe-mover">
+                  <button onClick={() => onMover(p.chave, -1)} disabled={p.chave === primeira} aria-label={`Subir ${p.nome}`} title="Subir">▲</button>
+                  <button onClick={() => onMover(p.chave, 1)} disabled={p.chave === ultima} aria-label={`Descer ${p.nome}`} title="Descer">▼</button>
+                </span>
+              ) : p.hoje && dias.includes(agora) && <i className={`pe-agora ${p.hoje.classe}`} aria-label={`Hoje: ${p.hoje.texto}`} />}
+              {onAbrir && !organizar
+                ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.ficha ?? p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>
                 : <span className="esc-pessoa">{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</span>}
               {p.cargo && <small className="pe-cargo">{p.cargo}</small>}
             </th>

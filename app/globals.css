@@ -2213,6 +2213,18 @@ table.pe-grade { width: 100%; min-width: calc(var(--nome) + var(--dias) * var(--
 .pe-grade thead th.pe-nome { z-index: 4; font-size: 10px; font-weight: 700; letter-spacing: .08em; vertical-align: bottom; padding-bottom: 12px; }
 .pe-grade .pe-pessoa:hover .pe-nome { background: var(--soft); }
 .pe-grade .pe-pessoa .pe-agora { margin-right: 8px; vertical-align: 1px; }
+/* Modo Organizar: ▲ ▼ ao lado do nome */
+.pe-mover { display: inline-flex; gap: 2px; margin-right: 8px; vertical-align: middle; }
+.pe-mover button { all: unset; box-sizing: border-box; cursor: pointer; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel); font-size: 9px; line-height: 1; color: var(--strong); }
+.pe-mover button:hover:not(:disabled) { background: var(--strong); border-color: var(--strong); color: var(--bg); }
+.pe-mover button:disabled { opacity: .3; cursor: default; }
+.pe-mover button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.pe-grade .pe-pessoa.organizando .pe-nome { background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
+.pe-grade .pe-mover ~ .pe-cargo { padding-left: 54px; }
+.pt-organizar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); background: color-mix(in srgb, var(--gold) 8%, transparent); font-size: 13px; color: var(--text); }
+.pt-organizar button { margin-left: auto; }
 .pe-grade .esc-pessoa { font-weight: 600; }
 .pe-pessoa-botao { all: unset; cursor: pointer; font-weight: 600; }
 .pe-pessoa-botao:hover { text-decoration: underline; text-underline-offset: 3px; }

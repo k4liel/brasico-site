@@ -26,6 +26,9 @@ type Justificativa = {
   cliente_id: number; id: number; pessoa_id: number | null; tipo_id: number | null; texto: string; descricao: string;
   inicio: string | null; fim: string | null; aprovacao: number | null; tem_arquivo: boolean; inserido_em: string | null;
 };
+// Ordem e grupo escolhidos à mão na escala (modo Organizar); null = o automático
+export type Ordem = { local: string | null; setor: string | null; posicao: number | null };
+export type ItemOrdem = { cliente_id: number; pessoa_id: number; posicao: number; local?: string | null; setor?: string | null };
 export type Cruzamento = { empresa_id: string; cpf: string; nome: string; unidade: string; ponto_situacao: string; ponto_ultima_batida: string | null; ativo: boolean };
 
 // Situação de hoje de cada pessoa, na ordem em que aparece
@@ -82,6 +85,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
   const [relogios, setRelogios] = useState<Relogio[]>([]);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
   const [cruzamento, setCruzamento] = useState<Cruzamento[]>([]);
+  const [ordem, setOrdem] = useState<Map<string, Ordem>>(new Map());
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState("");
   const [relogio, setRelogio] = useState(agoraHM());
@@ -95,7 +99,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
   const carregar = useCallback(async () => {
     try {
       const { de, ate } = cobertura.current;
-      const [pe, em, dp, cg, cc, es, tj, ju, re, ex, cr, di] = await Promise.all([
+      const [pe, em, dp, cg, cc, es, tj, ju, re, ex, cr, di, or] = await Promise.all([
         tudo<PessoaPonto>((a, b) => supabase.from("rhid_pessoas").select("cliente_id,id,nome,cpf,empresa_id,departamento_id,cargo_id,centro_custo_id,escala_id")
           .eq("situacao", 1).eq("presente", true).order("nome").range(a, b)),
         supabase.from("rhid_empresas").select("cliente_id,id,cnpj"),
@@ -111,6 +115,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
         tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,unidade,ponto_situacao,ponto_ultima_batida,ativo")
           .eq("ativo", true).order("nome").range(a, b)),
         lerDias(de, ate),
+        supabase.from("rhid_escala_ordem").select("cliente_id,pessoa_id,local,setor,posicao"),
       ]);
       // Cadastros sem departamento nem cargo e sem nenhuma batida (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
       const comPonto = new Set(di.filter((d) => d.batidas.length).map((d) => chave(d.cliente_id, d.pessoa_id)));
@@ -125,6 +130,8 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
       setExecucoes((ex.data ?? []) as Execucao[]);
       setCruzamento(cr);
       setDias(di);
+      setOrdem(new Map(((or.data ?? []) as (Ordem & { cliente_id: number; pessoa_id: number })[])
+        .map((o) => [chave(o.cliente_id, o.pessoa_id), { local: o.local, setor: o.setor, posicao: o.posicao }])));
       setRelogio(agoraHM());
       setErro("");
     } catch (e) {
@@ -219,7 +226,10 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
     const raiz = p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "";
     const depto = p.departamento_id != null ? n.depto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "";
     const centro = p.centro_custo_id != null ? n.centro.get(chave(p.cliente_id, p.centro_custo_id)) ?? "" : "";
-    const { local, setor } = localESetor(depto, unidadeRH.get(`${raiz}:${p.cpf}`) ?? "", centro);
+    const auto = localESetor(depto, unidadeRH.get(`${raiz}:${p.cpf}`) ?? "", centro);
+    const o = ordem.get(k);
+    const local = o?.local ?? auto.local;
+    const setor = o?.setor ?? auto.setor;
     const cargo = p.cargo_id != null ? nomeProprio(n.cargo.get(chave(p.cliente_id, p.cargo_id)) ?? "") : "";
     const escala = p.escala_id != null ? n.escala.get(chave(p.cliente_id, p.escala_id)) ?? "" : "";
     const ds = diasDe.get(k) ?? new Map<string, DiaPonto>();
@@ -240,7 +250,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
     const passados = [...ds.values()].filter((d) => d.dia < agora && d.dia >= somarDias(agora, -30));
     const saldo = [...ds.values()].filter((d) => d.dia <= agora && d.saldo_banco != null).sort((a, b) => b.dia.localeCompare(a.dia))[0]?.saldo_banco ?? null;
     return {
-      p, k, raiz, local, setor, cargo, escala, dias: ds,
+      p, k, raiz, local, setor, localAuto: auto.local, setorAuto: auto.setor, posicao: o?.posicao ?? null, cargo, escala, dias: ds,
       estado, batidasHoje, horarioHoje: dHoje?.horario ?? "", entradaHoje, afastado,
       diasTrabalhados: passados.filter((d) => d.minutos_trabalhados > 0).length,
       minutos: passados.reduce((t, d) => t + d.minutos_trabalhados, 0),
@@ -248,7 +258,26 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
       atraso: passados.reduce((t, d) => t + d.minutos_atraso, 0),
       saldo, chaveRH: `${raiz}:${p.cpf}`,
     };
-  }), [pessoas, raizDe, n, diasDe, unidadeRH, agora, afastadoHoje, relogio]);
+  }), [pessoas, raizDe, n, diasDe, unidadeRH, agora, afastadoHoje, relogio, ordem]);
+
+  // Grava a ordem (e o grupo de quem mudou de grupo) na hora, na tela e no banco
+  async function ordenar(itens: ItemOrdem[], limpar = false) {
+    setOrdem((m) => {
+      if (limpar) return new Map();
+      const n = new Map(m);
+      for (const it of itens) {
+        const k = chave(it.cliente_id, it.pessoa_id);
+        const a = n.get(k) ?? { local: null, setor: null, posicao: null };
+        n.set(k, { posicao: it.posicao, local: "local" in it ? it.local ?? null : a.local, setor: "setor" in it ? it.setor ?? null : a.setor });
+      }
+      return n;
+    });
+    const { error } = await supabase.rpc("rhid_escala_ordenar", { p_itens: itens, p_limpar: limpar });
+    if (error) {
+      setErro(`A ordem não foi salva: ${error.message}`);
+      carregar();
+    }
+  }
 
   // Tudo filtrado pela empresa escolhida no topo do RH
   const vistas = linhas.filter((l) => filtroEmpresa === "todas" || l.raiz === filtroEmpresa);
@@ -267,7 +296,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
   const ultima = execucoes.find((x) => x.status === "ok" && x.fim);
 
   return {
-    acesso, carregado, erro, lendo, ultima, atualizar, garantir, linhas, vistas,
+    acesso, carregado, erro, lendo, ultima, atualizar, garantir, ordenar, linhas, vistas,
     relogiosVistos, relogiosOk, cruz, just, agora, relogio,
   };
 }

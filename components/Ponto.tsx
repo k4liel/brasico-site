@@ -6,10 +6,10 @@
 // (justificativas) e Folha e governo (ponto × eSocial e relógios). Só leitura.
 import { useState, type ReactNode } from "react";
 import { cpfVisivel, dataBR, somarDias } from "@/lib/esocial/rh";
-import PontoEscala, { type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { ordemDaGrade, type PessoaEscala } from "./PontoEscala";
 import {
   ESTADOS, chave, diaFortaleza, horaCurta, horas, iniciais, nomeProprio,
-  type Estado, type Ponto,
+  type Estado, type ItemOrdem, type LinhaPonto, type Ponto,
 } from "./PontoDados";
 
 // Bolinha da situação de hoje (grade e listas)
@@ -39,6 +39,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
   const [setor, setSetor] = useState("");
   const [estado, setEstado] = useState<Estado | "">("");
   const [busca, setBusca] = useState("");
+  const [organizar, setOrganizar] = useState(false);
   if (!pronto(ponto)) return <Aguarde ponto={ponto} />;
 
   const { vistas } = ponto;
@@ -48,7 +49,46 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
   const termo = busca.trim().toLowerCase();
   const filtradas = doLocal.filter((l) => !setor || l.setor === setor)
     .filter((l) => !termo || l.p.nome.toLowerCase().includes(termo) || l.cargo.toLowerCase().includes(termo) || l.p.cpf.includes(termo.replace(/\D/g, "") || "#"));
-  const mostradas = filtradas.filter((l) => !estado || l.estado === estado);
+  // Organizando, valem só o local escolhido e a ordem: setor, busca e situação ficam de lado (ninguém some do grupo)
+  const mostradas = (organizar ? doLocal : filtradas.filter((l) => !estado || l.estado === estado))
+    .slice().sort((a, b) => (a.posicao ?? 1e6) - (b.posicao ?? 1e6) || a.p.nome.localeCompare(b.p.nome));
+  const linhaDe = new Map(mostradas.map((l) => [l.k, l]));
+  const pessoas = mostradas.map<PessoaEscala>((l) => ({
+    chave: l.k, ficha: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, setor: l.setor, dias: l.dias,
+    hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
+  }));
+
+  // Sobe ou desce uma linha. Na ponta do grupo (setor ou local), a pessoa passa para o grupo vizinho:
+  // subindo, vira a última de cima; descendo, a primeira de baixo. Renumera os grupos que mudaram e grava.
+  function mover(k: string, direcao: -1 | 1) {
+    const lista = ordemDaGrade(pessoas);
+    const i = lista.findIndex((x) => x.chave === k);
+    const j = i + direcao;
+    if (i < 0 || j < 0 || j >= lista.length) return;
+    const eu = lista[i], alvo = lista[j];
+    const grupoDe = (x: PessoaEscala) => `${x.local || "Sem local"}|${x.setor}`;
+    const mesmoGrupo = grupoDe(eu) === grupoDe(alvo);
+    const nova = lista.map((x) => (x.chave === k && !mesmoGrupo ? { ...x, local: alvo.local, setor: alvo.setor } : x));
+    if (mesmoGrupo) [nova[i], nova[j]] = [nova[j], nova[i]];
+    const afetados = new Set([grupoDe(eu), grupoDe(alvo)]);
+    const conta = new Map<string, number>();
+    const itens: ItemOrdem[] = [];
+    for (const x of nova) {
+      const g = grupoDe(x);
+      if (!afetados.has(g)) continue;
+      const pos = conta.get(g) ?? 0;
+      conta.set(g, pos + 1);
+      const l: LinhaPonto = linhaDe.get(x.chave)!;
+      const it: ItemOrdem = { cliente_id: l.p.cliente_id, pessoa_id: l.p.id, posicao: pos };
+      // Quem trocou de grupo guarda o grupo novo (ou volta ao automático, se for o dele)
+      if (x.chave === k && !mesmoGrupo) {
+        it.local = x.local === l.localAuto ? null : x.local;
+        it.setor = x.setor === l.setorAuto ? null : x.setor;
+      }
+      itens.push(it);
+    }
+    ponto.ordenar(itens);
+  }
 
   return (
     <section className="es-bloco pt-escala-bloco">
@@ -79,22 +119,31 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
         )}
         <FiltroUnidade unidades={setores} valor={setor} onMudar={setSetor} rotulo="setores" contar={(u) => doLocal.filter((l) => l.setor === u).length} />
       </div>
+      {organizar && (
+        <p className="pt-organizar">
+          <b>Organizando a escala.</b> Use ▲ e ▼ ao lado de cada nome para mudar a ordem. Na primeira ou na última pessoa de um setor,
+          ela passa para o setor (ou o local) vizinho. Cada mudança é salva na hora e vale para quem vê a escala.
+          <button className="ghost small" onClick={() => {
+            if (window.confirm("Voltar todo mundo para a ordem e os grupos automáticos (do RHiD)?")) ponto.ordenar([], true);
+          }}>Voltar ao automático</button>
+        </p>
+      )}
       {ponto.linhas.length === 0 ? (
         <p className="muted tv-nada">O ponto ainda não foi lido. A leitura roda sozinha de madrugada e ao longo do dia.</p>
       ) : mostradas.length === 0 ? (
         <p className="muted tv-nada">Ninguém neste filtro.</p>
       ) : (
         <PontoEscala garantir={ponto.garantir} onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
+          organizar={organizar} onMover={mover} pessoas={pessoas}
           extra={(
             <span className="pt-acoes">
               <span className="muted">{atualizadoEm(ponto)}</span>
               <button className="ghost small" onClick={ponto.atualizar} disabled={ponto.lendo}>Atualizar</button>
+              <button className={organizar ? "small" : "ghost small"} onClick={() => setOrganizar((v) => !v)} aria-pressed={organizar}>
+                {organizar ? "Pronto" : "Organizar"}
+              </button>
             </span>
-          )}
-          pessoas={mostradas.map<PessoaEscala>((l) => ({
-            chave: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, setor: l.setor, dias: l.dias,
-            hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
-          }))} />
+          )} />
       )}
     </section>
   );

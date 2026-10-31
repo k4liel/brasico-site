@@ -1003,3 +1003,58 @@ select cron.unschedule('rhid-batidas-dia') where exists (select 1 from cron.job 
 select cron.schedule('rhid-batidas-dia', '0 1,15,20 * * *', $job$ select public.rhid_agenda_batidas() $job$);
 select cron.unschedule('rhid-agora') where exists (select 1 from cron.job where jobname = 'rhid-agora');
 select cron.schedule('rhid-agora', '*/10 0-2,9-23 * * *', $job$ select public.rhid_agenda_agora() $job$);
+
+-- ---------------------------------------------------------------------
+-- Ordem da escala (31/10/2026, pedido do dono): no modo Organizar da aba Escala, cada pessoa sobe ou desce
+-- com ▲ ▼; passando do primeiro ou do último do grupo, entra no grupo vizinho (outro setor ou outro local).
+-- `posicao` = ordem dentro do grupo; `local`/`setor` = grupo escolhido à mão (null = o calculado do RHiD,
+-- lib/esocial/locais.ts). Vale para todos que veem o ponto. Nada se apaga: "voltar ao automático" só limpa.
+-- ---------------------------------------------------------------------
+create table if not exists public.rhid_escala_ordem (
+  cliente_id bigint not null,
+  pessoa_id bigint not null,
+  local text,
+  setor text,
+  posicao int,
+  atualizado_em timestamptz not null default now(),
+  atualizado_por uuid references auth.users(id),
+  primary key (cliente_id, pessoa_id)
+);
+
+do $$
+declare t text := 'rhid_escala_ordem';
+begin
+  execute format('drop trigger if exists %I on public.%I', t || '_sem_exclusao', t);
+  execute format('create trigger %I before delete on public.%I for each row execute function public.bloquear_exclusao()', t || '_sem_exclusao', t);
+  execute format('drop trigger if exists %I on public.%I', t || '_sem_truncate', t);
+  execute format('create trigger %I before truncate on public.%I for each statement execute function public.bloquear_exclusao()', t || '_sem_truncate', t);
+  execute format('alter table public.%I enable row level security', t);
+  execute format('drop policy if exists "ver" on public.%I', t);
+  execute format('create policy "ver" on public.%I for select using (public.rhid_pode_ver(auth.uid()))', t);
+  execute format('revoke all on public.%I from anon', t);
+  execute format('grant select on public.%I to authenticated', t);
+end $$;
+
+-- p_itens: [{cliente_id, pessoa_id, posicao, local?, setor?}] — local/setor só mudam quando vêm no item
+-- (null volta ao calculado). p_limpar: tudo volta à ordem e aos grupos automáticos.
+create or replace function public.rhid_escala_ordenar(p_itens jsonb default '[]', p_limpar boolean default false)
+returns void language plpgsql security definer set search_path = public as $$
+declare v jsonb;
+begin
+  if not public.rhid_pode_ver(auth.uid()) then raise exception 'Sem acesso ao ponto (RHiD)' using errcode = '42501'; end if;
+  if p_limpar then
+    update public.rhid_escala_ordem set local = null, setor = null, posicao = null, atualizado_em = now(), atualizado_por = auth.uid();
+    return;
+  end if;
+  for v in select * from jsonb_array_elements(coalesce(p_itens, '[]')) loop
+    insert into public.rhid_escala_ordem as t (cliente_id, pessoa_id, local, setor, posicao, atualizado_por)
+    values ((v->>'cliente_id')::bigint, (v->>'pessoa_id')::bigint, v->>'local', v->>'setor', (v->>'posicao')::int, auth.uid())
+    on conflict (cliente_id, pessoa_id) do update set
+      posicao = excluded.posicao,
+      local = case when v ? 'local' then excluded.local else t.local end,
+      setor = case when v ? 'setor' then excluded.setor else t.setor end,
+      atualizado_em = now(), atualizado_por = auth.uid();
+  end loop;
+end $$;
+revoke execute on function public.rhid_escala_ordenar(jsonb, boolean) from public, anon;
+grant execute on function public.rhid_escala_ordenar(jsonb, boolean) to authenticated;
