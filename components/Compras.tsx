@@ -68,7 +68,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
       <div>
         <span className="es-sobre">Operação · Compras</span>
         <h1>{gestor ? "Compras da semana" : `Sua lista · ${SETORES[eu?.setor ?? ""] ?? ""} · ${UNIDADES[eu?.unidade ?? ""] ?? ""}`}</h1>
-        <p>Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}. Pedidos no grupo até segunda à noite; terça às 6h sai a lista sugerida.
+        <p>Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}. Pedidos no grupo até terça à noite; a lista sugerida de cada pessoa sai em até 15 minutos depois de cada mensagem no grupo.
           {semana.status === "fechada" && " Esta semana já foi fechada."}</p>
       </div>
       {semanas.length > 1 && (
@@ -149,7 +149,7 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
         <Etapas atual={0} />
         <section className="av-bloco cp-vazio">
           <h2>Sua lista ainda não saiu</h2>
-          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS até segunda à noite. Na terça às 6h a lista sugerida aparece aqui para você revisar.</p>
+          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS (texto, planilha, PDF ou foto) até terça à noite. Em até 15 minutos a lista sugerida aparece aqui para você revisar.</p>
         </section>
       </>
     );
@@ -253,7 +253,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
 // As etapas da semana de compras, com a atual em destaque
 const ETAPAS = [
   { t: "Pedidos no grupo", d: "até segunda à noite" },
-  { t: "Lista sugerida", d: "terça às 6h, pelo Claude" },
+  { t: "Lista sugerida", d: "até 15 min depois do pedido, pelo Claude" },
   { t: "Revisão", d: "cada pessoa confere e aprova" },
   { t: "Lista única", d: "a Fernanda junta por fornecedor" },
   { t: "Semana fechada", d: "PDF e pedidos enviados" },
@@ -271,7 +271,7 @@ function Etapas({ atual }: { atual: number }) {
   );
 }
 
-// Situação da análise automática de terça (compras_analises, supabase/automacao.sql)
+// Situação da leitura automática do grupo (compras_analises, supabase/compras_continuo.sql)
 const ANALISE: Record<string, string> = { analisando: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
   pulada: "já estava em revisão", falha: "a análise falhou" };
 
@@ -289,7 +289,7 @@ function Andamento({ semana }: { semana: Semana }) {
     ]);
     setPessoas((p.data ?? []) as Pessoa[]);
     setListas((l.data ?? []) as Lista[]);
-    // a última análise automática de cada pessoa na semana (terça às 6h)
+    // a última análise automática de cada pessoa na semana
     setAnalises(Object.fromEntries(((a.data ?? []) as { pessoa_id: string; status: string; erro: string | null }[]).map((x) => [x.pessoa_id, x])));
   }, [supabase, semana.id]);
   useEffect(() => { carregar(); }, [carregar]);
@@ -318,7 +318,7 @@ function Andamento({ semana }: { semana: Semana }) {
         </div>
         <div className="ip-numero"><span className="ip-rotulo">Em revisão</span><span className="ip-valor">{revisao}</span><span className="ip-var neutro">a pessoa confere e aprova</span></div>
         <div className="ip-numero"><span className="ip-rotulo">Sem lista ainda</span><span className={semLista ? "ip-valor cf-alerta" : "ip-valor"}>{semLista}</span><span className="ip-var neutro">pedido no grupo até segunda</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Análise de terça</span><span className="ip-valor">{Object.values(analises).filter((a) => a.status === "ok").length}</span><span className="ip-var neutro">listas sugeridas pelo Claude</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Leitura do grupo</span><span className="ip-valor">{Object.values(analises).filter((a) => a.status === "ok").length}</span><span className="ip-var neutro">listas sugeridas pelo Claude</span></div>
       </div>
       <div className="cp-unidades">
         {porUnidade.map(({ u, pessoas: ps }) => {
@@ -362,7 +362,7 @@ function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: P
         <button className="ghost small" onClick={onFechar}>Fechar</button>
       </header>
       {lista === undefined ? <p className="muted">Carregando…</p>
-        : !lista || !itens.length ? <p className="muted">Ainda sem lista nesta semana. A análise de terça grava a lista sugerida aqui.</p>
+        : !lista || !itens.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui em até 15 minutos.</p>
         : <EditorLista lista={lista} itens={itens} podeEditar={semana.status === "aberta"} onMudou={carregar} gestor />}
     </div>
   );
