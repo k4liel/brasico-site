@@ -2865,6 +2865,14 @@ button.nf-grupo-cabeca:focus-visible { outline: 2px solid var(--gold); outline-o
 .av-resumo > button { width: 100%; padding: 12px 16px; font-size: 14.5px; }
 .av-nota { margin: 0; font-size: 12px; }
 
+/* Aba NFS-e (components/NotasServico.tsx): mesmos cartões das notas; a leitura do Portal fica no fim */
+.nfs-cards { margin-top: 8px; }
+.nfs-leitura { display: grid; gap: 12px; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); }
+.nfs-leitura h2 { margin: 0; font-family: var(--font-serif), Georgia, serif; font-size: 24px; font-weight: 500; color: var(--strong); }
+.nfs-leitura > p { margin: 0; }
+.nfs-tempo { margin-top: 8px; }
+.nfs-totais { margin-top: 16px; max-width: 520px; }
+
 @media (max-width: 1100px) { .sf-grade { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .av { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
@@ -3334,3 +3342,12 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
   .tp-arquivo-cartao { grid-template-columns: 1fr 1fr; }
   .tp-arquivo-nome { grid-column: 1 / -1; }
 }
+
+/* Fiscal do grupo: empresas desligadas do grupo (só histórico), num bloco recolhido no fim */
+.fx-desligadas > summary { cursor: pointer; list-style: none; }
+.fx-desligadas > summary::-webkit-details-marker { display: none; }
+.fx-desligadas > summary h2::after { content: " ›"; color: var(--muted); font-weight: 400; }
+.fx-desligadas[open] > summary h2::after { content: " ⌄"; }
+.fx-desligadas > .fx-nota { margin: 0 0 12px; }
+.fx-cartao.desligada { background: transparent; border-style: dashed; opacity: .8; }
+.fx-cartao.desligada:hover { opacity: 1; }

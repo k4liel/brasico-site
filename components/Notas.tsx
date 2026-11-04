@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import IndicePrecos from "./IndicePrecos";
+import NotasServico from "./NotasServico";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
-// Abas: Notas (por mês e por CNPJ, com a nota aberta e o PDF), Índice de preços, Nota avulsa e Leitura da SEFAZ.
+// Abas: Notas (por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
+// Ambiente Nacional), Índice de preços, Nota avulsa e Leitura da SEFAZ.
 // O PDF (DANFE) é montado do XML oficial em /api/notas/danfe/<chave>. Tabelas e funções em supabase/notas*.sql.
 type Empresa = {
   cnpj: string; nome: string; ativa: boolean; ciencia: boolean; ult_nsu: string; max_nsu: string | null;
@@ -45,7 +47,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   const supabase = useMemo(() => createClient(), []);
   const [acesso, setAcesso] = useState<boolean | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [aba, setAba] = useState<"notas" | "indice" | "avulsa" | "sefaz">("notas");
+  const [aba, setAba] = useState<"notas" | "nfse" | "indice" | "avulsa" | "sefaz">("notas");
 
   const carregarEmpresas = useCallback(async () => {
     const { data } = await supabase.from("notas_empresas").select("*").order("nome");
@@ -78,18 +80,20 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
           <div>
             <span className="es-sobre">Operação</span>
             <h1>Notas fiscais</h1>
-            <p>As notas de compra das empresas, que chegam da SEFAZ, e as notas avulsas. Clique numa nota para ver os itens e o PDF.</p>
+            <p>As notas de compra das empresas, que chegam da SEFAZ, as notas de serviço emitidas e tomadas, e as notas avulsas. Clique numa nota para ver os detalhes.</p>
           </div>
         </div>
 
         <div className="cp-abas" role="tablist">
           <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>Notas</button>
+          <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>
           <button role="tab" aria-selected={aba === "indice"} className={aba === "indice" ? "on" : ""} onClick={() => setAba("indice")}>Índice de preços</button>
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
           <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leitura da SEFAZ</button>
         </div>
 
         {aba === "notas" && <ListaNotas empresas={empresas} />}
+        {aba === "nfse" && <NotasServico />}
         {aba === "indice" && <IndicePrecos />}
         {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
         {aba === "sefaz" && <LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} />}
