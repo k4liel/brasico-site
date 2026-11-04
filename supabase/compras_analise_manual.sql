@@ -24,3 +24,8 @@ grant execute on function public.mcp_compras_buscar(text, text, text) to anon;
 -- mcp_compras_semana: devolve janela_dos_pedidos, mensagens_no_grupo e ultima_mensagem de cada pessoa,
 -- se cada lista foi mexida, e o passo a passo da análise manual (como_fazer).
 -- (definições completas: select pg_get_functiondef('mcp_compras_gravar_lista'::regproc), idem mcp_compras_semana)
+
+-- 04/11/2026 (depois): a análise automática voltou, agora com o Gemini do Google no plano grátis (sem custo):
+-- Edge Function compras-analise, segredo GEMINI_API_KEY; agenda compras-continuo religada.
+-- Cada lista guarda só o trecho do pedido que deu origem a ela (compras_auto_gravar lê lst->>'pedido'; migration
+-- compras_pedido_por_lista). Corpo completo: select pg_get_functiondef('compras_auto_gravar'::regproc).

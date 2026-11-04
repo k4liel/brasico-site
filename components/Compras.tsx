@@ -247,7 +247,7 @@ function Listas({ semana, listas, itens, carregar, gestor }: { semana: Semana; l
       )}
       {aberta && <JuntarListas listas={listas} onMudou={carregar} />}
       {listas.map((l) => (
-        <EditorLista key={l.id} lista={l} itens={itens.filter((i) => i.lista_id === l.id)}
+        <EditorLista key={l.id} lista={l} itens={itens.filter((i) => i.lista_id === l.id)} abertaInicial={listas.length === 1}
           podeEditar={aberta && (gestor || l.status !== "aprovada")} onMudou={carregar} gestor={gestor} />
       ))}
     </>
@@ -301,8 +301,10 @@ function AvisoListaNova({ pessoa, listas }: { pessoa: string; listas: Lista[] })
   );
 }
 
-function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lista; itens: Item[]; podeEditar: boolean; onMudou: () => void; gestor: boolean }) {
+// Cada lista abre e fecha: com várias listas, começam fechadas (só o título, os itens, o valor e a situação)
+function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial = true }: { lista: Lista; itens: Item[]; podeEditar: boolean; onMudou: () => void; gestor: boolean; abertaInicial?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
+  const [aberta, setAberta] = useState(abertaInicial);
   const [erro, setErro] = useState("");
   const [novo, setNovo] = useState({ nome: "", fornecedor: "", unidade: "", qtd: "", preco: "" });
   const vivos = itens.filter((i) => !i.removido);
@@ -341,15 +343,18 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
   }
 
   return (
-    <section className="av-bloco cp-lista">
+    <section className={aberta ? "av-bloco cp-lista" : "av-bloco cp-lista cp-fechada"}>
       <div className="cp-lista-cabeca">
-        <div className="cp-lista-titulo">
-          {podeEditar ? <input defaultValue={lista.titulo ?? ""} placeholder="Nome da lista (ex.: Mercado, Ceasa)" aria-label="Nome da lista"
+        <button type="button" className="cp-abre" onClick={() => setAberta(!aberta)} aria-expanded={aberta}
+          aria-label={aberta ? "Fechar a lista" : "Abrir a lista"}><span aria-hidden="true">{aberta ? "▾" : "▸"}</span></button>
+        <div className="cp-lista-titulo" onClick={() => !aberta && setAberta(true)}>
+          {podeEditar && aberta ? <input defaultValue={lista.titulo ?? ""} placeholder="Nome da lista (ex.: Mercado, Ceasa)" aria-label="Nome da lista"
             onBlur={(v) => v.target.value !== (lista.titulo ?? "") && renomear(v.target.value)} /> : <h3>{lista.titulo || "Lista"}</h3>}
         </div>
         <div className="cp-lista-total"><span>{vivos.length} itens</span><b>{brl(total)}</b></div>
         <span className={`estado ${lista.status === "aprovada" ? "tv-ok" : "tv-revisar"}`}>{STATUS[lista.status] ?? lista.status}</span>
       </div>
+      {aberta && <>
       {lista.pedido_texto && (
         <details className="cp-pedido"><summary>O pedido que veio no grupo</summary><pre>{lista.pedido_texto}</pre></details>
       )}
@@ -403,6 +408,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
         {gestor && lista.status === "aprovada" && <button className="ghost" onClick={() => aprovar(false)}>Reabrir para a pessoa</button>}
         {lista.status === "aprovada" && !gestor && <p className="es-tudo-certo">Lista aprovada. O setor de compras já pode juntá-la na lista final.</p>}
       </div>
+      </>}
     </section>
   );
 }

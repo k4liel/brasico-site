@@ -12,12 +12,17 @@
 // { "teste": true, "pessoa": "<id>" } analisa sem gravar listas (resultado em compras_testes).
 // No plano grátis, o Google pode usar o que é enviado para melhorar os modelos: mande só o pedido e os candidatos das
 // notas (nunca CPF, salário ou dado de cliente). Precisa do segredo GEMINI_API_KEY nas Edge Functions do Supabase.
+// O Gemini só escolhe o produto da nota para cada item; o próprio sistema confere a escolha (trava contra troca de
+// produto: leite × creme de leite, fino × grosso, cor, com/sem sal...), faz as contas (média de 4 semanas, projeção,
+// sugestão, preço e fornecedor, direto do candidato escolhido) e calcula a confiança (função ajustar).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
 
-// Modelos tentados em ordem (o primeiro que o plano grátis aceitar)
-const MODELOS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
+// Modelos tentados em ordem, do melhor para o mais simples (o primeiro que responder). Testados em 04/11/2026 com a
+// chave grátis: os Pro (gemini-pro-latest, 3.1-pro, 4-argon) pedem plano pago (cota 0); 2.5-flash e 2.5-pro saíram.
+const MODELOS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview",
+  "gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-flash-lite-latest"];
 const GRUPO_COMPRAS = "120363040261291910@g.us"; // COMPRAS {CC | FDL | SV I PM}
 const PRAZO_MS = 135_000; // a Edge Function para em 150 s
 
@@ -56,19 +61,16 @@ Junto vem uma separação prévia em listas e, para cada item, os candidatos ach
 2. LIGAR CADA ITEM AO PRODUTO DAS NOTAS (o mais exato possível; é a parte mais importante)
 - Escolha o candidato que é o MESMO produto: mesmo tipo e forma (fresco × congelado × seco; com sal × sem sal; inteiro × fatiado × ralado; zero × normal), mesma marca quando o pedido cita marca, e embalagem compatível com a unidade pedida. Semelhança alta de nome não basta: "limão" não é "tempero lemon pepper", "manteiga com sal" não é "sem sal", "pepsi" não é "pepsi zero".
 - Entre candidatos do mesmo produto, prefira o comprado pela casa da pessoa, depois o mais recente; o fornecedor é o da última compra.
-- confianca: "alta" = é o mesmo produto e há compra recente; "media" = produto equivalente (outra marca ou embalagem) ou compra só de outra casa; "baixa" = não achou nas notas. Com "baixa", deixe fornecedor, preco, media_4s e projecao vazios (null) e diga em motivo que o produto não aparece nas notas.
-- produto_nota = a descrição exata da nota escolhida (null se "baixa").
+- produto_nota = a descricao_na_nota exata do candidato escolhido, copiada letra por letra; null se nenhum candidato for o mesmo produto.
 
-3. MÉTRICAS E PROJEÇÃO (na unidade de compra da nota escolhida)
-- media_4s = media_semanal_4s da casa da pessoa; se a casa não comprou nas 4 semanas mas o grupo comprou, use a do grupo e diga isso em base.
-- projecao = media_4s × (1 + aumento da semana ÷ 100), arredondada para cima na embalagem de compra (caixa, fardo, pacote, barril...). Sem média, projecao = null.
-- base = uma frase curta de onde veio a conta. Ex.: "3 compras em 4 semanas · Eloi Chaves · 9,4 kg/semana no grupo".
-- unidade = a unidade de compra da nota escolhida (kg, cx, un, fardo, pct, L...). Se a pessoa pediu em outra unidade, converta qtd_pedida para essa unidade quando a nota deixar claro (ex.: 2 fardos de 12 = 24 un) e diga em motivo.
-- preco = ultimo_preco do candidato escolhido (por unidade de compra).
+3. QUANTIDADE
+- qtd_pedida = o número que veio no grupo, na unidade que a pessoa escreveu (sem quantidade = null). As contas (média de 4 semanas, projeção, sugestão, preço e fornecedor) são feitas pelo sistema a partir do candidato que você escolher: não calcule nada.
+- motivo = só se precisar avisar algo sobre o item (ex.: "pediu em caixa; a nota vem em kg"); senão null.
 
-4. QUANTIDADE SUGERIDA
-- qtd_pedida = exatamente o que veio no grupo.
-- qtd_sugerida = a pedida, salvo motivo claro: (a) a pedida passa de 50% acima ou abaixo da projeção e há pelo menos 2 compras nas 4 semanas — então sugira a projeção; (b) embalagem que não existe — arredonde para a embalagem. Escreva o motivo numa frase com os números (ex.: "Pediu 12; a média é 4,5/semana (3 compras em 4 semanas)"). Na dúvida, mantenha a pedida: quem decide é a pessoa.
+4. CAMPOS
+- pedido (de cada lista) = só o trecho das mensagens do grupo que deu origem a esta lista, copiado como veio (com a data e a hora da mensagem); não repita o pedido inteiro em todas as listas.
+- item_pedido = o texto do item exatamente como está na separação prévia (campo "item" de <candidatos>), para ligar a resposta aos candidatos.
+- nome = o nome claro e corrigido do produto, sem a quantidade (ex.: "Queijo mussarela", não "12 queido mutssarela").
 
 Responda só com o JSON pedido, em português.`;
 
@@ -89,17 +91,16 @@ const SCHEMA_LISTAS = T("OBJECT", {
     listas: T("ARRAY", { items: T("OBJECT", {
       properties: {
         titulo: T("STRING"),
+        pedido: T("STRING"),
         itens: T("ARRAY", { items: T("OBJECT", {
           properties: {
-            nome: T("STRING"), fornecedor: T("STRING", NULO), unidade: T("STRING", NULO),
-            qtd_pedida: T("NUMBER", NULO), qtd_sugerida: T("NUMBER", NULO), motivo: T("STRING", NULO),
-            preco: T("NUMBER", NULO), media_4s: T("NUMBER", NULO), projecao: T("NUMBER", NULO),
-            base: T("STRING", NULO), produto_nota: T("STRING", NULO), confianca: T("STRING", { enum: ["alta", "media", "baixa"] }),
+            item_pedido: T("STRING"), nome: T("STRING"), qtd_pedida: T("NUMBER", NULO),
+            produto_nota: T("STRING", NULO), motivo: T("STRING", NULO),
           },
-          required: ["nome", "qtd_pedida", "qtd_sugerida", "confianca"],
+          required: ["item_pedido", "nome", "qtd_pedida", "produto_nota"],
         }) }),
       },
-      required: ["titulo", "itens"],
+      required: ["titulo", "pedido", "itens"],
     }) }),
     observacao: T("STRING"),
   },
@@ -108,13 +109,16 @@ const SCHEMA_LISTAS = T("OBJECT", {
 
 type Parte = { text: string } | { inlineData: { mimeType: string; data: string } };
 type Item = Record<string, unknown> & { nome: string };
-type Lista = { titulo: string; itens: Item[] };
+type Lista = { titulo: string; pedido?: string; itens: Item[] };
 type Separacao = { listas: { titulo: string; itens: { item: string; buscas: string[] }[] }[] };
 type Mensagem = { autor_nome: string; tipo: string; texto: string; enviada_em: string; midia: string | null };
 type Contexto = { modo: "substituir" | "adicionar"; desde: string | null; aumento_pct: number; listas: { titulo: string | null; status: string; mexida: boolean }[] };
 type Pessoa = { id: string; nome: string; unidade: string; setor: string; wa_nome: string; analise?: number; de?: string; ate?: string };
+type Cand = { descricao_na_nota: string; unidade: string; fornecedor: string; semelhanca: number; ultima: string | null; ultimo_preco: number | null;
+  casa_da_pessoa?: { compras_4s: number; comprado_4s: number; media_semanal_4s: number }; grupo_todo?: { compras_4s: number; compras_8s: number; media_semanal_4s: number } };
+type ItemCand = { lista: string; item: string; candidatos: Cand[] };
 type Dados = { modo: Contexto["modo"]; pedido: string; mensagens: number; teste?: number; texto: string; midias: { midia: string; enviada_em: string }[];
-  candidatos: unknown; tentativas?: number };
+  candidatos: ItemCand[]; tentativas?: number; aumento?: number };
 const LIMITE_ARQUIVO = 8 * 1024 * 1024;
 const IMAGENS: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
@@ -122,6 +126,16 @@ const quando = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Fortaleza", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 const normal = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 const erroTexto = (e: unknown) => String((e as Error)?.message ?? e).slice(0, 500);
+
+// deno-lint-ignore no-explicit-any
+function lerResposta(j: any, modelo: string) {
+  const cand = j.candidates?.[0];
+  const texto = (cand?.content?.parts ?? []).filter((p: { thought?: boolean; text?: string }) => !p.thought && p.text).map((p: { text: string }) => p.text).join("");
+  if (!texto) throw new Error(`Gemini ${modelo} não respondeu (${cand?.finishReason ?? j.promptFeedback?.blockReason ?? "sem motivo"})`);
+  if (cand?.finishReason === "MAX_TOKENS") throw new Error("a resposta do Gemini passou do limite de tamanho");
+  const uso = j.usageMetadata ?? {};
+  return { json: JSON.parse(texto), modelo, uso: { entrada: uso.promptTokenCount, saida: uso.candidatesTokenCount, pensando: uso.thoughtsTokenCount } };
+}
 
 // Chamada ao Gemini com resposta em JSON. Tenta os modelos em ordem quando um não está no plano grátis ou estourou a cota.
 async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs: number, pensar: number) {
@@ -144,15 +158,19 @@ async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs
       throw new Error(ctl.signal.aborted ? `o Gemini (${modelo}) demorou demais` : erroTexto(e));
     } finally { clearTimeout(t); }
     const j = await r.json().catch(() => ({}));
+    // modelo que não aceita o limite de raciocínio: repete sem ele
+    if (r.status === 400 && /thinking/i.test(j.error?.message ?? "") && (corpo.generationConfig as Record<string, unknown>).thinkingConfig) {
+      delete (corpo.generationConfig as Record<string, unknown>).thinkingConfig;
+      const r2 = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": CHAVE }, body: JSON.stringify(corpo) });
+      const j2 = await r2.json().catch(() => ({}));
+      if (r2.ok) return lerResposta(j2, modelo);
+      ultimoErro = `${modelo}: ${r2.status} ${j2.error?.message ?? ""}`.slice(0, 300); continue;
+    }
     // sem cota, modelo fora do plano grátis ou sobrecarregado: tenta o próximo
     if ([403, 404, 429, 500, 503].includes(r.status)) { ultimoErro = `${modelo}: ${r.status} ${j.error?.message ?? ""}`.slice(0, 300); continue; }
     if (!r.ok) throw new Error(`Gemini ${modelo}: ${r.status} ${(j.error?.message ?? "").slice(0, 300)}`);
-    const cand = j.candidates?.[0];
-    const texto = (cand?.content?.parts ?? []).filter((p: { thought?: boolean; text?: string }) => !p.thought && p.text).map((p: { text: string }) => p.text).join("");
-    if (!texto) throw new Error(`Gemini ${modelo} não respondeu (${cand?.finishReason ?? j.promptFeedback?.blockReason ?? "sem motivo"})`);
-    if (cand?.finishReason === "MAX_TOKENS") throw new Error("a resposta do Gemini passou do limite de tamanho");
-    const uso = j.usageMetadata ?? {};
-    return { json: JSON.parse(texto), modelo, uso: { entrada: uso.promptTokenCount, saida: uso.candidatesTokenCount, pensando: uso.thoughtsTokenCount } };
+    return lerResposta(j, modelo);
   }
   throw new Error(`cota grátis do Gemini esgotada agora (${ultimoErro}); tenta de novo na próxima rodada`);
 }
@@ -246,7 +264,8 @@ async function comecar(pessoa: Pessoa, semana: { id: string; inicio: string }, a
     }
     const candidatos = await buscarTudo(separacao, pessoa.unidade);
     const uso = { modelo: sep.modelo, separar: sep.uso, itens_buscados: candidatos.length, segundos_etapa1: Math.round((Date.now() - inicio) / 1000) };
-    const dados: Dados = { modo: ctx.modo, pedido, mensagens: minhas.length, texto, midias, candidatos, ...(teste ? { teste } : {}) };
+    const dados: Dados = { modo: ctx.modo, pedido, mensagens: minhas.length, texto, midias, candidatos: candidatos as ItemCand[],
+      aumento: Number(ctx.aumento_pct ?? 0), ...(teste ? { teste } : {}) };
     await supabase.from("compras_analises").update({ status: "no_lote", lote: "gemini", dados, uso, mensagens: minhas.length }).eq("id", analiseId);
     return { pessoa: pessoa.nome, etapa1: true, itens: candidatos.length, uso };
   } catch (e) {
@@ -254,6 +273,76 @@ async function comecar(pessoa: Pessoa, semana: { id: string; inicio: string }, a
     if (teste) await supabase.from("compras_testes").update({ resultado: { erro: erroTexto(e) }, fim: new Date().toISOString() }).eq("id", teste);
     return { pessoa: pessoa.nome, erro: erroTexto(e) };
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Conferência do sistema sobre a escolha do Gemini
+// ---------------------------------------------------------------------------------------------------------------
+// Grupos de palavras que se excluem: se o pedido diz uma e a nota diz outra do mesmo grupo, é outro produto
+const EXCLUSIVOS: string[][][] = [
+  [["grosso"], ["fino", "refinado"]],
+  [["com sal"], ["sem sal"]],
+  [["amarelo", "amarela"], ["vermelho", "vermelha"], ["verde"], ["colorido", "colorida"]],
+  [["roxa", "roxo"], ["branca", "branco"]],
+  [["integral"], ["desnatado", "desnatada"], ["semidesnatado", "semi desnatado"]],
+  [["fresco", "fresca", "in natura"], ["congelado", "congelada"], ["seco", "seca", "desidratado"]],
+  [["zero", "diet", "light"], ["normal", "tradicional"]],
+  [["inteiro", "inteira", "peca"], ["ralado", "ralada"], ["fatiado", "fatiada"]],
+];
+// Palavras que mudam o produto: na nota sem estar no pedido = provável troca (ex.: "creme" de leite no lugar de leite)
+const MUDA_PRODUTO = ["creme", "condensado", "molho", "extrato", "tempero", "essencia", "farinha", "polpa", "suco", "xarope", "caldo", "doce", "geleia", "oleo", "vinagre", "achocolatado"];
+const tem = (texto: string, w: string) => new RegExp(`(^|[^a-z])${w}([^a-z]|$)`).test(texto);
+function conflito(pedido: string, nota: string): string | null {
+  const a = normal(pedido), b = normal(nota);
+  for (const grupo of EXCLUSIVOS) {
+    const ia = grupo.findIndex((ws) => ws.some((w) => tem(a, w)));
+    const ib = grupo.findIndex((ws) => ws.some((w) => tem(b, w)));
+    if (ia >= 0 && ib >= 0 && ia !== ib) return `o pedido diz "${grupo[ia][0]}" e a nota é "${grupo[ib][0]}"`;
+  }
+  for (const w of MUDA_PRODUTO) if (tem(b, w) && !tem(a, w)) return `a nota escolhida é de "${w}", que não está no pedido`;
+  return null;
+}
+const fmt = (n: number) => (Math.round(n * 100) / 100).toLocaleString("pt-BR");
+const curto = (f: string) => f.replace(/\b(LTDA|ME|EIRELI|EPP|S\/?A|COMERCIO|COMERCIAL|DISTRIBUIDORA|DE|DO|DA)\b\.?/gi, "").replace(/\s+/g, " ").trim().split(" ").slice(0, 3).join(" ");
+
+// Recalcula o item a partir do candidato escolhido: fornecedor, unidade, preço, média, projeção, sugestão e confiança
+function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento: number): Item {
+  const entrada = porItem.get(normal(String(i.item_pedido ?? ""))) ?? null;
+  const pedidoTxt = entrada?.item ?? String(i.item_pedido ?? i.nome ?? "");
+  const escolhida = String(i.produto_nota ?? "").trim();
+  const lista = entrada?.candidatos ?? [];
+  const c = escolhida ? (lista.find((x) => normal(x.descricao_na_nota) === normal(escolhida)) ?? todos.find((x) => normal(x.descricao_na_nota) === normal(escolhida))) : undefined;
+  const pedida = typeof i.qtd_pedida === "number" ? i.qtd_pedida : null;
+  const saida: Item = { ...i, qtd_pedida: pedida };
+  delete saida.item_pedido;
+  if (!c) {
+    return { ...saida, produto_nota: null, fornecedor: escolhida ? i.fornecedor ?? null : null, preco: null, media_4s: null, projecao: null, base: null,
+      confianca: "baixa", qtd_sugerida: pedida, motivo: lista.length ? "Não achei este produto com certeza nas notas: confira o fornecedor e o preço." : "Este produto não aparece nas notas de compra dos últimos 120 dias." };
+  }
+  const motivos: string[] = [];
+  const briga = conflito(pedidoTxt, c.descricao_na_nota);
+  if (briga) motivos.push(`Confira o produto: ${briga}.`);
+  const casa = c.casa_da_pessoa, grupo = c.grupo_todo;
+  const daCasa = (casa?.compras_4s ?? 0) > 0;
+  const media = daCasa ? Number(casa!.media_semanal_4s) : (grupo?.compras_4s ?? 0) > 0 ? Number(grupo!.media_semanal_4s) : null;
+  const compras = daCasa ? casa!.compras_4s : grupo?.compras_4s ?? 0;
+  const un = String(c.unidade ?? "").toUpperCase();
+  const fracionado = ["KG", "L", "LT", "G", "ML"].includes(un);
+  const projecao = media && media > 0 ? (fracionado ? Math.ceil(media * (1 + aumento / 100) * 2) / 2 : Math.ceil(media * (1 + aumento / 100))) : null;
+  const base = media ? `${compras} ${compras === 1 ? "compra" : "compras"} em 4 semanas · ${curto(c.fornecedor ?? "")} · ${fmt(media)} ${un.toLowerCase()}/semana ${daCasa ? "na casa" : "no grupo"}` : null;
+  let sugerida = pedida;
+  if (projecao && pedida == null) { sugerida = projecao; motivos.push(`O pedido não traz quantidade; sugeri a média (${fmt(media!)} ${un.toLowerCase()}/semana).`); }
+  else if (projecao && pedida != null && compras >= 2 && (pedida > projecao * 1.5 || pedida < projecao * 0.5)) {
+    sugerida = projecao;
+    motivos.push(`Pediu ${fmt(pedida)}; a média é ${fmt(media!)} ${un.toLowerCase()}/semana (${compras} compras em 4 semanas). Confira se a unidade do pedido é a mesma da nota (${un.toLowerCase()}).`);
+  }
+  const sem = Number(c.semelhanca ?? 0);
+  const recente = c.ultima ? (Date.now() - new Date(c.ultima).getTime()) / 86400000 <= 60 : false;
+  const confianca = briga ? "media" : sem >= 0.6 && recente ? "alta" : "media";
+  const motivoGemini = typeof i.motivo === "string" && i.motivo.trim() ? i.motivo.trim() : "";
+  return { ...saida, produto_nota: c.descricao_na_nota, fornecedor: c.fornecedor ?? null, unidade: c.unidade ?? i.unidade ?? null,
+    preco: c.ultimo_preco ?? null, media_4s: media, projecao, base, qtd_sugerida: sugerida, confianca,
+    motivo: motivos.length ? motivos.join(" ") : motivoGemini || null };
 }
 
 // Etapa 2: liga os itens, faz as contas e grava as listas
@@ -266,7 +355,7 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
   try {
     const anexos = await Promise.all((d.midias ?? []).map(anexo));
     resp = await gemini(INSTRUCOES, [...anexos, { text: `${d.texto}\n\n<candidatos>\n${JSON.stringify(d.candidatos)}\n</candidatos>` }],
-      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 8192);
+      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048);
   } catch (e) {
     // cota ou demora: fica para a próxima rodada; depois de 3 tentativas, falha
     const tentativas = (d.tentativas ?? 0) + 1;
@@ -280,9 +369,15 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
   }
   const entrega = resp.json as { listas: Lista[]; observacao: string };
   const uso = { ...(a.uso ?? {}), modelo_etapa2: resp.modelo, listas: resp.uso, segundos_etapa2: Math.round((Date.now() - inicio) / 1000) };
+  const porItem = new Map((d.candidatos ?? []).map((x) => [normal(x.item), x] as [string, ItemCand]));
+  const todos = (d.candidatos ?? []).flatMap((x) => x.candidatos ?? []);
+  const aumento = Number(d.aumento ?? 0);
   const listas = (entrega.listas ?? [])
-    .map((l) => ({ titulo: String(l.titulo ?? "").trim(), itens: (l.itens ?? []).filter((i) => i && String(i.nome ?? "").trim()) }))
+    .map((l) => ({ titulo: String(l.titulo ?? "").trim(), pedido: String(l.pedido ?? "").trim(),
+      itens: (l.itens ?? []).filter((i) => i && String(i.nome ?? "").trim()).map((i) => ajustar(i, porItem, todos, aumento)) }))
     .filter((l) => l.itens.length);
+  // cada lista guarda só o seu trecho do pedido; a observação da análise vai na primeira
+  if (entrega.observacao && listas[0]) listas[0].pedido = `${listas[0].pedido || d.pedido}\n\nObservação da análise: ${entrega.observacao}`;
   const nItens = listas.reduce((s, l) => s + l.itens.length, 0);
   if (d.teste) {
     await supabase.from("compras_testes").update({ resultado: { listas, observacao: entrega.observacao, uso }, fim: new Date().toISOString() }).eq("id", d.teste);
@@ -293,7 +388,7 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
     await fechar({ status: "sem_pedido", mensagens: d.mensagens, itens: 0, erro: entrega.observacao || null, uso });
     return { analise: a.id, sem_itens: true };
   }
-  const texto = entrega.observacao ? `${d.pedido}\n\nObservação da análise: ${entrega.observacao}` : d.pedido;
+  const texto = d.pedido; // só para lista sem trecho próprio
   const { error } = await supabase.rpc("compras_auto_gravar",
     { p_pessoa: a.pessoa_id, p_semana: a.semana_id, p_listas: listas, p_pedido_texto: texto, p_modo: d.modo });
   if (error) {

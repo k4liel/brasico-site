@@ -79,3 +79,11 @@ a.botao { display: inline-flex; align-items: center; text-decoration: none; }
 .cp-aviso > span { flex: 1; }
 .cp-aviso.aprovada { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 @media print { .cp-avisos, .cp-aviso-novo, .cp-senha { display: none !important; } }
+
+/* Listas que abrem e fecham (várias listas da mesma pessoa começam fechadas) */
+.cp-lista-cabeca { align-items: center; }
+.cp-abre { flex: none; width: 32px; height: 32px; display: inline-grid; place-items: center; padding: 0; border-radius: 8px;
+  background: none; border: 1px solid var(--border); color: var(--muted); font-size: 14px; cursor: pointer; }
+.cp-abre:hover { color: var(--strong); border-color: var(--gold); }
+.cp-fechada .cp-lista-titulo { cursor: pointer; }
+.cp-fechada { padding-top: 12px; padding-bottom: 12px; }
