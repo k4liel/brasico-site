@@ -8,7 +8,8 @@ import Gaveta from "./Gaveta";
 import PainelDividas, { type Divida } from "./PainelDividas";
 import { Acervo, type Capitulo, type Fonte, SITUACAO_FONTE } from "./ReceitaGuia";
 
-// Fiscal do grupo numa tela só: o que pede atenção, as 14 inscrições do grupo e o detalhe de cada uma num painel ao lado.
+// Fiscal do grupo numa tela só: o que pede atenção, as inscrições do grupo e o detalhe de cada uma num painel ao lado.
+// Empresas desligadas (fiscal_empresas.desligada_em) ficam fora de tudo, num bloco recolhido no fim.
 // Dados: cadastro público de todos os CNPJs (fiscal_empresas, BrasilAPI) e, para quem tem contrato do SERPRO
 // (Integra Contador), situação fiscal, caixa postal, pagamentos, DCTFWeb, MIT, Simples e parcelamentos
 // (receita_execucoes, receita_respostas, receita_mensagens, receita_pagamentos). Custos ao vivo em receita_chamadas.
@@ -21,8 +22,9 @@ type FiscalEmpresa = {
   natureza: string | null; porte: string | null; capital: number | null; abertura: string | null; simples: boolean | null;
   simples_desde: string | null; simples_exclusao: string | null; regime: string | null; regime_ano: number | null;
   socios: number | null; socios_exterior: number | null; atualizado_em: string | null;
-  // Operação encerrada (o CNPJ continua aberto até a baixa): a V6, do Cicchetti Midway, em 31/10/2026
-  operacao_encerrada_em: string | null;
+  // Desligada do grupo (sem vínculo): fica só como histórico, fora dos números e alertas.
+  // A V6 (Cicchetti Midway) e as sócias dela foram desligadas em 31/10/2026.
+  desligada_em: string | null; desligada_motivo: string | null;
 };
 type Config = { id: string; producao_ligada: boolean; limite_diario_cobradas: number; orcamento_ciclo: number };
 type Execucao = { id: string; empresa_id: string; tipo: Tipo; status: string; erro: string; origem: string; created_at: string };
@@ -91,6 +93,8 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const [acesso, setAcesso] = useState<boolean | null>(null);
   const [carregado, setCarregado] = useState(false);
   const [empresas, setEmpresas] = useState<FiscalEmpresa[]>([]);
+  // Empresas desligadas do grupo: só histórico, num bloco à parte no fim da página
+  const [desligadas, setDesligadas] = useState<FiscalEmpresa[]>([]);
   const [configs, setConfigs] = useState<Config[]>([]);
   const [certs, setCerts] = useState<Certificado[]>([]);
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
@@ -122,7 +126,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const carregar = useCallback(async () => {
     const desde = new Date(Date.now() - 400 * 86400000).toISOString();
     const [fe, cf, ce, x, sf, m, rl, pg, rs, ch, ro, dv] = await Promise.all([
-      supabase.from("fiscal_empresas").select("cnpj,raiz,ordem,apelido,papel,grupo,unidades,observacao,razao,fantasia,situacao,municipio,uf,cnae,natureza,porte,capital,abertura,simples,simples_desde,simples_exclusao,regime,regime_ano,socios,socios_exterior,atualizado_em,operacao_encerrada_em").order("ordem"),
+      supabase.from("fiscal_empresas").select("cnpj,raiz,ordem,apelido,papel,grupo,unidades,observacao,razao,fantasia,situacao,municipio,uf,cnae,natureza,porte,capital,abertura,simples,simples_desde,simples_exclusao,regime,regime_ano,socios,socios_exterior,atualizado_em,desligada_em,desligada_motivo").order("ordem"),
       supabase.from("receita_empresas").select("id,producao_ligada,limite_diario_cobradas,orcamento_ciclo"),
       supabase.from("certificados").select("cnpj,validade"),
       supabase.from("receita_execucoes").select("id,empresa_id,tipo,status,erro,origem,created_at").eq("ambiente", "producao").order("created_at", { ascending: false }).limit(150),
@@ -135,7 +139,9 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       supabase.from("receita_rotinas").select("id,nome,quando,ligada,ultima_vez").order("ordem"),
       supabase.from("fiscal_dividas").select("id,cnpj,orgao,categoria,detalhe,competencia,vencimento,principal,multa,juros,total,situacao,sensivel,fonte,data_base").is("arquivado_em", null),
     ]);
-    setEmpresas((fe.data ?? []) as FiscalEmpresa[]);
+    const todas = (fe.data ?? []) as FiscalEmpresa[];
+    setEmpresas(todas.filter((e) => !e.desligada_em));
+    setDesligadas(todas.filter((e) => e.desligada_em));
     setConfigs(((cf.data ?? []) as Config[]).map((c) => ({ ...c, orcamento_ciclo: Number(c.orcamento_ciclo) })));
     setCerts((ce.data ?? []) as Certificado[]);
     setExecucoes((x.data ?? []) as Execucao[]);
@@ -164,7 +170,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       supabase.from("fiscal_fontes").select("id,area,nome,o_que_da,situacao,como,falta,custo,prioridade,onde,ordem").order("ordem"),
     ]);
     setAcervo((a.data ?? []) as Capitulo[]);
-    setFontes((f.data ?? []) as Fonte[]);
+    setFontes(((f.data ?? []) as Fonte[]).filter((x) => x.situacao !== "desligada"));
   }, [supabase]);
 
   useEffect(() => {
@@ -286,10 +292,6 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       const e = empresas.find((x) => x.cnpj === c.cnpj);
       if (n <= 45) a.push({ nivel: n < 0 ? "erro" : "atencao", empresa: c.cnpj, titulo: n < 0 ? "Certificado digital vencido" : `Certificado digital vence em ${plural(n, "dia", "dias")}`, detalhe: `${e?.apelido ?? cnpjFmt(c.cnpj)} · ${dia(diaSP(c.validade))}` });
     }
-    // Empresa sem operação e com o CNPJ ainda aberto: lembrar da baixa e das obrigações até lá
-    for (const e of empresas.filter((x) => x.operacao_encerrada_em && x.situacao === "ATIVA"))
-      a.push({ nivel: "info", empresa: e.cnpj, titulo: `${e.apelido}: operação encerrada em ${dia(e.operacao_encerrada_em)}, CNPJ ainda aberto`,
-        detalhe: `${e.unidades || e.apelido} · até a baixa seguem DCTFWeb, ECF e ECD; combinar a baixa com o contador` });
     const peso = { erro: 0, atencao: 1, info: 2 };
     return a.sort((x, y) => peso[x.nivel] - peso[y.nivel]);
   }, [leituras, certs, empresas]);
@@ -345,7 +347,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const ultimaLeitura = execucoes.find((x) => x.status === "ok")?.created_at;
   const comAcesso = empresas.filter((e) => ligadas.has(e.raiz));
   const semAcesso = empresas.filter((e) => !ligadas.has(e.raiz));
-  const empresaAberta = empresas.find((e) => e.cnpj === aberta) ?? null;
+  const empresaAberta = empresas.find((e) => e.cnpj === aberta) ?? desligadas.find((e) => e.cnpj === aberta) ?? null;
   // Dívidas do painel central: o relatório de hoje da Receita substitui o levantamento da Receita e da PGFN daquela empresa
   const dividas: Divida[] = [];
   const releu = new Set<string>();
@@ -462,9 +464,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                   <button key={e.cnpj} className="fx-cartao" onClick={() => abrir(e.cnpj)}>
                     <div className="fx-cartao-topo">
                       <div><strong>{e.apelido}</strong><span className="fx-cnpj">{cnpjFmt(e.cnpj)}</span></div>
-                      {e.operacao_encerrada_em
-                        ? <span className="fx-tag" title={`CNPJ ${(e.situacao ?? "").toLowerCase()} na Receita até a baixa`}>sem operação</span>
-                        : <span className={e.situacao === "ATIVA" ? "fx-tag ok" : "fx-tag perigo"}>{(e.situacao ?? "—").toLowerCase()}</span>}
+                      <span className={e.situacao === "ATIVA" ? "fx-tag ok" : "fx-tag perigo"}>{(e.situacao ?? "—").toLowerCase()}</span>
                     </div>
                     <p className="fx-papel">{e.papel}</p>
                     <span className="fx-rodape">{GRUPOS[e.grupo] ?? e.grupo} · {(e.municipio ?? "").toLowerCase()} · {e.regime ? e.regime.toLowerCase() : e.simples ? "simples" : "regime não informado"}</span>
@@ -472,6 +472,29 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                 ))}
               </div>
             </section>
+
+            {/* Desligadas do grupo: sem vínculo, só histórico (fora dos números e alertas acima) */}
+            {desligadas.length > 0 && (
+              <details className="fx-bloco fx-desligadas">
+                <summary className="fx-bloco-cabeca">
+                  <h2>Desligadas do grupo</h2>
+                  <span className="muted">{plural(desligadas.length, "empresa", "empresas")} sem vínculo desde {dia(desligadas[0].desligada_em)} · só histórico, fora dos números e alertas</span>
+                </summary>
+                {desligadas[0].desligada_motivo && <p className="fx-nota">{desligadas[0].desligada_motivo}</p>}
+                <div className="fx-cartoes compactos">
+                  {desligadas.map((e) => (
+                    <button key={e.cnpj} className="fx-cartao desligada" onClick={() => abrir(e.cnpj)}>
+                      <div className="fx-cartao-topo">
+                        <div><strong>{e.apelido}</strong><span className="fx-cnpj">{cnpjFmt(e.cnpj)}</span></div>
+                        <span className="fx-tag">desligada</span>
+                      </div>
+                      <p className="fx-papel">{e.papel}</p>
+                      <span className="fx-rodape">{(e.municipio ?? "").toLowerCase()} · desligada em {dia(e.desligada_em)}</span>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            )}
 
             {/* Biblioteca e mapa */}
             <section className="fx-bloco fx-biblioteca">
@@ -687,7 +710,7 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
         <dl className="fx-kv">
           <div><dt>Razão social</dt><dd>{e.razao ?? "—"}</dd></div>
           {e.fantasia && <div><dt>Nome fantasia</dt><dd>{e.fantasia}</dd></div>}
-          <div><dt>Situação</dt><dd>{e.situacao ?? "—"}{e.operacao_encerrada_em ? ` · operação encerrada em ${dia(e.operacao_encerrada_em)}, CNPJ aberto até a baixa` : ""}</dd></div>
+          <div><dt>Situação</dt><dd>{e.situacao ?? "—"}{e.desligada_em ? ` na Receita · desligada do grupo em ${dia(e.desligada_em)}, sem vínculo` : ""}</dd></div>
           <div><dt>Papel no grupo</dt><dd>{e.papel}{e.unidades ? ` · ${e.unidades}` : ""}</dd></div>
           <div><dt>Município</dt><dd>{e.municipio ?? "—"}/{e.uf ?? ""}</dd></div>
           <div><dt>Atividade</dt><dd>{e.cnae ?? "—"}</dd></div>
