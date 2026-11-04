@@ -148,9 +148,9 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
 .cp-kpi small { font-size: 12.5px; color: var(--muted); }
 
 .cp-tarefa { border-left: 4px solid var(--border) !important; }
-.cp-tarefa.acao { border-left-color: var(--gold) !important; background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
-.cp-tarefa.aviso { border-left-color: var(--danger) !important; }
-.cp-tarefa.info { border-left-color: color-mix(in srgb, var(--muted) 60%, transparent) !important; }
+.cp-tarefa.t-acao { border-left-color: var(--gold) !important; background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
+.cp-tarefa.t-aviso { border-left-color: var(--danger) !important; }
+.cp-tarefa.t-info { border-left-color: color-mix(in srgb, var(--muted) 60%, transparent) !important; }
 
 .cp-casas { display: grid; gap: 10px; }
 .cp-casa { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; }

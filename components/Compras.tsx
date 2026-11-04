@@ -4,7 +4,6 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { NotaAvulsa } from "./Notas";
-import IndicePrecos from "./IndicePrecos";
 
 // Compras (Operação · fase 2): pedidos do grupo COMPRAS analisados pelo Claude viram listas por pessoa
 // (uma por pedido: mercado, Ceasa...), cada item ligado ao produto das notas, com a média de 4 semanas e a
@@ -39,7 +38,7 @@ const ler = (s: string) => (s.trim() === "" ? null : Number(s.replace(/\./g, "")
 const diaSemana = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 const fimSemana = (iso: string) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + 6); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); };
 
-type Aba = "painel" | "andamento" | "final" | "fornecedores" | "notas" | "precos" | "pessoas" | "avulsa";
+type Aba = "painel" | "andamento" | "final" | "fornecedores" | "pessoas" | "avulsa";
 
 export default function Compras({ userEmail }: { userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -100,7 +99,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
           <>
             <div className="cp-abas" role="tablist">
-              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista única e pedidos"], ["fornecedores", "Fornecedores"], ["notas", "Notas recebidas"], ["precos", "Índice de preços"], ["avulsa", "Nota avulsa"],
+              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista única e pedidos"], ["fornecedores", "Fornecedores"], ["avulsa", "Nota avulsa"],
                  ...(papel === "socio" ? [["pessoas", "Pessoas e acesso"]] : [])] as [Aba, string][]).map(([k, t]) => (
                 <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? "on" : ""} onClick={() => setAba(k)}>{t}</button>
               ))}
@@ -110,8 +109,6 @@ export default function Compras({ userEmail }: { userEmail: string }) {
             {aba === "andamento" && <Andamento semana={semana} />}
             {aba === "final" && <ListaUnica semana={semana} />}
             {aba === "fornecedores" && <Fornecedores />}
-            {aba === "notas" && <NotasRecebidas />}
-            {aba === "precos" && <IndicePrecos />}
             {aba === "avulsa" && <NotaAvulsa empresas={[]} onPronto={() => {}} />}
             {aba === "pessoas" && papel === "socio" && <Pessoas />}
           </>
@@ -881,7 +878,7 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
           {!tarefas.length ? <p className="es-tudo-certo">Tudo em dia nesta semana.</p> : (
             <ol className="cp-tarefas">
               {tarefas.map((x) => (
-                <li key={x.t} className={`cp-tarefa ${x.tom}`}>
+                <li key={x.t} className={`cp-tarefa t-${x.tom}`}>
                   <span><b>{x.t}</b><small>{x.d}</small></span>
                   {x.acao && <button className={x.tom === "acao" ? "small" : "ghost small"} onClick={() => irPara(x.acao![1])}>{x.acao[0]}</button>}
                 </li>
@@ -935,7 +932,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
             ))}
           </ul>
         )}
-        <button className="ghost small" onClick={() => irPara("precos")}>Abrir o índice de preços</button>
       </section>
     </section>
   );
@@ -1241,76 +1237,6 @@ function FichaFornecedor({ forn, onFechar, onSalvo }: { forn: Forn | null; onFec
         </footer>
       </form>
     </div>
-  );
-}
-
-// Notas de compra recentes (para a Fernanda conferir e achar a nota de cada pedido)
-type NotaRecente = { chave: string; emissao: string; valor: number; emitente: string; casa: string; completa: boolean; origem: string; itens: number; pedido: { fornecedor: string; status: string } | null };
-type ItemNota = { n_item: number; descricao: string; unidade: string; quantidade: number; valor_unitario: number; valor_total: number };
-function NotasRecebidas() {
-  const supabase = useMemo(() => createClient(), []);
-  const [dias, setDias] = useState(21);
-  const [busca, setBusca] = useState("");
-  const [termo, setTermo] = useState("");
-  const [notas, setNotas] = useState<NotaRecente[] | null>(null);
-  const [aberta, setAberta] = useState<string | null>(null);
-  const [itens, setItens] = useState<ItemNota[]>([]);
-  const [erro, setErro] = useState("");
-  useEffect(() => {
-    setNotas(null);
-    supabase.rpc("compras_notas_recentes", { p_dias: dias, p_busca: termo || null }).then(({ data, error }) => {
-      if (error) setErro(error.message);
-      setNotas((data ?? []) as NotaRecente[]);
-    });
-  }, [supabase, dias, termo]);
-  async function abrir(chave: string) {
-    if (aberta === chave) return setAberta(null);
-    setAberta(chave); setItens([]);
-    const { data } = await supabase.from("notas_itens").select("n_item,descricao,unidade,quantidade,valor_unitario,valor_total").eq("chave", chave).order("n_item");
-    setItens((data ?? []) as ItemNota[]);
-  }
-  const CASA: Record<string, string> = { ...UNIDADES, grupo: "outra empresa do grupo" };
-  const total = (notas ?? []).reduce((s, n) => s + Number(n.valor ?? 0), 0);
-  return (
-    <section className="cp-notas">
-      <form className="cp-notas-filtro" onSubmit={(e) => { e.preventDefault(); setTermo(busca.trim()); }}>
-        <input value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Fornecedor ou item (ex.: Eloi, queijo)" aria-label="Buscar nas notas" />
-        <select value={dias} onChange={(v) => setDias(Number(v.target.value))} aria-label="Período">
-          <option value={7}>últimos 7 dias</option><option value={21}>últimas 3 semanas</option><option value={60}>últimos 2 meses</option><option value={120}>últimos 4 meses</option>
-        </select>
-        <button className="ghost small">Buscar</button>
-      </form>
-      {erro && <p className="tv-alerta">{erro}</p>}
-      {!notas ? <p className="muted">Carregando as notas…</p> : !notas.length ? <p className="muted">Nenhuma nota nesse período.</p> : (
-        <>
-          <p className="muted">{notas.length} notas · {brl(total)}. As notas chegam da SEFAZ todo dia de manhã; a compra sem nota entra como nota avulsa.</p>
-          <ul className="cp-lista-notas">
-            {notas.map((n) => (
-              <li key={n.chave} className={aberta === n.chave ? "on" : ""}>
-                <button className="cp-nota-linha" onClick={() => abrir(n.chave)} aria-expanded={aberta === n.chave}>
-                  <span><b>{n.emitente}</b><small>{new Date(n.emissao).toLocaleDateString("pt-BR")} · {CASA[n.casa] ?? n.casa} · {n.itens} itens{n.origem === "avulsa" ? " · avulsa" : ""}{n.completa ? "" : " · só resumo"}</small></span>
-                  {n.pedido && <span className={`cp-ped ${n.pedido.status}`}>pedido da semana</span>}
-                  <b className="n">{brl(n.valor)}</b>
-                </button>
-                {aberta === n.chave && (
-                  <div className="cp-nota-itens">
-                    {n.completa && <a className="ghost small botao" href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">Ver PDF da nota</a>}
-                    {!itens.length ? <p className="muted">{n.completa ? "Carregando os itens…" : "A nota ainda está só em resumo, sem itens."}</p> : (
-                      <div className="nf-tabela-wrap">
-                        <table className="nf-tabela">
-                          <thead><tr><th>Item</th><th className="n">Qtd.</th><th>Unid.</th><th className="n">Preço</th><th className="n">Total</th></tr></thead>
-                          <tbody>{itens.map((i) => <tr key={i.n_item}><td>{i.descricao}</td><td className="n">{num(i.quantidade)}</td><td>{i.unidade}</td><td className="n">{brl(i.valor_unitario)}</td><td className="n">{brl(i.valor_total)}</td></tr>)}</tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </section>
   );
 }
 
