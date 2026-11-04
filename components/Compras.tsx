@@ -5,23 +5,29 @@ import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { NotaAvulsa } from "./Notas";
 
-// Compras (Operação · fase 2): pedidos do grupo COMPRAS analisados pelo Claude viram uma lista por
-// pessoa; cada pessoa revisa e aprova a sua; a Fernanda junta as aprovadas na lista única por
-// fornecedor e gera o PDF. Tabelas e funções em supabase/compras.sql.
+// Compras (Operação · fase 2): pedidos do grupo COMPRAS analisados pelo Claude viram listas por pessoa
+// (uma por pedido: mercado, Ceasa...), cada item ligado ao produto das notas, com a média de 4 semanas e a
+// projeção; cada pessoa revisa, junta listas se quiser e aprova; a Fernanda junta as aprovadas na lista
+// única por fornecedor e gera o PDF. Tabelas e funções em supabase/compras.sql e compras_listas_metricas.sql.
 type Papel = "socio" | "compras" | "solicitante" | null;
 type Pessoa = { id: string; nome: string; unidade: string | null; setor: string | null; papel: string; email?: string | null;
   user_id: string | null; wa_nome: string | null; ativo: boolean; convidado_em: string | null; registra_estoque?: boolean };
-type Semana = { id: string; inicio: string; status: string };
-type Lista = { id: string; semana_id: string; pessoa_id: string; status: string; pedido_texto: string | null; analisada_em: string | null; aprovada_em: string | null };
+type Semana = { id: string; inicio: string; status: string; aumento_pct?: number };
+type Lista = { id: string; semana_id: string; pessoa_id: string; status: string; titulo: string | null; pedido_texto: string | null; analisada_em: string | null; aprovada_em: string | null; created_at: string };
 type Item = { id: number; lista_id: string; ordem: number; nome: string; fornecedor: string | null; unidade: string | null;
   qtd_pedida: number | null; qtd_sugerida: number | null; motivo: string | null; qtd: number | null; preco: number | null;
-  removido: boolean; incluido_na_revisao: boolean };
+  removido: boolean; incluido_na_revisao: boolean; media_4s: number | null; projecao: number | null; base: string | null;
+  produto_nota: string | null; confianca: "alta" | "media" | "baixa" | null };
 type Final = { id: number; fornecedor: string; nome: string; unidade: string; qtd: number | null; preco: number | null;
   origem: { pessoa: string; unidade: string; setor: string; qtd: number }[]; removido: boolean; editado: boolean };
 
 const UNIDADES: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", sempre_vivo: "Sempre Vivo", filha_da_lua: "Filha da Lua" };
 const SETORES: Record<string, string> = { bar: "Bar", cozinha: "Cozinha", salao: "Salão", producao: "Produção" };
 const STATUS: Record<string, string> = { aguardando: "aguardando análise", em_revisao: "em revisão", aprovada: "aprovada" };
+const ATIVAS = ["aguardando", "em_revisao", "aprovada"];
+const CONFIANCA: Record<string, string> = { alta: "produto certo nas notas", media: "produto parecido nas notas", baixa: "não achado nas notas" };
+// Situação de uma pessoa com várias listas: aprovada só quando todas estão aprovadas
+const situacao = (ls: Lista[]) => (!ls.length ? null : ls.every((l) => l.status === "aprovada") ? "aprovada" : ls.some((l) => l.status === "em_revisao") ? "em_revisao" : "aguardando");
 const brl = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
 const num = (v: number | null | undefined) => (v == null ? "" : String(v).replace(".", ","));
 const ler = (s: string) => (s.trim() === "" ? null : Number(s.replace(/\./g, "").replace(",", ".")));
@@ -44,7 +50,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
       setEu(r.pessoa);
       if (!r.papel) return;
       const { data: atual } = await supabase.rpc("compras_semana_atual");
-      const { data: ss } = await supabase.from("compras_semanas").select("id,inicio,status").order("inicio", { ascending: false }).limit(20);
+      const { data: ss } = await supabase.from("compras_semanas").select("id,inicio,status,aumento_pct").order("inicio", { ascending: false }).limit(20);
       const lista = (ss ?? []) as Semana[];
       setSemanas(lista);
       setSemana(lista.find((s) => s.id === atual) ?? lista[0] ?? null);
@@ -123,27 +129,81 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
   );
 }
 
-function useLista(semanaId: string, pessoaId: string | null) {
+function useListas(semanaId: string, pessoaId: string | null) {
   const supabase = useMemo(() => createClient(), []);
-  const [lista, setLista] = useState<Lista | null | undefined>(undefined);
+  const [listas, setListas] = useState<Lista[] | undefined>(undefined);
   const [itens, setItens] = useState<Item[]>([]);
   const carregar = useCallback(async () => {
     if (!pessoaId) return;
-    const { data: l } = await supabase.from("compras_listas").select("*").eq("semana_id", semanaId).eq("pessoa_id", pessoaId).maybeSingle();
-    setLista((l as Lista | null) ?? null);
-    if (l) {
-      const { data: it } = await supabase.from("compras_itens").select("*").eq("lista_id", (l as Lista).id).order("ordem").order("id");
+    const { data: l } = await supabase.from("compras_listas").select("*").eq("semana_id", semanaId).eq("pessoa_id", pessoaId)
+      .in("status", ATIVAS).order("created_at");
+    const ls = (l ?? []) as Lista[];
+    setListas(ls);
+    if (ls.length) {
+      const { data: it } = await supabase.from("compras_itens").select("*").in("lista_id", ls.map((x) => x.id)).order("ordem").order("id");
       setItens((it ?? []) as Item[]);
     } else setItens([]);
   }, [supabase, semanaId, pessoaId]);
   useEffect(() => { carregar(); }, [carregar]);
-  return { lista, itens, carregar };
+  return { listas, itens, carregar };
+}
+
+// Juntar duas listas da mesma pessoa numa só (os itens vão para a primeira; a segunda fica guardada como juntada)
+function JuntarListas({ listas, onMudou }: { listas: Lista[]; onMudou: () => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const abertas = listas.filter((l) => l.status !== "aprovada");
+  const [destino, setDestino] = useState("");
+  const [origem, setOrigem] = useState("");
+  const [erro, setErro] = useState("");
+  if (abertas.length < 2) return null;
+  const nome = (l: Lista) => l.titulo || `Lista de ${new Date(l.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
+  async function juntar(ev: React.FormEvent) {
+    ev.preventDefault();
+    setErro("");
+    const { error } = await supabase.rpc("compras_listas_juntar", { p_destino: destino, p_origem: origem });
+    if (error) return setErro(error.message);
+    setDestino(""); setOrigem("");
+    onMudou();
+  }
+  return (
+    <form className="cp-juntar" onSubmit={juntar}>
+      <span className="cp-juntar-rotulo">Juntar listas</span>
+      <select value={destino} onChange={(v) => setDestino(v.target.value)} aria-label="Lista que fica">
+        <option value="">Lista que fica…</option>
+        {abertas.map((l) => <option key={l.id} value={l.id}>{nome(l)}</option>)}
+      </select>
+      <span aria-hidden="true">+</span>
+      <select value={origem} onChange={(v) => setOrigem(v.target.value)} aria-label="Lista que entra nela">
+        <option value="">Lista que entra nela…</option>
+        {abertas.filter((l) => l.id !== destino).map((l) => <option key={l.id} value={l.id}>{nome(l)}</option>)}
+      </select>
+      <button className="ghost small" disabled={!destino || !origem}>Juntar</button>
+      {erro && <p className="tv-alerta">{erro}</p>}
+    </form>
+  );
+}
+
+function Listas({ semana, listas, itens, carregar, gestor }: { semana: Semana; listas: Lista[]; itens: Item[]; carregar: () => void; gestor: boolean }) {
+  const aberta = semana.status === "aberta";
+  return (
+    <>
+      {listas.length > 1 && (
+        <p className="muted cp-listas-resumo">{listas.length} listas nesta semana · {listas.filter((l) => l.status === "aprovada").length} aprovadas.
+          Confira e aprove cada uma; se preferir, junte duas numa só.</p>
+      )}
+      {aberta && <JuntarListas listas={listas} onMudou={carregar} />}
+      {listas.map((l) => (
+        <EditorLista key={l.id} lista={l} itens={itens.filter((i) => i.lista_id === l.id)}
+          podeEditar={aberta && (gestor || l.status !== "aprovada")} onMudou={carregar} gestor={gestor} />
+      ))}
+    </>
+  );
 }
 
 function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
-  const { lista, itens, carregar } = useLista(semana.id, pessoa.id);
-  if (lista === undefined) return <p className="muted">Carregando a sua lista…</p>;
-  if (!lista || !itens.length) {
+  const { listas, itens, carregar } = useListas(semana.id, pessoa.id);
+  if (listas === undefined) return <p className="muted">Carregando as suas listas…</p>;
+  if (!listas.length) {
     return (
       <>
         <Etapas atual={0} />
@@ -156,8 +216,8 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
   }
   return (
     <>
-      <Etapas atual={lista.status === "aprovada" ? 3 : 2} />
-      <EditorLista lista={lista} itens={itens} podeEditar={semana.status === "aberta" && lista.status !== "aprovada"} onMudou={carregar} gestor={false} />
+      <Etapas atual={situacao(listas) === "aprovada" ? 3 : 2} />
+      <Listas semana={semana} listas={listas} itens={itens} carregar={carregar} gestor={false} />
     </>
   );
 }
@@ -188,6 +248,12 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
     setNovo({ nome: "", fornecedor: "", unidade: "", qtd: "", preco: "" });
     onMudou();
   }
+  async function renomear(titulo: string) {
+    setErro("");
+    const { error } = await supabase.rpc("compras_lista_titulo", { p_lista: lista.id, p_titulo: titulo });
+    if (error) setErro(error.message);
+    onMudou();
+  }
   async function aprovar(sim: boolean) {
     setErro("");
     const { error } = await supabase.rpc("compras_lista_aprovar", { p_lista: lista.id, p_aprovar: sim });
@@ -198,6 +264,10 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
   return (
     <section className="av-bloco cp-lista">
       <div className="cp-lista-cabeca">
+        <div className="cp-lista-titulo">
+          {podeEditar ? <input defaultValue={lista.titulo ?? ""} placeholder="Nome da lista (ex.: Mercado, Ceasa)" aria-label="Nome da lista"
+            onBlur={(v) => v.target.value !== (lista.titulo ?? "") && renomear(v.target.value)} /> : <h3>{lista.titulo || "Lista"}</h3>}
+        </div>
         <div className="cp-lista-total"><span>{vivos.length} itens</span><b>{brl(total)}</b></div>
         <span className={`estado ${lista.status === "aprovada" ? "tv-ok" : "tv-revisar"}`}>{STATUS[lista.status] ?? lista.status}</span>
       </div>
@@ -206,7 +276,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
       )}
       <div className="nf-tabela-wrap">
         <table className="nf-tabela cp-tabela">
-          <thead><tr><th>Item</th><th>Fornecedor</th><th className="n">Pediu</th><th className="n">Sugerido</th><th className="n">Pedir</th><th>Unid.</th><th className="n">Preço</th><th /></tr></thead>
+          <thead><tr><th>Item</th><th>Fornecedor</th><th className="n">Pediu</th><th className="n" title="Compra média por semana nas últimas 4 semanas (notas fiscais)">Média 4 sem.</th><th className="n" title="Média × (1 + % da semana), na embalagem">Projeção</th><th className="n">Sugerido</th><th className="n">Pedir</th><th>Unid.</th><th className="n">Preço</th><th /></tr></thead>
           <tbody>
             {itens.map((i) => {
               const difere = i.qtd_sugerida != null && i.qtd_pedida != null && i.qtd_sugerida !== i.qtd_pedida;
@@ -214,11 +284,19 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
                 <tr key={i.id} className={i.removido ? "cp-tirado" : ""}>
                   <td>
                     {podeEditar && !i.removido ? <input defaultValue={i.nome} onBlur={(v) => v.target.value !== i.nome && salvar(i, { nome: v.target.value })} aria-label="Item" /> : <span>{i.nome}</span>}
+                    {(i.produto_nota || i.confianca) && (
+                      <small className="cp-nota">
+                        {i.confianca && <span className={`cp-conf ${i.confianca}`} title={CONFIANCA[i.confianca]}>{i.confianca === "alta" ? "✓" : i.confianca === "media" ? "≈" : "?"}</span>}
+                        {i.produto_nota ? `na nota: ${i.produto_nota}` : CONFIANCA[i.confianca ?? ""]}
+                      </small>
+                    )}
                     {i.motivo && <small className={difere ? "cp-motivo atencao" : "cp-motivo"}>{i.motivo}</small>}
                     {i.incluido_na_revisao && <small className="cp-motivo">incluído na revisão</small>}
                   </td>
                   <td>{podeEditar && !i.removido ? <input defaultValue={i.fornecedor ?? ""} onBlur={(v) => v.target.value !== (i.fornecedor ?? "") && salvar(i, { fornecedor: v.target.value })} aria-label="Fornecedor" /> : i.fornecedor ?? "—"}</td>
                   <td className="n">{num(i.qtd_pedida) || "—"}</td>
+                  <td className="n" title={i.base ?? undefined}>{i.media_4s != null ? num(Math.round(i.media_4s * 100) / 100) : "—"}{i.base && <small className="cp-base">{i.base}</small>}</td>
+                  <td className="n">{num(i.projecao) || "—"}</td>
                   <td className={difere ? "n cp-difere" : "n"}>{num(i.qtd_sugerida) || "—"}</td>
                   <td className="n">{podeEditar && !i.removido ? <input className="n" inputMode="decimal" defaultValue={num(i.qtd)} onBlur={(v) => ler(v.target.value) !== i.qtd && salvar(i, { qtd: ler(v.target.value) })} aria-label="Quantidade final" /> : num(i.qtd)}</td>
                   <td>{podeEditar && !i.removido ? <input defaultValue={i.unidade ?? ""} onBlur={(v) => v.target.value !== (i.unidade ?? "") && salvar(i, { unidade: v.target.value })} aria-label="Unidade" /> : i.unidade ?? ""}</td>
@@ -272,7 +350,7 @@ function Etapas({ atual }: { atual: number }) {
 }
 
 // Situação da leitura automática do grupo (compras_analises, supabase/compras_continuo.sql)
-const ANALISE: Record<string, string> = { analisando: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
+const ANALISE: Record<string, string> = { analisando: "analisando…", no_lote: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
   pulada: "já estava em revisão", falha: "a análise falhou" };
 
 function Andamento({ semana }: { semana: Semana }) {
@@ -299,16 +377,19 @@ function Andamento({ semana }: { semana: Semana }) {
   }, [supabase, carregar]);
 
   const porUnidade = Object.keys(UNIDADES).map((u) => ({ u, pessoas: pessoas.filter((p) => p.unidade === u).sort((a, b) => (a.setor ?? "").localeCompare(b.setor ?? "")) }));
-  const aprovadas = listas.filter((l) => l.status === "aprovada").length;
-  const revisao = listas.filter((l) => l.status === "em_revisao").length;
-  const semLista = pessoas.length - listas.filter((l) => l.status !== "aguardando").length;
+  const ativas = listas.filter((l) => ATIVAS.includes(l.status));
+  const daPessoa = (id: string) => ativas.filter((l) => l.pessoa_id === id);
+  const aprovadas = pessoas.filter((p) => situacao(daPessoa(p.id)) === "aprovada").length;
+  const revisao = pessoas.filter((p) => situacao(daPessoa(p.id)) === "em_revisao").length;
+  const semLista = pessoas.filter((p) => !daPessoa(p.id).length).length;
   const pct = pessoas.length ? Math.round((aprovadas / pessoas.length) * 100) : 0;
   // Em que etapa a semana está: pedidos → lista sugerida → revisão → lista única → fechada
-  const etapa = semana.status === "fechada" ? 4 : aprovadas === pessoas.length && pessoas.length ? 3 : listas.some((l) => l.status !== "aguardando") ? 2 : 0;
+  const etapa = semana.status === "fechada" ? 4 : aprovadas === pessoas.length && pessoas.length ? 3 : ativas.some((l) => l.status !== "aguardando") ? 2 : 0;
 
   return (
     <>
       <Etapas atual={etapa} />
+      <AumentoSemana semana={semana} />
       <div className="ip-numeros">
         <div className="ip-numero">
           <span className="ip-rotulo">Listas aprovadas</span>
@@ -322,7 +403,7 @@ function Andamento({ semana }: { semana: Semana }) {
       </div>
       <div className="cp-unidades">
         {porUnidade.map(({ u, pessoas: ps }) => {
-          const ok = ps.filter((p) => listas.find((x) => x.pessoa_id === p.id)?.status === "aprovada").length;
+          const ok = ps.filter((p) => situacao(daPessoa(p.id)) === "aprovada").length;
           return (
             <section key={u} className="cp-unidade">
               <header className="cp-unidade-cabeca">
@@ -331,13 +412,14 @@ function Andamento({ semana }: { semana: Semana }) {
               </header>
               <ul className="cp-pessoas">
                 {ps.map((p) => {
-                  const l = listas.find((x) => x.pessoa_id === p.id);
+                  const ls = daPessoa(p.id);
+                  const st = situacao(ls);
                   return (
                     <li key={p.id}>
                       <button className={aberta === p.id ? "cp-pessoa on" : "cp-pessoa"} onClick={() => setAberta(aberta === p.id ? null : p.id)} aria-expanded={aberta === p.id}>
                         <span className="cp-avatar" aria-hidden="true">{p.nome.slice(0, 1)}</span>
                         <span className="cp-pessoa-nome"><strong>{p.nome}</strong><small>{SETORES[p.setor ?? ""]}{!p.wa_nome ? " · sem nome no WhatsApp" : analises[p.id] ? ` · ${ANALISE[analises[p.id].status] ?? analises[p.id].status}` : ""}</small></span>
-                        <span className={`estado ${l?.status === "aprovada" ? "tv-ok" : l?.status === "em_revisao" ? "tv-revisar" : ""}`}>{l ? STATUS[l.status] : "sem lista"}</span>
+                        <span className={`estado ${st === "aprovada" ? "tv-ok" : st === "em_revisao" ? "tv-revisar" : ""}`}>{st ? `${ls.length > 1 ? `${ls.length} listas · ` : ""}${STATUS[st]}` : "sem lista"}</span>
                       </button>
                     </li>
                   );
@@ -353,7 +435,7 @@ function Andamento({ semana }: { semana: Semana }) {
 }
 
 function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: Pessoa; onFechar: () => void }) {
-  const { lista, itens, carregar } = useLista(semana.id, pessoa.id);
+  const { listas, itens, carregar } = useListas(semana.id, pessoa.id);
   return (
     <div className="cp-da-pessoa">
       <header className="cp-da-pessoa-cabeca">
@@ -361,10 +443,33 @@ function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: P
         <div><h3>{pessoa.nome}</h3><small>{SETORES[pessoa.setor ?? ""]} · {UNIDADES[pessoa.unidade ?? ""]}</small></div>
         <button className="ghost small" onClick={onFechar}>Fechar</button>
       </header>
-      {lista === undefined ? <p className="muted">Carregando…</p>
-        : !lista || !itens.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui em até 15 minutos.</p>
-        : <EditorLista lista={lista} itens={itens} podeEditar={semana.status === "aberta"} onMudou={carregar} gestor />}
+      {listas === undefined ? <p className="muted">Carregando…</p>
+        : !listas.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui em até 15 minutos.</p>
+        : <Listas semana={semana} listas={listas} itens={itens} carregar={carregar} gestor />}
     </div>
+  );
+}
+
+// % a mais da semana (feriado, evento): entra na projeção de cada item na próxima análise
+function AumentoSemana({ semana }: { semana: Semana }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [pct, setPct] = useState(String(semana.aumento_pct ?? 0));
+  const [msg, setMsg] = useState("");
+  useEffect(() => { setPct(String(semana.aumento_pct ?? 0)); }, [semana.id, semana.aumento_pct]);
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault();
+    const { error } = await supabase.rpc("compras_semana_aumento", { p_semana: semana.id, p_pct: ler(pct) ?? 0 });
+    setMsg(error ? error.message : "Salvo. Vale para as próximas análises desta semana.");
+  }
+  if (semana.status !== "aberta") return null;
+  return (
+    <form className="cp-aumento" onSubmit={salvar}>
+      <label>Aumento da semana (feriado, evento)
+        <span><input inputMode="decimal" value={pct} onChange={(v) => setPct(v.target.value)} aria-label="Aumento da semana em %" />%</span>
+      </label>
+      <button className="ghost small">Salvar</button>
+      <small className="muted">{msg || "A projeção de cada item é a média das últimas 4 semanas mais esta porcentagem."}</small>
+    </form>
   );
 }
 

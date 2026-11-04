@@ -2486,6 +2486,26 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .cp-lista-total span { display: block; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .cp-lista-total b { font-family: var(--font-serif), Georgia, serif; font-size: 28px; font-weight: 500; color: var(--strong); font-variant-numeric: tabular-nums; }
 .cp-lista .nf-tabela-wrap { border: 1px solid var(--border); border-radius: 12px; }
+/* Várias listas por pessoa: nome da lista, juntar, produto da nota e média de 4 semanas */
+.cp-lista-titulo { flex: 1 1 260px; min-width: 0; }
+.cp-lista-titulo h3 { font-family: var(--font-serif), Georgia, serif; font-size: 20px; font-weight: 500; color: var(--strong); margin: 0; }
+.cp-lista-titulo input { width: 100%; max-width: 420px; padding: 8px 10px; font-family: var(--font-serif), Georgia, serif; font-size: 18px; color: var(--strong); }
+.cp-listas-resumo { font-size: 13.5px; margin: 0; }
+.cp-juntar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; background: var(--panel); border: 1px dashed var(--border); border-radius: 14px; }
+.cp-juntar-rotulo { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.cp-juntar select { padding: 7px 10px; min-width: 180px; max-width: 100%; }
+.cp-juntar .tv-alerta { flex-basis: 100%; margin: 0; }
+.cp-nota { display: flex; gap: 6px; align-items: baseline; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.cp-conf { flex: none; width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #fff; }
+.cp-conf.alta { background: var(--ok); }
+.cp-conf.media { background: var(--es-amber-ink); }
+.cp-conf.baixa { background: var(--muted); }
+.cp-base { display: block; font-size: 11px; color: var(--muted); font-variant-numeric: normal; white-space: normal; max-width: 180px; margin-left: auto; text-align: right; }
+.cp-aumento { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 0 0 16px; padding: 12px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
+.cp-aumento label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cp-aumento label span { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--strong); letter-spacing: 0; text-transform: none; }
+.cp-aumento input { width: 80px; padding: 7px 9px; text-align: right; }
+.cp-aumento small { flex: 1 1 240px; font-size: 12.5px; }
 .cp-vazio h2 { font-family: var(--font-serif), Georgia, serif; font-size: 22px; font-weight: 500; color: var(--strong); margin: 0; }
 .cp-vazio p { margin: 0; }
 .cp-final { display: grid; gap: 16px; }
