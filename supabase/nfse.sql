@@ -297,3 +297,16 @@ select cron.unschedule('nfse-diaria') where exists (select 1 from cron.job where
 select cron.schedule('nfse-diaria', '30 9,15 * * *', $job$ select public.nfse_rodada() $job$);
 select cron.unschedule('nfse-destravar') where exists (select 1 from cron.job where jobname = 'nfse-destravar');
 select cron.schedule('nfse-destravar', '*/15 * * * *', $job$ select public.nfse_destravar() $job$);
+
+-- Totais por mês, empresa e papel (aba NFS-e da página Notas); canceladas e substituídas ficam fora dos valores
+create or replace view public.nfse_meses with (security_invoker = true) as
+select to_char(emissao at time zone 'America/Fortaleza', 'YYYY-MM') mes, empresa_cnpj, papel,
+  count(*) filter (where situacao = 'normal')::int notas,
+  count(*) filter (where situacao <> 'normal')::int canceladas,
+  coalesce(sum(valor_servico) filter (where situacao = 'normal'), 0) valor,
+  coalesce(sum(iss) filter (where situacao = 'normal'), 0) iss,
+  coalesce(sum(iss) filter (where situacao = 'normal' and iss_retido), 0) iss_retido
+from public.nfse_notas
+where emissao is not null
+group by 1, 2, 3;
+grant select on public.nfse_meses to authenticated;

@@ -12,7 +12,7 @@ const TIMEOUT_MS = 25000;
 
 export class ErroConexao extends Error {}
 
-export type Documento = { nsu: number; chave: string | null; tipo: string | null; xml: string };
+export type Documento = { nsu: number; chave: string | null; tipo: string | null; xml: string; original?: string };
 export type Resposta = {
   http: number;
   status: string | null;          // StatusProcessamento: DOCUMENTOS_LOCALIZADOS, NENHUM_DOCUMENTO_LOCALIZADO, REJEICAO...
@@ -87,15 +87,12 @@ export async function distribuir(nsu: number, cnpjConsulta: string, cadeiaPem: s
   for (const d of Array.isArray(lote) ? lote : []) {
     const arquivo = String(campo(d, "ArquivoXml") ?? "");
     if (!arquivo) continue;
+    const base = { nsu: Number(campo(d, "NSU")), chave: (campo(d, "ChaveAcesso") as string) ?? null, tipo: (campo(d, "TipoDocumento") as string) ?? null };
     try {
-      documentos.push({
-        nsu: Number(campo(d, "NSU")),
-        chave: (campo(d, "ChaveAcesso") as string) ?? null,
-        tipo: (campo(d, "TipoDocumento") as string) ?? null,
-        xml: abrir(arquivo),
-      });
+      documentos.push({ ...base, xml: abrir(arquivo) });
     } catch {
-      // Documento que não abre fica de fora; o NSU avança e ele não trava a leitura
+      // Não abriu: segue com o original em base64, para ser guardado mesmo assim (o NSU não pula nada)
+      documentos.push({ ...base, xml: "", original: arquivo });
     }
   }
   return {

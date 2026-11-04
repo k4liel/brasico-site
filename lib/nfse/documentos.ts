@@ -4,7 +4,7 @@
 import { DOMParser, type Element } from "@xmldom/xmldom";
 
 export type NotaServico = {
-  chave: string; papel: "emitida" | "tomada" | "intermediada"; numero: string | null; emissao: string | null;
+  chave: string; empresa_cnpj: string; papel: "emitida" | "tomada" | "intermediada"; numero: string | null; emissao: string | null;
   competencia: string | null; emitente_cnpj: string | null; emitente_nome: string | null; emitente_municipio: string | null;
   tomador_doc: string | null; tomador_nome: string | null; local_incidencia: string | null; codigo_servico: string | null;
   descricao: string | null; valor_servico: number | null; base_calculo: number | null; aliquota: number | null;
@@ -34,7 +34,10 @@ const txt = (raiz: Element | null | undefined, n: string) => achar(raiz, n)?.tex
 const num = (s: string | null) => (s == null || s === "" || Number.isNaN(Number(s)) ? null : Number(s));
 const doc = (raiz: Element | null) => txt(raiz, "CNPJ") ?? txt(raiz, "CPF") ?? txt(raiz, "NIF");
 
-export function lerDocumento(xmlTexto: string, nsu: number, cnpjEmpresa: string): { nota?: NotaServico; evento?: EventoServico } {
+// A consulta é por raiz (o ADN devolve as notas de todos os CNPJs dela): a nota fica com o CNPJ do grupo
+// que aparece nela — emitente (emitida), tomador (tomada) ou, se só intermedia, o CNPJ consultado.
+export function lerDocumento(xmlTexto: string, nsu: number, cnpjConsultado: string): { nota?: NotaServico; evento?: EventoServico } {
+  const raiz = cnpjConsultado.slice(0, 8);
   const d = new DOMParser().parseFromString(xmlTexto, "text/xml");
   const r = d.documentElement as unknown as Element | null;
   if (!r) return {};
@@ -50,10 +53,13 @@ export function lerDocumento(xmlTexto: string, nsu: number, cnpjEmpresa: string)
     const emitente = doc(emit);
     const tomador = doc(toma);
     const ret = txt(dps, "tpRetISSQN");
+    const doGrupo = (d: string | null) => !!d && d.length === 14 && d.startsWith(raiz);
+    const papel = doGrupo(emitente) ? "emitida" : doGrupo(tomador) ? "tomada" : "intermediada";
     return {
       nota: {
         chave,
-        papel: emitente === cnpjEmpresa ? "emitida" : tomador === cnpjEmpresa ? "tomada" : "intermediada",
+        empresa_cnpj: papel === "emitida" ? emitente! : papel === "tomada" ? tomador! : cnpjConsultado,
+        papel,
         numero: txt(inf, "nNFSe"),
         emissao: txt(dps, "dhEmi") ?? txt(inf, "dhProc"),
         competencia: txt(dps, "dCompet"),

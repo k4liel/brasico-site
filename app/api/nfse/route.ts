@@ -81,13 +81,15 @@ async function processar(segredo: string, id: string) {
       const lidasNotas: NotaServico[] = [];
       const lidosEventos: EventoServico[] = [];
       for (const d of r.documentos) {
-        try {
-          const l = lerDocumento(d.xml, d.nsu, empresa.cnpj);
-          if (l.nota?.chave) lidasNotas.push(l.nota);
-          else if (l.evento) lidosEventos.push(l.evento);
-          else ignorados++;
-        } catch {
+        let l: ReturnType<typeof lerDocumento> = {};
+        try { if (d.xml) l = lerDocumento(d.xml, d.nsu, empresa.cnpj); } catch { /* fica como ilegível abaixo */ }
+        if (l.nota?.chave) lidasNotas.push(l.nota);
+        else if (l.evento) lidosEventos.push(l.evento);
+        else {
+          // Documento que não deu para ler: o original fica guardado em nfse_eventos (tipo "ilegivel") e o NSU avança
           ignorados++;
+          lidosEventos.push({ chave: d.chave ?? "?", tipo: "ilegivel", descricao: `${d.tipo ?? "documento"} que o Brasico não conseguiu ler`,
+            quando: null, nsu: d.nsu, xml: d.xml || d.original || "" });
         }
       }
       const maior = Math.max(...r.documentos.map((d) => d.nsu).filter(Number.isFinite));
