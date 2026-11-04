@@ -5,6 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 
 type Mode = "senha" | "link";
 
+// Equipe das casas entra com usuário (o primeiro nome), sem e-mail: vira <usuario>@usuarios.brasico (supabase/compras_acessos.sql)
+const DOMINIO_EQUIPE = "usuarios.brasico";
+const paraEmail = (v: string) => { const t = v.trim().toLowerCase(); return t.includes("@") ? t : `${t}@${DOMINIO_EQUIPE}`; };
+
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("senha");
   const [email, setEmail] = useState("");
@@ -20,7 +24,7 @@ export default function LoginPage() {
   }, []);
 
   function traduz(msg: string) {
-    if (/invalid login credentials/i.test(msg)) return "E-mail ou senha incorretos.";
+    if (/invalid login credentials/i.test(msg)) return "Usuário ou senha incorretos.";
     if (/already registered/i.test(msg)) return "Este e-mail já tem conta. Use “Entrar”.";
     if (/rate limit/i.test(msg)) return "Limite de e-mails atingido. Entre com senha ou tente o link mais tarde.";
     if (/password should be at least/i.test(msg)) return "A senha precisa ter pelo menos 8 caracteres.";
@@ -35,7 +39,7 @@ export default function LoginPage() {
     setError("");
     setInfo("");
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    const { error } = await supabase.auth.signInWithPassword({ email: paraEmail(email), password });
     setBusy(false);
     if (error) return setError(traduz(error.message));
     window.location.href = "/";
@@ -63,7 +67,7 @@ export default function LoginPage() {
         <h1>Brasico</h1>
         <div className="row segmented">
           <button type="button" className={mode === "senha" ? "tab active" : "tab"} onClick={() => setMode("senha")}>
-            E-mail e senha
+            Usuário e senha
           </button>
           <button type="button" className={mode === "link" ? "tab active" : "tab"} onClick={() => setMode("link")}>
             Link por e-mail
@@ -72,9 +76,9 @@ export default function LoginPage() {
 
         {mode === "senha" ? (
           <form onSubmit={entrar} className="stack">
-            <input type="email" required placeholder="seu@email.com" autoComplete="email"
+            <input type="text" required placeholder="Usuário ou e-mail" autoComplete="username" autoCapitalize="none" spellCheck={false}
               value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input type="password" required placeholder="Senha (mín. 8 caracteres)" autoComplete="current-password"
+            <input type="password" required placeholder="Senha" autoComplete="current-password"
               minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
             <button disabled={busy}>{busy ? "Aguarde..." : "Entrar"}</button>
             <p className="muted small">Acesso por convite. Peça o seu a um dos sócios.</p>
