@@ -298,3 +298,4 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
   .cp-fechado { display: block !important; }
   .cp-forn > .cp-fechado { display: block !important; }
 }
+.cp-forn-col select { width: 100%; min-width: 150px; max-width: 220px; padding: 6px 8px; font-size: 13px; }

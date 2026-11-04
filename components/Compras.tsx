@@ -693,6 +693,11 @@ function ListaUnica({ semana }: { semana: Semana }) {
     });
   const comItens = empresas.filter((x) => x.itens.length);
   const nPedidos = comItens.reduce((s, x) => s + x.grupos.length, 0);
+  // Opções do select de fornecedor: todos do cadastro. Se o fornecedor já está na lista única com o nome da nota,
+  // a opção usa esse nome, para o item cair no mesmo pedido (e não abrir um segundo com outro nome).
+  const opcoesForn = cadastro.map((c) => ({ nome: c.nome, valor: vivas.find((l) => doCadastro(l.fornecedor)?.id === c.id)?.fornecedor ?? c.nome }))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const valorForn = (f: string) => { const c = doCadastro(f); return c ? opcoesForn.find((o) => o.nome === c.nome)?.valor ?? f : f; };
   const fornecedoresConhecidos = [...new Set([...vivas.map((l) => l.fornecedor), ...cadastro.map((f) => f.nome)])].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const imprimindo = imprimir ? (() => { const [emp, ...r] = imprimir.split("|"); return { emp, forn: r.join("|") }; })() : null;
 
@@ -806,7 +811,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
                     {conferir === k && <ConferirNota semana={semana} fornecedor={g.f} empresa={e.cnpj} pedido={ped} onMudou={carregar} />}
                     <table className="nf-tabela cp-tabela cp-tabela-unica">
                       <thead><tr>
-                        <th className="cp-caixa" aria-label="Marcar" /><th>Item</th><th className="n">Quantidade</th>
+                        <th className="cp-caixa" aria-label="Marcar" /><th>Item</th><th className="no-print">Fornecedor</th><th className="n">Quantidade</th>
                         <th className="n cp-preco">Preço unit.</th><th className="n cp-preco">Total</th><th className="no-print" />
                       </tr></thead>
                       <tbody>
@@ -824,6 +829,11 @@ function ListaUnica({ semana }: { semana: Semana }) {
                                 <span className={aberta ? "so-print" : ""}>{l.nome}</span>
                                 <small className="no-print">{(l.origem ?? []).map((o) => `${o.pessoa} ${num(o.qtd)}`).join(" · ")}{l.movido ? " · movido" : l.editado ? " · editado" : ""}</small>
                               </td>
+                              <td className="no-print cp-forn-col">{aberta ? (
+                                <select value={valorForn(l.fornecedor)} onChange={(v) => mover(l.id, l.empresa, v.target.value)} aria-label={`Fornecedor de ${l.nome}`}>
+                                  {!doCadastro(l.fornecedor) && <option value={l.fornecedor}>{l.fornecedor}</option>}
+                                  {opcoesForn.map((o) => <option key={o.nome} value={o.valor}>{o.nome}</option>)}
+                                </select>) : (doCadastro(l.fornecedor)?.nome ?? l.fornecedor)}</td>
                               <td className="n cp-qtd">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.qtd)} onBlur={(v) => ler(v.target.value) !== l.qtd && salvar(l, { qtd: ler(v.target.value) })} aria-label="Quantidade" /><span className="so-print">{num(l.qtd)}</span></> : num(l.qtd)} <span className="cp-un-txt">{l.unidade}</span></td>
                               <td className="n cp-preco">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.preco)} placeholder="—" onBlur={(v) => ler(v.target.value) !== l.preco && salvar(l, { preco: ler(v.target.value) })} aria-label={`Preço unitário de ${l.nome}`} /><span className="so-print">{brl(l.preco)}</span></> : brl(l.preco)}</td>
                               <td className="n cp-preco cp-tot">{brl((l.qtd ?? 0) * (l.preco ?? 0))}</td>
@@ -833,7 +843,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
                               </>}</td>
                             </tr>
                             {movendo === l.id && (
-                              <tr className="cp-mover-linha no-print"><td colSpan={6}>
+                              <tr className="cp-mover-linha no-print"><td colSpan={7}>
                                 <MoverItem item={l} fornecedores={fornecedoresConhecidos} onMover={(emp, forn) => mover(l.id, emp, forn)} onCancelar={() => setMovendo(null)} />
                               </td></tr>
                             )}
