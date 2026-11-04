@@ -396,3 +396,11 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
   .cp-so-um .cp-forn-cabeca { border-radius: 1.2mm !important; margin-bottom: 1mm !important; }
   .cp-so-um table.nf-tabela { border: 0 !important; }
 }
+
+/* Itens retirados da lista única: apagados no fim do pedido, com Reativar (não entram em totais nem nos PDFs) */
+.cp-tirado-linha td { opacity: .5; background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--muted) 6%, transparent) 6px 12px); }
+.cp-tirado-linha td:last-child { opacity: 1; }
+.cp-tirado-nome { text-decoration: line-through; color: var(--muted); }
+.cp-tirado-linha small { display: block; font-size: 11.5px; color: var(--muted); }
+.cp-reativar { white-space: nowrap; }
+.cp-forn-so-tirados .cp-forn-cabeca { opacity: .7; }

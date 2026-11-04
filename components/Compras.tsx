@@ -21,7 +21,7 @@ type Item = { id: number; lista_id: string; ordem: number; nome: string; fornece
   produto_nota: string | null; confianca: "alta" | "media" | "baixa" | null };
 type Pedido = { fornecedor: string; empresa: string; status: "a_pedir" | "pedido" | "recebido"; pedido_em: string | null; recebido_em: string | null; nota_chave: string | null; observacao: string | null };
 type Final = { id: number; fornecedor: string; empresa: string; movido: boolean; nome: string; unidade: string; qtd: number | null; preco: number | null;
-  origem: { pessoa: string; unidade: string; setor: string; qtd: number }[]; removido: boolean; editado: boolean };
+  origem: { pessoa: string; unidade: string; setor: string; qtd: number }[]; removido: boolean; editado: boolean; atualizado_em?: string | null };
 
 const UNIDADES: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", sempre_vivo: "Sempre Vivo", filha_da_lua: "Filha da Lua" };
 const SETORES: Record<string, string> = { bar: "Bar", cozinha: "Cozinha", salao: "Salão", producao: "Produção" };
@@ -682,17 +682,22 @@ function ListaUnica({ semana }: { semana: Semana }) {
   }
 
   const vivas = linhas.filter((l) => !l.removido);
+  // retirados à mão pelo setor de compras: ficam apagados no pedido, com o botão Reativar (não entram em totais nem PDFs).
+  // Os que saíram sozinhos (lista reaberta) não aparecem: voltam quando a lista for aprovada de novo.
+  const tirados = linhas.filter((l) => l.removido && l.editado);
   const soma = (ls: Final[]) => ls.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0);
   const total = soma(vivas);
   // Empresa → fornecedor → itens. As empresas sem item aparecem só como lugar para soltar o item arrastado.
-  const empresas = [...EMPRESAS.map((e) => e.cnpj), ...[...new Set(vivas.map((l) => l.empresa))].filter((c) => !EMPRESAS.some((e) => e.cnpj === c))]
+  const empresas = [...EMPRESAS.map((e) => e.cnpj), ...[...new Set([...vivas, ...tirados].map((l) => l.empresa))].filter((c) => !EMPRESAS.some((e) => e.cnpj === c))]
     .map((cnpj) => {
       const doEmp = vivas.filter((l) => l.empresa === cnpj);
-      const fs = [...new Set(doEmp.map((l) => l.fornecedor))].sort((a, b) => soma(doEmp.filter((l) => l.fornecedor === b)) - soma(doEmp.filter((l) => l.fornecedor === a)));
-      return { e: empresaDe(cnpj), itens: doEmp, grupos: fs.map((f) => ({ f, itens: doEmp.filter((l) => l.fornecedor === f) })) };
+      const tirEmp = tirados.filter((l) => l.empresa === cnpj);
+      const fs = [...new Set([...doEmp, ...tirEmp].map((l) => l.fornecedor))].sort((a, b) => soma(doEmp.filter((l) => l.fornecedor === b)) - soma(doEmp.filter((l) => l.fornecedor === a)));
+      return { e: empresaDe(cnpj), itens: doEmp, tirados: tirEmp,
+        grupos: fs.map((f) => ({ f, itens: doEmp.filter((l) => l.fornecedor === f), tirados: tirEmp.filter((l) => l.fornecedor === f) })) };
     });
   const comItens = empresas.filter((x) => x.itens.length);
-  const nPedidos = comItens.reduce((s, x) => s + x.grupos.length, 0);
+  const nPedidos = comItens.reduce((s, x) => s + x.grupos.filter((g) => g.itens.length).length, 0);
   // Opções do select de fornecedor: todos do cadastro. Se o fornecedor já está na lista única com o nome da nota,
   // a opção usa esse nome, para o item cair no mesmo pedido (e não abrir um segundo com outro nome).
   const opcoesForn = cadastro.map((c) => ({ nome: c.nome, valor: vivas.find((l) => doCadastro(l.fornecedor)?.id === c.id)?.fornecedor ?? c.nome }))
@@ -756,22 +761,22 @@ function ListaUnica({ semana }: { semana: Semana }) {
             <span>Descontar o que já tem no estoque antes de pedir.</span>
           </>}
         </div>
-        {!vivas.length ? <p className="muted">Nada ainda. Os itens entram aqui sozinhos quando cada lista é aprovada.</p> : empresas.map(({ e, itens, grupos }) => {
-          if (!itens.length && arrastando == null) return null;
+        {!vivas.length && !tirados.length ? <p className="muted">Nada ainda. Os itens entram aqui sozinhos quando cada lista é aprovada.</p> : empresas.map(({ e, itens, tirados: tirEmp, grupos }) => {
+          if (!itens.length && !tirEmp.length && arrastando == null) return null;
           if (imprimindo && imprimindo.emp !== e.cnpj) return null;
           const soltaEmpresa = alvo === chavePedido(e.cnpj, "");
           const empAberta = !empFechadas.has(e.cnpj) || arrastando != null || !!imprimindo;
           return (
-            <section key={e.cnpj} className={`cp-empresa${soltaEmpresa ? " cp-solta" : ""}${!itens.length ? " cp-empresa-vazia" : ""}`} {...(aberta ? soltarEm(e.cnpj, null) : {})}>
+            <section key={e.cnpj} className={`cp-empresa${soltaEmpresa ? " cp-solta" : ""}${!itens.length ? " cp-empresa-vazia no-print" : ""}`} {...(aberta ? soltarEm(e.cnpj, null) : {})}>
               <header className="cp-empresa-cabeca cp-cab-abre" role="button" tabIndex={0} aria-expanded={empAberta}
                 onClick={() => alternar(setEmpFechadas, e.cnpj)} onKeyDown={teclaAbre(() => alternar(setEmpFechadas, e.cnpj))}>
                 <span className={`cp-seta no-print${empAberta ? " aberta" : ""}`} aria-hidden="true">›</span>
                 <span className="cp-empresa-selo" aria-hidden="true">{e.nome.slice(0, 1)}</span>
                 <span className="cp-empresa-nome"><b>{e.nome}</b><small>CNPJ {fmtCnpj(e.cnpj)}{e.casas ? ` · compra para ${e.casas}` : ""}</small></span>
-                <span className="cp-empresa-total cp-preco"><b>{brl(soma(itens))}</b><small>{itens.length} itens · {grupos.length} {grupos.length === 1 ? "pedido" : "pedidos"}</small></span>
+                <span className="cp-empresa-total cp-preco"><b>{brl(soma(itens))}</b><small>{itens.length} itens · {grupos.filter((g) => g.itens.length).length} {grupos.filter((g) => g.itens.length).length === 1 ? "pedido" : "pedidos"}</small></span>
               </header>
               <div className={`cp-corpo${empAberta ? "" : " cp-fechado"}`}>
-              {!itens.length && <p className="cp-empresa-solte">Solte aqui para passar o item para a {e.nome}.</p>}
+              {!itens.length && arrastando != null && <p className="cp-empresa-solte">Solte aqui para passar o item para a {e.nome}.</p>}
               {grupos.map((g) => {
                 const k = chavePedido(e.cnpj, g.f);
                 const ped = pedidos[k];
@@ -779,11 +784,11 @@ function ListaUnica({ semana }: { semana: Semana }) {
                 if (imprimindo && imprimindo.forn !== g.f) return null;
                 const fornAberto = fornAbertos.has(k) || !!imprimindo;
                 return (
-                  <div key={k} className={`cp-forn${imprimir === k ? " cp-imprimir" : ""}${alvo === k ? " cp-solta" : ""}`} {...(aberta ? soltarEm(e.cnpj, g.f) : {})}>
+                  <div key={k} className={`cp-forn${imprimir === k ? " cp-imprimir" : ""}${alvo === k ? " cp-solta" : ""}${!g.itens.length ? " cp-forn-so-tirados no-print" : ""}`} {...(aberta ? soltarEm(e.cnpj, g.f) : {})}>
                     <div className="cp-forn-cabeca cp-cab-abre" role="button" tabIndex={0} aria-expanded={fornAberto}
                       onClick={() => alternar(setFornAbertos, k)} onKeyDown={teclaAbre(() => alternar(setFornAbertos, k))}>
                       <span className={`cp-seta no-print${fornAberto ? " aberta" : ""}`} aria-hidden="true">›</span>
-                      <strong>{g.f}<small className="cp-forn-qtd no-print">{g.itens.length} {g.itens.length === 1 ? "item" : "itens"}</small></strong>
+                      <strong>{g.f}<small className="cp-forn-qtd no-print">{g.itens.length} {g.itens.length === 1 ? "item" : "itens"}{g.tirados.length ? ` · ${g.tirados.length} ${g.tirados.length === 1 ? "retirado" : "retirados"}` : ""}</small></strong>
                       <span className={`cp-ped no-print ${st}`}>{PEDIDO[st]}{st === "pedido" && ped?.pedido_em ? ` · ${quando(ped.pedido_em)}` : st === "recebido" && ped?.recebido_em ? ` · ${quando(ped.recebido_em)}` : ""}{ped?.nota_chave ? " · nota ligada" : ""}</span>
                       <span className="cp-preco">{brl(soma(g.itens))}</span>
                     </div>
@@ -848,6 +853,17 @@ function ListaUnica({ semana }: { semana: Semana }) {
                               </td></tr>
                             )}
                           </Fragment>
+                        ))}
+                        {g.tirados.map((l) => (
+                          <tr key={l.id} className="cp-tirado-linha no-print">
+                            <td className="cp-caixa" aria-hidden="true">–</td>
+                            <td><span className="cp-tirado-nome">{l.nome}</span><small>retirado{l.atualizado_em ? ` em ${quando(l.atualizado_em)}` : ""}</small></td>
+                            <td>{doCadastro(l.fornecedor)?.nome ?? l.fornecedor}</td>
+                            <td className="n">{num(l.qtd)} <span className="cp-un-txt">{l.unidade}</span></td>
+                            <td className="n">{brl(l.preco)}</td>
+                            <td className="n">{brl((l.qtd ?? 0) * (l.preco ?? 0))}</td>
+                            <td className="cp-item-acoes">{aberta && <button className="small cp-reativar" onClick={() => salvar(l, { removido: false })}>Reativar</button>}</td>
+                          </tr>
                         ))}
                       </tbody>
                     </table>
