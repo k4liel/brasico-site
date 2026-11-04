@@ -1210,6 +1210,9 @@ type Forn = { id: string; nome: string; razao_social: string | null; cnpj: strin
   contato_nome: string | null; telefone: string | null; whatsapp: string | null; email: string | null; como_pedir: string | null;
   dias_pedido: string | null; dias_entrega: string | null; prazo_pagamento: string | null; forma_pagamento: string | null;
   pedido_minimo: number | null; observacoes: string | null; ativo: boolean;
+  // vindos das notas fiscais (compras_fornecedores_dados_notas, todo dia)
+  nome_fantasia?: string | null; inscricao_estadual?: string | null; endereco?: string | null; cidade?: string | null; uf?: string | null; cep?: string | null;
+  dados_notas?: { notas: number; primeira: string | null; ultima: string | null; valor_12m: number; notas_12m: number } | null;
   notas_90d?: number; valor_90d?: number | null; ultima_compra?: string | null; casas?: string[] };
 const docFmt = (c: string | null) => !c ? "" : c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : c.length === 11 ? c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : c;
 const normalizar = (t: string) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
@@ -1364,6 +1367,20 @@ function FichaFornecedor({ forn, onFechar, onSalvo }: { forn: Forn | null; onFec
               </div>
             </fieldset>
           ))}
+          {forn && (forn.endereco || forn.inscricao_estadual || forn.dados_notas) && (
+            <fieldset className="cp-fz-bloco cp-fz-das-notas">
+              <legend>Dados das notas fiscais</legend>
+              <dl>
+                {forn.nome_fantasia && <><dt>Nome fantasia</dt><dd>{forn.nome_fantasia}</dd></>}
+                {forn.razao_social && <><dt>Razão social</dt><dd>{forn.razao_social}</dd></>}
+                {forn.cnpj && <><dt>CNPJ</dt><dd>{docFmt(forn.cnpj)}</dd></>}
+                {forn.inscricao_estadual && <><dt>Inscrição estadual</dt><dd>{forn.inscricao_estadual}</dd></>}
+                {forn.endereco && <><dt>Endereço</dt><dd>{forn.endereco}{forn.cidade ? ` · ${forn.cidade}` : ""}{forn.uf ? `/${forn.uf}` : ""}{forn.cep ? ` · CEP ${forn.cep.replace(/^(\d{5})(\d{3})$/, "$1-$2")}` : ""}</dd></>}
+                {forn.dados_notas && <><dt>Compras</dt><dd>{forn.dados_notas.notas} notas desde {dataBR(forn.dados_notas.primeira)} · {forn.dados_notas.notas_12m} notas e {brl(Number(forn.dados_notas.valor_12m))} nos últimos 12 meses</dd></>}
+              </dl>
+              <small className="muted">Atualizado todo dia pela nota mais recente. Telefone, forma e prazo de pagamento vêm das notas só quando estão vazios: o que você digitar fica.</small>
+            </fieldset>
+          )}
           {forn && forn.cnpjs.length > 1 && (
             <fieldset className="cp-fz-bloco">
               <legend>Filiais ({forn.cnpjs.length})</legend>

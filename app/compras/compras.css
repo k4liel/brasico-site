@@ -404,3 +404,10 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
 .cp-tirado-linha small { display: block; font-size: 11.5px; color: var(--muted); }
 .cp-reativar { white-space: nowrap; }
 .cp-forn-so-tirados .cp-forn-cabeca { opacity: .7; }
+
+/* Ficha do fornecedor: dados que vêm das notas (só leitura) */
+.cp-fz-das-notas dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 8px; font-size: 13.5px; }
+.cp-fz-das-notas dt { color: var(--muted); font-size: 12.5px; }
+.cp-fz-das-notas dd { margin: 0; color: var(--strong); overflow-wrap: anywhere; }
+.cp-fz-das-notas small { font-size: 12px; }
+@media (max-width: 560px) { .cp-fz-das-notas dl { grid-template-columns: 1fr; gap: 2px; } .cp-fz-das-notas dd { margin-bottom: 6px; } }
