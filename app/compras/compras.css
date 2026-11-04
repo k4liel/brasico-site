@@ -58,3 +58,24 @@ a.botao { display: inline-flex; align-items: center; text-decoration: none; }
   .cp-forn-acoes, .cp-conferir { padding-left: 12px; padding-right: 12px; }
   .cp-nota-linha { flex-wrap: wrap; }
 }
+
+/* Trocar senha (topo simples da equipe) */
+.cp-senha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 auto; padding: 12px 16px; max-width: 1200px;
+  background: var(--panel); border-bottom: 1px solid var(--border); }
+.cp-senha strong { font-size: 14px; margin-right: 4px; }
+.cp-senha input { flex: 1; min-width: 180px; }
+.cp-senha small { flex-basis: 100%; }
+
+/* Aviso de lista nova para a pessoa */
+.cp-aviso-novo { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--gold) 50%, transparent); background: color-mix(in srgb, var(--gold) 10%, var(--panel)); }
+.cp-aviso-novo > span { flex: 1; min-width: 200px; display: grid; gap: 2px; }
+.cp-aviso-novo small { color: var(--muted); font-size: 12.5px; }
+
+/* Avisos ao vivo para quem coordena */
+.cp-avisos { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: grid; gap: 8px; max-width: min(380px, calc(100vw - 32px)); }
+.cp-aviso { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--panel);
+  border: 1px solid var(--border); box-shadow: 0 8px 24px var(--shadow); font-size: 14px; }
+.cp-aviso > span { flex: 1; }
+.cp-aviso.aprovada { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+@media print { .cp-avisos, .cp-aviso-novo, .cp-senha { display: none !important; } }

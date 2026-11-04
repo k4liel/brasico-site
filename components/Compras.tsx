@@ -105,6 +105,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
                 <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? "on" : ""} onClick={() => setAba(k)}>{t}</button>
               ))}
             </div>
+            <AvisosGestor semana={semana} irPara={setAba} />
             {aba === "painel" && <Painel semana={semana} irPara={setAba} />}
             {aba === "andamento" && <Andamento semana={semana} />}
             {aba === "final" && <ListaUnica semana={semana} />}
@@ -127,15 +128,50 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 // Para quem só tem a área de Compras: sem o menu do Brasico
 // Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
 export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
+  const [senha, setSenha] = useState(false);
   async function sair() {
     await createClient().auth.signOut();
     window.location.href = "/login";
   }
   return (
-    <header className="topo cp-topo">
-      <span className="marca">Brasico · {area}</span>
-      <span className="cp-quem">{outra && <a href={outra.href}>{outra.nome}</a>}{nome || email}<button className="ghost small" onClick={sair}>Sair</button></span>
-    </header>
+    <>
+      <header className="topo cp-topo">
+        <span className="marca">Brasico · {area}</span>
+        <span className="cp-quem">{outra && <a href={outra.href}>{outra.nome}</a>}{nome || email}
+          <button className="ghost small" onClick={() => setSenha(!senha)} aria-expanded={senha}>Trocar senha</button>
+          <button className="ghost small" onClick={sair}>Sair</button></span>
+      </header>
+      {senha && <TrocarSenha onFechar={() => setSenha(false)} />}
+    </>
+  );
+}
+
+// A própria pessoa troca a senha (Supabase Auth); a senha nova não passa por mais nenhum lugar
+function TrocarSenha({ onFechar }: { onFechar: () => void }) {
+  const [nova, setNova] = useState("");
+  const [repete, setRepete] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault();
+    if (nova.length < 8) return setMsg({ ok: false, t: "A senha precisa ter pelo menos 8 caracteres." });
+    if (nova !== repete) return setMsg({ ok: false, t: "As duas senhas não são iguais." });
+    setSalvando(true);
+    const { error } = await createClient().auth.updateUser({ password: nova });
+    setSalvando(false);
+    if (error) return setMsg({ ok: false, t: /different|same/i.test(error.message) ? "A senha nova precisa ser diferente da atual." : error.message });
+    setNova(""); setRepete("");
+    setMsg({ ok: true, t: "Senha trocada. Use a nova da próxima vez que entrar." });
+  }
+  return (
+    <form className="cp-senha" onSubmit={salvar}>
+      <strong>Trocar a sua senha</strong>
+      <input type="password" autoComplete="new-password" value={nova} onChange={(v) => setNova(v.target.value)} placeholder="Senha nova (8 ou mais caracteres)" aria-label="Senha nova" />
+      <input type="password" autoComplete="new-password" value={repete} onChange={(v) => setRepete(v.target.value)} placeholder="Repita a senha nova" aria-label="Repita a senha nova" />
+      <button className="small" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+      <button type="button" className="ghost small" onClick={onFechar}>Fechar</button>
+      {msg && <small className={msg.ok ? "ok" : "err"} role="status">{msg.t}</small>}
+    </form>
   );
 }
 
@@ -155,6 +191,14 @@ function useListas(semanaId: string, pessoaId: string | null) {
     } else setItens([]);
   }, [supabase, semanaId, pessoaId]);
   useEffect(() => { carregar(); }, [carregar]);
+  // ao vivo: lista nova ou atualizada pela análise do grupo aparece sem recarregar a página
+  useEffect(() => {
+    if (!pessoaId) return;
+    const c = supabase.channel(`compras-listas-${pessoaId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compras_listas", filter: `pessoa_id=eq.${pessoaId}` }, () => carregar())
+      .subscribe();
+    return () => { supabase.removeChannel(c); };
+  }, [supabase, pessoaId, carregar]);
   return { listas, itens, carregar };
 }
 
@@ -226,9 +270,34 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
   }
   return (
     <>
+      <AvisoListaNova pessoa={pessoa.id} listas={listas} />
       <Etapas atual={situacao(listas) === "aprovada" ? 3 : 2} />
       <Listas semana={semana} listas={listas} itens={itens} carregar={carregar} gestor={false} />
     </>
+  );
+}
+
+// Aviso de lista nova ou atualizada desde a última vez que a pessoa olhou (guardado só neste aparelho)
+function AvisoListaNova({ pessoa, listas }: { pessoa: string; listas: Lista[] }) {
+  const chave = `cp-visto-${pessoa}`;
+  const ultima = listas.reduce((m, l) => (l.analisada_em && l.analisada_em > m ? l.analisada_em : m), "");
+  const [visto, setVisto] = useState<string | null>(null);
+  useEffect(() => {
+    try { setVisto(localStorage.getItem(chave) ?? ""); } catch { setVisto(""); }
+  }, [chave]);
+  if (visto === null || !ultima || ultima <= visto) return null;
+  const novas = listas.filter((l) => l.analisada_em && l.analisada_em > visto && l.status !== "aprovada");
+  if (!novas.length) return null;
+  function ok() {
+    try { localStorage.setItem(chave, ultima); } catch { /* sem armazenamento: o aviso volta na próxima vez */ }
+    setVisto(ultima);
+  }
+  return (
+    <div className="cp-aviso-novo" role="status">
+      <span><b>{visto ? "Sua lista foi atualizada" : novas.length > 1 ? `Chegaram ${novas.length} listas para você revisar` : "Chegou a sua lista para revisar"}</b>
+        <small>{novas.map((l) => l.titulo || "Lista").join(" · ")} · montada pelo Claude a partir do seu pedido no grupo</small></span>
+      <button className="small" onClick={ok}>Ok, vou revisar</button>
+    </div>
   );
 }
 
@@ -631,6 +700,56 @@ function ListaUnica({ semana }: { semana: Semana }) {
         </form>
       )}
     </section>
+  );
+}
+
+// Avisos ao vivo para quem coordena: lista aprovada, lista nova ou atualizada pela análise do grupo
+function AvisosGestor({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [avisos, setAvisos] = useState<{ id: number; t: string; aprovada: boolean }[]>([]);
+  useEffect(() => {
+    let vivo = true;
+    const status = new Map<string, string>();
+    const nomes = new Map<string, string>();
+    (async () => {
+      const [{ data: ls }, { data: ps }] = await Promise.all([
+        supabase.from("compras_listas").select("id,status").eq("semana_id", semana.id),
+        supabase.from("operacao_pessoas").select("id,nome"),
+      ]);
+      (ls ?? []).forEach((l: { id: string; status: string }) => status.set(l.id, l.status));
+      (ps ?? []).forEach((p: { id: string; nome: string }) => nomes.set(p.id, p.nome));
+    })();
+    let n = 0;
+    const c = supabase.channel(`compras-avisos-${semana.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compras_listas", filter: `semana_id=eq.${semana.id}` }, (ev) => {
+        if (!vivo) return;
+        const l = ev.new as Lista;
+        if (!l?.id) return;
+        const antes = status.get(l.id);
+        status.set(l.id, l.status);
+        const quem = nomes.get(l.pessoa_id) ?? "Alguém";
+        const nome = l.titulo ? `“${l.titulo}”` : "a lista";
+        let t = "";
+        if (l.status === "aprovada" && antes !== "aprovada") t = `${quem} aprovou ${nome}`;
+        else if (ev.eventType === "INSERT" && ATIVAS.includes(l.status)) t = `Lista nova de ${quem}: ${l.titulo || "sem título"}`;
+        if (!t) return;
+        const id = ++n;
+        setAvisos((a) => [...a.slice(-3), { id, t, aprovada: l.status === "aprovada" }]);
+        setTimeout(() => setAvisos((a) => a.filter((x) => x.id !== id)), 12000);
+      })
+      .subscribe();
+    return () => { vivo = false; supabase.removeChannel(c); };
+  }, [supabase, semana.id]);
+  if (!avisos.length) return null;
+  return (
+    <div className="cp-avisos" role="status" aria-live="polite">
+      {avisos.map((a) => (
+        <div key={a.id} className={a.aprovada ? "cp-aviso aprovada" : "cp-aviso"}>
+          <span>{a.t}</span>
+          <button className="ghost small" onClick={() => irPara(a.aprovada ? "final" : "andamento")}>{a.aprovada ? "Lista única" : "Ver"}</button>
+        </div>
+      ))}
+    </div>
   );
 }
 
