@@ -42,11 +42,17 @@ function mensagens(v: unknown): string[] {
   });
 }
 
-function get(caminho: string, cadeiaPem: string, chavePem: string): Promise<{ http: number; texto: string }> {
+// Teste: caminho cru no ADN (produção ou produção restrita), devolve o HTTP e o começo da resposta
+export async function sondar(caminho: string, restrita: boolean, cadeiaPem: string, chavePem: string) {
+  const r = await get(caminho, cadeiaPem, chavePem, restrita ? "adn.producaorestrita.nfse.gov.br" : HOST);
+  return { caminho, restrita, http: r.http, resposta: r.texto.replace(/"ArquivoXml":"[^"]*"/g, '"ArquivoXml":"…"').slice(0, 800) };
+}
+
+function get(caminho: string, cadeiaPem: string, chavePem: string, host = HOST): Promise<{ http: number; texto: string }> {
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
-        host: HOST, port: 443, method: "GET", path: caminho,
+        host, port: 443, method: "GET", path: caminho,
         cert: cadeiaPem, key: chavePem, minVersion: "TLSv1.2",
         headers: { Accept: "application/json" },
         timeout: TIMEOUT_MS,

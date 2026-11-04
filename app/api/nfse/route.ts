@@ -5,7 +5,7 @@
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { partesPem } from "@/lib/esocial/certificado";
-import { distribuir, ErroConexao } from "@/lib/nfse/adn";
+import { distribuir, ErroConexao, sondar } from "@/lib/nfse/adn";
 import { lerDocumento, type EventoServico, type NotaServico } from "@/lib/nfse/documentos";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ function db() {
 }
 
 type Pego = {
-  execucao: { id: string; origem: string };
+  execucao: { id: string; origem: string; teste?: { caminho: string; restrita?: boolean }[] };
   empresa: { cnpj: string; nome: string; ult_nsu: number };
   cert_cnpj: string | null;
   certificado: string | null;
@@ -45,6 +45,17 @@ async function processar(segredo: string, id: string) {
     if (!certificado) throw new Error("Não há certificado válido desta raiz. Envie o .pfx em Certificados digitais.");
     const { cadeia, chave } = partesPem(certificado);
     const cnpjConsulta = cert_cnpj && cert_cnpj !== empresa.cnpj ? empresa.cnpj : null;
+
+    // Execução de teste (só o banco cria, com o segredo): caminhos crus no ADN, sem gravar notas
+    if (Array.isArray(execucao.teste) && execucao.teste.length) {
+      const sondas = [];
+      for (const t of execucao.teste.slice(0, 8)) {
+        if (typeof t?.caminho !== "string" || !t.caminho.startsWith("/")) continue;
+        sondas.push(await sondar(t.caminho, !!t.restrita, cadeia, chave).catch((e) => ({ caminho: t.caminho, erro: String(e?.message ?? e) })));
+      }
+      resultado.sondas = sondas;
+      throw new Error("teste");
+    }
 
     let lote = true;
     for (;;) {
