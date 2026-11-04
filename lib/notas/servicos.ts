@@ -79,16 +79,26 @@ function assinarEvento(evento: string, cred: Credencial) {
   return sig.getSignedXml();
 }
 
-// Ciência da operação (210210) para até 20 notas, num lote só
-export async function darCiencia(cred: Credencial, cnpj: string, chaves: string[]): Promise<{ cstat: number | null; motivo: string | null; eventos: Evento[] }> {
+// Manifestação do destinatário, para até 20 notas num lote só. O Brasico só usa:
+//  - 210210 ciência da operação (sozinho, até 10 dias depois da emissão);
+//  - 210200 confirmação da operação, só para as notas que o dono autorizou (notas.confirmacao_autorizada_em).
+// Nunca desconhecimento (210220) nem operação não realizada (210240).
+const MANIFESTACOES = { "210210": "Ciencia da Operacao", "210200": "Confirmacao da Operacao" } as const;
+export type Manifestacao = keyof typeof MANIFESTACOES;
+
+export function darCiencia(cred: Credencial, cnpj: string, chaves: string[]) {
+  return manifestar(cred, cnpj, chaves, "210210");
+}
+
+export async function manifestar(cred: Credencial, cnpj: string, chaves: string[], tipo: Manifestacao): Promise<{ cstat: number | null; motivo: string | null; eventos: Evento[] }> {
   if (!chaves.length) return { cstat: null, motivo: null, eventos: [] };
   const quando = agora();
   const eventos = chaves.slice(0, 20).map((ch) => {
-    const id = `ID210210${ch}01`;
+    const id = `ID${tipo}${ch}01`;
     const ev =
       `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><infEvento Id="${id}"><cOrgao>91</cOrgao><tpAmb>1</tpAmb>` +
-      `<CNPJ>${cnpj}</CNPJ><chNFe>${ch}</chNFe><dhEvento>${quando}</dhEvento><tpEvento>210210</tpEvento><nSeqEvento>1</nSeqEvento>` +
-      `<verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>Ciencia da Operacao</descEvento></detEvento></infEvento></evento>`;
+      `<CNPJ>${cnpj}</CNPJ><chNFe>${ch}</chNFe><dhEvento>${quando}</dhEvento><tpEvento>${tipo}</tpEvento><nSeqEvento>1</nSeqEvento>` +
+      `<verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>${MANIFESTACOES[tipo]}</descEvento></detEvento></infEvento></evento>`;
     return assinarEvento(ev, cred);
   });
   const lote = String(Date.now()).slice(-15);
@@ -103,7 +113,7 @@ export async function darCiencia(cred: Credencial, cnpj: string, chaves: string[
     const ch = txt(inf, "chNFe");
     if (!ch) continue;
     saida.push({
-      chave: ch, tipo: "210210", sentido: "enviado",
+      chave: ch, tipo, sentido: "enviado",
       cstat: Number(txt(inf, "cStat")) || null, motivo: txt(inf, "xMotivo"), protocolo: txt(inf, "nProt"),
       quando: txt(inf, "dhRegEvento") ?? quando, xml: "",
     });

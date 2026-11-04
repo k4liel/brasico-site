@@ -6,7 +6,7 @@
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { partesPem } from "@/lib/esocial/certificado";
-import { consultarChave, consultarNSU, darCiencia, distribuir, type Credencial } from "@/lib/notas/servicos";
+import { consultarChave, consultarNSU, darCiencia, distribuir, manifestar, type Credencial } from "@/lib/notas/servicos";
 import { ErroConexao } from "@/lib/notas/sefaz";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ function db() {
   });
 }
 
-type Execucao = { id: string; empresa_cnpj: string; tipo: "distribuicao" | "ciencia" | "chave" };
+type Execucao = { id: string; empresa_cnpj: string; tipo: "distribuicao" | "ciencia" | "chave" | "confirmacao" };
 type Pego = { execucao: Execucao; empresa: { cnpj: string; nome: string; ult_nsu: string; lacunas?: Lacuna[] }; chaves: string[]; certificado: string | null };
 
 // Regra de 1 hora da SEFAZ, com 5 min de folga: no dia 28/10 uma consulta 12 s depois da hora exata levou 656.
@@ -164,7 +164,8 @@ async function processar(segredo: string, id: string) {
       if (!chaves.length) status = "sem_dados";
       Object.assign(resultado, { pedidas: chaves.length, tentadas, completas, respostas });
     } else {
-      const r = await darCiencia(cred, empresa.cnpj, chaves);
+      // ciência (210210) ou, só para as notas que o dono autorizou, confirmação da operação (210200)
+      const r = execucao.tipo === "confirmacao" ? await manifestar(cred, empresa.cnpj, chaves, "210200") : await darCiencia(cred, empresa.cnpj, chaves);
       cstat = r.cstat;
       const registradas = r.eventos.filter((e) => e.cstat === 135 || e.cstat === 136 || e.cstat === 573).length;
       Object.assign(resultado, { pedidas: chaves.length, registradas, recusadas: r.eventos.length - registradas });
