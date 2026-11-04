@@ -97,13 +97,19 @@ function saudacao() {
 export function Entrada({ tipo, children }: { tipo: TipoEntrada; children: React.ReactNode }) {
   const c = CONTEUDO[tipo];
   const [ola, setOla] = useState("");
-  useEffect(() => { setOla(saudacao()); }, []);
+  useEffect(() => { setOla(saudacao()); if (tipo === "colaboradores") document.title = "Área dos colaboradores"; }, [tipo]);
   const outra = tipo === "socios"
     ? { href: "/colaboradores", texto: "É da equipe das casas?", link: "Área dos colaboradores" }
     : { href: "/login", texto: "É sócio?", link: "Área dos sócios" };
 
   return (
     <main className={`ent ent-${tipo}`}>
+      {tipo === "colaboradores" ? (
+        // Equipe: só o nome da área, sem marca nem informações (pedido do dono, 04/11/2026)
+        <aside className="ent-marca ent-marca-so-titulo">
+          <h1>Área dos{" "}<br />colaboradores</h1>
+        </aside>
+      ) : (
       <aside className="ent-marca">
         <div className="ent-logo">
           <span className="ent-monograma" aria-hidden="true">B</span>
@@ -127,13 +133,14 @@ export function Entrada({ tipo, children }: { tipo: TipoEntrada; children: React
 
         <p className="ent-rodape"><Icone n="escudo" tam={14} /> Acesso restrito · conexão protegida</p>
       </aside>
+      )}
 
       <section className="ent-lado">
         <div className="ent-form-area">
           <p className="ent-ola">{ola ? `${ola}!` : " "}</p>
           {children}
         </div>
-        <p className="ent-troca">{outra.texto} <a href={outra.href}>{outra.link} <Icone n="seta" tam={14} /></a></p>
+        {tipo === "socios" && <p className="ent-troca">{outra.texto} <a href={outra.href}>{outra.link} <Icone n="seta" tam={14} /></a></p>}
       </section>
     </main>
   );

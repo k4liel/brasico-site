@@ -3351,3 +3351,9 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
 .fx-desligadas > .fx-nota { margin: 0 0 12px; }
 .fx-cartao.desligada { background: transparent; border-style: dashed; opacity: .8; }
 .fx-cartao.desligada:hover { opacity: 1; }
+/* Topo simples da equipe com duas áreas (TopoSimples em components/Compras.tsx) */
+.cp-menu { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cp-menu .marca { margin-right: 10px; }
+.cp-menu-item { padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; border: 1px solid transparent; }
+a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border-color: var(--border); }
+.cp-menu-item.on { color: var(--strong); background: var(--soft); border-color: var(--soft-line); }

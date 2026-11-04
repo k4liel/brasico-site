@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
+import { TopoSimples } from "./Compras";
 import IndicePrecos from "./IndicePrecos";
 import NotasServico, { LeituraNfse } from "./NotasServico";
 
@@ -46,6 +47,8 @@ const POR_PAGINA = 50;
 export default function Notas({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [acesso, setAcesso] = useState<boolean | null>(null);
+  const [compras, setCompras] = useState(false); // setor de compras: só NF-e, índice e nota avulsa
+  const [nome, setNome] = useState("");
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [aba, setAba] = useState<"notas" | "nfse" | "indice" | "avulsa" | "sefaz">("notas");
 
@@ -56,8 +59,13 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("notas_acesso").select("user_id").eq("user_id", userId);
-      if (!data?.length) return setAcesso(false);
+      const { data: papel } = await supabase.rpc("operacao_papel", { p_user: userId });
+      if (papel !== "socio" && papel !== "compras") return setAcesso(false);
+      if (papel === "compras") {
+        setCompras(true);
+        const { data: eu } = await supabase.from("operacao_pessoas").select("nome").eq("user_id", userId).maybeSingle();
+        setNome((eu as { nome?: string } | null)?.nome ?? "");
+      }
       setAcesso(true);
       carregarEmpresas();
     })();
@@ -74,29 +82,31 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
 
   return (
     <div className="pagina">
-      <Topo email={userEmail} ativo="notas" />
+      {compras ? <TopoSimples email={userEmail} nome={nome} area="Notas fiscais" outra={{ href: "/compras", nome: "Compras" }} />
+        : <Topo email={userEmail} ativo="notas" />}
       <main className="miolo tv es nf nf-larga">
         <div className="es-topo">
           <div>
             <span className="es-sobre">Operação</span>
             <h1>Notas fiscais</h1>
-            <p>NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes.</p>
+            <p>{compras ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."
+              : "NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."}</p>
           </div>
         </div>
 
         <div className="cp-abas" role="tablist">
           <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>NF-e (produtos)</button>
-          <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>
+          {!compras && <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>}
           <button role="tab" aria-selected={aba === "indice"} className={aba === "indice" ? "on" : ""} onClick={() => setAba("indice")}>Índice de preços</button>
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
-          <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>
+          {!compras && <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>}
         </div>
 
         {aba === "notas" && <ListaNotas empresas={empresas} />}
-        {aba === "nfse" && <NotasServico />}
+        {aba === "nfse" && !compras && <NotasServico />}
         {aba === "indice" && <IndicePrecos />}
         {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
-        {aba === "sefaz" && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /></>}
+        {aba === "sefaz" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /></>}
       </main>
     </div>
   );

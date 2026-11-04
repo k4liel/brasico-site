@@ -201,3 +201,7 @@ begin
     order by n.emissao desc limit 300) s), '[]'::jsonb);
 end $$;
 grant execute on function public.compras_notas_recentes(int, text) to authenticated;
+
+-- 04/11/2026: a Fernanda abre a página Notas (só NF-e, índice de preços e nota avulsa; sem NFS-e e sem Leituras).
+-- Para isso ela lê os nomes das empresas (notas_empresas).
+create policy ler_operacao on public.notas_empresas for select to authenticated using (public.notas_pode_ler(auth.uid()));

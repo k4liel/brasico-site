@@ -63,7 +63,9 @@ export async function middleware(request: NextRequest) {
   if (user && !isPublic && !path.startsWith("/estoque") && !path.startsWith("/producao")) {
     const { data: papel } = await supabase.rpc("operacao_papel", { p_user: user.id });
     const destino = papel === "estoque" ? "/estoque" : papel === "solicitante" || papel === "compras" ? "/compras" : null;
-    if (destino && !path.startsWith(destino)) {
+    // o setor de compras (Fernanda) também abre as Notas fiscais (só NF-e, índice e nota avulsa)
+    const liberadas = papel === "compras" ? ["/compras", "/notas"] : destino ? [destino] : [];
+    if (destino && !liberadas.some((p) => path.startsWith(p))) {
       const url = request.nextUrl.clone();
       url.pathname = destino;
       url.search = "";

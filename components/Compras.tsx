@@ -93,7 +93,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 
   return (
     <div className="pagina">
-      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : undefined} />}
+      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={papel === "compras" ? { href: "/notas", nome: "Notas fiscais" } : eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : undefined} />}
       <main className="miolo tv es cp-area nf-larga">
         {cabecalho}
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
@@ -124,6 +124,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 }
 
 // Para quem só tem a área de Compras: sem o menu do Brasico
+const ORDEM_AREAS = ["Compras", "Notas fiscais", "Câmara fria", "Produção"];
 // Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
 export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
   const [senha, setSenha] = useState(false);
@@ -134,8 +135,16 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
   return (
     <>
       <header className="topo cp-topo">
-        <span className="marca">Brasico · {area}</span>
-        <span className="cp-quem">{outra && <a href={outra.href}>{outra.nome}</a>}{nome || email}
+        {outra ? (
+          // quem abre duas áreas (ex.: a Fernanda, Compras e Notas fiscais) tem um menu com as duas
+          <nav className="cp-menu" aria-label="Páginas">
+            <span className="marca">Brasico</span>
+            {[{ href: "", nome: area }, outra].sort((x, y) => ORDEM_AREAS.indexOf(x.nome) - ORDEM_AREAS.indexOf(y.nome)).map((p) =>
+              p.nome === area ? <span key={p.nome} className="cp-menu-item on" aria-current="page">{p.nome}</span>
+                : <a key={p.nome} className="cp-menu-item" href={p.href}>{p.nome}</a>)}
+          </nav>
+        ) : <span className="marca">Brasico · {area}</span>}
+        <span className="cp-quem">{nome || email}
           <button className="ghost small" onClick={() => setSenha(!senha)} aria-expanded={senha}>Trocar senha</button>
           <button className="ghost small" onClick={sair}>Sair</button></span>
       </header>
