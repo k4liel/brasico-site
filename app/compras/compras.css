@@ -231,3 +231,51 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
 .cp-tag.falta { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
 .cp-forn-contato { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 8px 18px; font-size: 12.5px; color: var(--muted);
   border-bottom: 1px solid var(--soft-line); }
+
+/* Lista única por empresa (CNPJ que compra), com itens que se movem de empresa e de fornecedor */
+.cp-dica { margin: 4px 0 0; font-size: 13px; }
+.cp-empresa { display: grid; gap: 12px; padding: 14px; border-radius: 20px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--soft) 45%, var(--bg)); transition: border-color .15s, background .15s; }
+.cp-empresa-cabeca { display: flex; align-items: center; gap: 12px; padding: 2px 4px; }
+.cp-empresa-selo { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px;
+  background: var(--strong); color: var(--panel); font-family: var(--font-serif), Georgia, serif; font-size: 19px; font-weight: 600; }
+.cp-empresa-nome { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.cp-empresa-nome b { font-size: 16px; color: var(--strong); }
+.cp-empresa-nome small, .cp-empresa-total small { font-size: 12.5px; color: var(--muted); }
+.cp-empresa-total { display: grid; gap: 1px; text-align: right; }
+.cp-empresa-total b { font-size: 17px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cp-empresa-vazia { border-style: dashed; background: transparent; }
+.cp-empresa-solte { margin: 0; padding: 14px; text-align: center; font-size: 13px; color: var(--muted); }
+.cp-solta { border-color: var(--gold) !important; box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 25%, transparent);
+  background: color-mix(in srgb, var(--gold) 8%, var(--panel)); }
+.cp-tabela-unica thead th { font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.cp-tabela-unica td.cp-preco input, .cp-tabela-unica td.cp-qtd input { width: 92px; }
+.cp-tabela-unica .cp-un-txt { color: var(--muted); font-size: 13px; }
+.cp-tabela-unica tr[draggable="true"] { cursor: default; }
+.cp-alca { display: inline-grid; place-items: center; width: 22px; height: 28px; border-radius: 6px; color: var(--muted); cursor: grab; font-size: 16px; user-select: none; }
+.cp-alca:hover { background: var(--soft); color: var(--strong); }
+.cp-arrastando { opacity: .45; }
+.cp-item-acoes { white-space: nowrap; }
+.cp-item-acoes button + button { margin-left: 4px; }
+.cp-mover-linha td { background: color-mix(in srgb, var(--gold) 7%, var(--panel)); }
+.cp-mover { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 4px 0; }
+.cp-mover > b { flex: 1 0 100%; font-size: 13.5px; color: var(--strong); }
+.cp-mover label { display: grid; gap: 4px; flex: 1 1 200px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.cp-mover select, .cp-mover input { padding: 8px 10px; min-width: 0; }
+.cp-mover-botoes { display: flex; gap: 6px; }
+.cp-incluir.cp-incluir-emp { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.5fr) minmax(0, 2fr) repeat(3, minmax(0, .8fr)) auto; }
+.cp-incluir select { padding: 7px 9px; min-width: 0; }
+.cp-forn-card-emp { font-size: 11.5px; color: var(--muted); letter-spacing: .02em; }
+@media (max-width: 720px) {
+  .cp-empresa { padding: 10px; }
+  .cp-empresa-cabeca { flex-wrap: wrap; }
+  .cp-empresa-total { text-align: left; }
+  .cp-incluir.cp-incluir-emp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media print {
+  .cp-empresa { border: 0 !important; padding: 0 !important; background: none !important; box-shadow: none !important; }
+  .cp-empresa-selo { display: none !important; }
+  .cp-empresa { break-inside: auto; }
+  /* PDF que vai para o fornecedor: sem preços e sem a faixa da empresa (o "Faturar para" já diz o CNPJ) */
+  .cp-so-um .cp-preco, .cp-so-um .cp-empresa-cabeca { display: none !important; }
+}

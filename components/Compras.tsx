@@ -19,8 +19,8 @@ type Item = { id: number; lista_id: string; ordem: number; nome: string; fornece
   qtd_pedida: number | null; qtd_sugerida: number | null; motivo: string | null; qtd: number | null; preco: number | null;
   removido: boolean; incluido_na_revisao: boolean; media_4s: number | null; projecao: number | null; base: string | null;
   produto_nota: string | null; confianca: "alta" | "media" | "baixa" | null };
-type Pedido = { fornecedor: string; status: "a_pedir" | "pedido" | "recebido"; pedido_em: string | null; recebido_em: string | null; nota_chave: string | null; observacao: string | null };
-type Final = { id: number; fornecedor: string; nome: string; unidade: string; qtd: number | null; preco: number | null;
+type Pedido = { fornecedor: string; empresa: string; status: "a_pedir" | "pedido" | "recebido"; pedido_em: string | null; recebido_em: string | null; nota_chave: string | null; observacao: string | null };
+type Final = { id: number; fornecedor: string; empresa: string; movido: boolean; nome: string; unidade: string; qtd: number | null; preco: number | null;
   origem: { pessoa: string; unidade: string; setor: string; qtd: number }[]; removido: boolean; editado: boolean };
 
 const UNIDADES: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", sempre_vivo: "Sempre Vivo", filha_da_lua: "Filha da Lua" };
@@ -570,16 +570,30 @@ function AumentoSemana({ semana }: { semana: Semana }) {
   );
 }
 
+// Empresas que compram (CNPJ). Cada item nasce na empresa da casa que pediu (compras_empresa_padrao, supabase/compras_lista_unica_empresas.sql)
+const EMPRESAS: { cnpj: string; nome: string; razao: string; casas: string }[] = [
+  { cnpj: "24021962000276", nome: "Brasico77 · filial 0002", razao: "BRASICO77 EMPREENDIMENTOS TURISTICOS LTDA", casas: "Cicchetti Centro e Produção" },
+  { cnpj: "24021962000195", nome: "Brasico77 · matriz", razao: "BRASICO77 EMPREENDIMENTOS TURISTICOS LTDA", casas: "Filha da Lua" },
+  { cnpj: "50639716000101", nome: "LAIF Hotelarias", razao: "LAIF HOTELARIAS LTDA", casas: "Sempre Vivo" },
+  { cnpj: "36528542000189", nome: "Associação Genesis", razao: "ASSOCIACAO GENESIS", casas: "" },
+];
+const empresaDe = (cnpj: string) => EMPRESAS.find((e) => e.cnpj === cnpj) ?? { cnpj, nome: cnpj || "Sem empresa", razao: "", casas: "" };
+const fmtCnpj = (c: string) => (c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : c);
+const chavePedido = (empresa: string, fornecedor: string) => `${empresa}|${fornecedor}`;
+
 function ListaUnica({ semana }: { semana: Semana }) {
   const supabase = useMemo(() => createClient(), []);
   const [linhas, setLinhas] = useState<Final[]>([]);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
-  const [novo, setNovo] = useState({ fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
+  const [novo, setNovo] = useState({ empresa: EMPRESAS[0].cnpj, fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
   const [pedidos, setPedidos] = useState<Record<string, Pedido>>({});
   const [imprimir, setImprimir] = useState<string | null>(null);
   const [conferir, setConferir] = useState<string | null>(null);
   const [cadastro, setCadastro] = useState<Forn[]>([]);
+  const [movendo, setMovendo] = useState<number | null>(null);      // item com o painel "Mover" aberto
+  const [arrastando, setArrastando] = useState<number | null>(null); // item sendo arrastado
+  const [alvo, setAlvo] = useState<string | null>(null);             // onde o item vai cair
   const aberta = semana.status === "aberta";
   useEffect(() => {
     supabase.from("compras_fornecedores").select("*").eq("ativo", true).then(({ data }) => setCadastro((data ?? []) as Forn[]));
@@ -596,10 +610,10 @@ function ListaUnica({ semana }: { semana: Semana }) {
       supabase.from("compras_pedidos").select("*").eq("semana_id", semana.id),
     ]);
     setLinhas((data ?? []) as Final[]);
-    setPedidos(Object.fromEntries(((ps ?? []) as Pedido[]).map((x) => [x.fornecedor, x])));
+    setPedidos(Object.fromEntries(((ps ?? []) as Pedido[]).map((x) => [chavePedido(x.empresa, x.fornecedor), x])));
   }, [supabase, semana.id]);
 
-  // PDF de um fornecedor só: marca qual imprimir, imprime e volta ao normal
+  // PDF de um pedido só (o que vai para o fornecedor, sem preços): marca qual imprimir, imprime e volta ao normal
   useEffect(() => {
     if (!imprimir) return;
     const fim = () => setImprimir(null);
@@ -607,9 +621,9 @@ function ListaUnica({ semana }: { semana: Semana }) {
     const t = setTimeout(() => window.print(), 50);
     return () => { clearTimeout(t); window.removeEventListener("afterprint", fim); };
   }, [imprimir]);
-  async function marcar(fornecedor: string, status: Pedido["status"]) {
+  async function marcar(empresa: string, fornecedor: string, status: Pedido["status"]) {
     setErro("");
-    const { error } = await supabase.rpc("compras_pedido_gravar", { p_semana: semana.id, p_fornecedor: fornecedor, p_status: status });
+    const { error } = await supabase.rpc("compras_pedido_gravar", { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa, p_status: status });
     if (error) setErro(error.message);
     carregar();
   }
@@ -619,21 +633,31 @@ function ListaUnica({ semana }: { semana: Semana }) {
     setErro(""); setAviso("");
     const { data, error } = await supabase.rpc("compras_consolidar", { p_semana: semana.id });
     if (error) return setErro(error.message);
-    setAviso(`${data ?? 0} itens juntados das listas aprovadas. Itens que você já editou ficaram como estavam.`);
+    setAviso(`${data ?? 0} itens conferidos com as listas aprovadas. O que você editou ou moveu ficou como estava.`);
     carregar();
   }
   async function salvar(f: Final, m: Partial<Final>) {
     setErro("");
     const x = { ...f, ...m };
-    const { error } = await supabase.rpc("compras_final_salvar", { p_id: f.id, p_fornecedor: x.fornecedor, p_nome: x.nome, p_unidade: x.unidade, p_qtd: x.qtd, p_preco: x.preco, p_removido: x.removido });
+    const { error } = await supabase.rpc("compras_final_salvar", { p_id: f.id, p_fornecedor: x.fornecedor, p_nome: x.nome, p_unidade: x.unidade,
+      p_qtd: x.qtd, p_preco: x.preco, p_removido: x.removido, p_empresa: x.empresa });
     if (error) setErro(error.message);
     carregar();
   }
+  // mover = mudar a empresa e/ou o fornecedor do item (arrastando ou pelo botão Mover)
+  async function mover(id: number, empresa: string, fornecedor: string) {
+    const f = linhas.find((l) => l.id === id);
+    setMovendo(null); setArrastando(null); setAlvo(null);
+    if (!f || (f.empresa === empresa && f.fornecedor === fornecedor)) return;
+    setLinhas((ls) => ls.map((l) => (l.id === id ? { ...l, empresa, fornecedor, movido: true } : l))); // já mostra no lugar novo
+    await salvar(f, { empresa, fornecedor });
+  }
   async function incluir(ev: React.FormEvent) {
     ev.preventDefault();
-    const { error } = await supabase.rpc("compras_final_incluir", { p_semana: semana.id, p_fornecedor: novo.fornecedor, p_nome: novo.nome, p_unidade: novo.unidade, p_qtd: ler(novo.qtd), p_preco: ler(novo.preco) });
+    const { error } = await supabase.rpc("compras_final_incluir", { p_semana: semana.id, p_fornecedor: novo.fornecedor, p_nome: novo.nome, p_unidade: novo.unidade,
+      p_qtd: ler(novo.qtd), p_preco: ler(novo.preco), p_empresa: novo.empresa });
     if (error) return setErro(error.message);
-    setNovo({ fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
+    setNovo({ ...novo, fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
     carregar();
   }
   async function fechar(sim: boolean) {
@@ -643,22 +667,48 @@ function ListaUnica({ semana }: { semana: Semana }) {
   }
 
   const vivas = linhas.filter((l) => !l.removido);
-  const grupos = [...new Set(vivas.map((l) => l.fornecedor))].map((f) => ({ f, itens: vivas.filter((l) => l.fornecedor === f) }));
-  const total = vivas.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0);
+  const soma = (ls: Final[]) => ls.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0);
+  const total = soma(vivas);
+  // Empresa → fornecedor → itens. As empresas sem item aparecem só como lugar para soltar o item arrastado.
+  const empresas = [...EMPRESAS.map((e) => e.cnpj), ...[...new Set(vivas.map((l) => l.empresa))].filter((c) => !EMPRESAS.some((e) => e.cnpj === c))]
+    .map((cnpj) => {
+      const doEmp = vivas.filter((l) => l.empresa === cnpj);
+      const fs = [...new Set(doEmp.map((l) => l.fornecedor))].sort((a, b) => soma(doEmp.filter((l) => l.fornecedor === b)) - soma(doEmp.filter((l) => l.fornecedor === a)));
+      return { e: empresaDe(cnpj), itens: doEmp, grupos: fs.map((f) => ({ f, itens: doEmp.filter((l) => l.fornecedor === f) })) };
+    });
+  const comItens = empresas.filter((x) => x.itens.length);
+  const nPedidos = comItens.reduce((s, x) => s + x.grupos.length, 0);
+  const fornecedoresConhecidos = [...new Set([...vivas.map((l) => l.fornecedor), ...cadastro.map((f) => f.nome)])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const imprimindo = imprimir ? (() => { const [emp, ...r] = imprimir.split("|"); return { emp, forn: r.join("|") }; })() : null;
+
+  // arrastar e soltar (mouse); no celular, o botão Mover
+  const soltarEm = (empresa: string, fornecedor: string | null) => ({
+    onDragOver: (ev: React.DragEvent) => { if (arrastando == null) return; ev.preventDefault(); ev.stopPropagation(); setAlvo(chavePedido(empresa, fornecedor ?? "")); },
+    onDragLeave: (ev: React.DragEvent) => { if (ev.currentTarget.contains(ev.relatedTarget as Node)) return; setAlvo((a) => (a === chavePedido(empresa, fornecedor ?? "") ? null : a)); },
+    onDrop: (ev: React.DragEvent) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const id = Number(ev.dataTransfer.getData("text/plain") || arrastando);
+      const it = linhas.find((l) => l.id === id);
+      if (it) mover(id, empresa, fornecedor ?? it.fornecedor);
+    },
+  });
 
   return (
     <section className="cp-final">
       <div className="ip-numeros no-print">
         <div className="ip-numero"><span className="ip-rotulo">Itens</span><span className="ip-valor">{vivas.length}</span><span className="ip-var neutro">na lista única</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Fornecedores</span><span className="ip-valor">{grupos.length}</span><span className="ip-var neutro">um pedido para cada</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Total estimado</span><span className="ip-valor">{brl(total)}</span><span className="ip-var neutro">pelo último preço pago</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Semana</span><span className="ip-valor">{aberta ? "aberta" : "fechada"}</span><span className="ip-var neutro">{diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Empresas</span><span className="ip-valor">{comItens.length}</span><span className="ip-var neutro">CNPJs que vão comprar</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Pedidos</span><span className="ip-valor">{nPedidos}</span><span className="ip-var neutro">um por empresa e fornecedor</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Total estimado</span><span className="ip-valor">{brl(total)}</span><span className="ip-var neutro">semana {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)} · {aberta ? "aberta" : "fechada"}</span></div>
       </div>
       <div className="es-bloco-cabeca no-print cp-final-acoes">
-        <h2>Lista única por fornecedor</h2>
+        <div>
+          <h2>Lista única por empresa</h2>
+          {aberta && vivas.length > 0 && <p className="muted cp-dica">Para mudar um item de empresa ou de fornecedor, arraste-o pela alça <b>⠿</b> ou use <b>Mover</b>. O PDF de cada pedido vai para o fornecedor sem preços.</p>}
+        </div>
         <div className="nf-acoes">
-          {aberta && <button className="ghost small" onClick={juntar}>Juntar listas aprovadas</button>}
-          <button className="small" onClick={() => window.print()} disabled={!vivas.length}>Gerar PDF</button>
+          {aberta && <button className="ghost small" onClick={juntar}>Atualizar das listas</button>}
+          <button className="small" onClick={() => window.print()} disabled={!vivas.length}>PDF de tudo (com preços)</button>
           {aberta ? <button className="ghost small" onClick={() => fechar(true)} disabled={!vivas.length}>Fechar a semana</button>
             : <button className="ghost small" onClick={() => fechar(false)}>Reabrir a semana</button>}
         </div>
@@ -668,78 +718,149 @@ function ListaUnica({ semana }: { semana: Semana }) {
 
       <div className={imprimir ? "cp-pdf cp-so-um" : "cp-pdf"}>
         <div className="cp-pdf-cabeca">
-          <strong>{imprimir ? `Pedido · ${imprimir}` : "Lista de compras"} · semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</strong>
-          {imprimir ? (() => { const g = grupos.find((x) => x.f === imprimir); return <span>{g?.itens.length ?? 0} itens · total {brl(g?.itens.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0) ?? 0)}</span>; })()
-            : <span>{vivas.length} itens · {grupos.length} fornecedores · total {brl(total)}</span>}
-          <span>Descontar o que já tem no estoque antes de pedir.</span>
+          {imprimindo ? (() => {
+            const e = empresaDe(imprimindo.emp);
+            const its = vivas.filter((l) => l.empresa === imprimindo.emp && l.fornecedor === imprimindo.forn);
+            return <>
+              <strong>Pedido · {imprimindo.forn} · semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</strong>
+              <span>Faturar para: {e.razao || e.nome} · CNPJ {fmtCnpj(e.cnpj)}</span>
+              <span>{its.length} itens</span>
+            </>;
+          })() : <>
+            <strong>Lista de compras · semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</strong>
+            <span>{vivas.length} itens · {comItens.length} empresas · {nPedidos} pedidos · total {brl(total)}</span>
+            <span>Descontar o que já tem no estoque antes de pedir.</span>
+          </>}
         </div>
-        {!vivas.length ? <p className="muted">Nada ainda. Quando as listas forem aprovadas, use “Juntar listas aprovadas”.</p> : grupos.map((g) => {
-          const sub = g.itens.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0);
-          const ped = pedidos[g.f];
-          const st = ped?.status ?? "a_pedir";
+        {!vivas.length ? <p className="muted">Nada ainda. Os itens entram aqui sozinhos quando cada lista é aprovada.</p> : empresas.map(({ e, itens, grupos }) => {
+          if (!itens.length && arrastando == null) return null;
+          if (imprimindo && imprimindo.emp !== e.cnpj) return null;
+          const soltaEmpresa = alvo === chavePedido(e.cnpj, "");
           return (
-            <div key={g.f} className={imprimir === g.f ? "cp-forn cp-imprimir" : "cp-forn"}>
-              <div className="cp-forn-cabeca">
-                <strong>{g.f}</strong>
-                <span className={`cp-ped no-print ${st}`}>{PEDIDO[st]}{st === "pedido" && ped?.pedido_em ? ` · ${quando(ped.pedido_em)}` : st === "recebido" && ped?.recebido_em ? ` · ${quando(ped.recebido_em)}` : ""}{ped?.nota_chave ? " · nota ligada" : ""}</span>
-                <span>{brl(sub)}</span>
-              </div>
-              <div className="cp-forn-acoes no-print">
-                <button className="ghost small" onClick={() => setImprimir(g.f)}>PDF deste fornecedor</button>
-                {st === "a_pedir" && <button className="small" onClick={() => marcar(g.f, "pedido")}>Marcar pedido feito</button>}
-                {st === "pedido" && <><button className="small" onClick={() => marcar(g.f, "recebido")}>Marcar recebido</button><button className="ghost small" onClick={() => marcar(g.f, "a_pedir")}>Voltar para “a pedir”</button></>}
-                {st === "recebido" && <button className="ghost small" onClick={() => marcar(g.f, "pedido")}>Desfazer recebido</button>}
-                <button className={conferir === g.f ? "ghost small on" : "ghost small"} onClick={() => setConferir(conferir === g.f ? null : g.f)} aria-expanded={conferir === g.f}>Conferir com a nota</button>
-              </div>
-              {(() => {
-                const f = doCadastro(g.f);
-                if (!f || !(f.whatsapp || f.telefone || f.como_pedir || f.dias_entrega || f.contato_nome)) return null;
+            <section key={e.cnpj} className={`cp-empresa${soltaEmpresa ? " cp-solta" : ""}${!itens.length ? " cp-empresa-vazia" : ""}`} {...(aberta ? soltarEm(e.cnpj, null) : {})}>
+              <header className="cp-empresa-cabeca">
+                <span className="cp-empresa-selo" aria-hidden="true">{e.nome.slice(0, 1)}</span>
+                <span className="cp-empresa-nome"><b>{e.nome}</b><small>CNPJ {fmtCnpj(e.cnpj)}{e.casas ? ` · compra para ${e.casas}` : ""}</small></span>
+                <span className="cp-empresa-total cp-preco"><b>{brl(soma(itens))}</b><small>{itens.length} itens · {grupos.length} {grupos.length === 1 ? "pedido" : "pedidos"}</small></span>
+              </header>
+              {!itens.length && <p className="cp-empresa-solte">Solte aqui para passar o item para a {e.nome}.</p>}
+              {grupos.map((g) => {
+                const k = chavePedido(e.cnpj, g.f);
+                const ped = pedidos[k];
+                const st = ped?.status ?? "a_pedir";
+                if (imprimindo && imprimindo.forn !== g.f) return null;
                 return (
-                  <p className="cp-forn-contato no-print">
-                    {f.contato_nome && <span>👤 {f.contato_nome}</span>}
-                    {f.whatsapp && <a href={`https://wa.me/${f.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">💬 {f.whatsapp}</a>}
-                    {f.telefone && <span>📞 {f.telefone}</span>}
-                    {f.como_pedir && <span>📝 {f.como_pedir}</span>}
-                    {f.dias_entrega && <span>🚚 entrega {f.dias_entrega}</span>}
-                  </p>
+                  <div key={k} className={`cp-forn${imprimir === k ? " cp-imprimir" : ""}${alvo === k ? " cp-solta" : ""}`} {...(aberta ? soltarEm(e.cnpj, g.f) : {})}>
+                    <div className="cp-forn-cabeca">
+                      <strong>{g.f}</strong>
+                      <span className={`cp-ped no-print ${st}`}>{PEDIDO[st]}{st === "pedido" && ped?.pedido_em ? ` · ${quando(ped.pedido_em)}` : st === "recebido" && ped?.recebido_em ? ` · ${quando(ped.recebido_em)}` : ""}{ped?.nota_chave ? " · nota ligada" : ""}</span>
+                      <span className="cp-preco">{brl(soma(g.itens))}</span>
+                    </div>
+                    <div className="cp-forn-acoes no-print">
+                      <button className="ghost small" onClick={() => setImprimir(k)}>PDF para o fornecedor</button>
+                      {st === "a_pedir" && <button className="small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Marcar pedido feito</button>}
+                      {st === "pedido" && <><button className="small" onClick={() => marcar(e.cnpj, g.f, "recebido")}>Marcar recebido</button><button className="ghost small" onClick={() => marcar(e.cnpj, g.f, "a_pedir")}>Voltar para “a pedir”</button></>}
+                      {st === "recebido" && <button className="ghost small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Desfazer recebido</button>}
+                      <button className={conferir === k ? "ghost small on" : "ghost small"} onClick={() => setConferir(conferir === k ? null : k)} aria-expanded={conferir === k}>Conferir com a nota</button>
+                    </div>
+                    {(() => {
+                      const f = doCadastro(g.f);
+                      if (!f || !(f.whatsapp || f.telefone || f.como_pedir || f.dias_entrega || f.contato_nome)) return null;
+                      return (
+                        <p className="cp-forn-contato no-print">
+                          {f.contato_nome && <span>👤 {f.contato_nome}</span>}
+                          {f.whatsapp && <a href={`https://wa.me/${f.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">💬 {f.whatsapp}</a>}
+                          {f.telefone && <span>📞 {f.telefone}</span>}
+                          {f.como_pedir && <span>📝 {f.como_pedir}</span>}
+                          {f.dias_entrega && <span>🚚 entrega {f.dias_entrega}</span>}
+                        </p>
+                      );
+                    })()}
+                    {conferir === k && <ConferirNota semana={semana} fornecedor={g.f} empresa={e.cnpj} pedido={ped} onMudou={carregar} />}
+                    <table className="nf-tabela cp-tabela cp-tabela-unica">
+                      <thead><tr>
+                        <th className="cp-caixa" aria-label="Marcar" /><th>Item</th><th className="n">Quantidade</th>
+                        <th className="n cp-preco">Preço unit.</th><th className="n cp-preco">Total</th><th className="no-print" />
+                      </tr></thead>
+                      <tbody>
+                        {g.itens.map((l) => (
+                          <Fragment key={l.id}>
+                            <tr className={arrastando === l.id ? "cp-arrastando" : ""} draggable={aberta}
+                              onDragStart={(ev) => { ev.dataTransfer.setData("text/plain", String(l.id)); ev.dataTransfer.effectAllowed = "move"; setArrastando(l.id); }}
+                              onDragEnd={() => { setArrastando(null); setAlvo(null); }}>
+                              <td className="cp-caixa">
+                                {aberta ? <span className="cp-alca no-print" title="Arraste para outro fornecedor ou empresa" aria-hidden="true">⠿</span> : null}
+                                <span className={aberta ? "so-print" : ""} aria-hidden="true">☐</span>
+                              </td>
+                              <td>
+                                {aberta ? <input className="no-print-input" defaultValue={l.nome} onBlur={(v) => v.target.value !== l.nome && salvar(l, { nome: v.target.value })} aria-label="Item" /> : null}
+                                <span className={aberta ? "so-print" : ""}>{l.nome}</span>
+                                <small className="no-print">{(l.origem ?? []).map((o) => `${o.pessoa} ${num(o.qtd)}`).join(" · ")}{l.movido ? " · movido" : l.editado ? " · editado" : ""}</small>
+                              </td>
+                              <td className="n cp-qtd">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.qtd)} onBlur={(v) => ler(v.target.value) !== l.qtd && salvar(l, { qtd: ler(v.target.value) })} aria-label="Quantidade" /><span className="so-print">{num(l.qtd)}</span></> : num(l.qtd)} <span className="cp-un-txt">{l.unidade}</span></td>
+                              <td className="n cp-preco">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.preco)} placeholder="—" onBlur={(v) => ler(v.target.value) !== l.preco && salvar(l, { preco: ler(v.target.value) })} aria-label={`Preço unitário de ${l.nome}`} /><span className="so-print">{brl(l.preco)}</span></> : brl(l.preco)}</td>
+                              <td className="n cp-preco cp-tot">{brl((l.qtd ?? 0) * (l.preco ?? 0))}</td>
+                              <td className="no-print cp-item-acoes">{aberta && <>
+                                <button className={movendo === l.id ? "ghost small on" : "ghost small"} onClick={() => setMovendo(movendo === l.id ? null : l.id)} aria-expanded={movendo === l.id}>Mover</button>
+                                <button className="ghost small" onClick={() => salvar(l, { removido: true })}>Tirar</button>
+                              </>}</td>
+                            </tr>
+                            {movendo === l.id && (
+                              <tr className="cp-mover-linha no-print"><td colSpan={6}>
+                                <MoverItem item={l} fornecedores={fornecedoresConhecidos} onMover={(emp, forn) => mover(l.id, emp, forn)} onCancelar={() => setMovendo(null)} />
+                              </td></tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 );
-              })()}
-              {conferir === g.f && <ConferirNota semana={semana} fornecedor={g.f} pedido={ped} onMudou={carregar} />}
-              <table className="nf-tabela cp-tabela">
-                <tbody>
-                  {g.itens.map((l) => (
-                    <tr key={l.id}>
-                      <td className="cp-caixa" aria-hidden="true">☐</td>
-                      <td>
-                        {aberta ? <input className="no-print-input" defaultValue={l.nome} onBlur={(v) => v.target.value !== l.nome && salvar(l, { nome: v.target.value })} aria-label="Item" /> : null}
-                        <span className={aberta ? "so-print" : ""}>{l.nome}</span>
-                        <small className="no-print">{l.origem.map((o) => `${o.pessoa} ${num(o.qtd)}`).join(" · ")}{l.editado ? " · editado" : ""}</small>
-                      </td>
-                      <td className="no-print">{aberta && <input defaultValue={l.fornecedor} onBlur={(v) => v.target.value !== l.fornecedor && salvar(l, { fornecedor: v.target.value })} aria-label="Fornecedor" />}</td>
-                      <td className="n">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.qtd)} onBlur={(v) => ler(v.target.value) !== l.qtd && salvar(l, { qtd: ler(v.target.value) })} aria-label="Quantidade" /><span className="so-print">{num(l.qtd)}</span></> : num(l.qtd)} {l.unidade}</td>
-                      <td className="n">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.preco)} onBlur={(v) => ler(v.target.value) !== l.preco && salvar(l, { preco: ler(v.target.value) })} aria-label="Preço" /><span className="so-print">{brl(l.preco)}</span></> : brl(l.preco)}</td>
-                      <td className="n">{brl((l.qtd ?? 0) * (l.preco ?? 0))}</td>
-                      <td className="no-print">{aberta && <button className="ghost small" onClick={() => salvar(l, { removido: true })}>Tirar</button>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              })}
+            </section>
           );
         })}
       </div>
 
       {aberta && (
-        <form className="cp-incluir no-print" onSubmit={incluir}>
-          <input value={novo.fornecedor} onChange={(v) => setNovo({ ...novo, fornecedor: v.target.value })} placeholder="Fornecedor" aria-label="Fornecedor" />
+        <form className="cp-incluir cp-incluir-emp no-print" onSubmit={incluir}>
+          <select value={novo.empresa} onChange={(v) => setNovo({ ...novo, empresa: v.target.value })} aria-label="Empresa">
+            {EMPRESAS.map((e) => <option key={e.cnpj} value={e.cnpj}>{e.nome}</option>)}
+          </select>
+          <input value={novo.fornecedor} onChange={(v) => setNovo({ ...novo, fornecedor: v.target.value })} placeholder="Fornecedor" aria-label="Fornecedor" list="cp-fornecedores" />
           <input value={novo.nome} onChange={(v) => setNovo({ ...novo, nome: v.target.value })} placeholder="Item" aria-label="Item" />
           <input value={novo.qtd} onChange={(v) => setNovo({ ...novo, qtd: v.target.value })} inputMode="decimal" placeholder="Qtd." aria-label="Quantidade" />
           <input value={novo.unidade} onChange={(v) => setNovo({ ...novo, unidade: v.target.value })} placeholder="Unid." aria-label="Unidade" />
-          <input value={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v.target.value })} inputMode="decimal" placeholder="Preço" aria-label="Preço" />
+          <input value={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v.target.value })} inputMode="decimal" placeholder="Preço unit." aria-label="Preço unitário" />
           <button className="ghost small">Incluir na lista única</button>
         </form>
       )}
+      <datalist id="cp-fornecedores">{fornecedoresConhecidos.map((f) => <option key={f} value={f} />)}</datalist>
     </section>
+  );
+}
+
+// Painel "Mover" de um item da lista única: escolhe a empresa e o fornecedor
+function MoverItem({ item, onMover, onCancelar }: { item: Final; fornecedores: string[]; onMover: (empresa: string, fornecedor: string) => void; onCancelar: () => void }) {
+  const [empresa, setEmpresa] = useState(item.empresa);
+  const [fornecedor, setFornecedor] = useState(item.fornecedor);
+  const mudou = empresa !== item.empresa || fornecedor.trim() !== item.fornecedor;
+  return (
+    <form className="cp-mover" onSubmit={(ev) => { ev.preventDefault(); if (mudou && fornecedor.trim()) onMover(empresa, fornecedor.trim()); }}>
+      <b>Mover “{item.nome}”</b>
+      <label>Empresa
+        <select value={empresa} onChange={(v) => setEmpresa(v.target.value)}>
+          {EMPRESAS.map((e) => <option key={e.cnpj} value={e.cnpj}>{e.nome}{e.casas ? ` (${e.casas})` : ""}</option>)}
+        </select>
+      </label>
+      <label>Fornecedor
+        <input value={fornecedor} onChange={(v) => setFornecedor(v.target.value)} list="cp-fornecedores" placeholder="Nome do fornecedor" />
+      </label>
+      <span className="cp-mover-botoes">
+        <button className="small" disabled={!mudou || !fornecedor.trim()}>Mover</button>
+        <button type="button" className="ghost small" onClick={onCancelar}>Cancelar</button>
+      </span>
+    </form>
   );
 }
 
@@ -800,7 +921,7 @@ type PainelDados = {
   listas: { pessoas: number; com_lista: number; aprovadas: number; em_revisao: number; aguardando: number; pessoas_tudo_aprovado: number };
   pendentes: { pessoa: string; unidade: string; setor: string; listas: number; aprovadas: number }[];
   itens: { total: number; baixa: number; valor_aprovado: number; valor_todas: number };
-  fornecedores: { fornecedor: string; itens: number; valor: number; status: Pedido["status"]; pedido_em: string | null; recebido_em: string | null; nota: string | null }[];
+  fornecedores: { fornecedor: string; empresa: string; itens: number; valor: number; status: Pedido["status"]; pedido_em: string | null; recebido_em: string | null; nota: string | null }[];
   alertas_preco: { descricao: string; fornecedor: string; preco: number; media_anterior: number; alta_pct: number; unidade: string; emissao: string }[];
 };
 type Casa = { unidade: string; pessoas: number; com_lista: number; aprovadas: number; listas: number; valor: number };
@@ -906,11 +1027,12 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
 
       {fs.length > 0 && (
         <section className="av-bloco">
-          <h2>Pedidos por fornecedor</h2>
+          <h2>Pedidos por empresa e fornecedor</h2>
           <div className="cp-forn-cards">
             {fs.map((f) => (
-              <div key={f.fornecedor} className={`cp-forn-card ${f.status}`}>
+              <div key={`${f.empresa}|${f.fornecedor}`} className={`cp-forn-card ${f.status}`}>
                 <span className="cp-forn-card-nome">{f.fornecedor}</span>
+                <small className="cp-forn-card-emp">{empresaDe(f.empresa).nome}</small>
                 <b>{brl(Number(f.valor))}</b>
                 <small>{f.itens} itens · {PEDIDO[f.status]}{quando(f.status === "recebido" ? f.recebido_em : f.pedido_em) ? ` · ${quando(f.status === "recebido" ? f.recebido_em : f.pedido_em)}` : ""}</small>
                 {f.nota && <a href={`/api/notas/danfe/${f.nota}`} target="_blank" rel="noreferrer">Ver a nota</a>}
@@ -944,7 +1066,7 @@ type Conferencia = {
   fora_do_pedido?: { descricao: string; unidade: string; quantidade: number; preco: number }[];
 };
 const SITUACAO: Record<string, string> = { ok: "confere", faltou: "não veio na nota", quantidade: "quantidade diferente", preco: "preço acima do pedido" };
-function ConferirNota({ semana, fornecedor, pedido, onMudou }: { semana: Semana; fornecedor: string; pedido?: Pedido; onMudou: () => void }) {
+function ConferirNota({ semana, fornecedor, empresa, pedido, onMudou }: { semana: Semana; fornecedor: string; empresa: string; pedido?: Pedido; onMudou: () => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [conf, setConf] = useState<Conferencia | null>(null);
   const [sugestoes, setSugestoes] = useState<{ chave: string; emissao: string; valor: number; emitente: string; completa: boolean }[] | null>(null);
@@ -952,19 +1074,19 @@ function ConferirNota({ semana, fornecedor, pedido, onMudou }: { semana: Semana;
   const carregar = useCallback(async () => {
     setErro("");
     const [c, n] = await Promise.all([
-      supabase.rpc("compras_conferir", { p_semana: semana.id, p_fornecedor: fornecedor }),
+      supabase.rpc("compras_conferir", { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa }),
       supabase.rpc("compras_notas_do_fornecedor", { p_semana: semana.id, p_fornecedor: fornecedor }),
     ]);
     if (c.error || n.error) setErro((c.error ?? n.error)!.message);
     setConf((c.data ?? { nota: null }) as Conferencia);
     setSugestoes((n.data ?? []) as typeof sugestoes);
-  }, [supabase, semana.id, fornecedor]);
+  }, [supabase, semana.id, fornecedor, empresa]);
   useEffect(() => { carregar(); }, [carregar, pedido?.nota_chave]);
   async function ligar(chave: string | null) {
     setErro("");
     const { error } = await supabase.rpc("compras_pedido_gravar", chave
-      ? { p_semana: semana.id, p_fornecedor: fornecedor, p_nota: chave, p_status: pedido?.status === "recebido" ? null : "recebido" }
-      : { p_semana: semana.id, p_fornecedor: fornecedor, p_tirar_nota: true });
+      ? { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa, p_nota: chave, p_status: pedido?.status === "recebido" ? null : "recebido" }
+      : { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa, p_tirar_nota: true });
     if (error) return setErro(error.message);
     onMudou();
     carregar();
