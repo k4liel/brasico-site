@@ -6,7 +6,7 @@
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { partesPem } from "@/lib/esocial/certificado";
-import { consultarNSU, darCiencia, distribuir, type Credencial } from "@/lib/notas/servicos";
+import { consultarChave, consultarNSU, darCiencia, distribuir, type Credencial } from "@/lib/notas/servicos";
 import { ErroConexao } from "@/lib/notas/sefaz";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ function db() {
   });
 }
 
-type Execucao = { id: string; empresa_cnpj: string; tipo: "distribuicao" | "ciencia" };
+type Execucao = { id: string; empresa_cnpj: string; tipo: "distribuicao" | "ciencia" | "chave" };
 type Pego = { execucao: Execucao; empresa: { cnpj: string; nome: string; ult_nsu: string; lacunas?: Lacuna[] }; chaves: string[]; certificado: string | null };
 
 // Regra de 1 hora da SEFAZ, com 5 min de folga: no dia 28/10 uma consulta 12 s depois da hora exata levou 656.
@@ -135,6 +135,34 @@ async function processar(segredo: string, id: string) {
         break;
       }
       Object.assign(resultado, { chamadas, documentos, ult_nsu: ult });
+    } else if (execucao.tipo === "chave") {
+      // Notas só em resumo: uma a uma pela chave de acesso (consChNFe); para no primeiro 656
+      let completas = 0, tentadas = 0;
+      const respostas: string[] = [];
+      for (const ch of chaves) {
+        if (Date.now() - inicio > LIMITE_MS) { resultado.continua = true; break; }
+        const r = await consultarChave(cred, empresa.cnpj, ch);
+        tentadas++;
+        cstat = r.cstat;
+        const resposta = `${r.cstat ?? "?"} ${r.motivo ?? ""}`.trim();
+        respostas.push(resposta);
+        await supabase.rpc("notas_worker_tentou_chave", { p_segredo: segredo, p_chave: ch, p_resposta: resposta });
+        if (r.cstat === 656) {
+          status = "falha";
+          erro = `SEFAZ: consumo indevido (656) na consulta por chave. ${r.motivo ?? ""} Espera 1 hora.`.trim();
+          bloquear = new Date(Date.now() + UMA_HORA).toISOString();
+          break;
+        }
+        if (r.notas.length || r.eventos.length) {
+          completas += r.notas.filter((n) => (n as { completa?: boolean }).completa).length;
+          const g = await supabase.rpc("notas_worker_gravar", {
+            p_segredo: segredo, p_execucao: execucao.id, p_notas: r.notas, p_eventos: r.eventos, p_ult_nsu: null, p_max_nsu: null,
+          });
+          if (g.error) throw new Error(`gravação: ${g.error.message}`);
+        }
+      }
+      if (!chaves.length) status = "sem_dados";
+      Object.assign(resultado, { pedidas: chaves.length, tentadas, completas, respostas });
     } else {
       const r = await darCiencia(cred, empresa.cnpj, chaves);
       cstat = r.cstat;

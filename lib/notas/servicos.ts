@@ -22,6 +22,11 @@ export function consultarNSU(cred: Credencial, cnpj: string, nsu: string): Promi
   return rodada(cred, cnpj, `<consNSU><NSU>${nsu}</NSU></consNSU>`);
 }
 
+// Uma nota pela chave de acesso (consChNFe): para as que chegaram só em resumo
+export function consultarChave(cred: Credencial, cnpj: string, chave: string): Promise<Rodada> {
+  return rodada(cred, cnpj, `<consChNFe><chNFe>${chave}</chNFe></consChNFe>`);
+}
+
 async function rodada(cred: Credencial, cnpj: string, pedido: string): Promise<Rodada> {
   const msg =
     `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><tpAmb>1</tpAmb><cUFAutor>${UF_RN}</cUFAutor>` +
