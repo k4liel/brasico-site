@@ -17,6 +17,7 @@ export type Resposta = {
   documentos: Documento[];
   erros: string[];
   chaves: string[];               // nomes dos campos da resposta (diagnóstico, sem conteúdo)
+  bruto: string;                  // resposta sem o lote, para entender uma rejeição
 };
 
 // Campo do JSON sem depender de maiúsculas (a API já mudou o formato entre versões)
@@ -71,7 +72,7 @@ export async function distribuir(nsu: number, cnpjConsulta: string | null, cadei
   let json: unknown = null;
   try { json = JSON.parse(texto); } catch { /* resposta que não é JSON */ }
   if (!json) {
-    if (http === 429) return { http, status: "LIMITE", documentos: [], erros: ["muitas consultas (429)"], chaves: [] };
+    if (http === 429) return { http, status: "LIMITE", documentos: [], erros: ["muitas consultas (429)"], chaves: [], bruto: "" };
     throw new ErroConexao(`o Portal Nacional respondeu HTTP ${http}${texto ? `: ${texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 160)}` : ""}`);
   }
   const lote = campo(json, "LoteDFe");
@@ -96,5 +97,6 @@ export async function distribuir(nsu: number, cnpjConsulta: string | null, cadei
     documentos,
     erros: [...mensagens(campo(json, "Erros")), ...mensagens(campo(json, "Alertas"))],
     chaves: Object.keys(json as object),
+    bruto: JSON.stringify({ ...(json as object), LoteDFe: Array.isArray(lote) ? `${lote.length} documentos` : lote }).slice(0, 1500),
   };
 }

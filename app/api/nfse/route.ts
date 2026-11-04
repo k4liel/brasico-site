@@ -49,7 +49,8 @@ async function processar(segredo: string, id: string) {
     for (;;) {
       const r = await distribuir(nsu, cnpjConsulta, cadeia, chave);
       chamadas++;
-      if (chamadas === 1) resultado.primeira = { http: r.http, status: r.status, campos: r.chaves, erros: r.erros.slice(0, 5) };
+      if (chamadas === 1) resultado.primeira = { http: r.http, status: r.status, erros: r.erros.slice(0, 5) };
+      if (r.status && /REJEI|ERRO/i.test(r.status)) resultado.resposta = r.bruto;
 
       if (r.status === "LIMITE" || r.http === 429) {
         status = "falha";
