@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Compras from "@/components/Compras";
+import "./compras.css";
 
 export const dynamic = "force-dynamic";
 

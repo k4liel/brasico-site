@@ -1,0 +1,60 @@
+/* Compras · área da Fernanda (etapa 3): painel, pedido por fornecedor, conferência da nota e notas recebidas.
+   Usa as cores do sistema (app/globals.css); fica num arquivo próprio da página de Compras. */
+
+/* Situação do pedido de cada fornecedor */
+.cp-ped { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  border: 1px solid var(--border); color: var(--muted); background: var(--panel); }
+.cp-ped.pedido { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, transparent); background: color-mix(in srgb, var(--gold) 10%, transparent); }
+.cp-ped.recebido { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.cp-forn-cabeca { align-items: center; gap: 12px; }
+.cp-forn-cabeca strong { flex: 1; min-width: 0; }
+.cp-forn-acoes { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--soft-line); }
+.cp-forn-acoes .on { border-color: var(--gold); color: var(--strong); }
+
+/* PDF de um fornecedor só */
+@media print {
+  .cp-so-um .cp-forn:not(.cp-imprimir) { display: none !important; }
+}
+
+/* Conferência da nota com o pedido */
+.cp-conferir { display: grid; gap: 12px; padding: 14px 18px; background: color-mix(in srgb, var(--soft) 55%, var(--panel)); border-bottom: 1px solid var(--soft-line); }
+.cp-conferir-cabeca, .cp-sugestoes li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cp-conferir-cabeca > span, .cp-sugestoes li > span { flex: 1; min-width: 200px; display: grid; gap: 2px; }
+.cp-conferir small, .cp-sugestoes small { color: var(--muted); font-size: 12.5px; }
+.cp-sugestoes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cp-sugestoes li { padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+a.botao { display: inline-flex; align-items: center; text-decoration: none; }
+.cp-sit { font-size: 12.5px; font-weight: 600; white-space: nowrap; color: var(--ok); }
+.cp-sit.faltou, .cp-sit.quantidade, .cp-sit.preco { color: var(--danger); }
+.cp-conf-atencao td { background: color-mix(in srgb, var(--danger) 6%, transparent); }
+.cp-fora { margin: 8px 0 0; padding-left: 18px; font-size: 13.5px; }
+
+/* Painel */
+.cp-painel { display: grid; gap: 16px; }
+.cp-painel-grade { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.cp-painel h2 { font-size: 15px; margin: 0 0 12px; }
+.cp-tarefas, .cp-altas { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cp-tarefas li, .cp-altas li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.cp-tarefas li > span, .cp-altas li > span:first-child { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.cp-tarefas small, .cp-altas small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.cp-altas .n { display: grid; gap: 2px; text-align: right; }
+.cp-altas + button { margin-top: 12px; }
+
+/* Notas recebidas */
+.cp-notas { display: grid; gap: 12px; }
+.cp-notas-filtro { display: flex; flex-wrap: wrap; gap: 8px; }
+.cp-notas-filtro input { flex: 1; min-width: 200px; }
+.cp-lista-notas { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cp-lista-notas > li { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); overflow: hidden; }
+.cp-lista-notas > li.on { border-color: var(--gold); }
+.cp-nota-linha { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.cp-nota-linha > span:first-child { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.cp-nota-linha small { color: var(--muted); font-size: 12.5px; }
+.cp-nota-linha .n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cp-nota-itens { display: grid; gap: 10px; padding: 0 16px 14px; }
+.cp-nota-itens > a { justify-self: start; }
+
+@media (max-width: 640px) {
+  .cp-forn-acoes, .cp-conferir { padding-left: 12px; padding-right: 12px; }
+  .cp-nota-linha { flex-wrap: wrap; }
+}

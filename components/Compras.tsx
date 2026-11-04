@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { NotaAvulsa } from "./Notas";
+import IndicePrecos from "./IndicePrecos";
 
 // Compras (Operação · fase 2): pedidos do grupo COMPRAS analisados pelo Claude viram listas por pessoa
 // (uma por pedido: mercado, Ceasa...), cada item ligado ao produto das notas, com a média de 4 semanas e a
 // projeção; cada pessoa revisa, junta listas se quiser e aprova; a Fernanda junta as aprovadas na lista
-// única por fornecedor e gera o PDF. Tabelas e funções em supabase/compras.sql e compras_listas_metricas.sql.
+// única por fornecedor, gera o PDF de cada fornecedor, marca pedido feito e recebido e confere a nota fiscal
+// com o pedido. Tabelas e funções em supabase/compras.sql, compras_listas_metricas.sql e compras_fernanda.sql.
 type Papel = "socio" | "compras" | "solicitante" | null;
 type Pessoa = { id: string; nome: string; unidade: string | null; setor: string | null; papel: string; email?: string | null;
   user_id: string | null; wa_nome: string | null; ativo: boolean; convidado_em: string | null; registra_estoque?: boolean };
@@ -18,6 +20,7 @@ type Item = { id: number; lista_id: string; ordem: number; nome: string; fornece
   qtd_pedida: number | null; qtd_sugerida: number | null; motivo: string | null; qtd: number | null; preco: number | null;
   removido: boolean; incluido_na_revisao: boolean; media_4s: number | null; projecao: number | null; base: string | null;
   produto_nota: string | null; confianca: "alta" | "media" | "baixa" | null };
+type Pedido = { fornecedor: string; status: "a_pedir" | "pedido" | "recebido"; pedido_em: string | null; recebido_em: string | null; nota_chave: string | null; observacao: string | null };
 type Final = { id: number; fornecedor: string; nome: string; unidade: string; qtd: number | null; preco: number | null;
   origem: { pessoa: string; unidade: string; setor: string; qtd: number }[]; removido: boolean; editado: boolean };
 
@@ -25,6 +28,8 @@ const UNIDADES: Record<string, string> = { cicchetti_centro: "Cicchetti Centro",
 const SETORES: Record<string, string> = { bar: "Bar", cozinha: "Cozinha", salao: "Salão", producao: "Produção" };
 const STATUS: Record<string, string> = { aguardando: "aguardando análise", em_revisao: "em revisão", aprovada: "aprovada" };
 const ATIVAS = ["aguardando", "em_revisao", "aprovada"];
+const PEDIDO: Record<string, string> = { a_pedir: "a pedir", pedido: "pedido feito", recebido: "recebido" };
+const quando = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Fortaleza", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
 const CONFIANCA: Record<string, string> = { alta: "produto certo nas notas", media: "produto parecido nas notas", baixa: "não achado nas notas" };
 // Situação de uma pessoa com várias listas: aprovada só quando todas estão aprovadas
 const situacao = (ls: Lista[]) => (!ls.length ? null : ls.every((l) => l.status === "aprovada") ? "aprovada" : ls.some((l) => l.status === "em_revisao") ? "em_revisao" : "aguardando");
@@ -34,13 +39,15 @@ const ler = (s: string) => (s.trim() === "" ? null : Number(s.replace(/\./g, "")
 const diaSemana = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 const fimSemana = (iso: string) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + 6); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); };
 
+type Aba = "painel" | "andamento" | "final" | "notas" | "precos" | "pessoas" | "avulsa";
+
 export default function Compras({ userEmail }: { userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [papel, setPapel] = useState<Papel | undefined>(undefined);
   const [eu, setEu] = useState<Pessoa | null>(null);
   const [semanas, setSemanas] = useState<Semana[]>([]);
   const [semana, setSemana] = useState<Semana | null>(null);
-  const [aba, setAba] = useState<"andamento" | "final" | "pessoas" | "avulsa">("andamento");
+  const [aba, setAba] = useState<Aba>("painel");
 
   useEffect(() => {
     (async () => {
@@ -87,19 +94,22 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 
   return (
     <div className="pagina">
-      {gestor ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : undefined} />}
+      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : undefined} />}
       <main className="miolo tv es cp-area nf-larga">
         {cabecalho}
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
           <>
             <div className="cp-abas" role="tablist">
-              <button role="tab" aria-selected={aba === "andamento"} className={aba === "andamento" ? "on" : ""} onClick={() => setAba("andamento")}>Listas</button>
-              <button role="tab" aria-selected={aba === "final"} className={aba === "final" ? "on" : ""} onClick={() => setAba("final")}>Lista única</button>
-              <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
-              {papel === "socio" && <button role="tab" aria-selected={aba === "pessoas"} className={aba === "pessoas" ? "on" : ""} onClick={() => setAba("pessoas")}>Pessoas e acesso</button>}
+              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista única e pedidos"], ["notas", "Notas recebidas"], ["precos", "Índice de preços"], ["avulsa", "Nota avulsa"],
+                 ...(papel === "socio" ? [["pessoas", "Pessoas e acesso"]] : [])] as [Aba, string][]).map(([k, t]) => (
+                <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? "on" : ""} onClick={() => setAba(k)}>{t}</button>
+              ))}
             </div>
+            {aba === "painel" && <Painel semana={semana} irPara={setAba} />}
             {aba === "andamento" && <Andamento semana={semana} />}
             {aba === "final" && <ListaUnica semana={semana} />}
+            {aba === "notas" && <NotasRecebidas />}
+            {aba === "precos" && <IndicePrecos />}
             {aba === "avulsa" && <NotaAvulsa empresas={[]} onPronto={() => {}} />}
             {aba === "pessoas" && papel === "socio" && <Pessoas />}
           </>
@@ -479,12 +489,34 @@ function ListaUnica({ semana }: { semana: Semana }) {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [novo, setNovo] = useState({ fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
+  const [pedidos, setPedidos] = useState<Record<string, Pedido>>({});
+  const [imprimir, setImprimir] = useState<string | null>(null);
+  const [conferir, setConferir] = useState<string | null>(null);
   const aberta = semana.status === "aberta";
 
   const carregar = useCallback(async () => {
-    const { data } = await supabase.from("compras_final").select("*").eq("semana_id", semana.id).order("fornecedor").order("nome");
+    const [{ data }, { data: ps }] = await Promise.all([
+      supabase.from("compras_final").select("*").eq("semana_id", semana.id).order("fornecedor").order("nome"),
+      supabase.from("compras_pedidos").select("*").eq("semana_id", semana.id),
+    ]);
     setLinhas((data ?? []) as Final[]);
+    setPedidos(Object.fromEntries(((ps ?? []) as Pedido[]).map((x) => [x.fornecedor, x])));
   }, [supabase, semana.id]);
+
+  // PDF de um fornecedor só: marca qual imprimir, imprime e volta ao normal
+  useEffect(() => {
+    if (!imprimir) return;
+    const fim = () => setImprimir(null);
+    window.addEventListener("afterprint", fim);
+    const t = setTimeout(() => window.print(), 50);
+    return () => { clearTimeout(t); window.removeEventListener("afterprint", fim); };
+  }, [imprimir]);
+  async function marcar(fornecedor: string, status: Pedido["status"]) {
+    setErro("");
+    const { error } = await supabase.rpc("compras_pedido_gravar", { p_semana: semana.id, p_fornecedor: fornecedor, p_status: status });
+    if (error) setErro(error.message);
+    carregar();
+  }
   useEffect(() => { carregar(); }, [carregar]);
 
   async function juntar() {
@@ -538,17 +570,32 @@ function ListaUnica({ semana }: { semana: Semana }) {
       {erro && <p className="tv-alerta no-print">{erro}</p>}
       {aviso && <p className="es-aviso no-print">{aviso}</p>}
 
-      <div className="cp-pdf">
+      <div className={imprimir ? "cp-pdf cp-so-um" : "cp-pdf"}>
         <div className="cp-pdf-cabeca">
-          <strong>Lista de compras · semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</strong>
-          <span>{vivas.length} itens · {grupos.length} fornecedores · total {brl(total)}</span>
+          <strong>{imprimir ? `Pedido · ${imprimir}` : "Lista de compras"} · semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</strong>
+          {imprimir ? (() => { const g = grupos.find((x) => x.f === imprimir); return <span>{g?.itens.length ?? 0} itens · total {brl(g?.itens.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0) ?? 0)}</span>; })()
+            : <span>{vivas.length} itens · {grupos.length} fornecedores · total {brl(total)}</span>}
           <span>Descontar o que já tem no estoque antes de pedir.</span>
         </div>
         {!vivas.length ? <p className="muted">Nada ainda. Quando as listas forem aprovadas, use “Juntar listas aprovadas”.</p> : grupos.map((g) => {
           const sub = g.itens.reduce((s, l) => s + (l.qtd ?? 0) * (l.preco ?? 0), 0);
+          const ped = pedidos[g.f];
+          const st = ped?.status ?? "a_pedir";
           return (
-            <div key={g.f} className="cp-forn">
-              <div className="cp-forn-cabeca"><strong>{g.f}</strong><span>{brl(sub)}</span></div>
+            <div key={g.f} className={imprimir === g.f ? "cp-forn cp-imprimir" : "cp-forn"}>
+              <div className="cp-forn-cabeca">
+                <strong>{g.f}</strong>
+                <span className={`cp-ped no-print ${st}`}>{PEDIDO[st]}{st === "pedido" && ped?.pedido_em ? ` · ${quando(ped.pedido_em)}` : st === "recebido" && ped?.recebido_em ? ` · ${quando(ped.recebido_em)}` : ""}{ped?.nota_chave ? " · nota ligada" : ""}</span>
+                <span>{brl(sub)}</span>
+              </div>
+              <div className="cp-forn-acoes no-print">
+                <button className="ghost small" onClick={() => setImprimir(g.f)}>PDF deste fornecedor</button>
+                {st === "a_pedir" && <button className="small" onClick={() => marcar(g.f, "pedido")}>Marcar pedido feito</button>}
+                {st === "pedido" && <><button className="small" onClick={() => marcar(g.f, "recebido")}>Marcar recebido</button><button className="ghost small" onClick={() => marcar(g.f, "a_pedir")}>Voltar para “a pedir”</button></>}
+                {st === "recebido" && <button className="ghost small" onClick={() => marcar(g.f, "pedido")}>Desfazer recebido</button>}
+                <button className={conferir === g.f ? "ghost small on" : "ghost small"} onClick={() => setConferir(conferir === g.f ? null : g.f)} aria-expanded={conferir === g.f}>Conferir com a nota</button>
+              </div>
+              {conferir === g.f && <ConferirNota semana={semana} fornecedor={g.f} pedido={ped} onMudou={carregar} />}
               <table className="nf-tabela cp-tabela">
                 <tbody>
                   {g.itens.map((l) => (
@@ -582,6 +629,268 @@ function ListaUnica({ semana }: { semana: Semana }) {
           <input value={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v.target.value })} inputMode="decimal" placeholder="Preço" aria-label="Preço" />
           <button className="ghost small">Incluir na lista única</button>
         </form>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Painel da Fernanda: em que pé está a semana e o que fazer agora (compras_painel, supabase/compras_fernanda.sql)
+// ---------------------------------------------------------------------
+type PainelDados = {
+  listas: { pessoas: number; com_lista: number; aprovadas: number; em_revisao: number; aguardando: number; pessoas_tudo_aprovado: number };
+  pendentes: { pessoa: string; unidade: string; setor: string; listas: number; aprovadas: number }[];
+  itens: { total: number; baixa: number; valor_aprovado: number; valor_todas: number };
+  fornecedores: { fornecedor: string; itens: number; valor: number; status: Pedido["status"]; pedido_em: string | null; recebido_em: string | null; nota: string | null }[];
+  alertas_preco: { descricao: string; fornecedor: string; preco: number; media_anterior: number; alta_pct: number; unidade: string; emissao: string }[];
+};
+function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [d, setD] = useState<PainelDados | null>(null);
+  const [erro, setErro] = useState("");
+  useEffect(() => {
+    supabase.rpc("compras_painel", { p_semana: semana.id }).then(({ data, error }) => {
+      if (error) setErro(error.message); else setD(data as PainelDados);
+    });
+  }, [supabase, semana.id]);
+  if (erro) return <p className="tv-alerta">{erro}</p>;
+  if (!d) return <p className="muted">Carregando o painel…</p>;
+
+  const fs = d.fornecedores;
+  const aPedir = fs.filter((f) => f.status === "a_pedir");
+  const esperando = fs.filter((f) => f.status === "pedido");
+  const semNota = fs.filter((f) => f.status === "recebido" && !f.nota);
+  const totalFinal = fs.reduce((s, f) => s + Number(f.valor ?? 0), 0);
+  const pctAprov = d.listas.com_lista ? Math.round((d.listas.pessoas_tudo_aprovado / d.listas.com_lista) * 100) : 0;
+  const tarefas: { t: string; d: string; acao?: [string, Aba] }[] = [];
+  if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda sem lista`, d: "ainda não pediram no grupo COMPRAS nesta semana" });
+  if (d.pendentes.length) tarefas.push({ t: `${d.pendentes.length} pessoas ainda não aprovaram tudo`, d: d.pendentes.map((p) => `${p.pessoa} (${p.aprovadas}/${p.listas})`).join(" · "), acao: ["Ver listas", "andamento"] });
+  if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ t: "Juntar as listas aprovadas", d: "monta a lista única por fornecedor", acao: ["Abrir a lista única", "final"] });
+  if (aPedir.length) tarefas.push({ t: `Fazer o pedido a ${aPedir.length} fornecedores`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
+  if (esperando.length) tarefas.push({ t: `Esperando a entrega de ${esperando.length}`, d: esperando.map((f) => f.fornecedor).join(" · "), acao: ["Marcar recebido", "final"] });
+  if (semNota.length) tarefas.push({ t: `Ligar a nota de ${semNota.length} pedidos recebidos`, d: "e conferir quantidade e preço com o que foi pedido", acao: ["Conferir", "final"] });
+  if (d.itens.baixa) tarefas.push({ t: `${d.itens.baixa} itens sem produto nas notas`, d: "a análise não achou compra parecida: confira o fornecedor e o preço", acao: ["Ver listas", "andamento"] });
+
+  return (
+    <section className="cp-painel">
+      <div className="ip-numeros">
+        <div className="ip-numero">
+          <span className="ip-rotulo">Pessoas com tudo aprovado</span>
+          <span className="ip-valor">{d.listas.pessoas_tudo_aprovado}<small className="cp-de"> de {d.listas.com_lista}</small></span>
+          <span className="ip-var neutro">{d.listas.aprovadas} de {d.listas.aprovadas + d.listas.em_revisao + d.listas.aguardando} listas aprovadas</span>
+          <span className="pd-progresso" aria-hidden="true"><span style={{ width: `${pctAprov}%` }} /></span>
+        </div>
+        <div className="ip-numero"><span className="ip-rotulo">Estimado nas listas</span><span className="ip-valor">{brl(Number(d.itens.valor_todas))}</span><span className="ip-var neutro">{brl(Number(d.itens.valor_aprovado))} já aprovado</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Pedidos feitos</span><span className="ip-valor">{fs.length - aPedir.length}<small className="cp-de"> de {fs.length}</small></span><span className="ip-var neutro">{fs.filter((f) => f.status === "recebido").length} recebidos · {brl(totalFinal)} na lista única</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Itens nas listas</span><span className="ip-valor">{d.itens.total}</span><span className={d.itens.baixa ? "ip-var cf-alerta" : "ip-var neutro"}>{d.itens.baixa} sem produto nas notas</span></div>
+      </div>
+
+      <div className="cp-painel-grade">
+        <section className="av-bloco">
+          <h2>O que fazer agora</h2>
+          {!tarefas.length ? <p className="es-tudo-certo">Tudo em dia nesta semana.</p> : (
+            <ol className="cp-tarefas">
+              {tarefas.map((x) => (
+                <li key={x.t}>
+                  <span><b>{x.t}</b><small>{x.d}</small></span>
+                  {x.acao && <button className="ghost small" onClick={() => irPara(x.acao![1])}>{x.acao[0]}</button>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+        <section className="av-bloco">
+          <h2>Altas de preço nas notas</h2>
+          {!d.alertas_preco.length ? <p className="muted">Nenhuma alta de 15% ou mais nos últimos 14 dias.</p> : (
+            <ul className="cp-altas">
+              {d.alertas_preco.map((a, i) => (
+                <li key={i}>
+                  <span><b>{a.descricao}</b><small>{a.fornecedor} · {new Date(a.emissao).toLocaleDateString("pt-BR")}</small></span>
+                  <span className="n"><b className="cf-alerta">+{num(a.alta_pct)}%</b><small>{brl(a.preco)} / {a.unidade} · média {brl(a.media_anterior)}</small></span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button className="ghost small" onClick={() => irPara("precos")}>Abrir o índice de preços</button>
+        </section>
+      </div>
+
+      {fs.length > 0 && (
+        <section className="av-bloco">
+          <h2>Pedidos por fornecedor</h2>
+          <div className="nf-tabela-wrap">
+            <table className="nf-tabela">
+              <thead><tr><th>Fornecedor</th><th className="n">Itens</th><th className="n">Valor</th><th>Situação</th><th>Nota</th></tr></thead>
+              <tbody>
+                {fs.map((f) => (
+                  <tr key={f.fornecedor}>
+                    <td>{f.fornecedor}</td><td className="n">{f.itens}</td><td className="n">{brl(Number(f.valor))}</td>
+                    <td><span className={`cp-ped ${f.status}`}>{PEDIDO[f.status]}</span> <small className="muted">{quando(f.status === "recebido" ? f.recebido_em : f.pedido_em)}</small></td>
+                    <td>{f.nota ? <a href={`/api/notas/danfe/${f.nota}`} target="_blank" rel="noreferrer">Ver PDF</a> : <span className="muted">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
+// Conferência da nota com o pedido de um fornecedor (compras_conferir, compras_notas_do_fornecedor)
+type Conferencia = {
+  nota: { chave: string; emissao: string; valor: number; emitente: string; completa: boolean } | null;
+  itens?: { item: string; unidade: string; qtd_pedida: number | null; preco_pedido: number | null; na_nota: string | null; unidade_nota: string | null; qtd_nota: number | null; preco_nota: number | null; situacao: "ok" | "faltou" | "quantidade" | "preco" }[];
+  fora_do_pedido?: { descricao: string; unidade: string; quantidade: number; preco: number }[];
+};
+const SITUACAO: Record<string, string> = { ok: "confere", faltou: "não veio na nota", quantidade: "quantidade diferente", preco: "preço acima do pedido" };
+function ConferirNota({ semana, fornecedor, pedido, onMudou }: { semana: Semana; fornecedor: string; pedido?: Pedido; onMudou: () => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [conf, setConf] = useState<Conferencia | null>(null);
+  const [sugestoes, setSugestoes] = useState<{ chave: string; emissao: string; valor: number; emitente: string; completa: boolean }[] | null>(null);
+  const [erro, setErro] = useState("");
+  const carregar = useCallback(async () => {
+    setErro("");
+    const [c, n] = await Promise.all([
+      supabase.rpc("compras_conferir", { p_semana: semana.id, p_fornecedor: fornecedor }),
+      supabase.rpc("compras_notas_do_fornecedor", { p_semana: semana.id, p_fornecedor: fornecedor }),
+    ]);
+    if (c.error || n.error) setErro((c.error ?? n.error)!.message);
+    setConf((c.data ?? { nota: null }) as Conferencia);
+    setSugestoes((n.data ?? []) as typeof sugestoes);
+  }, [supabase, semana.id, fornecedor]);
+  useEffect(() => { carregar(); }, [carregar, pedido?.nota_chave]);
+  async function ligar(chave: string | null) {
+    setErro("");
+    const { error } = await supabase.rpc("compras_pedido_gravar", chave
+      ? { p_semana: semana.id, p_fornecedor: fornecedor, p_nota: chave, p_status: pedido?.status === "recebido" ? null : "recebido" }
+      : { p_semana: semana.id, p_fornecedor: fornecedor, p_tirar_nota: true });
+    if (error) return setErro(error.message);
+    onMudou();
+    carregar();
+  }
+  if (!conf || !sugestoes) return <div className="cp-conferir no-print"><p className="muted">Carregando…</p></div>;
+  const problemas = (conf.itens ?? []).filter((i) => i.situacao !== "ok").length;
+  return (
+    <div className="cp-conferir no-print">
+      {erro && <p className="tv-alerta">{erro}</p>}
+      {!conf.nota ? (
+        <>
+          <p className="muted">Escolha a nota fiscal deste pedido. Aparecem as notas do mesmo fornecedor de 3 dias antes da semana até 12 dias depois (a nota chega da SEFAZ uma vez por dia).</p>
+          {!sugestoes.length ? <p className="muted">Nenhuma nota desse fornecedor ainda. Se a compra veio sem nota, lance como nota avulsa.</p> : (
+            <ul className="cp-sugestoes">
+              {sugestoes.map((n) => (
+                <li key={n.chave}>
+                  <span><b>{n.emitente}</b><small>{new Date(n.emissao).toLocaleDateString("pt-BR")} · {brl(n.valor)}{n.completa ? "" : " · só o resumo (sem itens ainda)"}</small></span>
+                  <a className="ghost small botao" href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">Ver PDF</a>
+                  <button className="small" onClick={() => ligar(n.chave)}>É esta</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="cp-conferir-cabeca">
+            <span><b>Nota de {new Date(conf.nota.emissao).toLocaleDateString("pt-BR")} · {brl(conf.nota.valor)}</b>
+              <small>{problemas ? `${problemas} ${problemas === 1 ? "item pede" : "itens pedem"} atenção` : "Tudo confere com o pedido."}</small></span>
+            <a className="ghost small botao" href={`/api/notas/danfe/${conf.nota.chave}`} target="_blank" rel="noreferrer">Ver PDF da nota</a>
+            <button className="ghost small" onClick={() => ligar(null)}>Trocar a nota</button>
+          </div>
+          {!conf.nota.completa && <p className="es-aviso">A nota ainda está só em resumo: os itens aparecem quando a SEFAZ liberar a nota completa.</p>}
+          <div className="nf-tabela-wrap">
+            <table className="nf-tabela cp-tabela">
+              <thead><tr><th>Pedido</th><th className="n">Qtd. pedida</th><th className="n">Preço pedido</th><th>Na nota</th><th className="n">Qtd. na nota</th><th className="n">Preço na nota</th><th>Situação</th></tr></thead>
+              <tbody>
+                {(conf.itens ?? []).map((i, k) => (
+                  <tr key={k} className={i.situacao === "ok" ? "" : "cp-conf-atencao"}>
+                    <td>{i.item}<small className="muted"> {i.unidade}</small></td>
+                    <td className="n">{num(i.qtd_pedida)}</td><td className="n">{brl(i.preco_pedido)}</td>
+                    <td>{i.na_nota ?? "—"}{i.unidade_nota && <small className="muted"> {i.unidade_nota}</small>}</td>
+                    <td className="n">{num(i.qtd_nota)}</td><td className="n">{brl(i.preco_nota)}</td>
+                    <td><span className={`cp-sit ${i.situacao}`}>{SITUACAO[i.situacao]}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!!conf.fora_do_pedido?.length && (
+            <details className="cp-pedido"><summary>{conf.fora_do_pedido.length} itens na nota que não estavam no pedido</summary>
+              <ul className="cp-fora">{conf.fora_do_pedido.map((x, k) => <li key={k}>{x.descricao} · {num(x.quantidade)} {x.unidade} · {brl(x.preco)}</li>)}</ul>
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Notas de compra recentes (para a Fernanda conferir e achar a nota de cada pedido)
+type NotaRecente = { chave: string; emissao: string; valor: number; emitente: string; casa: string; completa: boolean; origem: string; itens: number; pedido: { fornecedor: string; status: string } | null };
+type ItemNota = { n_item: number; descricao: string; unidade: string; quantidade: number; valor_unitario: number; valor_total: number };
+function NotasRecebidas() {
+  const supabase = useMemo(() => createClient(), []);
+  const [dias, setDias] = useState(21);
+  const [busca, setBusca] = useState("");
+  const [termo, setTermo] = useState("");
+  const [notas, setNotas] = useState<NotaRecente[] | null>(null);
+  const [aberta, setAberta] = useState<string | null>(null);
+  const [itens, setItens] = useState<ItemNota[]>([]);
+  const [erro, setErro] = useState("");
+  useEffect(() => {
+    setNotas(null);
+    supabase.rpc("compras_notas_recentes", { p_dias: dias, p_busca: termo || null }).then(({ data, error }) => {
+      if (error) setErro(error.message);
+      setNotas((data ?? []) as NotaRecente[]);
+    });
+  }, [supabase, dias, termo]);
+  async function abrir(chave: string) {
+    if (aberta === chave) return setAberta(null);
+    setAberta(chave); setItens([]);
+    const { data } = await supabase.from("notas_itens").select("n_item,descricao,unidade,quantidade,valor_unitario,valor_total").eq("chave", chave).order("n_item");
+    setItens((data ?? []) as ItemNota[]);
+  }
+  const CASA: Record<string, string> = { ...UNIDADES, grupo: "outra empresa do grupo" };
+  const total = (notas ?? []).reduce((s, n) => s + Number(n.valor ?? 0), 0);
+  return (
+    <section className="cp-notas">
+      <form className="cp-notas-filtro" onSubmit={(e) => { e.preventDefault(); setTermo(busca.trim()); }}>
+        <input value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Fornecedor ou item (ex.: Eloi, queijo)" aria-label="Buscar nas notas" />
+        <select value={dias} onChange={(v) => setDias(Number(v.target.value))} aria-label="Período">
+          <option value={7}>últimos 7 dias</option><option value={21}>últimas 3 semanas</option><option value={60}>últimos 2 meses</option><option value={120}>últimos 4 meses</option>
+        </select>
+        <button className="ghost small">Buscar</button>
+      </form>
+      {erro && <p className="tv-alerta">{erro}</p>}
+      {!notas ? <p className="muted">Carregando as notas…</p> : !notas.length ? <p className="muted">Nenhuma nota nesse período.</p> : (
+        <>
+          <p className="muted">{notas.length} notas · {brl(total)}. As notas chegam da SEFAZ todo dia de manhã; a compra sem nota entra como nota avulsa.</p>
+          <ul className="cp-lista-notas">
+            {notas.map((n) => (
+              <li key={n.chave} className={aberta === n.chave ? "on" : ""}>
+                <button className="cp-nota-linha" onClick={() => abrir(n.chave)} aria-expanded={aberta === n.chave}>
+                  <span><b>{n.emitente}</b><small>{new Date(n.emissao).toLocaleDateString("pt-BR")} · {CASA[n.casa] ?? n.casa} · {n.itens} itens{n.origem === "avulsa" ? " · avulsa" : ""}{n.completa ? "" : " · só resumo"}</small></span>
+                  {n.pedido && <span className={`cp-ped ${n.pedido.status}`}>pedido da semana</span>}
+                  <b className="n">{brl(n.valor)}</b>
+                </button>
+                {aberta === n.chave && (
+                  <div className="cp-nota-itens">
+                    {n.completa && <a className="ghost small botao" href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">Ver PDF da nota</a>}
+                    {!itens.length ? <p className="muted">{n.completa ? "Carregando os itens…" : "A nota ainda está só em resumo, sem itens."}</p> : (
+                      <div className="nf-tabela-wrap">
+                        <table className="nf-tabela">
+                          <thead><tr><th>Item</th><th className="n">Qtd.</th><th>Unid.</th><th className="n">Preço</th><th className="n">Total</th></tr></thead>
+                          <tbody>{itens.map((i) => <tr key={i.n_item}><td>{i.descricao}</td><td className="n">{num(i.quantidade)}</td><td>{i.unidade}</td><td className="n">{brl(i.valor_unitario)}</td><td className="n">{brl(i.valor_total)}</td></tr>)}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
