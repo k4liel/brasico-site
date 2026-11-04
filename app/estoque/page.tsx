@@ -9,7 +9,7 @@ export default async function EstoquePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/colaboradores");
 
   return <Estoque userId={user.id} userEmail={user.email ?? ""} />;
 }

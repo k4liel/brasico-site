@@ -40,11 +40,20 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   // /p/<código>: link público de um projeto (só leitura, sem login)
   if (path.startsWith("/p/")) return response;
-  const isPublic = path.startsWith("/login") || path.startsWith("/auth");
+  // /colaboradores: login próprio da equipe das casas (só usuário e senha)
+  const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/colaboradores");
+  const areaEquipe = path.startsWith("/compras") || path.startsWith("/estoque") || path.startsWith("/producao");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = areaEquipe ? "/colaboradores" : "/login";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+  // Quem já entrou e abre o login dos colaboradores vai direto para a sua área
+  if (user && path.startsWith("/colaboradores")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
     return NextResponse.redirect(url);
   }
 

@@ -10,7 +10,7 @@ export default async function ComprasPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/colaboradores");
 
   return <Compras userEmail={user.email ?? ""} />;
 }

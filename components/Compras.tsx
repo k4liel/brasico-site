@@ -129,7 +129,7 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
   const [senha, setSenha] = useState(false);
   async function sair() {
     await createClient().auth.signOut();
-    window.location.href = "/login";
+    window.location.href = "/colaboradores";
   }
   return (
     <>

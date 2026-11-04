@@ -9,7 +9,7 @@ export default async function ProducaoPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/colaboradores");
 
   return <Producao userId={user.id} userEmail={user.email ?? ""} />;
 }
