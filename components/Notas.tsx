@@ -4,11 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import IndicePrecos from "./IndicePrecos";
-import NotasServico from "./NotasServico";
+import NotasServico, { LeituraNfse } from "./NotasServico";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
 // Abas: Notas (por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
-// Ambiente Nacional), Índice de preços, Nota avulsa e Leitura da SEFAZ.
+// Ambiente Nacional, com o PDF), Índice de preços, Nota avulsa e Leituras (SEFAZ e Portal Nacional da NFS-e).
 // O PDF (DANFE) é montado do XML oficial em /api/notas/danfe/<chave>. Tabelas e funções em supabase/notas*.sql.
 type Empresa = {
   cnpj: string; nome: string; ativa: boolean; ciencia: boolean; ult_nsu: string; max_nsu: string | null;
@@ -89,14 +89,14 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
           <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>
           <button role="tab" aria-selected={aba === "indice"} className={aba === "indice" ? "on" : ""} onClick={() => setAba("indice")}>Índice de preços</button>
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
-          <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leitura da SEFAZ</button>
+          <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>
         </div>
 
         {aba === "notas" && <ListaNotas empresas={empresas} />}
         {aba === "nfse" && <NotasServico />}
         {aba === "indice" && <IndicePrecos />}
         {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
-        {aba === "sefaz" && <LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} />}
+        {aba === "sefaz" && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /></>}
       </main>
     </div>
   );

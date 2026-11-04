@@ -15,7 +15,7 @@ export type EventoServico = { chave: string; tipo: string; descricao: string | n
 const nome = (e: Element) => e.localName ?? e.nodeName.replace(/^.*:/, "");
 
 // Primeiro elemento com o nome (sem prefixo), procurando nos descendentes
-function achar(raiz: Element | null | undefined, n: string): Element | null {
+export function achar(raiz: Element | null | undefined, n: string): Element | null {
   if (!raiz) return null;
   for (let c = raiz.firstChild; c; c = c.nextSibling) {
     if (c.nodeType !== 1) continue;
@@ -26,11 +26,11 @@ function achar(raiz: Element | null | undefined, n: string): Element | null {
   }
   return null;
 }
-function filho(raiz: Element | null | undefined, n: string): Element | null {
+export function filho(raiz: Element | null | undefined, n: string): Element | null {
   for (let c = raiz?.firstChild; c; c = c.nextSibling) if (c.nodeType === 1 && nome(c as Element) === n) return c as Element;
   return null;
 }
-const txt = (raiz: Element | null | undefined, n: string) => achar(raiz, n)?.textContent?.trim() || null;
+export const txt = (raiz: Element | null | undefined, n: string) => achar(raiz, n)?.textContent?.trim() || null;
 const num = (s: string | null) => (s == null || s === "" || Number.isNaN(Number(s)) ? null : Number(s));
 const doc = (raiz: Element | null) => txt(raiz, "CNPJ") ?? txt(raiz, "CPF") ?? txt(raiz, "NIF");
 

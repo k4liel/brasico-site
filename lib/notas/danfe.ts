@@ -34,7 +34,7 @@ export function code128c(digitos: string): number[] {
 // Texto que a Helvetica padrão consegue escrever (WinAnsi)
 const TROCA: Record<string, string> = { "≈": "~", "→": "->", "←": "<-", "≤": "<=", "≥": ">=", "×": "x", " ": " " };
 const WINANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
-function limpo(s: string | null | undefined): string {
+export function limpo(s: string | null | undefined): string {
   if (!s) return "";
   return [...s.normalize("NFC").replace(/[\r\n\t]+/g, " ")]
     .map((c) => {
@@ -59,9 +59,9 @@ const hora = (iso: string | null) => (iso && iso.length >= 19 ? iso.slice(11, 19
 const chaveFmt = (c: string) => (c.match(/.{1,4}/g) ?? []).join(" ");
 const MOD_FRETE: Record<string, string> = { "0": "0-Emitente", "1": "1-Destinatário", "2": "2-Terceiros", "3": "3-Próprio remetente", "4": "4-Próprio destinatário", "9": "9-Sem frete" };
 
-type Fontes = { r: PDFFont; b: PDFFont };
+export type Fontes = { r: PDFFont; b: PDFFont };
 
-class Folha {
+export class Folha {
   constructor(public page: PDFPage, public f: Fontes) {}
   // y medido de cima para baixo
   Y(y: number) { return A4.h - y; }

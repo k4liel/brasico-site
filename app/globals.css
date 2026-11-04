@@ -2865,8 +2865,7 @@ button.nf-grupo-cabeca:focus-visible { outline: 2px solid var(--gold); outline-o
 .av-resumo > button { width: 100%; padding: 12px 16px; font-size: 14.5px; }
 .av-nota { margin: 0; font-size: 12px; }
 
-/* Aba NFS-e (components/NotasServico.tsx): mesmos cartões das notas; a leitura do Portal fica no fim */
-.nfs-cards { margin-top: 8px; }
+/* NFS-e (components/NotasServico.tsx): a aba usa os mesmos grupos e cartões das notas; a leitura do Portal fica na aba Leituras */
 .nfs-leitura { display: grid; gap: 12px; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); }
 .nfs-leitura h2 { margin: 0; font-family: var(--font-serif), Georgia, serif; font-size: 24px; font-weight: 500; color: var(--strong); }
 .nfs-leitura > p { margin: 0; }
