@@ -18,7 +18,7 @@ function db() {
 }
 
 type Pego = {
-  execucao: { id: string; origem: string; teste?: { caminho: string; restrita?: boolean }[] };
+  execucao: { id: string; origem: string; teste?: { caminho: string; restrita?: boolean; limite?: number }[] };
   empresa: { cnpj: string; nome: string; ult_nsu: number };
   cert_cnpj: string | null;
   certificado: string | null;
@@ -44,35 +44,21 @@ async function processar(segredo: string, id: string) {
   try {
     if (!certificado) throw new Error("Não há certificado válido desta raiz. Envie o .pfx em Certificados digitais.");
     const { cadeia, chave } = partesPem(certificado);
-    const cnpjConsulta = cert_cnpj && cert_cnpj !== empresa.cnpj ? empresa.cnpj : null;
 
     // Execução de teste (só o banco cria, com o segredo): caminhos crus no ADN, sem gravar notas
     if (Array.isArray(execucao.teste) && execucao.teste.length) {
       const sondas = [];
       for (const t of execucao.teste.slice(0, 8)) {
         if (typeof t?.caminho !== "string" || !t.caminho.startsWith("/")) continue;
-        sondas.push(await sondar(t.caminho, !!t.restrita, cadeia, chave).catch((e) => ({ caminho: t.caminho, erro: String(e?.message ?? e) })));
+        sondas.push(await sondar(t.caminho, !!t.restrita, cadeia, chave, Number(t.limite) || 800).catch((e) => ({ caminho: t.caminho, erro: String(e?.message ?? e) })));
       }
       resultado.sondas = sondas;
       throw new Error("teste");
     }
 
-    let lote = true;
     for (;;) {
-      let r = await distribuir(nsu, cnpjConsulta, cadeia, chave, lote);
+      const r = await distribuir(nsu, empresa.cnpj, cadeia, chave);
       chamadas++;
-      // Rejeição sem motivo na primeira chamada: tenta as outras formas da consulta (NSU 1, sem lote)
-      if (chamadas === 1 && r.status === "REJEICAO" && !r.erros.length) {
-        const tentativas: string[] = [];
-        for (const [n, l] of [[Math.max(nsu, 1), true], [Math.max(nsu, 1), false], [nsu, false]] as const) {
-          if (n === nsu && l === lote) continue;
-          const t = await distribuir(n, cnpjConsulta, cadeia, chave, l);
-          chamadas++;
-          tentativas.push(`nsu=${n} lote=${l}: ${t.http} ${t.status} ${t.erros.join("; ")}`.trim());
-          if (t.status !== "REJEICAO") { r = t; nsu = n; lote = l; break; }
-        }
-        resultado.tentativas = tentativas;
-      }
       if (chamadas === 1) resultado.primeira = { http: r.http, status: r.status, erros: r.erros.slice(0, 5) };
       if (r.status && /REJEI|ERRO/i.test(r.status)) resultado.resposta = r.bruto;
 

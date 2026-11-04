@@ -1,7 +1,9 @@
 // Conversa com a API de distribuição dos contribuintes do Ambiente de Dados Nacional (ADN) da NFS-e:
 // GET https://adn.nfse.gov.br/contribuintes/DFe/{NSU} com o certificado A1 (mTLS), resposta em JSON.
 // Devolve as NFS-e e eventos em que o CNPJ é emitente, tomador ou intermediário, em ordem de NSU.
-// Com o certificado da matriz, ?cnpjConsulta=<CNPJ> lê outra inscrição da mesma raiz (manual do ADN v1.0).
+// ?cnpjConsulta=<CNPJ> vai sempre: sem ele (consulta "InscricaoCertificado") o ADN responde 400 REJEICAO sem
+// motivo, mesmo com o certificado do próprio CNPJ (testado em 04/11/2026); com ele ("CnpjBase") lê qualquer
+// inscrição da raiz do certificado. O lote traz os documentos com NSU maior que o informado.
 import https from "node:https";
 import { gunzipSync } from "node:zlib";
 
@@ -43,9 +45,9 @@ function mensagens(v: unknown): string[] {
 }
 
 // Teste: caminho cru no ADN (produção ou produção restrita), devolve o HTTP e o começo da resposta
-export async function sondar(caminho: string, restrita: boolean, cadeiaPem: string, chavePem: string) {
+export async function sondar(caminho: string, restrita: boolean, cadeiaPem: string, chavePem: string, limite = 800) {
   const r = await get(caminho, cadeiaPem, chavePem, restrita ? "adn.producaorestrita.nfse.gov.br" : HOST);
-  return { caminho, restrita, http: r.http, resposta: r.texto.replace(/"ArquivoXml":"[^"]*"/g, '"ArquivoXml":"…"').slice(0, 800) };
+  return { caminho, restrita, http: r.http, resposta: r.texto.replace(/"ArquivoXml":"[^"]*"/g, '"ArquivoXml":"…"').slice(0, Math.min(limite, 80000)) };
 }
 
 function get(caminho: string, cadeiaPem: string, chavePem: string, host = HOST): Promise<{ http: number; texto: string }> {
@@ -71,9 +73,8 @@ function get(caminho: string, cadeiaPem: string, chavePem: string, host = HOST):
 }
 
 // Um lote a partir do NSU (o ADN devolve até 50 documentos por chamada)
-export async function distribuir(nsu: number, cnpjConsulta: string | null, cadeiaPem: string, chavePem: string, comLote = true): Promise<Resposta> {
-  const q = new URLSearchParams(comLote ? { lote: "true" } : {});
-  if (cnpjConsulta) q.set("cnpjConsulta", cnpjConsulta);
+export async function distribuir(nsu: number, cnpjConsulta: string, cadeiaPem: string, chavePem: string): Promise<Resposta> {
+  const q = new URLSearchParams({ lote: "true", cnpjConsulta });
   const { http, texto } = await get(`/contribuintes/DFe/${nsu}?${q}`, cadeiaPem, chavePem);
   let json: unknown = null;
   try { json = JSON.parse(texto); } catch { /* resposta que não é JSON */ }
