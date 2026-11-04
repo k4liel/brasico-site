@@ -46,9 +46,22 @@ async function processar(segredo: string, id: string) {
     const { cadeia, chave } = partesPem(certificado);
     const cnpjConsulta = cert_cnpj && cert_cnpj !== empresa.cnpj ? empresa.cnpj : null;
 
+    let lote = true;
     for (;;) {
-      const r = await distribuir(nsu, cnpjConsulta, cadeia, chave);
+      let r = await distribuir(nsu, cnpjConsulta, cadeia, chave, lote);
       chamadas++;
+      // Rejeição sem motivo na primeira chamada: tenta as outras formas da consulta (NSU 1, sem lote)
+      if (chamadas === 1 && r.status === "REJEICAO" && !r.erros.length) {
+        const tentativas: string[] = [];
+        for (const [n, l] of [[Math.max(nsu, 1), true], [Math.max(nsu, 1), false], [nsu, false]] as const) {
+          if (n === nsu && l === lote) continue;
+          const t = await distribuir(n, cnpjConsulta, cadeia, chave, l);
+          chamadas++;
+          tentativas.push(`nsu=${n} lote=${l}: ${t.http} ${t.status} ${t.erros.join("; ")}`.trim());
+          if (t.status !== "REJEICAO") { r = t; nsu = n; lote = l; break; }
+        }
+        resultado.tentativas = tentativas;
+      }
       if (chamadas === 1) resultado.primeira = { http: r.http, status: r.status, erros: r.erros.slice(0, 5) };
       if (r.status && /REJEI|ERRO/i.test(r.status)) resultado.resposta = r.bruto;
 

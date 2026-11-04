@@ -65,8 +65,8 @@ function get(caminho: string, cadeiaPem: string, chavePem: string): Promise<{ ht
 }
 
 // Um lote a partir do NSU (o ADN devolve até 50 documentos por chamada)
-export async function distribuir(nsu: number, cnpjConsulta: string | null, cadeiaPem: string, chavePem: string): Promise<Resposta> {
-  const q = new URLSearchParams({ lote: "true" });
+export async function distribuir(nsu: number, cnpjConsulta: string | null, cadeiaPem: string, chavePem: string, lote = true): Promise<Resposta> {
+  const q = new URLSearchParams(lote ? { lote: "true" } : {});
   if (cnpjConsulta) q.set("cnpjConsulta", cnpjConsulta);
   const { http, texto } = await get(`/contribuintes/DFe/${nsu}?${q}`, cadeiaPem, chavePem);
   let json: unknown = null;
