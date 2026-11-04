@@ -115,7 +115,8 @@ async function processar(segredo: string, id: string) {
             lacunas.push({ de: nsu15(BigInt(ult) + BigInt(1)), ate: daSefaz });
             await supabase.rpc("notas_worker_lacunas", { p_segredo: segredo, p_execucao: execucao.id, p_lacunas: lacunas });
             const g = await supabase.rpc("notas_worker_gravar", {
-              p_segredo: segredo, p_execucao: execucao.id, p_notas: [], p_eventos: [], p_ult_nsu: daSefaz, p_max_nsu: r.maxNSU,
+              // a rejeição traz maxNSU zerado: não grava
+              p_segredo: segredo, p_execucao: execucao.id, p_notas: [], p_eventos: [], p_ult_nsu: daSefaz, p_max_nsu: null,
             });
             if (g.error) throw new Error(`gravação: ${g.error.message}`);
             status = "ok";
