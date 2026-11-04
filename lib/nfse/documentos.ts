@@ -34,10 +34,9 @@ export const txt = (raiz: Element | null | undefined, n: string) => achar(raiz, 
 const num = (s: string | null) => (s == null || s === "" || Number.isNaN(Number(s)) ? null : Number(s));
 const doc = (raiz: Element | null) => txt(raiz, "CNPJ") ?? txt(raiz, "CPF") ?? txt(raiz, "NIF");
 
-// A consulta é por raiz (o ADN devolve as notas de todos os CNPJs dela): a nota fica com o CNPJ do grupo
-// que aparece nela — emitente (emitida), tomador (tomada) ou, se só intermedia, o CNPJ consultado.
+// Cada CNPJ tem a sua fila no ADN (?cnpjConsulta=): a nota fica no CNPJ consultado — emitente (emitida),
+// tomador (tomada) ou, se não é nenhum dos dois, intermediada. Nota entre duas empresas do grupo aparece nas duas.
 export function lerDocumento(xmlTexto: string, nsu: number, cnpjConsultado: string): { nota?: NotaServico; evento?: EventoServico } {
-  const raiz = cnpjConsultado.slice(0, 8);
   const d = new DOMParser().parseFromString(xmlTexto, "text/xml");
   const r = d.documentElement as unknown as Element | null;
   if (!r) return {};
@@ -53,12 +52,11 @@ export function lerDocumento(xmlTexto: string, nsu: number, cnpjConsultado: stri
     const emitente = doc(emit);
     const tomador = doc(toma);
     const ret = txt(dps, "tpRetISSQN");
-    const doGrupo = (d: string | null) => !!d && d.length === 14 && d.startsWith(raiz);
-    const papel = doGrupo(emitente) ? "emitida" : doGrupo(tomador) ? "tomada" : "intermediada";
+    const papel = emitente === cnpjConsultado ? "emitida" : tomador === cnpjConsultado ? "tomada" : "intermediada";
     return {
       nota: {
         chave,
-        empresa_cnpj: papel === "emitida" ? emitente! : papel === "tomada" ? tomador! : cnpjConsultado,
+        empresa_cnpj: cnpjConsultado,
         papel,
         numero: txt(inf, "nNFSe"),
         emissao: txt(dps, "dhEmi") ?? txt(inf, "dhProc"),

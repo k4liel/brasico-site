@@ -215,7 +215,7 @@ export default function NotasServico() {
 }
 
 // ---------------------------------------------------------------------
-// Bloco da aba Leituras: uma leitura por raiz (a matriz lê as filiais junto, nfse_leitora no banco)
+// Bloco da aba Leituras: uma leitura por CNPJ (cada um tem a sua fila no Portal Nacional)
 // ---------------------------------------------------------------------
 export function LeituraNfse() {
   const supabase = useMemo(() => createClient(), []);
@@ -247,8 +247,7 @@ export function LeituraNfse() {
 
   const nomeEmpresa = Object.fromEntries(empresas.map((e) => [e.cnpj, e.nome]));
   const agora = new Date();
-  const leitoras = empresas.filter((e) => e.cnpj === (empresas.find((x) => x.raiz === e.raiz && x.cnpj.slice(8, 12) === "0001") ?? empresas.find((x) => x.raiz === e.raiz))?.cnpj);
-  const daRaiz = (raiz: string, papel: string) => meses.filter((m) => m.empresa_cnpj.startsWith(raiz) && m.papel === papel).reduce((s, m) => s + m.notas, 0);
+  const doCnpj = (cnpj: string, papel: string) => meses.filter((m) => m.empresa_cnpj === cnpj && m.papel === papel).reduce((s, m) => s + m.notas, 0);
 
   return (
     <section className="nfs-leitura">
@@ -256,8 +255,7 @@ export function LeituraNfse() {
       <p className="muted">Todo dia às 6h30 e às 12h30 o Brasico pergunta ao Ambiente de Dados Nacional, com o certificado de cada empresa e sem custo, por toda nota de serviço emitida ou tomada por ela.</p>
       {aviso && <p className="es-aviso">{aviso}</p>}
       <div className="sf-empresas">
-        {leitoras.map((e) => {
-          const filiais = empresas.filter((x) => x.raiz === e.raiz && x.cnpj !== e.cnpj);
+        {empresas.map((e) => {
           const bloqueada = !!e.bloqueado_ate && new Date(e.bloqueado_ate) > agora;
           const falha = !!e.ultimo_status && /falha|erro|rejei|portal|conex/i.test(e.ultimo_status);
           const estado = falha ? { cls: "falha", txt: "Precisa de atenção" } : !e.ativa ? { cls: "parada", txt: "Fora da leitura diária" }
@@ -268,13 +266,13 @@ export function LeituraNfse() {
                 <span className="nf-grupo-icone" aria-hidden="true">{e.nome.slice(0, 1)}</span>
                 <span className="sf-empresa-nome">
                   <strong>{e.nome}</strong>
-                  <small>CNPJ {doc(e.cnpj)}{filiais.length ? ` · lê junto ${filiais.length === 1 ? "a filial" : `${filiais.length} filiais`} ${filiais.map((f) => f.cnpj.slice(8, 12)).join(", ")}` : ""}</small>
+                  <small>CNPJ {doc(e.cnpj)}</small>
                 </span>
                 <span className={`sf-estado ${estado.cls}`}>{estado.txt}</span>
               </header>
               <dl className="sf-numeros">
-                <div><dt>Emitidas</dt><dd>{daRaiz(e.raiz, "emitida")}</dd></div>
-                <div><dt>Tomadas</dt><dd>{daRaiz(e.raiz, "tomada")}</dd></div>
+                <div><dt>Emitidas</dt><dd>{doCnpj(e.cnpj, "emitida")}</dd></div>
+                <div><dt>Tomadas</dt><dd>{doCnpj(e.cnpj, "tomada")}</dd></div>
                 <div><dt>Última leitura</dt><dd>{e.ultima_consulta ? `${dia(e.ultima_consulta)} · ${hora(e.ultima_consulta)}` : "nunca"}</dd></div>
               </dl>
               {e.ultimo_status && !STATUS[e.ultimo_status] && <p className="sf-ultimo">{e.ultimo_status}</p>}
@@ -311,7 +309,7 @@ export function LeituraNfse() {
         </ol>
       )}
       <p className="muted es-nota">
-        A consulta é por empresa: a matriz traz também as notas das filiais, e cada nota fica no CNPJ que aparece nela. Desde janeiro de 2026
+        A consulta é por CNPJ: matriz e cada filial têm a sua própria fila no Portal Nacional, lida com o certificado da empresa. Desde janeiro de 2026
         as prefeituras mandam as notas de serviço para o Ambiente Nacional; notas antigas de prefeitura com sistema próprio podem não estar lá.
         As outras empresas do grupo entram quando o certificado digital delas for enviado em Certificados digitais.
       </p>
