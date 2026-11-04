@@ -413,7 +413,9 @@ function NotaAberta({ nota, empresa, onFechar }: { nota: Nota; empresa?: string;
 
         <div className="nf-painel-corpo">
           {nota.origem === "sefaz" && !nota.completa && (
-            <p className="es-aviso">Só o resumo desta nota chegou da SEFAZ. Os itens e o PDF aparecem quando a nota completa chegar (depois da ciência da operação).</p>
+            <p className="es-aviso">{nota.emissao && Date.now() - new Date(nota.emissao).getTime() > 10 * 86400000
+              ? "Só o resumo desta nota chegou da SEFAZ, e já passou o prazo de 10 dias da ciência da operação: a SEFAZ não libera mais os itens para o Brasico. Para ter os itens, peça o XML ao fornecedor."
+              : "Só o resumo desta nota chegou da SEFAZ. O Brasico registra a ciência da operação e busca a nota completa sozinho (às 6h, 7h30, 9h e 15h); os itens e o PDF aparecem em seguida."}</p>
           )}
           {extra && (
             <dl className="nf-dados">
@@ -551,7 +553,7 @@ function LeituraSefaz({ empresas, onMudou }: { empresas: Empresa[]; onMudou: () 
         </span>
         <div>
           <strong>Leitura automática todo dia, às 6h e às 9h</strong>
-          <p>O Brasico pergunta à SEFAZ, sem custo, por todas as notas emitidas contra as empresas marcadas. A rodada das 9h traz as notas completas que só tinham chegado em resumo. Próxima leitura: {proximaTexto}.</p>
+          <p>O Brasico pergunta à SEFAZ, sem custo, por todas as notas emitidas contra as empresas marcadas. Nota que chega só em resumo recebe a ciência da operação e é buscada completa pela chave logo em seguida (e de novo às 7h30 e às 15h). Próxima leitura: {proximaTexto}.</p>
         </div>
       </section>
       {aviso && <p className="es-aviso">{aviso}</p>}

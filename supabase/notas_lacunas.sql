@@ -23,6 +23,8 @@ begin
   select * into c from public.certificados where cnpj = x.empresa_cnpj;
   if x.tipo = 'ciencia' then
     select coalesce(jsonb_agg(p.chave), '[]') into v_chaves from (select chave from public.notas_pendentes_ciencia(e.cnpj) limit 20) p;
+  elsif x.tipo = 'chave' then
+    select coalesce(jsonb_agg(p.chave), '[]') into v_chaves from public.notas_pendentes_chave(e.cnpj) p;
   end if;
   return jsonb_build_object(
     'execucao', to_jsonb(x),
