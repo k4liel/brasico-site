@@ -299,3 +299,100 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
   .cp-forn > .cp-fechado { display: block !important; }
 }
 .cp-forn-col select { width: 100%; min-width: 150px; max-width: 220px; padding: 6px 8px; font-size: 13px; }
+
+/* =============================================================================================
+   PDF da lista única (impressão do navegador), refeito em 04/11/2026.
+   Folha branca, letra pequena (Inter 8 pt, título em Lora), linhas justas; empresa numa faixa marinho e
+   fornecedor numa faixa âmbar viva. "PDF de tudo" = uma coluna com preços; "PDF para o fornecedor"
+   (.cp-so-um) = sem preços e com os itens em DUAS colunas. Fica por último e com !important para
+   passar por cima das regras de tela e do tema escuro.
+   ============================================================================================= */
+@media print {
+  @page { size: A4 portrait; margin: 9mm 9mm 10mm; }
+  :root, html, body { color-scheme: light !important; background: #fff !important; }
+  body { color: #1d2433 !important; font: 8pt/1.25 var(--font-sans), "Segoe UI", Arial, sans-serif !important; }
+  .pagina, .miolo, .cp-final, .cp-pdf { background: #fff !important; color: #1d2433 !important; margin: 0 !important; padding: 0 !important;
+    max-width: none !important; width: auto !important; display: block !important; gap: 0 !important; border: 0 !important; box-shadow: none !important; }
+  .cp-pdf * { color: #1d2433 !important; box-shadow: none !important; text-shadow: none !important; }
+  .cp-pdf, .cp-pdf * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  /* Cabeçalho do documento */
+  .cp-pdf-cabeca { display: flex !important; flex-wrap: wrap; align-items: baseline; gap: .8mm 4mm; margin: 0 0 3.5mm !important;
+    padding: 0 0 2mm !important; border: 0 !important; border-bottom: 1.4pt solid #b45309 !important; border-radius: 0 !important; background: none !important; }
+  .cp-pdf-cabeca strong { flex: 1 0 100%; font-family: var(--font-serif), Georgia, serif; font-size: 14pt !important; font-weight: 600;
+    color: #1c2a48 !important; letter-spacing: -.01em; line-height: 1.2; }
+  .cp-pdf-cabeca span { font-size: 8pt !important; color: #4b5468 !important; }
+  .cp-pdf-cabeca span + span::before { content: "·"; margin-right: 4mm; color: #b45309; font-weight: 700; }
+
+  /* Empresa: faixa marinho */
+  .cp-empresa { display: block !important; margin: 0 0 3mm !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: none !important; }
+  .cp-empresa > .cp-corpo { display: block !important; }
+  .cp-empresa-cabeca { display: flex !important; align-items: center; gap: 4mm; margin: 0 0 1.6mm !important; padding: 1.5mm 3mm !important;
+    background: #1c2a48 !important; border-radius: 1.4mm !important; break-after: avoid; }
+  .cp-empresa-cabeca * { color: #fff !important; }
+  .cp-empresa-selo, .cp-seta, .cp-empresa-solte { display: none !important; }
+  .cp-empresa-nome { display: flex !important; align-items: baseline; gap: 3mm; flex: 1; }
+  .cp-empresa-nome b { font-size: 9.5pt !important; font-weight: 700; letter-spacing: .01em; }
+  .cp-empresa-nome small, .cp-empresa-total small { font-size: 7pt !important; color: #c9d1e3 !important; }
+  .cp-empresa-total { display: flex !important; align-items: baseline; gap: 3mm; text-align: right; }
+  .cp-empresa-total b { font-size: 9.5pt !important; color: #f5c27a !important; }
+
+  /* Fornecedor: faixa âmbar viva com o nome em destaque */
+  .cp-forn { display: block !important; margin: 0 0 2.2mm !important; border: 0 !important; border-radius: 0 !important; overflow: visible !important;
+    background: none !important; break-inside: auto !important; }
+  .cp-forn > .cp-corpo { display: block !important; }
+  .cp-forn-cabeca { display: flex !important; align-items: center; gap: 3mm; margin: 0 !important; padding: 1mm 3mm !important;
+    background: #b45309 !important; border: 0 !important; border-radius: 1.2mm 1.2mm 0 0 !important; break-after: avoid; }
+  .cp-forn-cabeca * { color: #fff !important; }
+  .cp-forn-cabeca strong { flex: 1; font-size: 9pt !important; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .cp-forn-cabeca span { font-size: 8.5pt !important; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* Tabela de itens: linhas justas, zebra suave, borda fina */
+  .cp-pdf .nf-tabela-wrap { overflow: visible !important; border: 0 !important; }
+  .cp-pdf table.nf-tabela { width: 100% !important; margin: 0 !important; border-collapse: collapse !important; font-size: 8pt !important;
+    border: .5pt solid #e7c49c !important; border-top: 0 !important; }
+  .cp-pdf .nf-tabela thead { display: table-header-group; }
+  .cp-pdf .nf-tabela th { padding: .6mm 2mm !important; font-size: 6.5pt !important; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: #7c2d12 !important; background: #fdf0e1 !important; border-bottom: .5pt solid #e7c49c !important; text-align: left; }
+  .cp-pdf .nf-tabela th.n { text-align: right; }
+  .cp-pdf .nf-tabela td { padding: .5mm 2mm !important; border: 0 !important; border-bottom: .3pt solid #e6e2da !important; vertical-align: middle;
+    background: #fff !important; line-height: 1.2; }
+  .cp-pdf .nf-tabela tbody tr:nth-child(even) td { background: #faf6f0 !important; }
+  .cp-pdf .nf-tabela tr { break-inside: avoid; }
+  .cp-pdf .nf-tabela td.n { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .cp-pdf .cp-caixa { width: 4.5mm !important; padding-right: 0 !important; font-size: 8.5pt !important; color: #9a8f80 !important; }
+  .cp-pdf .cp-tot { font-weight: 700; color: #1c2a48 !important; }
+  .cp-pdf .cp-un-txt { color: #6b7385 !important; font-size: 7pt !important; }
+  .cp-pdf .cp-mover-linha { display: none !important; }
+
+  /* Duas colunas: no PDF de tudo, os fornecedores de cada empresa correm em duas colunas (a faixa da empresa
+     ocupa a largura toda); colunas da tabela com largura fixa para os números ficarem alinhados */
+  .cp-pdf:not(.cp-so-um) .cp-empresa > .cp-corpo { column-count: 2; column-gap: 5mm; column-fill: auto; }
+  .cp-pdf:not(.cp-so-um) .cp-empresa > .cp-corpo { column-fill: balance; }
+  .cp-pdf:not(.cp-so-um) .cp-forn { break-inside: avoid !important; margin-bottom: 2mm !important; }
+  .cp-pdf:not(.cp-so-um) .cp-forn-cabeca { padding: .8mm 2mm !important; }
+  .cp-pdf:not(.cp-so-um) .cp-forn-cabeca strong { font-size: 7.6pt !important; letter-spacing: .01em; }
+  .cp-pdf:not(.cp-so-um) .cp-forn-cabeca span { font-size: 7.6pt !important; }
+  .cp-pdf:not(.cp-so-um) table.nf-tabela { table-layout: fixed; font-size: 7.4pt !important; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela th { padding: .4mm 1.2mm !important; font-size: 5.8pt !important; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela td { padding: .35mm 1.2mm !important; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela th:nth-child(1) { width: 4mm; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela th:nth-child(4) { width: 12mm; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela th:nth-child(5) { width: 17mm; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela th:nth-child(6) { width: 18mm; }
+  .cp-pdf:not(.cp-so-um) .nf-tabela td:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cp-pdf:not(.cp-so-um) .cp-caixa { padding: .35mm 0 .35mm 1mm !important; font-size: 7.5pt !important; }
+
+  /* PDF para o fornecedor: sem preços e os itens em duas colunas */
+  .cp-so-um table.nf-tabela, .cp-so-um .nf-tabela tbody { display: block !important; }
+  .cp-so-um .nf-tabela thead { display: none !important; }
+  .cp-so-um .nf-tabela tbody { column-count: 2; column-gap: 0; column-rule: .5pt solid #e7c49c; }
+  .cp-so-um .nf-tabela tbody tr { display: flex !important; align-items: center; break-inside: avoid; }
+  .cp-so-um .nf-tabela tbody td { display: block; }
+  .cp-so-um .nf-tabela tbody td:nth-child(2) { flex: 1; min-width: 0; }
+  .cp-so-um .nf-tabela tbody td.n { text-align: right; font-weight: 700; color: #1c2a48 !important; }
+  .cp-so-um .nf-tabela tbody tr:nth-child(even) td { background: #fff !important; }
+  .cp-so-um .nf-tabela tbody tr:nth-child(4n+3) td, .cp-so-um .nf-tabela tbody tr:nth-child(4n+4) td { background: #fff !important; }
+  .cp-so-um .cp-forn-cabeca { border-radius: 1.2mm !important; margin-bottom: 1mm !important; }
+  .cp-so-um table.nf-tabela { border: 0 !important; }
+}

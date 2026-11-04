@@ -811,7 +811,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
                     {conferir === k && <ConferirNota semana={semana} fornecedor={g.f} empresa={e.cnpj} pedido={ped} onMudou={carregar} />}
                     <table className="nf-tabela cp-tabela cp-tabela-unica">
                       <thead><tr>
-                        <th className="cp-caixa" aria-label="Marcar" /><th>Item</th><th className="no-print">Fornecedor</th><th className="n">Quantidade</th>
+                        <th className="cp-caixa" aria-label="Marcar" /><th>Item</th><th className="no-print">Fornecedor</th><th className="n">Qtd.</th>
                         <th className="n cp-preco">Preço unit.</th><th className="n cp-preco">Total</th><th className="no-print" />
                       </tr></thead>
                       <tbody>
