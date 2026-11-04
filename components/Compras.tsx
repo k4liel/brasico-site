@@ -81,7 +81,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
       <div>
         <span className="es-sobre">Operação · Compras</span>
         <h1>{gestor ? "Compras da semana" : `Sua lista · ${SETORES[eu?.setor ?? ""] ?? ""} · ${UNIDADES[eu?.unidade ?? ""] ?? ""}`}</h1>
-        <p>Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}. Pedidos no grupo até terça à noite; a lista sugerida de cada pessoa sai em até 15 minutos depois de cada mensagem no grupo.
+        <p>Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}. Pedidos no grupo até terça à noite; quando todos tiverem pedido, o setor de compras monta e libera a lista sugerida de cada pessoa.
           {semana.status === "fechada" && " Esta semana já foi fechada."}</p>
       </div>
       {semanas.length > 1 && (
@@ -263,7 +263,7 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
         <Etapas atual={0} />
         <section className="av-bloco cp-vazio">
           <h2>Sua lista ainda não saiu</h2>
-          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS (texto, planilha, PDF ou foto) até terça à noite. Em até 15 minutos a lista sugerida aparece aqui para você revisar.</p>
+          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS (texto, planilha, PDF ou foto) até terça à noite. Quando todos tiverem pedido, a lista sugerida é montada e aparece aqui para você revisar (você recebe um aviso nesta página).</p>
         </section>
       </>
     );
@@ -410,7 +410,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor }: { lista: Lis
 // As etapas da semana de compras, com a atual em destaque
 const ETAPAS = [
   { t: "Pedidos no grupo", d: "até segunda à noite" },
-  { t: "Lista sugerida", d: "até 15 min depois do pedido, pelo Claude" },
+  { t: "Lista sugerida", d: "montada quando todos pediram" },
   { t: "Revisão", d: "cada pessoa confere e aprova" },
   { t: "Lista única", d: "a Fernanda junta por fornecedor" },
   { t: "Semana fechada", d: "PDF e pedidos enviados" },
@@ -523,7 +523,7 @@ function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: P
         <button className="ghost small" onClick={onFechar}>Fechar</button>
       </header>
       {listas === undefined ? <p className="muted">Carregando…</p>
-        : !listas.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui em até 15 minutos.</p>
+        : !listas.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui depois que for montada.</p>
         : <Listas semana={semana} listas={listas} itens={itens} carregar={carregar} gestor />}
     </div>
   );

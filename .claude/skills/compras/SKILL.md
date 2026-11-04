@@ -6,8 +6,17 @@ description: Monta a lista de compras da Pipa no padrão da equipe — a lista s
 # Compras do Brasico
 
 **Onde cada coisa fica (desde 29/10/2026):**
-- A compra semanal segue a rotina da página **Compras** do site (`/compras`): pedidos no grupo COMPRAS até segunda à noite, lista sugerida de cada pessoa na terça, aprovação, lista única da Fernanda por fornecedor e PDF. O projeto "Compras" do Brasico foi para a Lixeira: não o recrie nem grave listas em projeto.
+- A compra semanal segue a rotina da página **Compras** do site (`/compras`): pedidos no grupo COMPRAS até terça à noite, lista sugerida de cada pessoa montada quando todos pediram, aprovação, lista única da Fernanda por fornecedor e PDF. O projeto "Compras" do Brasico foi para a Lixeira: não o recrie nem grave listas em projeto.
 - As compras da **produção de fim de ano** ficam no projeto **Produção Sempre Vivo**, aba **05 · Compras** (comprado, lista da semana 2, o que falta das semanas 3 a 6). O cronograma está na aba 03.
+
+**Listas da semana de cada pessoa (análise manual, desde 04/11/2026).** A análise automática do grupo está pausada para não ter custo de API. Quando o dono disser que todos mandaram o pedido ("monta as listas", "faz a análise"):
+1. `compras_semana`: as pessoas, `mensagens_no_grupo` de cada uma, as listas que já existem (`mexida` = a pessoa já mexeu) e o `aumento_pct` da semana.
+2. Para cada pessoa com mensagens: leia as mensagens dela no grupo COMPRAS dentro de `janela_dos_pedidos` (`whatsapp_mensagens`). Planilha, PDF e foto anexados fazem parte do pedido. Mensagem mais nova que corrige uma anterior vale a quantidade final.
+3. Separe em listas como a pessoa separou (Mercado, Ceasa, Comida de funcionário, um fornecedor de bebida…); pedido sem divisão = uma lista com título curto.
+4. Cada item: `compras_buscar` com a unidade da pessoa. Escolha o candidato que é o **mesmo produto** (tipo e forma, com ou sem sal, zero ou normal, inteiro ou ralado, marca, embalagem); semelhança alta de nome não basta. Sem candidato certo, busque de novo com o nome corrigido, abreviado como na nota (QJO, MANT, CX, PCT), sinônimo (macaxeira = mandioca) ou marca. Prefira o que a casa da pessoa comprou, depois o mais recente.
+5. Métricas: `media_4s` = média semanal da casa (ou do grupo, dito em `base`); `projecao` = média × (1 + aumento ÷ 100), arredondada na embalagem; `qtd_sugerida` = a pedida, salvo se passar de 50% acima ou abaixo da projeção com 2 ou mais compras em 4 semanas (então a projeção, com o motivo e os números); `confianca` alta/media/baixa; `produto_nota` = descrição exata da nota; `preco` = último preço.
+6. Grave cada lista com `compras_gravar_lista` (com `titulo`; `substituir = true` só na primeira lista da pessoa, que troca as ainda não revisadas). Lista `mexida` ou aprovada nunca é trocada. A lista aparece para a pessoa assim que é gravada, com aviso na página dela.
+7. No fim, diga ao dono quantas listas e itens gravou por pessoa e o que ficou sem produto nas notas.
 
 O método abaixo é o padrão da lista (nascido em 26/10/2026, na semana do feriado de Finados) e vale para conferir ou refazer uma lista à mão:
 
