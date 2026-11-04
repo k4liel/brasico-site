@@ -87,3 +87,125 @@ a.botao { display: inline-flex; align-items: center; text-decoration: none; }
 .cp-abre:hover { color: var(--strong); border-color: var(--gold); }
 .cp-fechada .cp-lista-titulo { cursor: pointer; }
 .cp-fechada { padding-top: 12px; padding-bottom: 12px; }
+
+/* ---------------------------------------------------------------------------------------------
+   Listas (04/11/2026): uma coluna de sugestão com o "por quê" embaixo; campos editáveis destacados
+   --------------------------------------------------------------------------------------------- */
+.cp-legenda { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.cp-campo-exemplo { display: inline-grid; place-items: center; min-width: 40px; height: 26px; padding: 0 8px; border-radius: 8px;
+  background: color-mix(in srgb, var(--gold) 16%, var(--panel)); border: 1.5px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  color: var(--strong); font-weight: 700; font-size: 13px; }
+.cp-tabela-lista th { font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.cp-tabela-lista th.cp-th-edita { color: var(--gold); }
+.cp-tabela-lista td { vertical-align: middle; }
+.cp-item { min-width: 220px; }
+.cp-item .cp-nome { display: block; font-size: 14.5px; color: var(--strong); }
+.cp-item input.cp-nome { width: 100%; }
+.cp-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; font-size: 12px; color: var(--muted); line-height: 1.35; }
+.cp-forn-nome { color: var(--text); }
+.cp-pediu { color: var(--muted); }
+.cp-sug { display: inline-block; min-width: 44px; padding: 4px 10px; border-radius: 999px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--ok) 10%, transparent); color: var(--ok); }
+.cp-sug.difere { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+input.cp-edita { width: 84px; padding: 7px 9px; border-radius: 9px; font-weight: 700; font-size: 14px; color: var(--strong);
+  background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border: 1.5px solid color-mix(in srgb, var(--gold) 65%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--gold) 30%, transparent); }
+input.cp-edita:hover { border-color: var(--gold); }
+input.cp-edita:focus { outline: 2px solid var(--gold); outline-offset: 1px; background: var(--panel); }
+input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
+.cp-tot { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cp-com-obs td { border-bottom: 0 !important; }
+.cp-obs td { padding-top: 0 !important; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.cp-obs td::before { content: none; }
+.cp-tirado .cp-nome, .cp-tirado .cp-sub { text-decoration: line-through; opacity: .55; }
+@media (max-width: 640px) { input.cp-edita { width: 70px; } .cp-item { min-width: 170px; } }
+@media print { .cp-legenda { display: none; } input.cp-edita { border: 0; background: none; box-shadow: none; } }
+
+/* ---------------------------------------------------------------------------------------------
+   Painel (04/11/2026): trilha da semana, indicadores, tarefas coloridas, casas e fornecedores em cartões
+   --------------------------------------------------------------------------------------------- */
+.cp-trilha { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.cp-trilha li { position: relative; display: grid; gap: 3px; padding: 14px 16px 16px; border-radius: 16px; background: var(--panel); border: 1px solid var(--border); }
+.cp-trilha li.feita { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.cp-trilha li.andando { border-color: color-mix(in srgb, var(--gold) 55%, transparent); }
+.cp-trilha-n { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; font-size: 12.5px; font-weight: 700;
+  background: var(--soft); color: var(--muted); }
+.feita .cp-trilha-n { background: var(--ok); color: #fff; }
+.andando .cp-trilha-n { background: var(--gold); color: #fff; }
+.cp-trilha-t { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.cp-trilha-v { font-size: 22px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cp-trilha small { font-size: 12px; color: var(--muted); }
+.cp-barra { height: 6px; border-radius: 99px; background: var(--soft); overflow: hidden; margin-top: 6px; }
+.cp-barra span { display: block; height: 100%; border-radius: 99px; background: var(--gold); }
+.feita .cp-barra span { background: var(--ok); }
+
+.cp-kpis { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.cp-kpi { display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 2px; align-items: center; padding: 16px 18px;
+  border-radius: 16px; background: var(--panel); border: 1px solid var(--border); }
+.cp-kpi-icone { grid-row: span 3; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: var(--soft); font-size: 22px; }
+.cp-kpi-rotulo { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.cp-kpi b { font-size: 22px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cp-kpi small { font-size: 12.5px; color: var(--muted); }
+
+.cp-tarefa { border-left: 4px solid var(--border) !important; }
+.cp-tarefa.acao { border-left-color: var(--gold) !important; background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
+.cp-tarefa.aviso { border-left-color: var(--danger) !important; }
+.cp-tarefa.info { border-left-color: color-mix(in srgb, var(--muted) 60%, transparent) !important; }
+
+.cp-casas { display: grid; gap: 10px; }
+.cp-casa { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; }
+.cp-anel { --p: 0; flex: none; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--ok) calc(var(--p) * 1%), var(--soft) 0); }
+.cp-anel b { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--panel); font-size: 12.5px; color: var(--strong); }
+.cp-casa-txt { display: grid; gap: 2px; }
+.cp-casa-txt small { font-size: 12.5px; color: var(--muted); }
+
+.cp-forn-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.cp-forn-card { display: grid; gap: 3px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); border-top: 4px solid var(--border); background: var(--panel); }
+.cp-forn-card.pedido { border-top-color: var(--gold); }
+.cp-forn-card.recebido { border-top-color: var(--ok); }
+.cp-forn-card-nome { font-size: 13px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.cp-forn-card b { font-size: 18px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cp-forn-card small { font-size: 12px; color: var(--muted); }
+.cp-forn-card a { font-size: 12.5px; }
+
+/* ---------------------------------------------------------------------------------------------
+   Fornecedores (cadastro da Fernanda)
+   --------------------------------------------------------------------------------------------- */
+.cp-fornecedores { display: grid; gap: 14px; }
+.cp-fornecedores-topo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cp-busca { flex: 1; min-width: 220px; }
+.cp-forn-grade { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.cp-forn-ficha { display: grid; gap: 10px; padding: 14px 16px; text-align: left; border-radius: 16px; background: var(--panel);
+  border: 1px solid var(--border); color: inherit; cursor: pointer; }
+.cp-forn-ficha:hover { border-color: var(--gold); }
+.cp-forn-ficha.desativado { opacity: .55; }
+.cp-forn-ficha-topo { display: flex; align-items: center; gap: 10px; }
+.cp-forn-ficha-topo > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.cp-forn-ficha-topo b { font-size: 14.5px; color: var(--strong); overflow-wrap: anywhere; }
+.cp-forn-ficha small { font-size: 12px; color: var(--muted); }
+.cp-forn-ficha-num { display: grid; gap: 2px; }
+.cp-forn-ficha-num b { font-size: 18px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cp-forn-ficha-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-tag { padding: 2px 9px; border-radius: 999px; font-size: 11.5px; background: var(--soft); color: var(--muted); }
+.cp-tag.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+.cp-tag.falta { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.cp-forn-contato { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 8px 18px; font-size: 12.5px; color: var(--muted);
+  border-bottom: 1px solid var(--soft-line); }
+
+.cp-ficha-fundo { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; background: rgba(10, 15, 25, .45); }
+.cp-ficha { width: min(640px, 100%); height: 100%; overflow-y: auto; display: grid; align-content: start; gap: 14px; padding: 20px 22px 32px;
+  background: var(--panel); box-shadow: -12px 0 32px var(--shadow); }
+.cp-ficha-cabeca { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.cp-ficha-cabeca h2 { margin: 2px 0 0; font-size: 22px; }
+.cp-ficha-campos { display: grid; gap: 10px 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.cp-ficha-campos label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.cp-ficha-campos label.largo { grid-column: 1 / -1; }
+.cp-ficha-campos input, .cp-ficha-campos textarea { font-size: 14px; }
+.cp-ficha-ativo { grid-column: 1 / -1; display: flex !important; align-items: center; gap: 8px; color: var(--text) !important; }
+.cp-ficha-acoes { display: flex; gap: 8px; }
+.cp-ficha-notas h3 { font-size: 15px; margin: 6px 0 8px; }
+.cp-ficha-notas ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cp-ficha-notas li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 13.5px; }
+.cp-ficha-notas li small { display: block; font-size: 12px; color: var(--muted); }
+.cp-ficha-notas a { font-size: 12.5px; }

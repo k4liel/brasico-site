@@ -1,0 +1,13 @@
+-- 04/11/2026: cadastro de fornecedores da Fernanda (aba Fornecedores das Compras) e andamento por casa no painel.
+-- O corpo completo das funções está no banco (migrations compras_fornecedores e compras_painel_casas):
+--   select pg_get_functiondef('compras_fornecedores_lista'::regproc); idem compras_fornecedor_salvar, compras_fornecedor_notas,
+--   compras_painel_casas.
+-- compras_fornecedores: nome (como a equipe chama), razao_social (como vem na nota), cnpj (único), apelidos, categoria,
+--   contato_nome, telefone, whatsapp, email, como_pedir, dias_pedido, dias_entrega, prazo_pagamento, forma_pagamento,
+--   pedido_minimo, observacoes, ativo. Nada se apaga (desativar = ativo false); cada mudança guarda a versão anterior em
+--   compras_fornecedores_historico. RLS: só sócios e setor de compras leem; gravação só por compras_fornecedor_salvar.
+-- Primeira carga: um fornecedor por CNPJ emitente das notas (nome mais recente), 80 fornecedores em 04/11/2026.
+-- compras_fornecedores_lista: cada fornecedor com notas e valor de 90 dias, última compra e casas que compraram
+--   (pelo CNPJ, pela razão social ou pelos apelidos).
+-- compras_fornecedor_notas(id): as 30 últimas notas do fornecedor.
+-- compras_painel_casas(semana): por casa, pessoas, quem pediu, quem aprovou tudo, listas e valor estimado.

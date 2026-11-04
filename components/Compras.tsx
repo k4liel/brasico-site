@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { NotaAvulsa } from "./Notas";
@@ -39,7 +39,7 @@ const ler = (s: string) => (s.trim() === "" ? null : Number(s.replace(/\./g, "")
 const diaSemana = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 const fimSemana = (iso: string) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + 6); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); };
 
-type Aba = "painel" | "andamento" | "final" | "notas" | "precos" | "pessoas" | "avulsa";
+type Aba = "painel" | "andamento" | "final" | "fornecedores" | "notas" | "precos" | "pessoas" | "avulsa";
 
 export default function Compras({ userEmail }: { userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -100,7 +100,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
           <>
             <div className="cp-abas" role="tablist">
-              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista única e pedidos"], ["notas", "Notas recebidas"], ["precos", "Índice de preços"], ["avulsa", "Nota avulsa"],
+              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista única e pedidos"], ["fornecedores", "Fornecedores"], ["notas", "Notas recebidas"], ["precos", "Índice de preços"], ["avulsa", "Nota avulsa"],
                  ...(papel === "socio" ? [["pessoas", "Pessoas e acesso"]] : [])] as [Aba, string][]).map(([k, t]) => (
                 <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? "on" : ""} onClick={() => setAba(k)}>{t}</button>
               ))}
@@ -109,6 +109,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
             {aba === "painel" && <Painel semana={semana} irPara={setAba} />}
             {aba === "andamento" && <Andamento semana={semana} />}
             {aba === "final" && <ListaUnica semana={semana} />}
+            {aba === "fornecedores" && <Fornecedores />}
             {aba === "notas" && <NotasRecebidas />}
             {aba === "precos" && <IndicePrecos />}
             {aba === "avulsa" && <NotaAvulsa empresas={[]} onPronto={() => {}} />}
@@ -358,35 +359,49 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
       {lista.pedido_texto && (
         <details className="cp-pedido"><summary>O pedido que veio no grupo</summary><pre>{lista.pedido_texto}</pre></details>
       )}
+      {podeEditar && (
+        <p className="cp-legenda"><span className="cp-campo-exemplo" aria-hidden="true">12</span>
+          Os campos em destaque (<b>Pedir</b>, <b>Unid.</b> e <b>Preço</b>) você pode mudar: clique, escreva e saia do campo para salvar.</p>
+      )}
       <div className="nf-tabela-wrap">
-        <table className="nf-tabela cp-tabela">
-          <thead><tr><th>Item</th><th>Fornecedor</th><th className="n">Pediu</th><th className="n" title="Compra média por semana nas últimas 4 semanas (notas fiscais)">Média 4 sem.</th><th className="n" title="Média × (1 + % da semana), na embalagem">Projeção</th><th className="n">Sugerido</th><th className="n">Pedir</th><th>Unid.</th><th className="n">Preço</th><th /></tr></thead>
+        <table className="nf-tabela cp-tabela cp-tabela-lista">
+          <thead><tr>
+            <th>Item</th><th className="n">Pediu</th>
+            <th className="n" title="Pela média de compra das últimas 4 semanas (notas fiscais), mais o % da semana">Sugestão</th>
+            <th className="n cp-th-edita">Pedir</th><th className="cp-th-edita">Unid.</th><th className="n cp-th-edita">Preço</th>
+            <th className="n">Total</th><th />
+          </tr></thead>
           <tbody>
             {itens.map((i) => {
               const difere = i.qtd_sugerida != null && i.qtd_pedida != null && i.qtd_sugerida !== i.qtd_pedida;
+              const edita = podeEditar && !i.removido;
+              // por que a sugestão: a conta (média, compras, fornecedor) e o aviso da análise
+              const porque = [i.motivo, i.base && !i.motivo?.includes("média") ? `Base: ${i.base}.` : null].filter(Boolean).join(" ");
               return (
-                <tr key={i.id} className={i.removido ? "cp-tirado" : ""}>
-                  <td>
-                    {podeEditar && !i.removido ? <input defaultValue={i.nome} onBlur={(v) => v.target.value !== i.nome && salvar(i, { nome: v.target.value })} aria-label="Item" /> : <span>{i.nome}</span>}
-                    {(i.produto_nota || i.confianca) && (
-                      <small className="cp-nota">
+                <Fragment key={i.id}>
+                  <tr className={`${i.removido ? "cp-tirado" : ""} ${porque ? "cp-com-obs" : ""}`}>
+                    <td className="cp-item">
+                      {gestor && edita ? <input className="cp-nome" defaultValue={i.nome} onBlur={(v) => v.target.value !== i.nome && salvar(i, { nome: v.target.value })} aria-label="Item" />
+                        : <b className="cp-nome">{i.nome}</b>}
+                      <span className="cp-sub">
                         {i.confianca && <span className={`cp-conf ${i.confianca}`} title={CONFIANCA[i.confianca]}>{i.confianca === "alta" ? "✓" : i.confianca === "media" ? "≈" : "?"}</span>}
-                        {i.produto_nota ? `na nota: ${i.produto_nota}` : CONFIANCA[i.confianca ?? ""]}
-                      </small>
-                    )}
-                    {i.motivo && <small className={difere ? "cp-motivo atencao" : "cp-motivo"}>{i.motivo}</small>}
-                    {i.incluido_na_revisao && <small className="cp-motivo">incluído na revisão</small>}
-                  </td>
-                  <td>{podeEditar && !i.removido ? <input defaultValue={i.fornecedor ?? ""} onBlur={(v) => v.target.value !== (i.fornecedor ?? "") && salvar(i, { fornecedor: v.target.value })} aria-label="Fornecedor" /> : i.fornecedor ?? "—"}</td>
-                  <td className="n">{num(i.qtd_pedida) || "—"}</td>
-                  <td className="n" title={i.base ?? undefined}>{i.media_4s != null ? num(Math.round(i.media_4s * 100) / 100) : "—"}{i.base && <small className="cp-base">{i.base}</small>}</td>
-                  <td className="n">{num(i.projecao) || "—"}</td>
-                  <td className={difere ? "n cp-difere" : "n"}>{num(i.qtd_sugerida) || "—"}</td>
-                  <td className="n">{podeEditar && !i.removido ? <input className="n" inputMode="decimal" defaultValue={num(i.qtd)} onBlur={(v) => ler(v.target.value) !== i.qtd && salvar(i, { qtd: ler(v.target.value) })} aria-label="Quantidade final" /> : num(i.qtd)}</td>
-                  <td>{podeEditar && !i.removido ? <input defaultValue={i.unidade ?? ""} onBlur={(v) => v.target.value !== (i.unidade ?? "") && salvar(i, { unidade: v.target.value })} aria-label="Unidade" /> : i.unidade ?? ""}</td>
-                  <td className="n">{podeEditar && !i.removido ? <input className="n" inputMode="decimal" defaultValue={num(i.preco)} onBlur={(v) => ler(v.target.value) !== i.preco && salvar(i, { preco: ler(v.target.value) })} aria-label="Preço" /> : brl(i.preco)}</td>
-                  <td>{podeEditar && <button className="ghost small" onClick={() => salvar(i, { removido: !i.removido })}>{i.removido ? "Voltar" : "Tirar"}</button>}</td>
-                </tr>
+                        {i.produto_nota ? i.produto_nota : CONFIANCA[i.confianca ?? ""] ?? ""}
+                        {i.fornecedor && <> · <span className="cp-forn-nome">{i.fornecedor}</span></>}
+                      </span>
+                      {i.incluido_na_revisao && <span className="cp-sub">incluído na revisão</span>}
+                    </td>
+                    <td className="n cp-pediu">{num(i.qtd_pedida) || "—"}</td>
+                    <td className="n"><span className={difere ? "cp-sug difere" : "cp-sug"}>{num(i.qtd_sugerida) || "—"}</span></td>
+                    <td className="n">{edita ? <input className="n cp-edita" inputMode="decimal" defaultValue={num(i.qtd)} onBlur={(v) => ler(v.target.value) !== i.qtd && salvar(i, { qtd: ler(v.target.value) })} aria-label={`Quantidade a pedir de ${i.nome}`} /> : <b>{num(i.qtd)}</b>}</td>
+                    <td>{edita ? <input className="cp-edita cp-un" defaultValue={i.unidade ?? ""} onBlur={(v) => v.target.value !== (i.unidade ?? "") && salvar(i, { unidade: v.target.value })} aria-label={`Unidade de ${i.nome}`} /> : i.unidade ?? ""}</td>
+                    <td className="n">{edita ? <input className="n cp-edita" inputMode="decimal" defaultValue={num(i.preco)} onBlur={(v) => ler(v.target.value) !== i.preco && salvar(i, { preco: ler(v.target.value) })} aria-label={`Preço de ${i.nome}`} /> : brl(i.preco)}</td>
+                    <td className="n cp-tot">{brl((i.qtd ?? 0) * (i.preco ?? 0))}</td>
+                    <td>{podeEditar && <button className="ghost small" onClick={() => salvar(i, { removido: !i.removido })}>{i.removido ? "Voltar" : "Tirar"}</button>}</td>
+                  </tr>
+                  {porque && !i.removido && (
+                    <tr className="cp-obs"><td colSpan={8}><span aria-hidden="true">💡</span> {porque}</td></tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -567,7 +582,16 @@ function ListaUnica({ semana }: { semana: Semana }) {
   const [pedidos, setPedidos] = useState<Record<string, Pedido>>({});
   const [imprimir, setImprimir] = useState<string | null>(null);
   const [conferir, setConferir] = useState<string | null>(null);
+  const [cadastro, setCadastro] = useState<Forn[]>([]);
   const aberta = semana.status === "aberta";
+  useEffect(() => {
+    supabase.from("compras_fornecedores").select("*").eq("ativo", true).then(({ data }) => setCadastro((data ?? []) as Forn[]));
+  }, [supabase]);
+  // o fornecedor da lista única no cadastro: pela razão social, pelo nome ou por um apelido
+  const doCadastro = (nome: string) => {
+    const n = nome.trim().toUpperCase();
+    return cadastro.find((f) => (f.razao_social ?? "").toUpperCase() === n || f.nome.toUpperCase() === n || f.apelidos.some((a) => a.toUpperCase() === n));
+  };
 
   const carregar = useCallback(async () => {
     const [{ data }, { data: ps }] = await Promise.all([
@@ -670,6 +694,19 @@ function ListaUnica({ semana }: { semana: Semana }) {
                 {st === "recebido" && <button className="ghost small" onClick={() => marcar(g.f, "pedido")}>Desfazer recebido</button>}
                 <button className={conferir === g.f ? "ghost small on" : "ghost small"} onClick={() => setConferir(conferir === g.f ? null : g.f)} aria-expanded={conferir === g.f}>Conferir com a nota</button>
               </div>
+              {(() => {
+                const f = doCadastro(g.f);
+                if (!f || !(f.whatsapp || f.telefone || f.como_pedir || f.dias_entrega || f.contato_nome)) return null;
+                return (
+                  <p className="cp-forn-contato no-print">
+                    {f.contato_nome && <span>👤 {f.contato_nome}</span>}
+                    {f.whatsapp && <a href={`https://wa.me/${f.whatsapp.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">💬 {f.whatsapp}</a>}
+                    {f.telefone && <span>📞 {f.telefone}</span>}
+                    {f.como_pedir && <span>📝 {f.como_pedir}</span>}
+                    {f.dias_entrega && <span>🚚 entrega {f.dias_entrega}</span>}
+                  </p>
+                );
+              })()}
               {conferir === g.f && <ConferirNota semana={semana} fornecedor={g.f} pedido={ped} onMudou={carregar} />}
               <table className="nf-tabela cp-tabela">
                 <tbody>
@@ -769,45 +806,73 @@ type PainelDados = {
   fornecedores: { fornecedor: string; itens: number; valor: number; status: Pedido["status"]; pedido_em: string | null; recebido_em: string | null; nota: string | null }[];
   alertas_preco: { descricao: string; fornecedor: string; preco: number; media_anterior: number; alta_pct: number; unidade: string; emissao: string }[];
 };
+type Casa = { unidade: string; pessoas: number; com_lista: number; aprovadas: number; listas: number; valor: number };
 function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [d, setD] = useState<PainelDados | null>(null);
+  const [casas, setCasas] = useState<Casa[]>([]);
   const [erro, setErro] = useState("");
-  useEffect(() => {
+  const carregar = useCallback(() => {
     supabase.rpc("compras_painel", { p_semana: semana.id }).then(({ data, error }) => {
       if (error) setErro(error.message); else setD(data as PainelDados);
     });
+    supabase.rpc("compras_painel_casas", { p_semana: semana.id }).then(({ data }) => setCasas((data ?? []) as Casa[]));
   }, [supabase, semana.id]);
+  useEffect(() => { carregar(); }, [carregar]);
+  // ao vivo: lista aprovada ou nova muda o painel na hora
+  useEffect(() => {
+    const c = supabase.channel(`compras-painel-${semana.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compras_listas", filter: `semana_id=eq.${semana.id}` }, () => carregar())
+      .subscribe();
+    return () => { supabase.removeChannel(c); };
+  }, [supabase, semana.id, carregar]);
   if (erro) return <p className="tv-alerta">{erro}</p>;
   if (!d) return <p className="muted">Carregando o painel…</p>;
 
   const fs = d.fornecedores;
   const aPedir = fs.filter((f) => f.status === "a_pedir");
   const esperando = fs.filter((f) => f.status === "pedido");
-  const semNota = fs.filter((f) => f.status === "recebido" && !f.nota);
+  const recebidos = fs.filter((f) => f.status === "recebido");
+  const semNota = recebidos.filter((f) => !f.nota);
   const totalFinal = fs.reduce((s, f) => s + Number(f.valor ?? 0), 0);
-  const pctAprov = d.listas.com_lista ? Math.round((d.listas.pessoas_tudo_aprovado / d.listas.com_lista) * 100) : 0;
-  const tarefas: { t: string; d: string; acao?: [string, Aba] }[] = [];
-  if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda sem lista`, d: "ainda não pediram no grupo COMPRAS nesta semana" });
-  if (d.pendentes.length) tarefas.push({ t: `${d.pendentes.length} pessoas ainda não aprovaram tudo`, d: d.pendentes.map((p) => `${p.pessoa} (${p.aprovadas}/${p.listas})`).join(" · "), acao: ["Ver listas", "andamento"] });
-  if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ t: "Juntar as listas aprovadas", d: "monta a lista única por fornecedor", acao: ["Abrir a lista única", "final"] });
-  if (aPedir.length) tarefas.push({ t: `Fazer o pedido a ${aPedir.length} fornecedores`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
-  if (esperando.length) tarefas.push({ t: `Esperando a entrega de ${esperando.length}`, d: esperando.map((f) => f.fornecedor).join(" · "), acao: ["Marcar recebido", "final"] });
-  if (semNota.length) tarefas.push({ t: `Ligar a nota de ${semNota.length} pedidos recebidos`, d: "e conferir quantidade e preço com o que foi pedido", acao: ["Conferir", "final"] });
-  if (d.itens.baixa) tarefas.push({ t: `${d.itens.baixa} itens sem produto nas notas`, d: "a análise não achou compra parecida: confira o fornecedor e o preço", acao: ["Ver listas", "andamento"] });
+  const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+
+  // As cinco etapas da semana, cada uma com quanto já foi feito
+  const etapas = [
+    { t: "Pedidos no grupo", v: `${d.listas.com_lista}/${d.listas.pessoas}`, p: pct(d.listas.com_lista, d.listas.pessoas), d: "pessoas que já pediram" },
+    { t: "Aprovação", v: `${d.listas.pessoas_tudo_aprovado}/${d.listas.com_lista}`, p: pct(d.listas.pessoas_tudo_aprovado, d.listas.com_lista), d: "aprovaram todas as listas" },
+    { t: "Lista única", v: fs.length ? `${fs.length}` : "—", p: fs.length ? 100 : 0, d: fs.length ? "fornecedores" : "ainda não juntada" },
+    { t: "Pedidos feitos", v: `${fs.length - aPedir.length}/${fs.length || 0}`, p: pct(fs.length - aPedir.length, fs.length), d: "fornecedores com pedido" },
+    { t: "Recebido", v: `${recebidos.length}/${fs.length || 0}`, p: pct(recebidos.length, fs.length), d: "entregas conferidas" },
+  ];
+  const tarefas: { t: string; d: string; tom: "aviso" | "acao" | "info"; acao?: [string, Aba] }[] = [];
+  if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ tom: "info", t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda não pediram`, d: "o pedido é feito no grupo COMPRAS até terça à noite" });
+  if (d.pendentes.length) tarefas.push({ tom: "aviso", t: `${d.pendentes.length} pessoas ainda não aprovaram tudo`, d: d.pendentes.map((p) => `${p.pessoa} (${p.aprovadas} de ${p.listas})`).join(" · "), acao: ["Ver as listas", "andamento"] });
+  if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ tom: "acao", t: "Juntar as listas aprovadas", d: "monta a lista única, separada por fornecedor", acao: ["Abrir a lista única", "final"] });
+  if (aPedir.length) tarefas.push({ tom: "acao", t: `Fazer o pedido a ${aPedir.length} ${aPedir.length === 1 ? "fornecedor" : "fornecedores"}`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
+  if (esperando.length) tarefas.push({ tom: "info", t: `Esperando a entrega de ${esperando.length}`, d: esperando.map((f) => f.fornecedor).join(" · "), acao: ["Marcar recebido", "final"] });
+  if (semNota.length) tarefas.push({ tom: "acao", t: `Conferir a nota de ${semNota.length} ${semNota.length === 1 ? "entrega" : "entregas"}`, d: "ligar a nota fiscal e comparar quantidade e preço com o pedido", acao: ["Conferir", "final"] });
+  if (d.itens.baixa) tarefas.push({ tom: "aviso", t: `${d.itens.baixa} itens sem produto nas notas`, d: "a análise não achou compra parecida: confira fornecedor e preço", acao: ["Ver as listas", "andamento"] });
 
   return (
     <section className="cp-painel">
-      <div className="ip-numeros">
-        <div className="ip-numero">
-          <span className="ip-rotulo">Pessoas com tudo aprovado</span>
-          <span className="ip-valor">{d.listas.pessoas_tudo_aprovado}<small className="cp-de"> de {d.listas.com_lista}</small></span>
-          <span className="ip-var neutro">{d.listas.aprovadas} de {d.listas.aprovadas + d.listas.em_revisao + d.listas.aguardando} listas aprovadas</span>
-          <span className="pd-progresso" aria-hidden="true"><span style={{ width: `${pctAprov}%` }} /></span>
-        </div>
-        <div className="ip-numero"><span className="ip-rotulo">Estimado nas listas</span><span className="ip-valor">{brl(Number(d.itens.valor_todas))}</span><span className="ip-var neutro">{brl(Number(d.itens.valor_aprovado))} já aprovado</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Pedidos feitos</span><span className="ip-valor">{fs.length - aPedir.length}<small className="cp-de"> de {fs.length}</small></span><span className="ip-var neutro">{fs.filter((f) => f.status === "recebido").length} recebidos · {brl(totalFinal)} na lista única</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Itens nas listas</span><span className="ip-valor">{d.itens.total}</span><span className={d.itens.baixa ? "ip-var cf-alerta" : "ip-var neutro"}>{d.itens.baixa} sem produto nas notas</span></div>
+      <ol className="cp-trilha" aria-label="Andamento da semana">
+        {etapas.map((e, k) => (
+          <li key={e.t} className={e.p >= 100 ? "feita" : e.p > 0 ? "andando" : ""}>
+            <span className="cp-trilha-n" aria-hidden="true">{e.p >= 100 ? "✓" : k + 1}</span>
+            <span className="cp-trilha-t">{e.t}</span>
+            <b className="cp-trilha-v">{e.v}</b>
+            <small>{e.d}</small>
+            <span className="cp-barra" aria-hidden="true"><span style={{ width: `${e.p}%` }} /></span>
+          </li>
+        ))}
+      </ol>
+
+      <div className="cp-kpis">
+        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🧾</span><span className="cp-kpi-rotulo">Estimado nas listas</span><b>{brl(Number(d.itens.valor_todas))}</b><small>{brl(Number(d.itens.valor_aprovado))} já aprovado</small></div>
+        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📦</span><span className="cp-kpi-rotulo">Itens pedidos</span><b>{d.itens.total}</b><small className={d.itens.baixa ? "cf-alerta" : ""}>{d.itens.baixa} sem produto nas notas</small></div>
+        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🚚</span><span className="cp-kpi-rotulo">Lista única</span><b>{brl(totalFinal)}</b><small>{fs.length} fornecedores · {recebidos.length} recebidos</small></div>
+        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📈</span><span className="cp-kpi-rotulo">Altas de preço</span><b>{d.alertas_preco.length}</b><small>itens 15% ou mais acima da média</small></div>
       </div>
 
       <div className="cp-painel-grade">
@@ -816,49 +881,62 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
           {!tarefas.length ? <p className="es-tudo-certo">Tudo em dia nesta semana.</p> : (
             <ol className="cp-tarefas">
               {tarefas.map((x) => (
-                <li key={x.t}>
+                <li key={x.t} className={`cp-tarefa ${x.tom}`}>
                   <span><b>{x.t}</b><small>{x.d}</small></span>
-                  {x.acao && <button className="ghost small" onClick={() => irPara(x.acao![1])}>{x.acao[0]}</button>}
+                  {x.acao && <button className={x.tom === "acao" ? "small" : "ghost small"} onClick={() => irPara(x.acao![1])}>{x.acao[0]}</button>}
                 </li>
               ))}
             </ol>
           )}
         </section>
         <section className="av-bloco">
-          <h2>Altas de preço nas notas</h2>
-          {!d.alertas_preco.length ? <p className="muted">Nenhuma alta de 15% ou mais nos últimos 14 dias.</p> : (
-            <ul className="cp-altas">
-              {d.alertas_preco.map((a, i) => (
-                <li key={i}>
-                  <span><b>{a.descricao}</b><small>{a.fornecedor} · {new Date(a.emissao).toLocaleDateString("pt-BR")}</small></span>
-                  <span className="n"><b className="cf-alerta">+{num(a.alta_pct)}%</b><small>{brl(a.preco)} / {a.unidade} · média {brl(a.media_anterior)}</small></span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <button className="ghost small" onClick={() => irPara("precos")}>Abrir o índice de preços</button>
+          <h2>Por casa</h2>
+          <div className="cp-casas">
+            {casas.map((c) => {
+              const p = pct(c.aprovadas, c.com_lista || c.pessoas);
+              return (
+                <div key={c.unidade} className="cp-casa">
+                  <span className="cp-anel" style={{ ["--p" as string]: `${p}` }} aria-label={`${p}% aprovado`}><b>{p}%</b></span>
+                  <span className="cp-casa-txt"><b>{UNIDADES[c.unidade] ?? c.unidade}</b>
+                    <small>{c.aprovadas} de {c.com_lista} aprovaram · {c.listas} listas</small>
+                    <small>{brl(Number(c.valor))} estimado</small></span>
+                </div>
+              );
+            })}
+          </div>
         </section>
       </div>
 
       {fs.length > 0 && (
         <section className="av-bloco">
           <h2>Pedidos por fornecedor</h2>
-          <div className="nf-tabela-wrap">
-            <table className="nf-tabela">
-              <thead><tr><th>Fornecedor</th><th className="n">Itens</th><th className="n">Valor</th><th>Situação</th><th>Nota</th></tr></thead>
-              <tbody>
-                {fs.map((f) => (
-                  <tr key={f.fornecedor}>
-                    <td>{f.fornecedor}</td><td className="n">{f.itens}</td><td className="n">{brl(Number(f.valor))}</td>
-                    <td><span className={`cp-ped ${f.status}`}>{PEDIDO[f.status]}</span> <small className="muted">{quando(f.status === "recebido" ? f.recebido_em : f.pedido_em)}</small></td>
-                    <td>{f.nota ? <a href={`/api/notas/danfe/${f.nota}`} target="_blank" rel="noreferrer">Ver PDF</a> : <span className="muted">—</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="cp-forn-cards">
+            {fs.map((f) => (
+              <div key={f.fornecedor} className={`cp-forn-card ${f.status}`}>
+                <span className="cp-forn-card-nome">{f.fornecedor}</span>
+                <b>{brl(Number(f.valor))}</b>
+                <small>{f.itens} itens · {PEDIDO[f.status]}{quando(f.status === "recebido" ? f.recebido_em : f.pedido_em) ? ` · ${quando(f.status === "recebido" ? f.recebido_em : f.pedido_em)}` : ""}</small>
+                {f.nota && <a href={`/api/notas/danfe/${f.nota}`} target="_blank" rel="noreferrer">Ver a nota</a>}
+              </div>
+            ))}
           </div>
         </section>
       )}
+
+      <section className="av-bloco">
+        <h2>Altas de preço nas notas</h2>
+        {!d.alertas_preco.length ? <p className="muted">Nenhuma alta de 15% ou mais nos últimos 14 dias.</p> : (
+          <ul className="cp-altas">
+            {d.alertas_preco.map((a, k) => (
+              <li key={k}>
+                <span><b>{a.descricao}</b><small>{a.fornecedor} · {new Date(a.emissao).toLocaleDateString("pt-BR")}</small></span>
+                <span className="n"><b className="cf-alerta">+{num(a.alta_pct)}%</b><small>{brl(a.preco)} / {a.unidade} · média {brl(a.media_anterior)}</small></span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button className="ghost small" onClick={() => irPara("precos")}>Abrir o índice de preços</button>
+      </section>
     </section>
   );
 }
@@ -947,6 +1025,148 @@ function ConferirNota({ semana, fornecedor, pedido, onMudou }: { semana: Semana;
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Fornecedores (cadastro da Fernanda): contato, como pedir, dias, pagamento e as notas de cada um
+// (compras_fornecedores, compras_fornecedores_lista, compras_fornecedor_salvar, compras_fornecedor_notas)
+// ---------------------------------------------------------------------------------------------------------------
+type Forn = { id: string; nome: string; razao_social: string | null; cnpj: string | null; apelidos: string[]; categoria: string | null;
+  contato_nome: string | null; telefone: string | null; whatsapp: string | null; email: string | null; como_pedir: string | null;
+  dias_pedido: string | null; dias_entrega: string | null; prazo_pagamento: string | null; forma_pagamento: string | null;
+  pedido_minimo: number | null; observacoes: string | null; ativo: boolean;
+  notas_90d?: number; valor_90d?: number | null; ultima_compra?: string | null; casas?: string[] };
+const docFmt = (c: string | null) => !c ? "" : c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : c.length === 11 ? c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : c;
+const CAMPOS_FORN: [keyof Forn, string, string][] = [
+  ["nome", "Nome (como a equipe chama)", "Ex.: Eloi Chaves"], ["razao_social", "Razão social (como vem na nota)", ""],
+  ["cnpj", "CNPJ ou CPF", "só números"], ["categoria", "Categoria", "Ex.: mercearia, hortifrúti, bebidas"],
+  ["contato_nome", "Contato (vendedor)", ""], ["whatsapp", "WhatsApp", "Ex.: 84 99999-9999"], ["telefone", "Telefone", ""], ["email", "E-mail", ""],
+  ["como_pedir", "Como pedir", "Ex.: WhatsApp do vendedor até 10h"], ["dias_pedido", "Dias de pedido", "Ex.: segunda e quinta"],
+  ["dias_entrega", "Dias de entrega", "Ex.: terça e sexta"], ["prazo_pagamento", "Prazo de pagamento", "Ex.: 14 dias"],
+  ["forma_pagamento", "Forma de pagamento", "Ex.: boleto, Pix"], ["pedido_minimo", "Pedido mínimo (R$)", ""],
+];
+function Fornecedores() {
+  const supabase = useMemo(() => createClient(), []);
+  const [lista, setLista] = useState<Forn[] | null>(null);
+  const [busca, setBusca] = useState("");
+  const [mostrar, setMostrar] = useState<"ativos" | "todos">("ativos");
+  const [aberto, setAberto] = useState<Forn | "novo" | null>(null);
+  const [erro, setErro] = useState("");
+  const carregar = useCallback(async () => {
+    const { data, error } = await supabase.rpc("compras_fornecedores_lista");
+    if (error) setErro(error.message);
+    setLista((data ?? []) as Forn[]);
+  }, [supabase]);
+  useEffect(() => { carregar(); }, [carregar]);
+  const termo = normalizar(busca);
+  const vistos = (lista ?? []).filter((f) => (mostrar === "todos" || f.ativo) &&
+    (!termo || normalizar([f.nome, f.razao_social, f.cnpj, f.categoria, f.contato_nome, ...f.apelidos].filter(Boolean).join(" ")).includes(termo)));
+  const semContato = (lista ?? []).filter((f) => f.ativo && (f.valor_90d ?? 0) > 0 && !f.whatsapp && !f.telefone).length;
+  return (
+    <section className="cp-fornecedores">
+      <div className="cp-fornecedores-topo">
+        <input className="cp-busca" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, CNPJ, categoria ou contato" aria-label="Buscar fornecedor" />
+        <select value={mostrar} onChange={(v) => setMostrar(v.target.value as "ativos" | "todos")} aria-label="Quais mostrar">
+          <option value="ativos">Só os ativos</option><option value="todos">Todos, inclusive os desativados</option>
+        </select>
+        <button className="small" onClick={() => setAberto("novo")}>+ Novo fornecedor</button>
+      </div>
+      {erro && <p className="tv-alerta">{erro}</p>}
+      {semContato > 0 && <p className="es-aviso">{semContato} fornecedores com compra nos últimos 90 dias ainda estão sem WhatsApp ou telefone. Clique num deles para completar.</p>}
+      {!lista ? <p className="muted">Carregando os fornecedores…</p> : !vistos.length ? <p className="muted">Nenhum fornecedor encontrado.</p> : (
+        <div className="cp-forn-grade">
+          {vistos.map((f) => (
+            <button key={f.id} className={f.ativo ? "cp-forn-ficha" : "cp-forn-ficha desativado"} onClick={() => setAberto(f)}>
+              <span className="cp-forn-ficha-topo">
+                <span className="cp-avatar" aria-hidden="true">{f.nome.slice(0, 1).toUpperCase()}</span>
+                <span><b>{f.nome}</b><small>{f.categoria ?? "sem categoria"}{f.cnpj ? ` · ${docFmt(f.cnpj)}` : ""}</small></span>
+              </span>
+              <span className="cp-forn-ficha-num"><b>{brl(Number(f.valor_90d ?? 0))}</b><small>{f.notas_90d ?? 0} notas em 90 dias{f.ultima_compra ? ` · última ${new Date(`${f.ultima_compra}T12:00:00`).toLocaleDateString("pt-BR")}` : ""}</small></span>
+              <span className="cp-forn-ficha-tags">
+                {(f.casas ?? []).filter((c) => c !== "grupo").map((c) => <span key={c} className="cp-tag">{UNIDADES[c] ?? c}</span>)}
+                {f.whatsapp || f.telefone ? <span className="cp-tag ok">com contato</span> : <span className="cp-tag falta">sem contato</span>}
+                {!f.ativo && <span className="cp-tag">desativado</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {aberto && <FichaFornecedor forn={aberto === "novo" ? null : aberto} onFechar={() => setAberto(null)} onSalvo={() => { setAberto(null); carregar(); }} />}
+    </section>
+  );
+}
+const normalizar = (t: string) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
+function FichaFornecedor({ forn, onFechar, onSalvo }: { forn: Forn | null; onFechar: () => void; onSalvo: () => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [f, setF] = useState<Record<string, string>>(() => Object.fromEntries(CAMPOS_FORN.map(([k]) => [k, forn?.[k] == null ? "" : String(forn[k])])));
+  const [apelidos, setApelidos] = useState((forn?.apelidos ?? []).join("\n"));
+  const [obs, setObs] = useState(forn?.observacoes ?? "");
+  const [ativo, setAtivo] = useState(forn?.ativo ?? true);
+  const [notas, setNotas] = useState<{ chave: string; emissao: string; valor: number; casa: string; completa: boolean; situacao: string; itens: number }[] | null>(null);
+  const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => {
+    if (!forn) return setNotas([]);
+    supabase.rpc("compras_fornecedor_notas", { p_id: forn.id }).then(({ data }) => setNotas((data ?? []) as typeof notas));
+  }, [supabase, forn]);
+  async function salvar(ev: React.FormEvent) {
+    ev.preventDefault();
+    setErro(""); setSalvando(true);
+    const dados = { ...f, pedido_minimo: f.pedido_minimo ? String(ler(f.pedido_minimo)) : "", observacoes: obs,
+      apelidos: apelidos.split("\n").map((a) => a.trim()).filter(Boolean), ativo };
+    const { error } = await supabase.rpc("compras_fornecedor_salvar", { p_id: forn?.id ?? null, p_dados: dados });
+    setSalvando(false);
+    if (error) return setErro(error.message);
+    onSalvo();
+  }
+  return (
+    <div className="cp-ficha-fundo" role="dialog" aria-modal="true" aria-label={forn ? `Fornecedor ${forn.nome}` : "Novo fornecedor"} onClick={onFechar}>
+      <form className="cp-ficha" onSubmit={salvar} onClick={(e) => e.stopPropagation()}>
+        <header className="cp-ficha-cabeca">
+          <div><span className="es-sobre">Fornecedor</span><h2>{forn ? forn.nome : "Novo fornecedor"}</h2></div>
+          <button type="button" className="ghost small" onClick={onFechar}>Fechar</button>
+        </header>
+        <div className="cp-ficha-campos">
+          {CAMPOS_FORN.map(([k, rotulo, dica]) => (
+            <label key={k}>{rotulo}
+              <input value={f[k]} onChange={(v) => setF({ ...f, [k]: v.target.value })} placeholder={dica} inputMode={k === "pedido_minimo" || k === "cnpj" ? "decimal" : undefined}
+                required={k === "nome"} />
+            </label>
+          ))}
+          <label className="largo">Outros nomes nas notas e nas listas (um por linha)
+            <textarea value={apelidos} onChange={(v) => setApelidos(v.target.value)} rows={2} placeholder="Ex.: ELOI CHAVES ATACADO" />
+          </label>
+          <label className="largo">Observações
+            <textarea value={obs} onChange={(v) => setObs(v.target.value)} rows={3} placeholder="Ex.: pedir sempre com o Fulano; entrega só pela manhã" />
+          </label>
+          <label className="cp-ficha-ativo"><input type="checkbox" checked={ativo} onChange={(v) => setAtivo(v.target.checked)} /> Fornecedor ativo (desmarque para esconder, sem apagar)</label>
+        </div>
+        {erro && <p className="tv-alerta">{erro}</p>}
+        <div className="cp-ficha-acoes">
+          <button className="small" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+          <button type="button" className="ghost small" onClick={onFechar}>Cancelar</button>
+        </div>
+        {forn && (
+          <section className="cp-ficha-notas">
+            <h3>Últimas notas</h3>
+            {!notas ? <p className="muted">Carregando…</p> : !notas.length ? <p className="muted">Nenhuma nota deste fornecedor ainda.</p> : (
+              <ul>
+                {notas.map((n) => (
+                  <li key={n.chave}>
+                    <span><b>{new Date(n.emissao).toLocaleDateString("pt-BR")}</b> · {UNIDADES[n.casa] ?? "outra empresa do grupo"}
+                      <small>{n.situacao === "cancelada" ? "cancelada" : n.completa ? `${n.itens} itens` : "só o resumo: a SEFAZ não liberou os itens"}</small></span>
+                    <b className="n">{brl(n.valor)}</b>
+                    {n.completa && n.situacao !== "cancelada" ? <a href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">Ver PDF</a> : <span />}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+      </form>
     </div>
   );
 }
