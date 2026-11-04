@@ -13,10 +13,19 @@ export type Rodada = {
 };
 
 // Uma chamada da distribuição por NSU (até 50 documentos)
-export async function distribuir(cred: Credencial, cnpj: string, ultNSU: string): Promise<Rodada> {
+export function distribuir(cred: Credencial, cnpj: string, ultNSU: string): Promise<Rodada> {
+  return rodada(cred, cnpj, `<distNSU><ultNSU>${ultNSU}</ultNSU></distNSU>`);
+}
+
+// Um documento pelo NSU exato (consNSU): busca o que outro sistema consultando o mesmo CNPJ já levou na sequência
+export function consultarNSU(cred: Credencial, cnpj: string, nsu: string): Promise<Rodada> {
+  return rodada(cred, cnpj, `<consNSU><NSU>${nsu}</NSU></consNSU>`);
+}
+
+async function rodada(cred: Credencial, cnpj: string, pedido: string): Promise<Rodada> {
   const msg =
     `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><tpAmb>1</tpAmb><cUFAutor>${UF_RN}</cUFAutor>` +
-    `<CNPJ>${cnpj}</CNPJ><distNSU><ultNSU>${ultNSU}</ultNSU></distNSU></distDFeInt>`;
+    `<CNPJ>${cnpj}</CNPJ>${pedido}</distDFeInt>`;
   const resposta = await chamar("distribuicao", msg, cred.cadeia, cred.chave);
   const doc = xml(resposta);
   const ret = el(doc, "retDistDFeInt");
