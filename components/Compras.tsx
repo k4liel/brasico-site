@@ -1033,25 +1033,32 @@ function ConferirNota({ semana, fornecedor, pedido, onMudou }: { semana: Semana;
 // Fornecedores (cadastro da Fernanda): contato, como pedir, dias, pagamento e as notas de cada um
 // (compras_fornecedores, compras_fornecedores_lista, compras_fornecedor_salvar, compras_fornecedor_notas)
 // ---------------------------------------------------------------------------------------------------------------
-type Forn = { id: string; nome: string; razao_social: string | null; cnpj: string | null; apelidos: string[]; categoria: string | null;
+type Forn = { id: string; nome: string; razao_social: string | null; cnpj: string | null; cnpjs: string[]; apelidos: string[]; categoria: string | null;
   contato_nome: string | null; telefone: string | null; whatsapp: string | null; email: string | null; como_pedir: string | null;
   dias_pedido: string | null; dias_entrega: string | null; prazo_pagamento: string | null; forma_pagamento: string | null;
   pedido_minimo: number | null; observacoes: string | null; ativo: boolean;
   notas_90d?: number; valor_90d?: number | null; ultima_compra?: string | null; casas?: string[] };
 const docFmt = (c: string | null) => !c ? "" : c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : c.length === 11 ? c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : c;
-const CAMPOS_FORN: [keyof Forn, string, string][] = [
-  ["nome", "Nome (como a equipe chama)", "Ex.: Eloi Chaves"], ["razao_social", "Razão social (como vem na nota)", ""],
-  ["cnpj", "CNPJ ou CPF", "só números"], ["categoria", "Categoria", "Ex.: mercearia, hortifrúti, bebidas"],
-  ["contato_nome", "Contato (vendedor)", ""], ["whatsapp", "WhatsApp", "Ex.: 84 99999-9999"], ["telefone", "Telefone", ""], ["email", "E-mail", ""],
-  ["como_pedir", "Como pedir", "Ex.: WhatsApp do vendedor até 10h"], ["dias_pedido", "Dias de pedido", "Ex.: segunda e quinta"],
-  ["dias_entrega", "Dias de entrega", "Ex.: terça e sexta"], ["prazo_pagamento", "Prazo de pagamento", "Ex.: 14 dias"],
-  ["forma_pagamento", "Forma de pagamento", "Ex.: boleto, Pix"], ["pedido_minimo", "Pedido mínimo (R$)", ""],
+const normalizar = (t: string) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+const dataBR = (d: string | null | undefined) => (d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR") : "—");
+// Campos da ficha, em blocos
+const BLOCOS_FORN: { titulo: string; campos: [keyof Forn, string, string][] }[] = [
+  { titulo: "Identificação", campos: [["nome", "Nome (como a equipe chama)", "Ex.: Eloi Chaves"], ["razao_social", "Razão social (como vem na nota)", ""],
+    ["cnpj", "CNPJ ou CPF principal", "só números"], ["categoria", "Categoria", "Ex.: mercearia, hortifrúti, bebidas"]] },
+  { titulo: "Contato", campos: [["contato_nome", "Vendedor ou contato", ""], ["whatsapp", "WhatsApp", "Ex.: 84 99999-9999"],
+    ["telefone", "Telefone", ""], ["email", "E-mail", ""]] },
+  { titulo: "Pedido e entrega", campos: [["como_pedir", "Como pedir", "Ex.: WhatsApp do vendedor até 10h"], ["dias_pedido", "Dias de pedido", "Ex.: segunda e quinta"],
+    ["dias_entrega", "Dias de entrega", "Ex.: terça e sexta"], ["pedido_minimo", "Pedido mínimo (R$)", ""]] },
+  { titulo: "Pagamento", campos: [["forma_pagamento", "Forma de pagamento", "Ex.: boleto, Pix"], ["prazo_pagamento", "Prazo", "Ex.: 14 dias"]] },
 ];
+type Ordem = "valor" | "nome" | "ultima";
+
 function Fornecedores() {
   const supabase = useMemo(() => createClient(), []);
   const [lista, setLista] = useState<Forn[] | null>(null);
   const [busca, setBusca] = useState("");
-  const [mostrar, setMostrar] = useState<"ativos" | "todos">("ativos");
+  const [filtro, setFiltro] = useState<"ativos" | "com_compra" | "sem_contato" | "todos">("ativos");
+  const [ordem, setOrdem] = useState<Ordem>("valor");
   const [aberto, setAberto] = useState<Forn | "novo" | null>(null);
   const [erro, setErro] = useState("");
   const carregar = useCallback(async () => {
@@ -1060,58 +1067,93 @@ function Fornecedores() {
     setLista((data ?? []) as Forn[]);
   }, [supabase]);
   useEffect(() => { carregar(); }, [carregar]);
+
+  const todos = lista ?? [];
+  const temContato = (f: Forn) => !!(f.whatsapp || f.telefone || f.email);
   const termo = normalizar(busca);
-  const vistos = (lista ?? []).filter((f) => (mostrar === "todos" || f.ativo) &&
-    (!termo || normalizar([f.nome, f.razao_social, f.cnpj, f.categoria, f.contato_nome, ...f.apelidos].filter(Boolean).join(" ")).includes(termo)));
-  const semContato = (lista ?? []).filter((f) => f.ativo && (f.valor_90d ?? 0) > 0 && !f.whatsapp && !f.telefone).length;
+  const vistos = todos
+    .filter((f) => filtro === "todos" || (f.ativo && (filtro === "ativos" || (filtro === "com_compra" ? (f.valor_90d ?? 0) > 0 : !temContato(f)))))
+    .filter((f) => !termo || normalizar([f.nome, f.razao_social, f.categoria, f.contato_nome, ...f.cnpjs, ...f.apelidos].filter(Boolean).join(" ")).includes(termo))
+    .sort((a, b) => ordem === "nome" ? a.nome.localeCompare(b.nome) : ordem === "ultima" ? (b.ultima_compra ?? "").localeCompare(a.ultima_compra ?? "") : Number(b.valor_90d ?? 0) - Number(a.valor_90d ?? 0));
+  const ativos = todos.filter((f) => f.ativo);
+  const comCompra = ativos.filter((f) => (f.valor_90d ?? 0) > 0).length;
+  const semContato = ativos.filter((f) => !temContato(f)).length;
+  const total90 = ativos.reduce((s, f) => s + Number(f.valor_90d ?? 0), 0);
+
   return (
-    <section className="cp-fornecedores">
-      <div className="cp-fornecedores-topo">
-        <input className="cp-busca" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, CNPJ, categoria ou contato" aria-label="Buscar fornecedor" />
-        <select value={mostrar} onChange={(v) => setMostrar(v.target.value as "ativos" | "todos")} aria-label="Quais mostrar">
-          <option value="ativos">Só os ativos</option><option value="todos">Todos, inclusive os desativados</option>
+    <section className="cp-fz">
+      <div className="cp-fz-resumo">
+        <div><b>{ativos.length}</b><span>fornecedores ativos</span></div>
+        <div><b>{comCompra}</b><span>com compra em 90 dias</span></div>
+        <div><b>{brl(total90)}</b><span>comprado em 90 dias</span></div>
+        <div className={semContato ? "atencao" : ""}><b>{semContato}</b><span>sem contato cadastrado</span></div>
+      </div>
+
+      <div className="cp-fz-barra">
+        <input className="cp-fz-busca" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar fornecedor, CNPJ, categoria ou contato" aria-label="Buscar fornecedor" />
+        <select value={filtro} onChange={(v) => setFiltro(v.target.value as typeof filtro)} aria-label="Filtrar">
+          <option value="ativos">Ativos</option><option value="com_compra">Com compra em 90 dias</option>
+          <option value="sem_contato">Sem contato</option><option value="todos">Todos (inclui desativados)</option>
+        </select>
+        <select value={ordem} onChange={(v) => setOrdem(v.target.value as Ordem)} aria-label="Ordenar">
+          <option value="valor">Mais comprados</option><option value="ultima">Compra mais recente</option><option value="nome">Nome (A–Z)</option>
         </select>
         <button className="small" onClick={() => setAberto("novo")}>+ Novo fornecedor</button>
       </div>
       {erro && <p className="tv-alerta">{erro}</p>}
-      {semContato > 0 && <p className="es-aviso">{semContato} fornecedores com compra nos últimos 90 dias ainda estão sem WhatsApp ou telefone. Clique num deles para completar.</p>}
+
       {!lista ? <p className="muted">Carregando os fornecedores…</p> : !vistos.length ? <p className="muted">Nenhum fornecedor encontrado.</p> : (
-        <div className="cp-forn-grade">
-          {vistos.map((f) => (
-            <button key={f.id} className={f.ativo ? "cp-forn-ficha" : "cp-forn-ficha desativado"} onClick={() => setAberto(f)}>
-              <span className="cp-forn-ficha-topo">
-                <span className="cp-avatar" aria-hidden="true">{f.nome.slice(0, 1).toUpperCase()}</span>
-                <span><b>{f.nome}</b><small>{f.categoria ?? "sem categoria"}{f.cnpj ? ` · ${docFmt(f.cnpj)}` : ""}</small></span>
-              </span>
-              <span className="cp-forn-ficha-num"><b>{brl(Number(f.valor_90d ?? 0))}</b><small>{f.notas_90d ?? 0} notas em 90 dias{f.ultima_compra ? ` · última ${new Date(`${f.ultima_compra}T12:00:00`).toLocaleDateString("pt-BR")}` : ""}</small></span>
-              <span className="cp-forn-ficha-tags">
-                {(f.casas ?? []).filter((c) => c !== "grupo").map((c) => <span key={c} className="cp-tag">{UNIDADES[c] ?? c}</span>)}
-                {f.whatsapp || f.telefone ? <span className="cp-tag ok">com contato</span> : <span className="cp-tag falta">sem contato</span>}
-                {!f.ativo && <span className="cp-tag">desativado</span>}
-              </span>
-            </button>
-          ))}
+        <div className="cp-fz-tabela-caixa">
+          <table className="cp-fz-tabela">
+            <thead><tr>
+              <th>Fornecedor</th><th>Categoria</th><th>Casas</th><th className="n">90 dias</th><th>Última compra</th><th>Contato</th><th>Pedido / entrega</th><th aria-label="Editar" />
+            </tr></thead>
+            <tbody>
+              {vistos.map((f) => (
+                <tr key={f.id} className={f.ativo ? "" : "desativado"} onClick={() => setAberto(f)}>
+                  <td className="cp-fz-nome">
+                    <b>{f.nome}</b>
+                    <small>{f.cnpjs.length > 1 ? `${f.cnpjs.length} filiais · ` : ""}{docFmt(f.cnpj)}</small>
+                  </td>
+                  <td>{f.categoria ?? <span className="muted">—</span>}</td>
+                  <td><span className="cp-fz-casas">{(f.casas ?? []).filter((c) => c !== "grupo").map((c) => <span key={c} className="cp-tag">{UNIDADES[c] ?? c}</span>)}
+                    {(f.casas ?? []).includes("grupo") && <span className="cp-tag">outra do grupo</span>}</span></td>
+                  <td className="n"><b>{brl(Number(f.valor_90d ?? 0))}</b><small>{f.notas_90d ?? 0} notas</small></td>
+                  <td>{dataBR(f.ultima_compra)}</td>
+                  <td>{temContato(f) ? <span className="cp-fz-contato">{f.contato_nome && <b>{f.contato_nome}</b>}{f.whatsapp ?? f.telefone ?? f.email}</span>
+                    : <span className="cp-tag falta">sem contato</span>}</td>
+                  <td><span className="cp-fz-pedido">{f.como_pedir ?? "—"}{f.dias_entrega && <small>entrega {f.dias_entrega}</small>}</span></td>
+                  <td><button className="ghost small" onClick={(e) => { e.stopPropagation(); setAberto(f); }}>Editar</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {aberto && <FichaFornecedor forn={aberto === "novo" ? null : aberto} onFechar={() => setAberto(null)} onSalvo={() => { setAberto(null); carregar(); }} />}
     </section>
   );
 }
-const normalizar = (t: string) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 
 function FichaFornecedor({ forn, onFechar, onSalvo }: { forn: Forn | null; onFechar: () => void; onSalvo: () => void }) {
   const supabase = useMemo(() => createClient(), []);
-  const [f, setF] = useState<Record<string, string>>(() => Object.fromEntries(CAMPOS_FORN.map(([k]) => [k, forn?.[k] == null ? "" : String(forn[k])])));
+  const campos = BLOCOS_FORN.flatMap((b) => b.campos);
+  const [f, setF] = useState<Record<string, string>>(() => Object.fromEntries(campos.map(([k]) => [k, forn?.[k] == null ? "" : String(forn[k])])));
   const [apelidos, setApelidos] = useState((forn?.apelidos ?? []).join("\n"));
   const [obs, setObs] = useState(forn?.observacoes ?? "");
   const [ativo, setAtivo] = useState(forn?.ativo ?? true);
-  const [notas, setNotas] = useState<{ chave: string; emissao: string; valor: number; casa: string; completa: boolean; situacao: string; itens: number }[] | null>(null);
+  const [notas, setNotas] = useState<{ chave: string; emissao: string; valor: number; casa: string; completa: boolean; situacao: string; itens: number; filial: string }[] | null>(null);
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
   useEffect(() => {
-    if (!forn) return setNotas([]);
+    if (!forn) { setNotas([]); return; }
     supabase.rpc("compras_fornecedor_notas", { p_id: forn.id }).then(({ data }) => setNotas((data ?? []) as typeof notas));
   }, [supabase, forn]);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onFechar]);
   async function salvar(ev: React.FormEvent) {
     ev.preventDefault();
     setErro(""); setSalvando(true);
@@ -1123,49 +1165,80 @@ function FichaFornecedor({ forn, onFechar, onSalvo }: { forn: Forn | null; onFec
     onSalvo();
   }
   return (
-    <div className="cp-ficha-fundo" role="dialog" aria-modal="true" aria-label={forn ? `Fornecedor ${forn.nome}` : "Novo fornecedor"} onClick={onFechar}>
-      <form className="cp-ficha" onSubmit={salvar} onClick={(e) => e.stopPropagation()}>
-        <header className="cp-ficha-cabeca">
-          <div><span className="es-sobre">Fornecedor</span><h2>{forn ? forn.nome : "Novo fornecedor"}</h2></div>
-          <button type="button" className="ghost small" onClick={onFechar}>Fechar</button>
+    <div className="cp-fz-fundo" onClick={onFechar}>
+      <form className="cp-fz-ficha" role="dialog" aria-modal="true" aria-label={forn ? `Fornecedor ${forn.nome}` : "Novo fornecedor"}
+        onSubmit={salvar} onClick={(e) => e.stopPropagation()}>
+        <header className="cp-fz-ficha-topo">
+          <div>
+            <span className="es-sobre">{forn ? "Editar fornecedor" : "Novo fornecedor"}</span>
+            <h2>{f.nome || "Sem nome"}</h2>
+            {forn && <small>{brl(Number(forn.valor_90d ?? 0))} em 90 dias · {forn.notas_90d ?? 0} notas · última compra {dataBR(forn.ultima_compra)}</small>}
+          </div>
+          <button type="button" className="ghost small" onClick={onFechar} aria-label="Fechar">✕</button>
         </header>
-        <div className="cp-ficha-campos">
-          {CAMPOS_FORN.map(([k, rotulo, dica]) => (
-            <label key={k}>{rotulo}
-              <input value={f[k]} onChange={(v) => setF({ ...f, [k]: v.target.value })} placeholder={dica} inputMode={k === "pedido_minimo" || k === "cnpj" ? "decimal" : undefined}
-                required={k === "nome"} />
-            </label>
-          ))}
-          <label className="largo">Outros nomes nas notas e nas listas (um por linha)
-            <textarea value={apelidos} onChange={(v) => setApelidos(v.target.value)} rows={2} placeholder="Ex.: ELOI CHAVES ATACADO" />
-          </label>
-          <label className="largo">Observações
-            <textarea value={obs} onChange={(v) => setObs(v.target.value)} rows={3} placeholder="Ex.: pedir sempre com o Fulano; entrega só pela manhã" />
-          </label>
-          <label className="cp-ficha-ativo"><input type="checkbox" checked={ativo} onChange={(v) => setAtivo(v.target.checked)} /> Fornecedor ativo (desmarque para esconder, sem apagar)</label>
-        </div>
-        {erro && <p className="tv-alerta">{erro}</p>}
-        <div className="cp-ficha-acoes">
-          <button className="small" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
-          <button type="button" className="ghost small" onClick={onFechar}>Cancelar</button>
-        </div>
-        {forn && (
-          <section className="cp-ficha-notas">
-            <h3>Últimas notas</h3>
-            {!notas ? <p className="muted">Carregando…</p> : !notas.length ? <p className="muted">Nenhuma nota deste fornecedor ainda.</p> : (
-              <ul>
-                {notas.map((n) => (
-                  <li key={n.chave}>
-                    <span><b>{new Date(n.emissao).toLocaleDateString("pt-BR")}</b> · {UNIDADES[n.casa] ?? "outra empresa do grupo"}
-                      <small>{n.situacao === "cancelada" ? "cancelada" : n.completa ? `${n.itens} itens` : "só o resumo: a SEFAZ não liberou os itens"}</small></span>
-                    <b className="n">{brl(n.valor)}</b>
-                    {n.completa && n.situacao !== "cancelada" ? <a href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">Ver PDF</a> : <span />}
-                  </li>
+
+        <div className="cp-fz-ficha-corpo">
+          {BLOCOS_FORN.map((b) => (
+            <fieldset key={b.titulo} className="cp-fz-bloco">
+              <legend>{b.titulo}</legend>
+              <div className="cp-fz-campos">
+                {b.campos.map(([k, rotulo, dica]) => (
+                  <label key={k}><span>{rotulo}</span>
+                    <input value={f[k]} onChange={(v) => setF({ ...f, [k]: v.target.value })} placeholder={dica}
+                      inputMode={k === "pedido_minimo" || k === "cnpj" ? "decimal" : undefined} required={k === "nome"} />
+                  </label>
                 ))}
-              </ul>
-            )}
-          </section>
-        )}
+              </div>
+            </fieldset>
+          ))}
+          {forn && forn.cnpjs.length > 1 && (
+            <fieldset className="cp-fz-bloco">
+              <legend>Filiais ({forn.cnpjs.length})</legend>
+              <p className="cp-fz-filiais">{forn.cnpjs.map((c) => <span key={c} className="cp-tag">{docFmt(c)}</span>)}</p>
+            </fieldset>
+          )}
+          <fieldset className="cp-fz-bloco">
+            <legend>Outros nomes e observações</legend>
+            <div className="cp-fz-campos">
+              <label className="largo"><span>Outros nomes nas notas e nas listas (um por linha)</span>
+                <textarea value={apelidos} onChange={(v) => setApelidos(v.target.value)} rows={2} placeholder="Ex.: ELOI CHAVES ATACADO" /></label>
+              <label className="largo"><span>Observações</span>
+                <textarea value={obs} onChange={(v) => setObs(v.target.value)} rows={3} placeholder="Ex.: pedir sempre com o Fulano; entrega só pela manhã" /></label>
+              <label className="cp-fz-ativo largo"><input type="checkbox" checked={ativo} onChange={(v) => setAtivo(v.target.checked)} />
+                <span>Fornecedor ativo (desmarque para esconder da lista, sem apagar)</span></label>
+            </div>
+          </fieldset>
+
+          {forn && (
+            <fieldset className="cp-fz-bloco">
+              <legend>Últimas notas</legend>
+              {!notas ? <p className="muted">Carregando…</p> : !notas.length ? <p className="muted">Nenhuma nota deste fornecedor ainda.</p> : (
+                <div className="cp-fz-tabela-caixa">
+                  <table className="cp-fz-tabela pequena">
+                    <thead><tr><th>Data</th><th>Casa</th><th>Itens</th><th className="n">Valor</th><th /></tr></thead>
+                    <tbody>
+                      {notas.map((n) => (
+                        <tr key={n.chave}>
+                          <td>{new Date(n.emissao).toLocaleDateString("pt-BR")}</td>
+                          <td>{UNIDADES[n.casa] ?? "outra do grupo"}</td>
+                          <td>{n.situacao === "cancelada" ? <span className="cp-tag">cancelada</span> : n.completa ? n.itens : <span className="cp-tag falta">só resumo</span>}</td>
+                          <td className="n">{brl(n.valor)}</td>
+                          <td>{n.completa && n.situacao !== "cancelada" && <a href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">PDF</a>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </fieldset>
+          )}
+        </div>
+
+        <footer className="cp-fz-ficha-rodape">
+          {erro && <p className="tv-alerta">{erro}</p>}
+          <button type="button" className="ghost small" onClick={onFechar}>Cancelar</button>
+          <button className="small" disabled={salvando}>{salvando ? "Salvando…" : "Salvar"}</button>
+        </footer>
       </form>
     </div>
   );

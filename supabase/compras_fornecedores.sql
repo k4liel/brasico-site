@@ -11,3 +11,11 @@
 --   (pelo CNPJ, pela razão social ou pelos apelidos).
 -- compras_fornecedor_notas(id): as 30 últimas notas do fornecedor.
 -- compras_painel_casas(semana): por casa, pessoas, quem pediu, quem aprovou tudo, listas e valor estimado.
+
+-- 04/11/2026 (depois): um fornecedor por EMPRESA (raiz do CNPJ, 8 primeiros dígitos; doc_raiz()): as filiais ficam em
+-- cnpjs; os repetidos ficaram com mesclado_em = o que ficou (ativo false, nada apagado). compras_fornecedores_sincronizar()
+-- (chamada por compras_fornecedores_lista) inclui sozinho fornecedor novo das notas e filial nova de quem já existe.
+-- Nomes iniciais sem "Ltda", "Eireli", "ME" no fim.
+-- Lista única automática (migration compras_lista_unica_automatica): gatilhos em compras_listas (status) e compras_itens
+-- chamam compras_consolidar_semana: lista aprovada entra na hora; reaberta, os itens dela saem (removido = true),
+-- menos os que a Fernanda editou à mão.
