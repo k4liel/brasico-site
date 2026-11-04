@@ -603,6 +603,12 @@ function ListaUnica({ semana }: { semana: Semana }) {
   const [movendo, setMovendo] = useState<number | null>(null);      // item com o painel "Mover" aberto
   const [arrastando, setArrastando] = useState<number | null>(null); // item sendo arrastado
   const [alvo, setAlvo] = useState<string | null>(null);             // onde o item vai cair
+  // abrir e fechar: empresas começam abertas, fornecedores começam fechados (só o cabeçalho com a situação e o total)
+  const [empFechadas, setEmpFechadas] = useState<Set<string>>(new Set());
+  const [fornAbertos, setFornAbertos] = useState<Set<string>>(new Set());
+  const alternar = (set: (f: (s: Set<string>) => Set<string>) => void, k: string) =>
+    set((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const teclaAbre = (fn: () => void) => (ev: React.KeyboardEvent) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); } };
   const aberta = semana.status === "aberta";
   useEffect(() => {
     supabase.from("compras_fornecedores").select("*").eq("ativo", true).then(({ data }) => setCadastro((data ?? []) as Forn[]));
@@ -716,6 +722,10 @@ function ListaUnica({ semana }: { semana: Semana }) {
           {aberta && vivas.length > 0 && <p className="muted cp-dica">Para mudar um item de empresa ou de fornecedor, arraste-o pela alça <b>⠿</b> ou use <b>Mover</b>. O PDF de cada pedido vai para o fornecedor sem preços.</p>}
         </div>
         <div className="nf-acoes">
+          {vivas.length > 0 && <>
+            <button className="ghost small" onClick={() => { setEmpFechadas(new Set()); setFornAbertos(new Set(comItens.flatMap((x) => x.grupos.map((g) => chavePedido(x.e.cnpj, g.f))))); }}>Abrir tudo</button>
+            <button className="ghost small" onClick={() => { setFornAbertos(new Set()); setEmpFechadas(new Set(comItens.map((x) => x.e.cnpj))); }}>Fechar tudo</button>
+          </>}
           {aberta && <button className="ghost small" onClick={juntar}>Atualizar das listas</button>}
           <button className="small" onClick={() => window.print()} disabled={!vivas.length}>PDF de tudo (com preços)</button>
           {aberta ? <button className="ghost small" onClick={() => fechar(true)} disabled={!vivas.length}>Fechar a semana</button>
@@ -745,26 +755,34 @@ function ListaUnica({ semana }: { semana: Semana }) {
           if (!itens.length && arrastando == null) return null;
           if (imprimindo && imprimindo.emp !== e.cnpj) return null;
           const soltaEmpresa = alvo === chavePedido(e.cnpj, "");
+          const empAberta = !empFechadas.has(e.cnpj) || arrastando != null || !!imprimindo;
           return (
             <section key={e.cnpj} className={`cp-empresa${soltaEmpresa ? " cp-solta" : ""}${!itens.length ? " cp-empresa-vazia" : ""}`} {...(aberta ? soltarEm(e.cnpj, null) : {})}>
-              <header className="cp-empresa-cabeca">
+              <header className="cp-empresa-cabeca cp-cab-abre" role="button" tabIndex={0} aria-expanded={empAberta}
+                onClick={() => alternar(setEmpFechadas, e.cnpj)} onKeyDown={teclaAbre(() => alternar(setEmpFechadas, e.cnpj))}>
+                <span className={`cp-seta no-print${empAberta ? " aberta" : ""}`} aria-hidden="true">›</span>
                 <span className="cp-empresa-selo" aria-hidden="true">{e.nome.slice(0, 1)}</span>
                 <span className="cp-empresa-nome"><b>{e.nome}</b><small>CNPJ {fmtCnpj(e.cnpj)}{e.casas ? ` · compra para ${e.casas}` : ""}</small></span>
                 <span className="cp-empresa-total cp-preco"><b>{brl(soma(itens))}</b><small>{itens.length} itens · {grupos.length} {grupos.length === 1 ? "pedido" : "pedidos"}</small></span>
               </header>
+              <div className={`cp-corpo${empAberta ? "" : " cp-fechado"}`}>
               {!itens.length && <p className="cp-empresa-solte">Solte aqui para passar o item para a {e.nome}.</p>}
               {grupos.map((g) => {
                 const k = chavePedido(e.cnpj, g.f);
                 const ped = pedidos[k];
                 const st = ped?.status ?? "a_pedir";
                 if (imprimindo && imprimindo.forn !== g.f) return null;
+                const fornAberto = fornAbertos.has(k) || !!imprimindo;
                 return (
                   <div key={k} className={`cp-forn${imprimir === k ? " cp-imprimir" : ""}${alvo === k ? " cp-solta" : ""}`} {...(aberta ? soltarEm(e.cnpj, g.f) : {})}>
-                    <div className="cp-forn-cabeca">
-                      <strong>{g.f}</strong>
+                    <div className="cp-forn-cabeca cp-cab-abre" role="button" tabIndex={0} aria-expanded={fornAberto}
+                      onClick={() => alternar(setFornAbertos, k)} onKeyDown={teclaAbre(() => alternar(setFornAbertos, k))}>
+                      <span className={`cp-seta no-print${fornAberto ? " aberta" : ""}`} aria-hidden="true">›</span>
+                      <strong>{g.f}<small className="cp-forn-qtd no-print">{g.itens.length} {g.itens.length === 1 ? "item" : "itens"}</small></strong>
                       <span className={`cp-ped no-print ${st}`}>{PEDIDO[st]}{st === "pedido" && ped?.pedido_em ? ` · ${quando(ped.pedido_em)}` : st === "recebido" && ped?.recebido_em ? ` · ${quando(ped.recebido_em)}` : ""}{ped?.nota_chave ? " · nota ligada" : ""}</span>
                       <span className="cp-preco">{brl(soma(g.itens))}</span>
                     </div>
+                    <div className={`cp-corpo${fornAberto ? "" : " cp-fechado"}`}>
                     <div className="cp-forn-acoes no-print">
                       <button className="ghost small" onClick={() => setImprimir(k)}>PDF para o fornecedor</button>
                       {st === "a_pedir" && <button className="small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Marcar pedido feito</button>}
@@ -823,9 +841,11 @@ function ListaUnica({ semana }: { semana: Semana }) {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 );
               })}
+              </div>
             </section>
           );
         })}
