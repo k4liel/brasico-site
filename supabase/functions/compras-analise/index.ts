@@ -407,13 +407,23 @@ Deno.serve(async (req) => {
   const data = /^\d{4}-\d{2}-\d{2}$/.test(corpo.data ?? "") ? corpo.data : null;
   const teste = corpo.teste === true;
 
-  // Uma etapa por chamada: primeiro termina a análise mais antiga que já passou pela etapa 1
+  // Uma etapa por chamada: primeiro termina a análise mais antiga que já passou pela etapa 1. A análise é reservada
+  // (lote = "gemini@<hora>") para duas chamadas ao mesmo tempo não gravarem as listas duas vezes; reserva com mais de
+  // 5 min (chamada que caiu no meio) volta a valer.
   if (!corpo.pessoa) {
-    const { data: pend } = await supabase.from("compras_analises").select("id,semana_id,pessoa_id,dados,uso")
-      .eq("status", "no_lote").eq("lote", "gemini").order("inicio").limit(1);
+    const corte = new Date(Date.now() - 5 * 60_000).toISOString();
+    const { data: pend } = await supabase.from("compras_analises").select("id,semana_id,pessoa_id,dados,uso,lote")
+      .eq("status", "no_lote").or(`lote.eq.gemini,and(lote.like.gemini@*,lote.lt.gemini@${corte})`).order("inicio").limit(1);
     if (pend?.length) {
-      try { return Response.json({ terminada: await terminar(pend[0] as any) }); }
-      catch (e) { return Response.json({ erro: erroTexto(e) }, { status: 500 }); }
+      const { data: reservada } = await supabase.from("compras_analises").update({ lote: `gemini@${new Date().toISOString()}` })
+        .eq("id", pend[0].id).eq("lote", pend[0].lote).eq("status", "no_lote").select("id");
+      if (!reservada?.length) return Response.json({ pronto: "outra chamada já está terminando esta análise" });
+      try {
+        const r = await terminar(pend[0] as any);
+        // tentativa que falhou por cota ou demora: devolve para a fila
+        if ((r as Record<string, unknown>).tenta_de_novo) await supabase.from("compras_analises").update({ lote: "gemini" }).eq("id", pend[0].id).eq("status", "no_lote");
+        return Response.json({ terminada: r });
+      } catch (e) { return Response.json({ erro: erroTexto(e) }, { status: 500 }); }
     }
   }
 
