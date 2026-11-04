@@ -109,6 +109,7 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
   const supabase = useMemo(() => createClient(), []);
   const [meses, setMeses] = useState<Mes[]>([]);
   const [mes, setMes] = useState("");
+  const [mesesProntos, setMesesProntos] = useState(false);
   const [empresa, setEmpresa] = useState("");
   const [situacao, setSituacao] = useState("");
   const [busca, setBusca] = useState("");
@@ -125,6 +126,7 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
       const ms = (data ?? []) as Mes[];
       setMeses(ms);
       setMes((m) => m || ms[0]?.mes || "");
+      setMesesProntos(true);
     });
   }, [supabase]);
 
@@ -135,14 +137,14 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
   }, [busca]);
 
   const carregar = useCallback(async () => {
+    // Um mês por vez (o seletor muda o mês; as páginas andam só dentro dele)
+    if (!mes) { setNotas(mesesProntos ? [] : null); setTotal(0); return; }
     setNotas(null);
     let q = supabase.from("notas").select("chave,empresa_cnpj,origem,emitente_cnpj,emitente_nome,emissao,valor,situacao,completa,foto,observacao", { count: "exact" });
-    if (mes) {
-      const ini = `${mes}-01T00:00:00-03:00`;
-      const prox = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1);
-      const fim = `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, "0")}-01T00:00:00-03:00`;
-      q = q.gte("emissao", ini).lt("emissao", fim);
-    }
+    const ini = `${mes}-01T00:00:00-03:00`;
+    const prox = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1);
+    const fim = `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, "0")}-01T00:00:00-03:00`;
+    q = q.gte("emissao", ini).lt("emissao", fim);
     if (empresa) q = q.eq("empresa_cnpj", empresa);
     if (situacao === "completa") q = q.eq("completa", true).eq("origem", "sefaz");
     if (situacao === "resumo") q = q.eq("completa", false).eq("origem", "sefaz");
@@ -162,7 +164,7 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
     const { data, count } = await q.order("emissao", { ascending: false }).range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
     setNotas((data ?? []) as Nota[]);
     setTotal(count ?? 0);
-  }, [supabase, mes, empresa, situacao, termo, pagina]);
+  }, [supabase, mes, mesesProntos, empresa, situacao, termo, pagina]);
   useEffect(() => { carregar(); }, [carregar]);
 
   const nomeEmpresa = useMemo(() => Object.fromEntries(empresas.map((e) => [e.cnpj, e.nome])), [empresas]);
@@ -199,7 +201,7 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
       <div className="ft-barra nf-barra">
         <div className="nf-escolha">
           <select value={mes} onChange={(e) => { setMes(e.target.value); setPagina(0); }} aria-label="Mês">
-            <option value="">Todos os meses</option>
+            {!meses.length && <option value="">Sem notas ainda</option>}
             {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
           </select>
           <select value={situacao} onChange={(e) => { setSituacao(e.target.value); setPagina(0); }} aria-label="Situação">

@@ -37,6 +37,7 @@ const urlPdf = (n: NotaS) => `/api/nfse/danfse/${n.empresa_cnpj}/${n.chave}`;
 function useBase(supabase: ReturnType<typeof createClient>) {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [meses, setMeses] = useState<Mes[]>([]);
+  const [pronto, setPronto] = useState(false);
   const carregar = useCallback(async () => {
     const [e, m] = await Promise.all([
       supabase.from("nfse_empresas").select("cnpj,raiz,nome,ativa,ult_nsu,bloqueado_ate,ultima_consulta,ultimo_status").order("cnpj"),
@@ -44,14 +45,15 @@ function useBase(supabase: ReturnType<typeof createClient>) {
     ]);
     setEmpresas((e.data ?? []) as Empresa[]);
     setMeses((m.data ?? []) as Mes[]);
+    setPronto(true);
   }, [supabase]);
   useEffect(() => { carregar(); }, [carregar]);
-  return { empresas, meses, carregar };
+  return { empresas, meses, pronto, carregar };
 }
 
 export default function NotasServico() {
   const supabase = useMemo(() => createClient(), []);
-  const { empresas, meses } = useBase(supabase);
+  const { empresas, meses, pronto } = useBase(supabase);
   const [mes, setMes] = useState("");
   const [papel, setPapel] = useState("");
   const [empresa, setEmpresa] = useState("");
@@ -66,19 +68,19 @@ export default function NotasServico() {
 
   useEffect(() => {
     (async () => {
+      // Um mês por vez: só busca depois que o mês foi escolhido (o mais recente, ao abrir)
+      if (!mes) { setNotas(pronto ? [] : null); return; }
       setNotas(null);
       let q = supabase.from("nfse_notas").select("empresa_cnpj,chave,papel,numero,emissao,competencia,emitente_cnpj,emitente_nome,emitente_municipio,tomador_doc,tomador_nome,local_incidencia,codigo_servico,descricao,valor_servico,base_calculo,aliquota,iss,iss_retido,valor_liquido,situacao");
-      if (mes) {
-        const prox = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1);
-        q = q.gte("emissao", `${mes}-01T00:00:00-03:00`).lt("emissao", `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, "0")}-01T00:00:00-03:00`);
-      }
+      const prox = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1);
+      q = q.gte("emissao", `${mes}-01T00:00:00-03:00`).lt("emissao", `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, "0")}-01T00:00:00-03:00`);
       const { data } = await q.order("emissao", { ascending: false }).limit(2000);
       setNotas((data ?? []) as NotaS[]);
     })();
-  }, [supabase, mes]);
+  }, [supabase, mes, pronto]);
 
   const nomeEmpresa = Object.fromEntries(empresas.map((e) => [e.cnpj, e.nome]));
-  const doMes = meses.filter((m) => (!mes || m.mes === mes) && (!empresa || m.empresa_cnpj === empresa));
+  const doMes = meses.filter((m) => m.mes === mes && (!empresa || m.empresa_cnpj === empresa));
   const soma = (p: string, k: "valor" | "iss" | "iss_retido" | "notas") => doMes.filter((m) => m.papel === p).reduce((s, m) => s + Number(m[k]), 0);
   const t = busca.trim().toLowerCase();
   const t0 = t; // (dentro dos grupos, "t" é o total do mês)
@@ -113,7 +115,7 @@ export default function NotasServico() {
       <div className="ft-barra nf-barra">
         <div className="nf-escolha">
           <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
-            <option value="">Todos os meses</option>
+            {!listaMeses.length && <option value="">Sem notas ainda</option>}
             {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
           </select>
           <select value={papel} onChange={(e) => setPapel(e.target.value)} aria-label="Tipo">
