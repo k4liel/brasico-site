@@ -1267,14 +1267,14 @@ function Pessoas() {
       try { texto = (await (error as { context?: Response }).context?.json())?.erro ?? texto; } catch {}
       return setMsg(texto);
     }
-    setMsg(`${p.nome} já pode entrar: em brasico.vercel.app/login, “Link por e-mail”, com ${p.email}.`);
+    setMsg(`${p.nome} tem o login criado. A equipe entra só em brasico.vercel.app/colaboradores, com usuário e senha (peça aos sócios).`);
     carregar();
   }
 
   return (
     <section className="av-bloco">
       <header className="av-bloco-cabeca"><div><h3>Pessoas e acesso</h3><p className="muted">quem pede no grupo e a Fernanda</p></div></header>
-      <p className="muted cp-ajuda">Cadastre o e-mail e clique em Dar acesso. A pessoa entra pela tela de login, em “Link por e-mail”, e só vê a área de Compras.
+      <p className="muted cp-ajuda">Cadastre o e-mail e clique em Dar acesso. A equipe entra só pela área dos colaboradores (brasico.vercel.app/colaboradores), com usuário e senha, e só vê a área dela.
         O nome no WhatsApp é como ela aparece no grupo COMPRAS, para o pedido cair na lista certa.</p>
       {msg && <p className="es-aviso">{msg}</p>}
       <div className="nf-tabela-wrap">

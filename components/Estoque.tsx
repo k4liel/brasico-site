@@ -342,7 +342,7 @@ function QuemRegistra() {
       try { texto = (await (error as { context?: Response }).context?.json())?.erro ?? texto; } catch {}
       return setMsg(texto);
     }
-    setMsg(`${p.nome} já pode entrar: em brasico.vercel.app/login, “Link por e-mail”, com ${p.email}.`);
+    setMsg(`${p.nome} tem o login criado. A equipe entra só em brasico.vercel.app/colaboradores, com usuário e senha (peça aos sócios).`);
     carregar();
   }
 

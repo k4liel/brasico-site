@@ -2,13 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Campo, CampoSenha, Entrada, Icone, conferirArea, paraEmail, traduzErro } from "@/components/Entrada";
 
 type Mode = "senha" | "link";
 
-// Equipe das casas entra com usuário (o primeiro nome), sem e-mail: vira <usuario>@usuarios.brasico (supabase/compras_acessos.sql)
-const DOMINIO_EQUIPE = "usuarios.brasico";
-const paraEmail = (v: string) => { const t = v.trim().toLowerCase(); return t.includes("@") ? t : `${t}@${DOMINIO_EQUIPE}`; };
-
+// Login dos sócios. A equipe das casas entra só por /colaboradores: quem é dela é desconectado aqui (conferirArea).
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("senha");
   const [email, setEmail] = useState("");
@@ -23,25 +21,15 @@ export default function LoginPage() {
     }
   }, []);
 
-  function traduz(msg: string) {
-    if (/invalid login credentials/i.test(msg)) return "Usuário ou senha incorretos.";
-    if (/already registered/i.test(msg)) return "Este e-mail já tem conta. Use “Entrar”.";
-    if (/rate limit/i.test(msg)) return "Limite de e-mails atingido. Entre com senha ou tente o link mais tarde.";
-    if (/password should be at least/i.test(msg)) return "A senha precisa ter pelo menos 8 caracteres.";
-    if (/email not confirmed/i.test(msg)) return "E-mail ainda não confirmado.";
-    if (/signups not allowed|user not found/i.test(msg)) return "Este e-mail não tem acesso. Peça o convite a um dos sócios.";
-    return msg;
-  }
-
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     setInfo("");
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email: paraEmail(email), password });
-    setBusy(false);
-    if (error) return setError(traduz(error.message));
+    const { error } = await createClient().auth.signInWithPassword({ email: paraEmail(email), password });
+    if (error) { setBusy(false); return setError(traduzErro(error.message)); }
+    const aviso = await conferirArea("socios");
+    if (aviso) { setBusy(false); return setError(aviso); }
     window.location.href = "/";
   }
 
@@ -51,50 +39,49 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     setInfo("");
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await createClient().auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: `${window.location.origin}/auth/callback`, shouldCreateUser: false },
     });
     setBusy(false);
-    if (error) return setError(traduz(error.message));
-    setInfo(`Link enviado para ${email.trim()}. Abra seu e-mail e clique nele.`);
+    if (error) return setError(traduzErro(error.message));
+    setInfo(`Link enviado para ${email.trim()}. Abra o seu e-mail e clique nele.`);
   }
 
+  function trocar(m: Mode) { setMode(m); setError(""); setInfo(""); }
+
   return (
-    <main className="center">
-      <div className="card login">
-        <h1>Brasico</h1>
-        <div className="row segmented">
-          <button type="button" className={mode === "senha" ? "tab active" : "tab"} onClick={() => setMode("senha")}>
-            Usuário e senha
-          </button>
-          <button type="button" className={mode === "link" ? "tab active" : "tab"} onClick={() => setMode("link")}>
-            Link por e-mail
-          </button>
-        </div>
+    <Entrada tipo="socios">
+      <h2 className="ent-titulo">Entrar</h2>
+      <p className="ent-sub">Acesso dos sócios e da administração.</p>
 
-        {mode === "senha" ? (
-          <form onSubmit={entrar} className="stack">
-            <input type="text" required placeholder="Usuário ou e-mail" autoComplete="username" autoCapitalize="none" spellCheck={false}
-              value={email} onChange={(e) => setEmail(e.target.value)} />
-            <input type="password" required placeholder="Senha" autoComplete="current-password"
-              minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} />
-            <button disabled={busy}>{busy ? "Aguarde..." : "Entrar"}</button>
-            <p className="muted small">Acesso por convite. Peça o seu a um dos sócios.</p>
-          </form>
-        ) : (
-          <form onSubmit={enviarLink} className="stack">
-            <p className="muted small">Enviamos um link de acesso para o seu e-mail.</p>
-            <input type="email" required placeholder="seu@email.com" autoComplete="email"
-              value={email} onChange={(e) => setEmail(e.target.value)} />
-            <button disabled={busy}>{busy ? "Enviando..." : "Receber link de acesso"}</button>
-          </form>
-        )}
-
-        {error && <p className="err">{error}</p>}
-        {info && <p className="ok">{info}</p>}
+      <div className="ent-modos" role="tablist" aria-label="Forma de entrar">
+        <button type="button" role="tab" aria-selected={mode === "senha"} className={mode === "senha" ? "on" : ""} onClick={() => trocar("senha")}>Senha</button>
+        <button type="button" role="tab" aria-selected={mode === "link"} className={mode === "link" ? "on" : ""} onClick={() => trocar("link")}>Link por e-mail</button>
       </div>
-    </main>
+
+      {mode === "senha" ? (
+        <form className="ent-form" onSubmit={entrar}>
+          <Campo rotulo="E-mail" icone="email">
+            <input type="text" required autoFocus placeholder="seu@email.com" autoComplete="username" autoCapitalize="none" spellCheck={false}
+              value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Campo>
+          <CampoSenha valor={password} mudar={setPassword} />
+          {error && <p className="ent-erro" role="alert">{error}</p>}
+          <button className="ent-botao" disabled={busy}>{busy ? "Entrando…" : <>Entrar <Icone n="seta" tam={18} /></>}</button>
+        </form>
+      ) : (
+        <form className="ent-form" onSubmit={enviarLink}>
+          <Campo rotulo="E-mail" icone="email">
+            <input type="email" required autoFocus placeholder="seu@email.com" autoComplete="email"
+              value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Campo>
+          {error && <p className="ent-erro" role="alert">{error}</p>}
+          {info && <p className="ent-ok" role="status">{info}</p>}
+          <button className="ent-botao" disabled={busy}>{busy ? "Enviando…" : <>Receber o link de acesso <Icone n="seta" tam={18} /></>}</button>
+        </form>
+      )}
+      <p className="ent-nota">Acesso por convite. Peça o seu a um dos sócios.</p>
+    </Entrada>
   );
 }
