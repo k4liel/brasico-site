@@ -58,6 +58,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - TOTVS: `totvs_unidades.encerrada_em = 2026-10-31` e `ativa = false`; `totvs_pedir` recusa extração. O painel /vendas mostra as unidades em operação e um cartão **Arquivo** com o resumo de toda a operação; o Midway só entra no "todas as unidades" dos meses em que operava. Dias depois do encerramento não contam.
 - Cicchetti Management: `precos_coleta.ativa = false` (a lista de notas do Midway não é relida); as notas já copiadas seguem no Índice de preços. `compras_auto_buscar` não usa compras do Midway.
 - Fichas e Menus: o Midway fica por último, marcado "arquivo"; `menus_produtos` e `fichas_venda` congelam nos últimos 60/30 dias de operação. Câmara fria: o Midway saiu dos destinos de saída (o histórico mantém o nome).
+- Fiscal: a V6 (CNPJ do Midway) tem `fiscal_empresas.operacao_encerrada_em = 2026-10-31`; na /receita aparece "sem operação" e um lembrete da baixa em "O que pede atenção". O CNPJ segue aberto (DCTFWeb, ECF, ECD) até a baixa pelo contador.
 - Não reative nada do Midway e não o inclua em compras, comparações atuais ou previsões. Outra unidade que encerrar segue o mesmo caminho (`encerrada_em`).
 
 ## Vendas TOTVS (Chef Web)

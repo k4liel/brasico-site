@@ -21,6 +21,8 @@ type FiscalEmpresa = {
   natureza: string | null; porte: string | null; capital: number | null; abertura: string | null; simples: boolean | null;
   simples_desde: string | null; simples_exclusao: string | null; regime: string | null; regime_ano: number | null;
   socios: number | null; socios_exterior: number | null; atualizado_em: string | null;
+  // Operação encerrada (o CNPJ continua aberto até a baixa): a V6, do Cicchetti Midway, em 31/10/2026
+  operacao_encerrada_em: string | null;
 };
 type Config = { id: string; producao_ligada: boolean; limite_diario_cobradas: number; orcamento_ciclo: number };
 type Execucao = { id: string; empresa_id: string; tipo: Tipo; status: string; erro: string; origem: string; created_at: string };
@@ -120,7 +122,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const carregar = useCallback(async () => {
     const desde = new Date(Date.now() - 400 * 86400000).toISOString();
     const [fe, cf, ce, x, sf, m, rl, pg, rs, ch, ro, dv] = await Promise.all([
-      supabase.from("fiscal_empresas").select("cnpj,raiz,ordem,apelido,papel,grupo,unidades,observacao,razao,fantasia,situacao,municipio,uf,cnae,natureza,porte,capital,abertura,simples,simples_desde,simples_exclusao,regime,regime_ano,socios,socios_exterior,atualizado_em").order("ordem"),
+      supabase.from("fiscal_empresas").select("cnpj,raiz,ordem,apelido,papel,grupo,unidades,observacao,razao,fantasia,situacao,municipio,uf,cnae,natureza,porte,capital,abertura,simples,simples_desde,simples_exclusao,regime,regime_ano,socios,socios_exterior,atualizado_em,operacao_encerrada_em").order("ordem"),
       supabase.from("receita_empresas").select("id,producao_ligada,limite_diario_cobradas,orcamento_ciclo"),
       supabase.from("certificados").select("cnpj,validade"),
       supabase.from("receita_execucoes").select("id,empresa_id,tipo,status,erro,origem,created_at").eq("ambiente", "producao").order("created_at", { ascending: false }).limit(150),
@@ -284,6 +286,10 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       const e = empresas.find((x) => x.cnpj === c.cnpj);
       if (n <= 45) a.push({ nivel: n < 0 ? "erro" : "atencao", empresa: c.cnpj, titulo: n < 0 ? "Certificado digital vencido" : `Certificado digital vence em ${plural(n, "dia", "dias")}`, detalhe: `${e?.apelido ?? cnpjFmt(c.cnpj)} · ${dia(diaSP(c.validade))}` });
     }
+    // Empresa sem operação e com o CNPJ ainda aberto: lembrar da baixa e das obrigações até lá
+    for (const e of empresas.filter((x) => x.operacao_encerrada_em && x.situacao === "ATIVA"))
+      a.push({ nivel: "info", empresa: e.cnpj, titulo: `${e.apelido}: operação encerrada em ${dia(e.operacao_encerrada_em)}, CNPJ ainda aberto`,
+        detalhe: `${e.unidades || e.apelido} · até a baixa seguem DCTFWeb, ECF e ECD; combinar a baixa com o contador` });
     const peso = { erro: 0, atencao: 1, info: 2 };
     return a.sort((x, y) => peso[x.nivel] - peso[y.nivel]);
   }, [leituras, certs, empresas]);
@@ -456,7 +462,9 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                   <button key={e.cnpj} className="fx-cartao" onClick={() => abrir(e.cnpj)}>
                     <div className="fx-cartao-topo">
                       <div><strong>{e.apelido}</strong><span className="fx-cnpj">{cnpjFmt(e.cnpj)}</span></div>
-                      <span className={e.situacao === "ATIVA" ? "fx-tag ok" : "fx-tag perigo"}>{(e.situacao ?? "—").toLowerCase()}</span>
+                      {e.operacao_encerrada_em
+                        ? <span className="fx-tag" title={`CNPJ ${(e.situacao ?? "").toLowerCase()} na Receita até a baixa`}>sem operação</span>
+                        : <span className={e.situacao === "ATIVA" ? "fx-tag ok" : "fx-tag perigo"}>{(e.situacao ?? "—").toLowerCase()}</span>}
                     </div>
                     <p className="fx-papel">{e.papel}</p>
                     <span className="fx-rodape">{GRUPOS[e.grupo] ?? e.grupo} · {(e.municipio ?? "").toLowerCase()} · {e.regime ? e.regime.toLowerCase() : e.simples ? "simples" : "regime não informado"}</span>
@@ -679,7 +687,7 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
         <dl className="fx-kv">
           <div><dt>Razão social</dt><dd>{e.razao ?? "—"}</dd></div>
           {e.fantasia && <div><dt>Nome fantasia</dt><dd>{e.fantasia}</dd></div>}
-          <div><dt>Situação</dt><dd>{e.situacao ?? "—"}</dd></div>
+          <div><dt>Situação</dt><dd>{e.situacao ?? "—"}{e.operacao_encerrada_em ? ` · operação encerrada em ${dia(e.operacao_encerrada_em)}, CNPJ aberto até a baixa` : ""}</dd></div>
           <div><dt>Papel no grupo</dt><dd>{e.papel}{e.unidades ? ` · ${e.unidades}` : ""}</dd></div>
           <div><dt>Município</dt><dd>{e.municipio ?? "—"}/{e.uf ?? ""}</dd></div>
           <div><dt>Atividade</dt><dd>{e.cnae ?? "—"}</dd></div>

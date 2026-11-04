@@ -127,3 +127,11 @@ begin
     execute d;
   end if;
 end $$;
+
+-- 6) Página Fiscal do grupo (/receita), aplicado em 04/11/2026 (migration fiscal_v6_midway_encerrado):
+alter table public.fiscal_empresas add column if not exists operacao_encerrada_em date;
+update public.fiscal_empresas
+   set operacao_encerrada_em = date '2026-10-31', papel = 'Cicchetti Midway (Natal) · operação encerrada em 31/10/2026'
+ where cnpj = '58076145000156';
+-- Acervo fiscal (só o português): os trechos que tratavam a saída do Midway como plano passaram a dizer
+-- "encerrado em 31/10/2026" (capa, Grupo e empresas, Mapa societário e Perguntas).
