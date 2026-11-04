@@ -251,7 +251,7 @@ export function LeituraNfse() {
 
   return (
     <section className="nfs-leitura">
-      <h2>Notas de serviço · Portal Nacional da NFS-e</h2>
+      <h2 className="nfs-titulo">NFS-e (serviços) · Portal Nacional</h2>
       <p className="muted">Todo dia às 6h30 e às 12h30 o Brasico pergunta ao Ambiente de Dados Nacional, com o certificado de cada empresa e sem custo, por toda nota de serviço emitida ou tomada por ela.</p>
       {aviso && <p className="es-aviso">{aviso}</p>}
       <div className="sf-empresas">

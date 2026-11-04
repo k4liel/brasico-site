@@ -7,7 +7,7 @@ import IndicePrecos from "./IndicePrecos";
 import NotasServico, { LeituraNfse } from "./NotasServico";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
-// Abas: Notas (por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
+// Abas: NF-e (produtos: por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
 // Ambiente Nacional, com o PDF), Índice de preços, Nota avulsa e Leituras (SEFAZ e Portal Nacional da NFS-e).
 // O PDF (DANFE) é montado do XML oficial em /api/notas/danfe/<chave>. Tabelas e funções em supabase/notas*.sql.
 type Empresa = {
@@ -80,12 +80,12 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
           <div>
             <span className="es-sobre">Operação</span>
             <h1>Notas fiscais</h1>
-            <p>As notas de compra das empresas, que chegam da SEFAZ, as notas de serviço emitidas e tomadas, e as notas avulsas. Clique numa nota para ver os detalhes.</p>
+            <p>NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes.</p>
           </div>
         </div>
 
         <div className="cp-abas" role="tablist">
-          <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>Notas</button>
+          <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>NF-e (produtos)</button>
           <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>
           <button role="tab" aria-selected={aba === "indice"} className={aba === "indice" ? "on" : ""} onClick={() => setAba("indice")}>Índice de preços</button>
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
@@ -534,6 +534,7 @@ function LeituraSefaz({ empresas, onMudou }: { empresas: Empresa[]; onMudou: () 
 
   return (
     <div className="sf">
+      <h2 className="nfs-titulo">NF-e (produtos) · SEFAZ</h2>
       <section className="sf-faixa">
         <span className="sf-faixa-icone" aria-hidden="true">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v5h-5" /></svg>
