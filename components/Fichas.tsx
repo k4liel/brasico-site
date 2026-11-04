@@ -22,8 +22,19 @@ type Apelido = { id: number; insumo_id: string; apelido: string; unidade_compra:
 type Produto = { unidade_id: string; grupo: string | null; subgrupo: string | null; categoria: string | null; produto: string;
   vendidos_60d: number; preco_medio: number | null; ultima_venda: string; ficha_id: string | null };
 
-const LOCAIS: Record<string, string> = { midway: "Cicchetti Midway", cicchetti_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", producao: "Produção central" };
-const CASAS: Record<string, string> = { midway: "Cicchetti Midway", pipa_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua" };
+// O Cicchetti Midway encerrou em 31/10/2026: fica por último, como arquivo (fichas e último cardápio só para consulta)
+const LOCAIS: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", producao: "Produção central", midway: "Cicchetti Midway · arquivo" };
+const CASAS: Record<string, string> = { pipa_centro: "Cicchetti Centro", filha_da_lua: "Filha da Lua", midway: "Cicchetti Midway · arquivo" };
+const ENCERRADAS: Record<string, string> = { midway: "31/10/2026" };
+function AvisoArquivo({ chave, oque }: { chave: string; oque: string }) {
+  if (!ENCERRADAS[chave]) return null;
+  return (
+    <p className="ft-arquivo-aviso">
+      <span className="ft-arquivo-selo">Arquivo</span>{" "}
+      O Cicchetti Midway encerrou as atividades em {ENCERRADAS[chave]}. {oque} fica guardado só para consulta e não recebe atualização.
+    </p>
+  );
+}
 const DA_CASA: Record<string, string> = { midway: "midway", pipa_centro: "cicchetti_centro", filha_da_lua: "filha_da_lua" };
 const TIPOS: Record<string, string> = { prato: "Prato", drink: "Drink", preparo: "Preparo" };
 const brl = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
@@ -117,7 +128,7 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
 function ListaFichas({ fichas, custos, vendas, abrir, onMudou }: {
   fichas: Ficha[]; custos: Record<string, Custo>; vendas: Record<string, Venda[]>; abrir: (id: string) => void; onMudou: () => void;
 }) {
-  const [local, setLocal] = useState("midway");
+  const [local, setLocal] = useState("cicchetti_centro");
   const [grupo, setGrupo] = useState("");
   const [busca, setBusca] = useState("");
   const [revisar, setRevisar] = useState(false);
@@ -153,6 +164,7 @@ function ListaFichas({ fichas, custos, vendas, abrir, onMudou }: {
           <button className="ghost small" onClick={() => setRevisar(true)}>Revisar insumos</button>
         </div>
       </div>
+      {!b && <AvisoArquivo chave={local} oque="O que está aqui" />}
       {!b && grupos.length > 1 && (
         <div className="ft-chips ft-chips-sub" role="tablist" aria-label="Grupo">
           <button role="tab" aria-selected={!grupo} className={!grupo ? "on" : ""} onClick={() => setGrupo("")}>Todos</button>
@@ -444,7 +456,7 @@ function CustoItem({ item, custo, feito, avisar }: { item: Item; custo: number |
 function Menus({ fichas, custos, abrir }: { fichas: Ficha[]; custos: Record<string, Custo>; abrir: (id: string) => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [produtos, setProdutos] = useState<Produto[] | null>(null);
-  const [casa, setCasa] = useState("midway");
+  const [casa, setCasa] = useState("pipa_centro");
   const [categoria, setCategoria] = useState("comida");
   const [ligando, setLigando] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -487,7 +499,8 @@ function Menus({ fichas, custos, abrir }: { fichas: Ficha[]; custos: Record<stri
           ))}
         </div>
       </div>
-      <p className="muted cp-ajuda">O cardápio é o que a TOTVS vendeu nos últimos 60 dias. {ligados} de {lista.length} itens já estão ligados a uma ficha:
+      <AvisoArquivo chave={casa} oque="O cardápio (o que a TOTVS vendeu nos últimos 60 dias de operação)" />
+      <p className="muted cp-ajuda">O cardápio é o que a TOTVS vendeu nos últimos 60 dias{ENCERRADAS[casa] ? ` de operação, até ${ENCERRADAS[casa]}` : ""}. {ligados} de {lista.length} itens já estão ligados a uma ficha:
         clique para abrir a ficha, ou ligue os que faltam.</p>
       {msg && <p className="es-aviso tv-alerta">{msg}</p>}
 

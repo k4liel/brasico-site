@@ -1,6 +1,7 @@
 // Contas e formatos do painel de vendas TOTVS (components/Totvs.tsx e components/TotvsPartes.tsx).
 // Tudo é calculado na tela a partir de totvs_dias (um resumo por unidade e dia).
-export type Unidade = { id: string; nome: string; loja: number | null; ativa: boolean; ordem: number };
+// encerrada_em: último dia de operação (unidade encerrada = só arquivo, sem extração)
+export type Unidade = { id: string; nome: string; loja: number | null; ativa: boolean; ordem: number; encerrada_em: string | null };
 export type Historico = { unidade_id: string; cursor: string; parado: boolean; motivo: string };
 export type Produto = { nome: string; grupo: string; categoria: string; quantidade: number; valor: number };
 export type Pagamento = { tipo: string; forma: string; valor: number; vezes: number };
@@ -26,6 +27,7 @@ export const pct =(v: number) => `${(v * 100).toLocaleString("pt-BR", { maximumF
 export const hojeFortaleza = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 export const diaSemana = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
 export const dataBr = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+export const dataLonga = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 export const diasNoMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).getUTCDate();
 export const somarMeses = (mes: string, n: number) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1 + n, 1)).toISOString().slice(0, 7);
 export const mesAnterior = (mes: string) => somarMeses(mes, -1);

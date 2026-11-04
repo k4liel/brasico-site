@@ -12,7 +12,7 @@ O guia completo está em `lib/cicchetti.ts`. É o mesmo texto que o conector ent
    - `cicchetti_vendas_resumo` e `cicchetti_vendas_produtos`: vendas por dia e produtos vendidos (unidade + período).
    - `cicchetti_cmv_notas` e `cicchetti_cmv_itens`: notas de compra e os itens de cada nota.
    - `cicchetti_rh_colaboradores`: colaboradores ativos, só dados operacionais.
-2. **Unidades independentes:** midway, pipa_centro e pipa_producao. Nunca some sem mostrar cada uma.
+2. **Unidades independentes:** pipa_centro e pipa_producao. Nunca some sem mostrar cada uma. O **midway encerrou em 31/10/2026**: só histórico até essa data, nunca como unidade ativa.
 3. **Sempre unidade e período explícitos.** AAAA-MM-DD nas chamadas, DD/MM/AAAA e R$ nas respostas.
 4. **Só leitura.** Nada é alterado no Cicchetti Management.
 5. **Nunca peça nem mostre** a chave da API, CPF, telefone, e-mail, salário, chave fiscal ou XML. A chave fica só no cofre (Vault) do Supabase, com o nome `cicchetti_api_chave`.

@@ -16,6 +16,8 @@ type Pessoa = { id: string; nome: string; papel: string; unidade: string | null;
   user_id: string | null; ativo: boolean; registra_estoque: boolean };
 
 const DESTINOS: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", sempre_vivo: "Sempre Vivo", filha_da_lua: "Filha da Lua", midway: "Cicchetti Midway", outro: "Outro" };
+// Destinos que não recebem mais saídas (o nome continua valendo no histórico): o Midway encerrou em 31/10/2026
+const DESTINOS_ENCERRADOS = new Set(["midway"]);
 const TIPOS = { entrada: "Entrada", saida: "Saída", contagem: "Contagem" } as const;
 const ORIGENS: Record<string, string> = { tela: "pela tela", grupo: "pedido do grupo", projeto: "contagem do projeto", producao: "da produção" };
 const num = (v: number | null | undefined) => (v == null ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: 2 }));
@@ -263,7 +265,7 @@ function Registrar({ saldos, inicial, onPronto }: { saldos: Saldo[]; inicial: st
               <label>Para onde foi
                 <select value={destino} onChange={(v) => setDestino(v.target.value)}>
                   <option value="">Escolha…</option>
-                  {Object.entries(DESTINOS).map(([k, d]) => <option key={k} value={k}>{d}</option>)}
+                  {Object.entries(DESTINOS).filter(([k]) => !DESTINOS_ENCERRADOS.has(k)).map(([k, d]) => <option key={k} value={k}>{d}</option>)}
                 </select>
               </label>
             ) : <label>Observação<input value={obs} onChange={(v) => setObs(v.target.value)} placeholder="opcional" /></label>}

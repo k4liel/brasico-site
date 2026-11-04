@@ -53,6 +53,13 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Antes de qualquer ação difícil de desfazer (excluir, reescrever histórico do git, deixar algo público), mostre o plano e espere a confirmação.
 - Link público (botão Compartilhar no projeto, ou `compartilhar_projeto` no conector): abre `/p/<código>` sem login e mostra só o documento daquele projeto e os seus PDFs (rota `/api/publico/<código>/...`, que confere o código); o PDF do documento é baixado no botão Baixar PDF e enviado como arquivo. Só ative com confirmação do dono; "Gerar novo link" derruba o anterior. Funções em supabase/link_publico.sql e link_publico_arquivos.sql.
 
+## Cicchetti Midway: encerrado (só arquivo)
+- O Cicchetti Midway (Midway Mall, Natal; CNPJ da V6) **encerrou todas as atividades em 31/10/2026**. Fica só como dado histórico: nenhuma rotina puxa nada dele (supabase/midway_encerrado.sql).
+- TOTVS: `totvs_unidades.encerrada_em = 2026-10-31` e `ativa = false`; `totvs_pedir` recusa extração. O painel /vendas mostra as unidades em operação e um cartão **Arquivo** com o resumo de toda a operação; o Midway só entra no "todas as unidades" dos meses em que operava. Dias depois do encerramento não contam.
+- Cicchetti Management: `precos_coleta.ativa = false` (a lista de notas do Midway não é relida); as notas já copiadas seguem no Índice de preços. `compras_auto_buscar` não usa compras do Midway.
+- Fichas e Menus: o Midway fica por último, marcado "arquivo"; `menus_produtos` e `fichas_venda` congelam nos últimos 60/30 dias de operação. Câmara fria: o Midway saiu dos destinos de saída (o histórico mantém o nome).
+- Não reative nada do Midway e não o inclua em compras, comparações atuais ou previsões. Outra unidade que encerrar segue o mesmo caminho (`encerrada_em`).
+
 ## Vendas TOTVS (Chef Web)
 - A Edge Function `totvs-extrair` puxa da TOTVS Chef Web API as vendas, sangrias e fechamentos de um dia (data de movimento) de uma unidade e grava um resumo em `totvs_dias` (uma linha por unidade e dia; puxar de novo substitui, sem duplicar). Cada pedido fica em `totvs_execucoes`.
 - Agenda `totvs-diario` (pg_cron, supabase/totvs_agenda.sql): todo dia às 4h30 de Fortaleza puxa o dia anterior de cada unidade e, a cada 10 min até as 6h30, tenta de novo o que faltar da última semana (e ontem, se veio "sem movimento"), um dia por unidade de cada vez. Ao meio-dia puxa ontem de novo, uma vez: às 4h30 o caixa às vezes ainda não mandou o dia à TOTVS e ele vinha vazio ou pela metade (supabase/totvs_agenda_meio_dia.sql).
@@ -62,7 +69,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - O total de cada venda é o da TOTVS (ValorTotal, com o ajuste de troco), não a soma dos itens. O dia fica "revisar" só quando o pago não bate com o vendido; diferenças internas da TOTVS (taxa de serviço nos itens, desconto fora dos itens, item sem garçom) vão para `avisos` sem marcar o dia (supabase/totvs_conferencia.sql). Nunca ajuste números em silêncio. Notas fiscais/CMV ainda não estão integradas.
 
 ## Cicchetti Management (API externa)
-- API REST somente leitura do sistema de gestão do Cicchetti: `https://www.cicchettimanagement.com/api/integracoes/externas/v1` (OpenAPI em `/openapi.json`). Unidades `midway`, `pipa_centro` e `pipa_producao` (bases independentes); escopos `vendas`, `cmv` e `rh`. Até 120 consultas por minuto por chave.
+- API REST somente leitura do sistema de gestão do Cicchetti: `https://www.cicchettimanagement.com/api/integracoes/externas/v1` (OpenAPI em `/openapi.json`). Unidades `pipa_centro` e `pipa_producao` (bases independentes); `midway` encerrou em 31/10/2026 e só tem histórico; escopos `vendas`, `cmv` e `rh`. Até 120 consultas por minuto por chave.
 - O banco faz a consulta (extensão `http`) na função `mcp_cicchetti`, chamada pelo conector. A chave fica só no Vault (`cicchetti_api_chave`); é criada no Cicchetti Management (Sistema > API externa) e cadastrada por um sócio no SQL Editor do Supabase (comandos em supabase/cicchetti_api.sql). Nunca no GitHub nem no chat.
 - Quem consulta: só quem está em `cicchetti_acesso` (os sócios). Cada consulta fica em `cicchetti_consultas` com o `request_id` da API (nunca a chave).
 - Conector: `guia_cicchetti`, `cicchetti_unidades`, `cicchetti_vendas_resumo`, `cicchetti_vendas_produtos`, `cicchetti_cmv_notas`, `cicchetti_cmv_itens`, `cicchetti_rh_colaboradores` (lib/cicchetti.ts; skill em .claude/skills/cicchetti-api). Mostre as unidades sempre separadas e não exponha CPF, telefone, e-mail, salário, chave fiscal nem XML.

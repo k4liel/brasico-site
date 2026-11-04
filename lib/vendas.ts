@@ -11,6 +11,7 @@ De onde vêm os números
 
 Ferramentas
 - totvs_unidades: lista as unidades (id, nome, loja), o último dia extraído e as últimas extrações (status e erro). Comece por aqui se não souber o id da unidade.
+  Unidade com "encerrada_em" (o Cicchetti Midway, encerrado em 31/10/2026) é só arquivo: não se extrai mais, e os dias depois do encerramento não contam. Nos relatórios atuais mostre só as unidades em operação; num período antigo, mostre a encerrada separada e com o aviso.
 - totvs_vendas: lê o que já foi puxado. Filtros: unidade (id ou parte do nome; vazio = todas), de, ate (AAAA-MM-DD). Sem datas = ontem. Para 1 ou 2 dias vem o detalhe (produtos, pagamentos, garçons, sangrias, fechamentos, cancelados); para períodos maiores, peça detalhe=true só se precisar.
 - totvs_extrair: pede para puxar (ou puxar de novo) um dia de uma unidade. Leva de segundos a 1 minuto. Depois veja em totvs_unidades (ultimas_execucoes) se ficou "ok", "revisar", "sem_movimento" ou "falha", e leia com totvs_vendas.
 

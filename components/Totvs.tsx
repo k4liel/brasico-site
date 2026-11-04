@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
 import {
-  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, diaSemana, diasNoMes,
+  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, dataLonga, diaSemana, diasNoMes,
   escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses,
 } from "@/lib/totvs-painel";
 
@@ -35,16 +35,29 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   // O detalhe do dia já vem aberto no último dia com venda; só fecha quando a pessoa fecha
   const [fechouDia, setFechouDia] = useState(false);
   const [historico, setHistorico] = useState<Historico[]>([]);
+  // Unidades encerradas: ficam só como arquivo (sem extração), com o resumo de toda a operação
+  const [encerradas, setEncerradas] = useState<Unidade[]>([]);
+  const [arquivo, setArquivo] = useState<Record<string, Ponto[]>>({});
 
   useEffect(() => {
     (async () => {
       const { data: a } = await supabase.from("totvs_acesso").select("user_id").eq("user_id", userId);
       if (!a?.length) return setAcesso(false);
       setAcesso(true);
-      const { data: u } = await supabase.from("totvs_unidades").select("id,nome,loja,ativa,ordem").order("ordem");
-      const lista = ((u ?? []) as Unidade[]).filter((x) => x.ativa && x.loja != null);
+      const { data: u } = await supabase.from("totvs_unidades").select("id,nome,loja,ativa,ordem,encerrada_em").order("ordem");
+      const todas = (u ?? []) as Unidade[];
+      const lista = todas.filter((x) => x.ativa && x.loja != null && !x.encerrada_em);
+      const fechadas = todas.filter((x) => x.encerrada_em);
       setUnidades(lista);
+      setEncerradas(fechadas);
       setUnidade((atual) => atual ?? lista[0]?.id ?? null);
+      const arq: Record<string, Ponto[]> = {};
+      for (const f of fechadas) {
+        const { data: pts } = await supabase.from("totvs_dias").select("dia,total,pessoas,status").eq("unidade_id", f.id)
+          .lte("dia", f.encerrada_em as string).order("dia").limit(5000);
+        arq[f.id] = (pts ?? []) as Ponto[];
+      }
+      setArquivo(arq);
     })();
   }, [supabase, userId]);
 
@@ -124,19 +137,27 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   // Ontem só "falta" depois da agenda das 4h30 (que tenta de novo até as 6h30)
   const antesDaAgenda = new Date(Date.now() - 3 * 3600 * 1000).getUTCHours() < 7;
   const ultimoPossivel = mesAtual ? ontem : `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}`;
-  const doMes = (dias ?? []).filter((d) => d.dia.startsWith(mes));
-  const doAnterior = (dias ?? []).filter((d) => d.dia.startsWith(mesAnterior(mes)));
+  // Unidade encerrada: nada depois do último dia de operação entra nas contas
+  const fimDe = (id: string) => encerradas.find((u) => u.id === id)?.encerrada_em ?? null;
+  const operando = (d: { unidade_id: string; dia: string }) => { const f = fimDe(d.unidade_id); return !f || d.dia <= f; };
+  const doMes = (dias ?? []).filter((d) => d.dia.startsWith(mes) && operando(d));
+  const doAnterior = (dias ?? []).filter((d) => d.dia.startsWith(mesAnterior(mes)) && operando(d));
 
-  // Resumo de cada unidade no mês
-  const resumoUnidades = unidades.map((u) => {
+  // Resumo de cada unidade no mês (a encerrada aparece nos meses em que ainda operava)
+  const noMes = [...unidades, ...encerradas.filter((u) => (u.encerrada_em as string).slice(0, 7) >= mes && (arquivo[u.id] ?? []).some((p) => p.dia.startsWith(mes)))];
+  const resumoDe = (u: Unidade) => {
     const ds = doMes.filter((d) => d.unidade_id === u.id);
     const s = somar(ds);
     const ultimo = ds[ds.length - 1];
-    const diasEsperados = Math.max(0, +ultimoPossivel.slice(8, 10) - (mesAtual && antesDaAgenda && !ds.some((d) => d.dia === ontem) ? 1 : 0));
+    const fim = u.encerrada_em && u.encerrada_em < ultimoPossivel ? u.encerrada_em : ultimoPossivel;
+    const diasEsperados = fim.startsWith(mes) ? Math.max(0, +fim.slice(8, 10) - (!u.encerrada_em && mesAtual && antesDaAgenda && !ds.some((d) => d.dia === ontem) ? 1 : 0)) : 0;
     return { u, ds, s, ultimo, diasEsperados, revisar: ds.filter((d) => d.status === "revisar").length };
-  });
+  };
+  const resumoUnidades = noMes.map(resumoDe);
 
-  const sel = resumoUnidades.find((x) => x.u.id === unidade);
+  const unidadeSel = [...unidades, ...encerradas].find((u) => u.id === unidade);
+  const encerradaSel = unidadeSel?.encerrada_em ?? null;
+  const sel = resumoUnidades.find((x) => x.u.id === unidade) ?? (unidadeSel ? resumoDe(unidadeSel) : undefined);
   const ds = sel?.ds ?? [];
   const ativos = ds.filter(comMovimento);
   const s = somar(ds);
@@ -145,19 +166,20 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const ultimoDia = ds[ds.length - 1]?.dia;
   const limiteDia = ultimoDia ? +ultimoDia.slice(8, 10) : 0;
   // Projeção pelos dias corridos do calendário (dias fechados também contam), não só pelos dias com venda
-  const projecao = mesAtual && limiteDia && limiteDia < diasNoMes(mes) ? (s.total / limiteDia) * diasNoMes(mes) : null;
+  const projecao = !encerradaSel && mesAtual && limiteDia && limiteDia < diasNoMes(mes) ? (s.total / limiteDia) * diasNoMes(mes) : null;
 
   // Comparações no mesmo trecho do mês: mês anterior e mesmo mês do ano anterior
   const anteriorAteDia = doAnterior.filter((d) => d.unidade_id === unidade && +d.dia.slice(8, 10) <= limiteDia);
   const totalAnterior = somar(anteriorAteDia).total;
   const anteriorCompleto = limiteDia > 0 && anteriorAteDia.length >= Math.ceil(limiteDia * 0.9);
   const mesAnoAntes = somarMeses(mes, -12);
-  const anoAntes = (serie ?? []).filter((p) => p.dia.startsWith(mesAnoAntes) && +p.dia.slice(8, 10) <= limiteDia);
+  const anoAntes = (serie ?? []).filter((p) => p.dia.startsWith(mesAnoAntes) && +p.dia.slice(8, 10) <= limiteDia && (!encerradaSel || p.dia <= encerradaSel));
   const totalAnoAntes = anoAntes.reduce((a, p) => a + Number(p.total), 0);
   const anoAntesCompleto = limiteDia > 0 && anoAntes.length >= Math.ceil(limiteDia * 0.9) && totalAnoAntes > 0;
 
   const faltam: string[] = [];
-  for (let i = 1; i <= +ultimoPossivel.slice(8, 10); i++) {
+  const ultimoDaUnidade = encerradaSel && encerradaSel < ultimoPossivel ? encerradaSel : ultimoPossivel;
+  if (!encerradaSel) for (let i = 1; i <= +ultimoPossivel.slice(8, 10); i++) {
     const d = `${mes}-${String(i).padStart(2, "0")}`;
     if (d <= ultimoPossivel && !ds.some((x) => x.dia === d) && !(d === ontem && antesDaAgenda)) faltam.push(d);
   }
@@ -210,6 +232,24 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     { nome: "Outros", valor: s.outros, cor: "tp-cor-outros" },
   ].filter((x) => x.valor > 0);
 
+  // Resumo de toda a operação de cada unidade encerrada (o "arquivo")
+  const resumoArquivo = encerradas.map((u) => {
+    const pts = (arquivo[u.id] ?? []).filter(comMovimento);
+    const total = pts.reduce((a, p) => a + Number(p.total), 0);
+    const pessoas = pts.reduce((a, p) => a + Number(p.pessoas), 0);
+    const porMes = new Map<string, number>();
+    for (const p of pts) porMes.set(p.dia.slice(0, 7), (porMes.get(p.dia.slice(0, 7)) ?? 0) + Number(p.total));
+    const melhorMes = [...porMes.entries()].sort((a, b) => b[1] - a[1])[0];
+    return { u, inicio: pts[0]?.dia ?? null, total, pessoas, dias: pts.length, meses: porMes.size, melhorMes };
+  });
+
+  function abrirArquivo(u: Unidade) {
+    setUnidade(u.id);
+    const ultimoMes = (u.encerrada_em as string).slice(0, 7);
+    if (mes > ultimoMes) setMes(ultimoMes);
+    requestAnimationFrame(() => document.getElementById("tp-unidade")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
   function abrirDia(dia: string) {
     const fechar = abertoAgora === dia;
     setAberto(fechar ? null : dia);
@@ -233,7 +273,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           <select aria-label="Mês" value={mes.slice(5)} onChange={(e) => setMes(`${mes.slice(0, 4)}-${e.target.value}`)}>
             {MESES.map((nome, i) => {
               const mm = String(i + 1).padStart(2, "0");
-              return <option key={mm} value={mm} disabled={!meses.includes(`${mes.slice(0, 4)}-${mm}`)}>{maiuscula(nome)}</option>;
+              const m = `${mes.slice(0, 4)}-${mm}`;
+              return <option key={mm} value={mm} disabled={!meses.includes(m) || (!!encerradaSel && m > encerradaSel.slice(0, 7))}>{maiuscula(nome)}</option>;
             })}
           </select>
           <select aria-label="Ano" value={mes.slice(0, 4)}
@@ -255,7 +296,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
         {/* Resumo de todas as unidades */}
         <section className="tp-painel tp-geral" aria-label="Resumo das unidades">
           <div className="tp-geral-total">
-            <span className="tp-rotulo">Todas as unidades</span>
+            <span className="tp-rotulo">{noMes.length > unidades.length ? "Todas as unidades no mês" : "Unidades em operação"}</span>
             <b className="tp-numero tp-numero-xl">{dias === null ? "—" : reais(totalGeral)}</b>
             <span className="tp-nota">{maiuscula(nomeMes(mes))}{pessoasGeral ? ` · ${inteiro(pessoasGeral)} pessoas · ${reais(totalGeral / pessoasGeral)} por pessoa` : ""}</span>
           </div>
@@ -263,6 +304,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
             {resumoUnidades.map(({ u, s: su, ds: dsu, ultimo, diasEsperados, revisar }) => (
               <button key={u.id} className={u.id === unidade ? "tp-unidade on" : "tp-unidade"} onClick={() => setUnidade(u.id)} aria-pressed={u.id === unidade}>
                 <span className="tp-unidade-nome">{u.nome}</span>
+                {u.encerrada_em && <span className="tp-encerrada">Encerrada em {dataLonga(u.encerrada_em)}</span>}
                 <b className="tp-numero">{dias === null ? "—" : reais(su.total)}</b>
                 <span className="tp-participa" aria-hidden="true"><i style={{ width: `${totalGeral ? (su.total / totalGeral) * 100 : 0}%` }} /></span>
                 <span className="tp-nota">
@@ -275,16 +317,40 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           </div>
         </section>
 
+        {resumoArquivo.length > 0 && (
+          <section className="tp-arquivo" aria-label="Unidades encerradas">
+            <div className="tp-arquivo-cabeca">
+              <span className="tp-sobre">Arquivo</span>
+              <span className="tp-nota">Unidades que encerraram as atividades. Os dados ficam guardados para consulta e não recebem atualização.</span>
+            </div>
+            {resumoArquivo.map(({ u, inicio, total, pessoas, dias: nd, meses: nm, melhorMes }) => (
+              <button key={u.id} type="button" className={u.id === unidade ? "tp-arquivo-cartao on" : "tp-arquivo-cartao"} onClick={() => abrirArquivo(u)} aria-pressed={u.id === unidade}>
+                <span className="tp-arquivo-nome">
+                  <b>{u.nome}</b>
+                  <span className="tp-encerrada">Encerrada em {dataLonga(u.encerrada_em as string)}</span>
+                </span>
+                <span className="tp-arquivo-dado"><span className="tp-rotulo">Período de operação</span><b>{inicio ? `${dataLonga(inicio)} a ${dataLonga(u.encerrada_em as string)}` : "—"}</b></span>
+                <span className="tp-arquivo-dado"><span className="tp-rotulo">Faturamento no período</span><b>{reais(total)}</b></span>
+                <span className="tp-arquivo-dado"><span className="tp-rotulo">Dias com venda</span><b>{inteiro(nd)}{nm ? ` · ${plural(nm, "mês", "meses")}` : ""}</b></span>
+                <span className="tp-arquivo-dado"><span className="tp-rotulo">Ticket por pessoa</span><b>{pessoas ? reais(total / pessoas) : "—"}</b></span>
+                <span className="tp-arquivo-dado"><span className="tp-rotulo">Melhor mês</span><b>{melhorMes ? `${maiuscula(nomeMes(melhorMes[0]))} · ${reaisCurto(melhorMes[1])}` : "—"}</b></span>
+              </button>
+            ))}
+          </section>
+        )}
+
         {dias === null && <div className="tp-carregando" aria-label="Carregando"><i /><i /><i /></div>}
 
         {sel && dias !== null && (
           <>
-            <div className="tp-titulo">
+            <div className="tp-titulo" id="tp-unidade">
               <div>
-                <h2>{sel.u.nome}</h2>
+                <h2>{sel.u.nome}{encerradaSel && <span className="tp-encerrada tp-encerrada-titulo">Arquivo · encerrada em {dataLonga(encerradaSel)}</span>}</h2>
                 <span className="tp-nota">
-                  {maiuscula(nomeMes(mes))}{ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}
-                  {mesAtual && antesDaAgenda && ultimoDia !== ontem ? ` · ${dataBr(ontem)} chega às 4h30` : ""}
+                  {encerradaSel
+                    ? `${maiuscula(nomeMes(mes))} · dados guardados até o último dia de operação, sem atualização`
+                    : <>{maiuscula(nomeMes(mes))}{ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}
+                      {mesAtual && antesDaAgenda && ultimoDia !== ontem ? ` · ${dataBr(ontem)} chega às 4h30` : ""}</>}
                 </span>
               </div>
               {ds.length > 0 && (
@@ -306,7 +372,12 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
             )}
 
             {nDias === 0 ? (
-              <p className="tp-vazio">Ainda não há vendas deste mês para {sel.u.nome}.</p>
+              <p className="tp-vazio">
+                {encerradaSel && mes > encerradaSel.slice(0, 7)
+                  ? <>{sel.u.nome} encerrou as atividades em {dataLonga(encerradaSel)}.{" "}
+                    <button type="button" className="ghost small" onClick={() => setMes(encerradaSel.slice(0, 7))}>Ver o último mês de operação</button></>
+                  : `Ainda não há vendas deste mês para ${sel.u.nome}.`}
+              </p>
             ) : (
               <>
                 <section className="tp-painel tp-kpis">
@@ -393,7 +464,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                               onMouseEnter={() => setFoco(dia)} onFocus={() => setFoco(dia)} onBlur={() => setFoco(null)} tabIndex={d ? 0 : -1}
                               onClick={() => d && abrirDia(dia)} onKeyDown={(e) => d && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrirDia(dia))}
                               aria-label={d ? `${dataBr(dia)}: ${reais(Number(d.total))}${d.status === "revisar" ? ", para revisar" : ""}. Abrir detalhe` : `${dataBr(dia)}: sem dados`}>
-                              {d ? <i style={{ height: `${Math.max(1, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoPossivel ? <i className="falta" /> : null}
+                              {d ? <i style={{ height: `${Math.max(1, (Number(d.total) / escala) * 100)}%` }} /> : dia <= ultimoDaUnidade ? <i className="falta" /> : null}
                             </div>
                           );
                         })}
@@ -426,7 +497,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                 <Perdas key={`a-${unidade}-${mes}`} dias={ds} />
 
                 <p className="tp-qualidade">
-                  {ds.length} de {+ultimoPossivel.slice(8, 10)} dias lançados · {ds.filter((d) => d.status === "ok").length} conferidos (o pago bate com o vendido)
+                  {ds.length} de {ultimoDaUnidade.startsWith(mes) ? +ultimoDaUnidade.slice(8, 10) : diasNoMes(mes)} dias lançados · {ds.filter((d) => d.status === "ok").length} conferidos (o pago bate com o vendido)
                   {ds.some((d) => d.status === "sem_movimento") && ` · ${ds.filter((d) => d.status === "sem_movimento").length} sem movimento`}
                   {sel.revisar > 0 && ` · ${sel.revisar} para revisar (${ds.filter((d) => d.status === "revisar").map((d) => dataBr(d.dia)).join(", ")}): o pago não bateu com o vendido, e os números aparecem como vieram.`}
                 </p>
