@@ -24,7 +24,7 @@ type Pego = { execucao: Execucao; empresa: { cnpj: string; nome: string; ult_nsu
 // Regra de 1 hora da SEFAZ, com 5 min de folga: no dia 28/10 uma consulta 12 s depois da hora exata levou 656.
 const UMA_HORA = 65 * 60 * 1000;
 const LIMITE_MS = 45000; // deixa folga para gravar antes dos 60 s da Vercel
-const LACUNA_POR_LEITURA = 30; // documentos buscados um a um (consNSU) por leitura
+const LACUNA_POR_LEITURA = 15; // um a um (consNSU) por leitura: a SEFAZ aceita até 20 consultas por hora (656 depois disso)
 type Lacuna = { de: string; ate: string };
 const nsu15 = (n: bigint) => n.toString().padStart(15, "0");
 const faltam = (ls: Lacuna[]) => ls.reduce((s, l) => s + Number(BigInt(l.ate) - BigInt(l.de) + BigInt(1)), 0);
