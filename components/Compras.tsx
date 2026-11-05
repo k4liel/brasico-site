@@ -486,7 +486,7 @@ const ETAPAS = [
   { t: "Lista sugerida", d: "montada quando todos pediram" },
   { t: "Revisão", d: "cada pessoa confere e aprova" },
   { t: "Lista única", d: "a Fernanda junta por fornecedor" },
-  { t: "Semana fechada", d: "PDF e pedidos enviados" },
+  { t: "Semana fechada", d: "fecha sozinha 7 dias depois do fim" },
 ];
 function Etapas({ atual }: { atual: number }) {
   return (
@@ -648,11 +648,9 @@ function ListaUnica({ semana }: { semana: Semana }) {
   const supabase = useMemo(() => createClient(), []);
   const [linhas, setLinhas] = useState<Final[]>([]);
   const [erro, setErro] = useState("");
-  const [aviso, setAviso] = useState("");
   const [novo, setNovo] = useState({ empresa: EMPRESAS[0].cnpj, fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
   const [pedidos, setPedidos] = useState<Record<string, Pedido>>({});
   const [imprimir, setImprimir] = useState<string | null>(null);
-  const [conferir, setConferir] = useState<string | null>(null);
   const [cadastro, setCadastro] = useState<Forn[]>([]);
   const [movendo, setMovendo] = useState<number | null>(null);      // item com o painel "Mover" aberto
   const [arrastando, setArrastando] = useState<number | null>(null); // item sendo arrastado
@@ -698,13 +696,6 @@ function ListaUnica({ semana }: { semana: Semana }) {
   }
   useEffect(() => { carregar(); }, [carregar]);
 
-  async function juntar() {
-    setErro(""); setAviso("");
-    const { data, error } = await supabase.rpc("compras_consolidar", { p_semana: semana.id });
-    if (error) return setErro(error.message);
-    setAviso(`${data ?? 0} itens conferidos com as listas aprovadas. O que você editou ou moveu ficou como estava.`);
-    carregar();
-  }
   async function salvar(f: Final, m: Partial<Final>) {
     setErro("");
     const x = { ...f, ...m };
@@ -728,11 +719,6 @@ function ListaUnica({ semana }: { semana: Semana }) {
     if (error) return setErro(error.message);
     setNovo({ ...novo, fornecedor: "", nome: "", unidade: "", qtd: "", preco: "" });
     carregar();
-  }
-  async function fechar(sim: boolean) {
-    const { error } = await supabase.rpc("compras_semana_fechar", { p_semana: semana.id, p_fechar: sim });
-    if (error) return setErro(error.message);
-    window.location.reload();
   }
 
   const vivas = linhas.filter((l) => !l.removido);
@@ -790,14 +776,10 @@ function ListaUnica({ semana }: { semana: Semana }) {
             <button className="ghost small" onClick={() => { setEmpFechadas(new Set()); setFornAbertos(new Set(comItens.flatMap((x) => x.grupos.map((g) => chavePedido(x.e.cnpj, g.f))))); }}>Abrir tudo</button>
             <button className="ghost small" onClick={() => { setFornAbertos(new Set()); setEmpFechadas(new Set(comItens.map((x) => x.e.cnpj))); }}>Fechar tudo</button>
           </>}
-          {aberta && <button className="ghost small" onClick={juntar}>Atualizar das listas</button>}
           <button className="small" onClick={() => window.print()} disabled={!vivas.length}>PDF de tudo (com preços)</button>
-          {aberta ? <button className="ghost small" onClick={() => fechar(true)} disabled={!vivas.length}>Fechar a semana</button>
-            : <button className="ghost small" onClick={() => fechar(false)}>Reabrir a semana</button>}
         </div>
       </div>
       {erro && <p className="tv-alerta no-print">{erro}</p>}
-      {aviso && <p className="es-aviso no-print">{aviso}</p>}
 
       <div className={imprimir ? "cp-pdf cp-so-um" : "cp-pdf"}>
         <div className="cp-pdf-cabeca">
@@ -852,7 +834,6 @@ function ListaUnica({ semana }: { semana: Semana }) {
                       {st === "a_pedir" && <button className="small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Marcar pedido feito</button>}
                       {st === "pedido" && <><button className="small" onClick={() => marcar(e.cnpj, g.f, "recebido")}>Marcar recebido</button><button className="ghost small" onClick={() => marcar(e.cnpj, g.f, "a_pedir")}>Voltar para “a pedir”</button></>}
                       {st === "recebido" && <button className="ghost small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Desfazer recebido</button>}
-                      <button className={conferir === k ? "ghost small on" : "ghost small"} onClick={() => setConferir(conferir === k ? null : k)} aria-expanded={conferir === k}>Conferir com a nota</button>
                     </div>
                     {(() => {
                       const f = doCadastro(g.f);
@@ -867,7 +848,6 @@ function ListaUnica({ semana }: { semana: Semana }) {
                         </p>
                       );
                     })()}
-                    {conferir === k && <ConferirNota semana={semana} fornecedor={g.f} empresa={e.cnpj} pedido={ped} onMudou={carregar} />}
                     <table className="nf-tabela cp-tabela cp-tabela-unica">
                       <thead><tr>
                         <th className="cp-caixa" aria-label="Marcar" /><th>Item</th><th className="no-print">Fornecedor</th><th className="n">Qtd.</th>
@@ -1060,7 +1040,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
   const aPedir = fs.filter((f) => f.status === "a_pedir");
   const esperando = fs.filter((f) => f.status === "pedido");
   const recebidos = fs.filter((f) => f.status === "recebido");
-  const semNota = recebidos.filter((f) => !f.nota);
   const totalFinal = fs.reduce((s, f) => s + Number(f.valor ?? 0), 0);
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
@@ -1078,7 +1057,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
   if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ tom: "acao", t: "Juntar as listas aprovadas", d: "monta a lista única, separada por fornecedor", acao: ["Abrir a lista única", "final"] });
   if (aPedir.length) tarefas.push({ tom: "acao", t: `Fazer o pedido a ${aPedir.length} ${aPedir.length === 1 ? "fornecedor" : "fornecedores"}`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
   if (esperando.length) tarefas.push({ tom: "info", t: `Esperando a entrega de ${esperando.length}`, d: esperando.map((f) => f.fornecedor).join(" · "), acao: ["Marcar recebido", "final"] });
-  if (semNota.length) tarefas.push({ tom: "acao", t: `Conferir a nota de ${semNota.length} ${semNota.length === 1 ? "entrega" : "entregas"}`, d: "ligar a nota fiscal e comparar quantidade e preço com o pedido", acao: ["Conferir", "final"] });
   if (d.itens.baixa) tarefas.push({ tom: "aviso", t: `${d.itens.baixa} itens sem produto nas notas`, d: "a análise não achou compra parecida: confira fornecedor e preço", acao: ["Ver as listas", "andamento"] });
 
   return (
@@ -1165,94 +1143,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
         )}
       </section>
     </section>
-  );
-}
-
-// Conferência da nota com o pedido de um fornecedor (compras_conferir, compras_notas_do_fornecedor)
-type Conferencia = {
-  nota: { chave: string; emissao: string; valor: number; emitente: string; completa: boolean } | null;
-  itens?: { item: string; unidade: string; qtd_pedida: number | null; preco_pedido: number | null; na_nota: string | null; unidade_nota: string | null; qtd_nota: number | null; preco_nota: number | null; situacao: "ok" | "faltou" | "quantidade" | "preco" }[];
-  fora_do_pedido?: { descricao: string; unidade: string; quantidade: number; preco: number }[];
-};
-const SITUACAO: Record<string, string> = { ok: "confere", faltou: "não veio na nota", quantidade: "quantidade diferente", preco: "preço acima do pedido" };
-function ConferirNota({ semana, fornecedor, empresa, pedido, onMudou }: { semana: Semana; fornecedor: string; empresa: string; pedido?: Pedido; onMudou: () => void }) {
-  const supabase = useMemo(() => createClient(), []);
-  const [conf, setConf] = useState<Conferencia | null>(null);
-  const [sugestoes, setSugestoes] = useState<{ chave: string; emissao: string; valor: number; emitente: string; completa: boolean }[] | null>(null);
-  const [erro, setErro] = useState("");
-  const carregar = useCallback(async () => {
-    setErro("");
-    const [c, n] = await Promise.all([
-      supabase.rpc("compras_conferir", { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa }),
-      supabase.rpc("compras_notas_do_fornecedor", { p_semana: semana.id, p_fornecedor: fornecedor }),
-    ]);
-    if (c.error || n.error) setErro((c.error ?? n.error)!.message);
-    setConf((c.data ?? { nota: null }) as Conferencia);
-    setSugestoes((n.data ?? []) as typeof sugestoes);
-  }, [supabase, semana.id, fornecedor, empresa]);
-  useEffect(() => { carregar(); }, [carregar, pedido?.nota_chave]);
-  async function ligar(chave: string | null) {
-    setErro("");
-    const { error } = await supabase.rpc("compras_pedido_gravar", chave
-      ? { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa, p_nota: chave, p_status: pedido?.status === "recebido" ? null : "recebido" }
-      : { p_semana: semana.id, p_fornecedor: fornecedor, p_empresa: empresa, p_tirar_nota: true });
-    if (error) return setErro(error.message);
-    onMudou();
-    carregar();
-  }
-  if (!conf || !sugestoes) return <div className="cp-conferir no-print"><p className="muted">Carregando…</p></div>;
-  const problemas = (conf.itens ?? []).filter((i) => i.situacao !== "ok").length;
-  return (
-    <div className="cp-conferir no-print">
-      {erro && <p className="tv-alerta">{erro}</p>}
-      {!conf.nota ? (
-        <>
-          <p className="muted">Escolha a nota fiscal deste pedido. Aparecem as notas do mesmo fornecedor de 3 dias antes da semana até 12 dias depois (a nota chega da SEFAZ uma vez por dia).</p>
-          {!sugestoes.length ? <p className="muted">Nenhuma nota desse fornecedor ainda. Se a compra veio sem nota, lance como nota avulsa.</p> : (
-            <ul className="cp-sugestoes">
-              {sugestoes.map((n) => (
-                <li key={n.chave}>
-                  <span><b>{n.emitente}</b><small>{new Date(n.emissao).toLocaleDateString("pt-BR")} · {brl(n.valor)}{n.completa ? "" : " · só o resumo (sem itens ainda)"}</small></span>
-                  <a className="ghost small botao" href={`/api/notas/danfe/${n.chave}`} target="_blank" rel="noreferrer">Ver PDF</a>
-                  <button className="small" onClick={() => ligar(n.chave)}>É esta</button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      ) : (
-        <>
-          <div className="cp-conferir-cabeca">
-            <span><b>Nota de {new Date(conf.nota.emissao).toLocaleDateString("pt-BR")} · {brl(conf.nota.valor)}</b>
-              <small>{problemas ? `${problemas} ${problemas === 1 ? "item pede" : "itens pedem"} atenção` : "Tudo confere com o pedido."}</small></span>
-            <a className="ghost small botao" href={`/api/notas/danfe/${conf.nota.chave}`} target="_blank" rel="noreferrer">Ver PDF da nota</a>
-            <button className="ghost small" onClick={() => ligar(null)}>Trocar a nota</button>
-          </div>
-          {!conf.nota.completa && <p className="es-aviso">A nota ainda está só em resumo: os itens aparecem quando a SEFAZ liberar a nota completa.</p>}
-          <div className="nf-tabela-wrap">
-            <table className="nf-tabela cp-tabela">
-              <thead><tr><th>Pedido</th><th className="n">Qtd. pedida</th><th className="n">Preço pedido</th><th>Na nota</th><th className="n">Qtd. na nota</th><th className="n">Preço na nota</th><th>Situação</th></tr></thead>
-              <tbody>
-                {(conf.itens ?? []).map((i, k) => (
-                  <tr key={k} className={i.situacao === "ok" ? "" : "cp-conf-atencao"}>
-                    <td>{i.item}<small className="muted"> {i.unidade}</small></td>
-                    <td className="n">{num(i.qtd_pedida)}</td><td className="n">{brl(i.preco_pedido)}</td>
-                    <td>{i.na_nota ?? "—"}{i.unidade_nota && <small className="muted"> {i.unidade_nota}</small>}</td>
-                    <td className="n">{num(i.qtd_nota)}</td><td className="n">{brl(i.preco_nota)}</td>
-                    <td><span className={`cp-sit ${i.situacao}`}>{SITUACAO[i.situacao]}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!!conf.fora_do_pedido?.length && (
-            <details className="cp-pedido"><summary>{conf.fora_do_pedido.length} itens na nota que não estavam no pedido</summary>
-              <ul className="cp-fora">{conf.fora_do_pedido.map((x, k) => <li key={k}>{x.descricao} · {num(x.quantidade)} {x.unidade} · {brl(x.preco)}</li>)}</ul>
-            </details>
-          )}
-        </>
-      )}
-    </div>
   );
 }
 
