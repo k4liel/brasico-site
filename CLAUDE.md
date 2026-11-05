@@ -53,6 +53,9 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Antes de qualquer ação difícil de desfazer (excluir, reescrever histórico do git, deixar algo público), mostre o plano e espere a confirmação.
 - Link público (botão Compartilhar no projeto, ou `compartilhar_projeto` no conector): abre `/p/<código>` sem login e mostra só o documento daquele projeto e os seus PDFs (rota `/api/publico/<código>/...`, que confere o código); o PDF do documento é baixado no botão Baixar PDF e enviado como arquivo. Só ative com confirmação do dono; "Gerar novo link" derruba o anterior. Funções em supabase/link_publico.sql e link_publico_arquivos.sql.
 
+## Filha da Lua (página própria)
+- Página /filha-da-lua (components/FilhaDaLua.tsx, item "Filha da Lua" do menu), criada em 05/11/2026 a pedido do dono. Todo o projeto "Filha da Lua Ecolodge" (12 capítulos nos 5 idiomas: cardápios das ceias, fichas técnicas, compras e produção, ajustes; CSS, rodapé e abas) foi copiado para `filhadalua_capitulos` e `filhadalua_estilo` (supabase/filha_da_lua.sql) e o projeto foi para a **Lixeira**: não o recrie. Quem vê: os sócios (`notas_pode_ver`). O conteúdo fica só no banco; para mudar um capítulo, atualize a linha pelo id (nada se apaga: tirar = `arquivado_em`).
+
 ## Cicchetti Midway: encerrado (só arquivo)
 - O Cicchetti Midway (Midway Mall, Natal; CNPJ da V6) **encerrou todas as atividades em 31/10/2026**. Fica só como dado histórico: nenhuma rotina puxa nada dele (supabase/midway_encerrado.sql).
 - TOTVS: `totvs_unidades.encerrada_em = 2026-10-31` e `ativa = false`; `totvs_pedir` recusa extração. O painel /vendas mostra as unidades em operação e um cartão **Arquivo** com o resumo de toda a operação; o Midway só entra no "todas as unidades" dos meses em que operava. Dias depois do encerramento não contam.
