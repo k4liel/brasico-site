@@ -14,7 +14,12 @@ type Papel = "socio" | "compras" | "solicitante" | null;
 type Pessoa = { id: string; nome: string; unidade: string | null; setor: string | null; papel: string; email?: string | null;
   user_id: string | null; wa_nome: string | null; ativo: boolean; convidado_em: string | null; registra_estoque?: boolean };
 type Semana = { id: string; inicio: string; status: string; aumento_pct?: number };
-type Lista = { id: string; semana_id: string; pessoa_id: string; status: string; titulo: string | null; pedido_texto: string | null; analisada_em: string | null; aprovada_em: string | null; created_at: string };
+type Lista = { id: string; semana_id: string; pessoa_id: string; status: string; titulo: string | null; pedido_texto: string | null; analisada_em: string | null; aprovada_em: string | null; created_at: string; movida_de?: string | null; movida_em?: string | null };
+// Situação da lista na semana (compras_listas_situacao): total e quantos itens já estão em pedido feito / recebido
+type SitLista = { lista_id: string; pessoa_id: string; itens: number; total: number; pedidos: number; recebidos: number; pedido_em: string | null; recebido_em: string | null };
+// Comprada = todos os itens já foram pedidos ao fornecedor; recebida = todos chegaram
+const compra = (x?: SitLista) => (!x || !x.itens || !x.pedidos ? null : x.recebidos >= x.itens ? "recebida" : x.pedidos >= x.itens ? "comprada" : "parte");
+const COMPRA: Record<string, string> = { recebida: "✓ Comprada e recebida", comprada: "✓ Comprada", parte: "Parte comprada" };
 type Item = { id: number; lista_id: string; ordem: number; nome: string; fornecedor: string | null; unidade: string | null;
   qtd_pedida: number | null; qtd_sugerida: number | null; motivo: string | null; qtd: number | null; preco: number | null;
   removido: boolean; incluido_na_revisao: boolean; media_4s: number | null; projecao: number | null; base: string | null;
@@ -186,8 +191,11 @@ function useListas(semanaId: string, pessoaId: string | null) {
   const supabase = useMemo(() => createClient(), []);
   const [listas, setListas] = useState<Lista[] | undefined>(undefined);
   const [itens, setItens] = useState<Item[]>([]);
+  const [sit, setSit] = useState<Record<string, SitLista>>({});
   const carregar = useCallback(async () => {
     if (!pessoaId) return;
+    const { data: sx } = await supabase.rpc("compras_listas_situacao", { p_semana: semanaId });
+    setSit(Object.fromEntries(((sx ?? []) as SitLista[]).map((x) => [x.lista_id, { ...x, total: Number(x.total) }])));
     const { data: l } = await supabase.from("compras_listas").select("*").eq("semana_id", semanaId).eq("pessoa_id", pessoaId)
       .in("status", ATIVAS).order("created_at");
     const ls = (l ?? []) as Lista[];
@@ -203,10 +211,11 @@ function useListas(semanaId: string, pessoaId: string | null) {
     if (!pessoaId) return;
     const c = supabase.channel(`compras-listas-${pessoaId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "compras_listas", filter: `pessoa_id=eq.${pessoaId}` }, () => carregar())
+      .on("postgres_changes", { event: "*", schema: "public", table: "compras_pedidos" }, () => carregar())
       .subscribe();
     return () => { supabase.removeChannel(c); };
   }, [supabase, pessoaId, carregar]);
-  return { listas, itens, carregar };
+  return { listas, itens, sit, carregar };
 }
 
 // Juntar duas listas da mesma pessoa numa só (os itens vão para a primeira; a segunda fica guardada como juntada)
@@ -244,25 +253,35 @@ function JuntarListas({ listas, onMudou }: { listas: Lista[]; onMudou: () => voi
   );
 }
 
-function Listas({ semana, listas, itens, carregar, gestor }: { semana: Semana; listas: Lista[]; itens: Item[]; carregar: () => void; gestor: boolean }) {
+function Listas({ semana, listas, itens, sit, carregar, gestor }: { semana: Semana; listas: Lista[]; itens: Item[]; sit: Record<string, SitLista>; carregar: () => void; gestor: boolean }) {
   const aberta = semana.status === "aberta";
+  // total de todas as listas da pessoa na semana (itens que ficaram, quantidade × preço)
+  const vivos = itens.filter((i) => !i.removido && listas.some((l) => l.id === i.lista_id));
+  const total = vivos.reduce((s, i) => s + (i.qtd ?? 0) * (i.preco ?? 0), 0);
+  const aprovadas = listas.filter((l) => l.status === "aprovada").length;
+  const compradas = listas.filter((l) => ["comprada", "recebida"].includes(compra(sit[l.id]) ?? "")).length;
   return (
     <>
+      <div className="cp-soma-listas">
+        <div className="cp-soma-total"><span className="cp-soma-rotulo">Total {listas.length > 1 ? `das ${listas.length} listas` : "da lista"}</span><b>{brl(total)}</b></div>
+        <div><span className="cp-soma-rotulo">Itens</span><b>{vivos.length}</b></div>
+        <div><span className="cp-soma-rotulo">Aprovadas</span><b>{aprovadas}<small> de {listas.length}</small></b></div>
+        <div className={compradas ? "cp-soma-ok" : ""}><span className="cp-soma-rotulo">Já compradas</span><b>{compradas}<small> de {listas.length}</small></b></div>
+      </div>
       {listas.length > 1 && (
-        <p className="muted cp-listas-resumo">{listas.length} listas nesta semana · {listas.filter((l) => l.status === "aprovada").length} aprovadas.
-          Confira e aprove cada uma; se preferir, junte duas numa só.</p>
+        <p className="muted cp-listas-resumo">Confira e aprove cada uma; se preferir, junte duas numa só ou mande uma lista para outra semana.</p>
       )}
       {aberta && <JuntarListas listas={listas} onMudou={carregar} />}
       {listas.map((l) => (
-        <EditorLista key={l.id} lista={l} itens={itens.filter((i) => i.lista_id === l.id)} abertaInicial={listas.length === 1}
-          podeEditar={aberta && (gestor || l.status !== "aprovada")} onMudou={carregar} gestor={gestor} />
+        <EditorLista key={l.id} lista={l} itens={itens.filter((i) => i.lista_id === l.id)} abertaInicial={listas.length === 1 && !compra(sit[l.id])}
+          podeEditar={aberta && (gestor || l.status !== "aprovada")} onMudou={carregar} gestor={gestor} sit={sit[l.id]} semanaAberta={aberta} semanaInicio={semana.inicio} />
       ))}
     </>
   );
 }
 
 function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
-  const { listas, itens, carregar } = useListas(semana.id, pessoa.id);
+  const { listas, itens, sit, carregar } = useListas(semana.id, pessoa.id);
   if (listas === undefined) return <p className="muted">Carregando as suas listas…</p>;
   if (!listas.length) {
     return (
@@ -279,7 +298,7 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
     <>
       <AvisoListaNova pessoa={pessoa.id} listas={listas} />
       <Etapas atual={situacao(listas) === "aprovada" ? 3 : 2} />
-      <Listas semana={semana} listas={listas} itens={itens} carregar={carregar} gestor={false} />
+      <Listas semana={semana} listas={listas} itens={itens} sit={sit} carregar={carregar} gestor={false} />
     </>
   );
 }
@@ -309,7 +328,7 @@ function AvisoListaNova({ pessoa, listas }: { pessoa: string; listas: Lista[] })
 }
 
 // Cada lista abre e fecha: com várias listas, começam fechadas (só o título, os itens, o valor e a situação)
-function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial = true }: { lista: Lista; itens: Item[]; podeEditar: boolean; onMudou: () => void; gestor: boolean; abertaInicial?: boolean }) {
+function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial = true, sit, semanaAberta, semanaInicio }: { lista: Lista; itens: Item[]; podeEditar: boolean; onMudou: () => void; gestor: boolean; abertaInicial?: boolean; sit?: SitLista; semanaAberta: boolean; semanaInicio: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [aberta, setAberta] = useState(abertaInicial);
   const [erro, setErro] = useState("");
@@ -342,6 +361,18 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
     if (error) setErro(error.message);
     onMudou();
   }
+  const comprada = compra(sit);
+  // mandar para a semana anterior ou a seguinte (lista com item já pedido ao fornecedor não muda)
+  const podeMover = semanaAberta && !sit?.pedidos && (gestor || lista.status !== "aprovada");
+  async function moverSemana(direcao: -1 | 1) {
+    const d = new Date(`${semanaInicio}T12:00:00`); d.setDate(d.getDate() + 7 * direcao);
+    const alvo = d.toISOString().slice(0, 10);
+    if (!confirm(`Mandar "${lista.titulo || "Lista"}" para a semana de ${diaSemana(alvo)} a ${fimSemana(alvo)}?`)) return;
+    setErro("");
+    const { error } = await supabase.rpc("compras_lista_mover_semana", { p_lista: lista.id, p_direcao: direcao });
+    if (error) return setErro(error.message);
+    onMudou();
+  }
   async function aprovar(sim: boolean) {
     setErro("");
     const { error } = await supabase.rpc("compras_lista_aprovar", { p_lista: lista.id, p_aprovar: sim });
@@ -350,7 +381,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
   }
 
   return (
-    <section className={aberta ? "av-bloco cp-lista" : "av-bloco cp-lista cp-fechada"}>
+    <section className={`av-bloco cp-lista${aberta ? "" : " cp-fechada"}${comprada === "comprada" || comprada === "recebida" ? " cp-lista-comprada" : ""}`}>
       <div className="cp-lista-cabeca">
         <button type="button" className="cp-abre" onClick={() => setAberta(!aberta)} aria-expanded={aberta}
           aria-label={aberta ? "Fechar a lista" : "Abrir a lista"}><span aria-hidden="true">{aberta ? "▾" : "▸"}</span></button>
@@ -359,8 +390,17 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
             onBlur={(v) => v.target.value !== (lista.titulo ?? "") && renomear(v.target.value)} /> : <h3>{lista.titulo || "Lista"}</h3>}
         </div>
         <div className="cp-lista-total"><span>{vivos.length} itens</span><b>{brl(total)}</b></div>
-        <span className={`estado ${lista.status === "aprovada" ? "tv-ok" : "tv-revisar"}`}>{STATUS[lista.status] ?? lista.status}</span>
+        {comprada ? <span className={`cp-selo-compra ${comprada}`}>{COMPRA[comprada]}{comprada === "parte" && sit ? ` · ${sit.pedidos} de ${sit.itens}` : ""}</span>
+          : <span className={`estado ${lista.status === "aprovada" ? "tv-ok" : "tv-revisar"}`}>{STATUS[lista.status] ?? lista.status}</span>}
       </div>
+      {comprada && (
+        <p className={`cp-faixa-compra ${comprada}`}>
+          {comprada === "recebida" ? `Esta lista já foi comprada e chegou${sit?.recebido_em ? ` (${quando(sit.recebido_em)})` : ""}.`
+            : comprada === "comprada" ? `Esta lista já foi comprada: todos os itens foram pedidos ao fornecedor${sit?.pedido_em ? ` (${quando(sit.pedido_em)})` : ""}.`
+            : `${sit?.pedidos} de ${sit?.itens} itens já foram pedidos ao fornecedor; o resto ainda falta comprar.`}
+        </p>
+      )}
+      {lista.movida_em && <p className="cp-faixa-movida">Esta lista veio de outra semana ({quando(lista.movida_em)}).</p>}
       {aberta && <>
       {lista.pedido_texto && (
         <details className="cp-pedido"><summary>O pedido que veio no grupo</summary><pre>{lista.pedido_texto}</pre></details>
@@ -427,7 +467,13 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
       <div className="cp-rodape">
         {podeEditar && <button onClick={() => aprovar(true)}>Aprovar a lista</button>}
         {gestor && lista.status === "aprovada" && <button className="ghost" onClick={() => aprovar(false)}>Reabrir para a pessoa</button>}
-        {lista.status === "aprovada" && !gestor && <p className="es-tudo-certo">Lista aprovada. O setor de compras já pode juntá-la na lista final.</p>}
+        {lista.status === "aprovada" && !gestor && !comprada && <p className="es-tudo-certo">Lista aprovada. O setor de compras já pode juntá-la na lista final.</p>}
+        {podeMover && (
+          <span className="cp-mover-semana">
+            <button type="button" className="ghost small" onClick={() => moverSemana(-1)}>← Semana passada</button>
+            <button type="button" className="ghost small" onClick={() => moverSemana(1)}>Próxima semana →</button>
+          </span>
+        )}
       </div>
       </>}
     </section>
@@ -465,7 +511,10 @@ function Andamento({ semana }: { semana: Semana }) {
   const [listas, setListas] = useState<Lista[]>([]);
   const [aberta, setAberta] = useState<string | null>(null);
   const [analises, setAnalises] = useState<Record<string, { status: string; erro: string | null }>>({});
+  const [sit, setSit] = useState<SitLista[]>([]);
   const carregar = useCallback(async () => {
+    const { data: sx } = await supabase.rpc("compras_listas_situacao", { p_semana: semana.id });
+    setSit(((sx ?? []) as SitLista[]).map((x) => ({ ...x, total: Number(x.total) })));
     const [p, l, a] = await Promise.all([
       supabase.from("operacao_pessoas").select("id,nome,unidade,setor,papel,user_id,wa_nome,ativo,convidado_em").eq("papel", "solicitante").eq("ativo", true),
       supabase.from("compras_listas").select("*").eq("semana_id", semana.id),
@@ -520,12 +569,17 @@ function Andamento({ semana }: { semana: Semana }) {
                 {ps.map((p) => {
                   const ls = daPessoa(p.id);
                   const st = situacao(ls);
+                  const sp = sit.filter((x) => x.pessoa_id === p.id);
+                  const totalP = sp.reduce((s, x) => s + x.total, 0);
+                  const compradasP = ls.filter((l) => ["comprada", "recebida"].includes(compra(sp.find((x) => x.lista_id === l.id)) ?? "")).length;
                   return (
                     <li key={p.id}>
                       <button className={aberta === p.id ? "cp-pessoa on" : "cp-pessoa"} onClick={() => setAberta(aberta === p.id ? null : p.id)} aria-expanded={aberta === p.id}>
                         <span className="cp-avatar" aria-hidden="true">{p.nome.slice(0, 1)}</span>
                         <span className="cp-pessoa-nome"><strong>{p.nome}</strong><small>{SETORES[p.setor ?? ""]}{!p.wa_nome ? " · sem nome no WhatsApp" : analises[p.id] ? ` · ${ANALISE[analises[p.id].status] ?? analises[p.id].status}` : ""}</small></span>
-                        <span className={`estado ${st === "aprovada" ? "tv-ok" : st === "em_revisao" ? "tv-revisar" : ""}`}>{st ? `${ls.length > 1 ? `${ls.length} listas · ` : ""}${STATUS[st]}` : "sem lista"}</span>
+                        {ls.length > 0 && <span className="cp-pessoa-total">{brl(totalP)}</span>}
+                        {ls.length > 0 && compradasP === ls.length ? <span className="cp-selo-compra comprada">✓ Comprada{ls.length > 1 ? `s (${ls.length})` : ""}</span>
+                          : <span className={`estado ${st === "aprovada" ? "tv-ok" : st === "em_revisao" ? "tv-revisar" : ""}`}>{st ? `${ls.length > 1 ? `${ls.length} listas · ` : ""}${STATUS[st]}${compradasP ? ` · ${compradasP} comprada${compradasP > 1 ? "s" : ""}` : ""}` : "sem lista"}</span>}
                       </button>
                     </li>
                   );
@@ -541,7 +595,7 @@ function Andamento({ semana }: { semana: Semana }) {
 }
 
 function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: Pessoa; onFechar: () => void }) {
-  const { listas, itens, carregar } = useListas(semana.id, pessoa.id);
+  const { listas, itens, sit, carregar } = useListas(semana.id, pessoa.id);
   return (
     <div className="cp-da-pessoa">
       <header className="cp-da-pessoa-cabeca">
@@ -551,7 +605,7 @@ function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: P
       </header>
       {listas === undefined ? <p className="muted">Carregando…</p>
         : !listas.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui depois que for montada.</p>
-        : <Listas semana={semana} listas={listas} itens={itens} carregar={carregar} gestor />}
+        : <Listas semana={semana} listas={listas} itens={itens} sit={sit} carregar={carregar} gestor />}
     </div>
   );
 }
