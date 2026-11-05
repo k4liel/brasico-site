@@ -286,7 +286,6 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
   if (!listas.length) {
     return (
       <>
-        <Etapas atual={0} />
         <section className="av-bloco cp-vazio">
           <h2>Sua lista ainda não saiu</h2>
           <p className="muted">Mande o pedido do seu setor no grupo COMPRAS (texto, planilha, PDF ou foto). Em poucos minutos a lista sugerida aparece aqui para você revisar (você recebe um aviso nesta página).</p>
@@ -297,7 +296,6 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
   return (
     <>
       <AvisoListaNova pessoa={pessoa.id} listas={listas} />
-      <Etapas atual={situacao(listas) === "aprovada" ? 3 : 2} />
       <Listas semana={semana} listas={listas} itens={itens} sit={sit} carregar={carregar} gestor={false} />
     </>
   );
@@ -480,27 +478,6 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
   );
 }
 
-// As etapas da semana de compras, com a atual em destaque
-const ETAPAS = [
-  { t: "Pedidos no grupo", d: "até segunda à noite" },
-  { t: "Lista sugerida", d: "montada quando todos pediram" },
-  { t: "Revisão", d: "cada pessoa confere e aprova" },
-  { t: "Lista única", d: "a Fernanda junta por fornecedor" },
-  { t: "Semana fechada", d: "fecha sozinha 7 dias depois do fim" },
-];
-function Etapas({ atual }: { atual: number }) {
-  return (
-    <ol className="cp-etapas" aria-label="Etapas da semana">
-      {ETAPAS.map((e, i) => (
-        <li key={e.t} className={i < atual ? "feita" : i === atual ? "atual" : ""} aria-current={i === atual ? "step" : undefined}>
-          <span className="cp-etapa-n" aria-hidden="true">{i < atual ? "✓" : i + 1}</span>
-          <span><b>{e.t}</b><small>{e.d}</small></span>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 // Situação da leitura automática do grupo (compras_analises, supabase/compras_continuo.sql)
 const ANALISE: Record<string, string> = { analisando: "analisando…", no_lote: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
   pulada: "já estava em revisão", falha: "a análise falhou" };
@@ -538,12 +515,9 @@ function Andamento({ semana }: { semana: Semana }) {
   const revisao = pessoas.filter((p) => situacao(daPessoa(p.id)) === "em_revisao").length;
   const semLista = pessoas.filter((p) => !daPessoa(p.id).length).length;
   const pct = pessoas.length ? Math.round((aprovadas / pessoas.length) * 100) : 0;
-  // Em que etapa a semana está: pedidos → lista sugerida → revisão → lista única → fechada
-  const etapa = semana.status === "fechada" ? 4 : aprovadas === pessoas.length && pessoas.length ? 3 : ativas.some((l) => l.status !== "aguardando") ? 2 : 0;
 
   return (
     <>
-      <Etapas atual={etapa} />
       <AumentoSemana semana={semana} />
       <div className="ip-numeros">
         <div className="ip-numero">
@@ -553,7 +527,7 @@ function Andamento({ semana }: { semana: Semana }) {
           <span className="pd-progresso" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
         </div>
         <div className="ip-numero"><span className="ip-rotulo">Em revisão</span><span className="ip-valor">{revisao}</span><span className="ip-var neutro">a pessoa confere e aprova</span></div>
-        <div className="ip-numero"><span className="ip-rotulo">Sem lista ainda</span><span className={semLista ? "ip-valor cf-alerta" : "ip-valor"}>{semLista}</span><span className="ip-var neutro">pedido no grupo até segunda</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Sem lista ainda</span><span className={semLista ? "ip-valor cf-alerta" : "ip-valor"}>{semLista}</span><span className="ip-var neutro">pedido no grupo COMPRAS</span></div>
         <div className="ip-numero"><span className="ip-rotulo">Leitura do grupo</span><span className="ip-valor">{Object.values(analises).filter((a) => a.status === "ok").length}</span><span className="ip-var neutro">listas sugeridas pelo Claude</span></div>
       </div>
       <div className="cp-unidades">
