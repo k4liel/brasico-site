@@ -436,3 +436,34 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
 .cp-mover-semana { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .cp-pessoas .cp-pessoa { grid-template-columns: 32px minmax(0, 1fr) auto auto; }
 .cp-pessoa-total { font-size: 13.5px; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Movimento da semana: % que recalcula todas as listas (05/11/2026) */
+.cp-aum { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 24px; align-items: center; margin: 0 0 16px; padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, var(--gold) 35%, var(--border)); border-radius: 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gold) 9%, var(--panel)) 0%, var(--panel) 60%); }
+.cp-aum-texto { display: flex; gap: 14px; align-items: flex-start; }
+.cp-aum-selo { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px;
+  font-family: var(--font-serif), Georgia, serif; font-size: 22px; font-weight: 600; color: #fff; background: var(--gold); }
+.cp-aum-texto h3 { margin: 0 0 4px; font-family: var(--font-serif), Georgia, serif; font-size: 18px; font-weight: 600; color: var(--strong); }
+.cp-aum-texto p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); max-width: 560px; }
+.cp-aum-texto p b { color: var(--strong); font-weight: 600; }
+.cp-aum-controle { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.cp-aum-atalhos { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: color-mix(in srgb, var(--soft) 70%, var(--panel)); border: 1px solid var(--soft-line); }
+.cp-aum-atalhos button { height: 34px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; box-shadow: none;
+  color: var(--muted); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.cp-aum-atalhos button:hover:not(:disabled) { background: var(--panel); color: var(--strong); filter: none; }
+.cp-aum-atalhos button.on { background: var(--gold); color: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.cp-aum-campo { display: inline-flex; align-items: center; gap: 4px; height: 42px; padding: 0 12px; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--border); }
+.cp-aum-campo:focus-within { border-color: var(--gold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 20%, transparent); }
+.cp-aum-campo input { width: 56px; padding: 0; border: 0; outline: 0; background: transparent; box-shadow: none; text-align: right;
+  font-size: 18px; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cp-aum-campo span { font-size: 16px; font-weight: 600; color: var(--muted); }
+.cp-aum-status { grid-column: 1 / -1; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; line-height: 1.5; color: var(--text);
+  background: var(--panel); border: 1px dashed var(--soft-line); }
+.cp-aum-status b { color: var(--strong); }
+@media (max-width: 760px) {
+  .cp-aum { grid-template-columns: 1fr; }
+  .cp-aum-controle { justify-content: flex-start; }
+  .cp-aum-atalhos { flex-wrap: wrap; }
+}

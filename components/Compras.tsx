@@ -104,7 +104,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
           <>
             <div className="cp-abas" role="tablist">
-              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista única e pedidos"], ["fornecedores", "Fornecedores"], ["avulsa", "Nota avulsa"],
+              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista Geral"], ["fornecedores", "Fornecedores"], ["avulsa", "Nota avulsa"],
                  ...(papel === "socio" ? [["pessoas", "Pessoas e acesso"]] : [])] as [Aba, string][]).map(([k, t]) => (
                 <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? "on" : ""} onClick={() => setAba(k)}>{t}</button>
               ))}
@@ -489,6 +489,7 @@ function Andamento({ semana }: { semana: Semana }) {
   const [aberta, setAberta] = useState<string | null>(null);
   const [analises, setAnalises] = useState<Record<string, { status: string; erro: string | null }>>({});
   const [sit, setSit] = useState<SitLista[]>([]);
+  const [versao, setVersao] = useState(0);
   const carregar = useCallback(async () => {
     const { data: sx } = await supabase.rpc("compras_listas_situacao", { p_semana: semana.id });
     setSit(((sx ?? []) as SitLista[]).map((x) => ({ ...x, total: Number(x.total) })));
@@ -518,7 +519,7 @@ function Andamento({ semana }: { semana: Semana }) {
 
   return (
     <>
-      <AumentoSemana semana={semana} />
+      <AumentoSemana semana={semana} onSalvo={() => { carregar(); setVersao((v) => v + 1); }} />
       <div className="ip-numeros">
         <div className="ip-numero">
           <span className="ip-rotulo">Listas aprovadas</span>
@@ -563,7 +564,7 @@ function Andamento({ semana }: { semana: Semana }) {
           );
         })}
       </div>
-      {aberta && <ListaDaPessoa semana={semana} pessoa={pessoas.find((p) => p.id === aberta)!} onFechar={() => setAberta(null)} />}
+      {aberta && <ListaDaPessoa key={`${aberta}-${versao}`} semana={semana} pessoa={pessoas.find((p) => p.id === aberta)!} onFechar={() => setAberta(null)} />}
     </>
   );
 }
@@ -585,25 +586,63 @@ function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: P
 }
 
 // % a mais da semana (feriado, evento): entra na projeção de cada item na próxima análise
-function AumentoSemana({ semana }: { semana: Semana }) {
+function AumentoSemana({ semana, onSalvo }: { semana: Semana; onSalvo: () => void }) {
   const supabase = useMemo(() => createClient(), []);
-  const [pct, setPct] = useState(String(semana.aumento_pct ?? 0));
-  const [msg, setMsg] = useState("");
-  useEffect(() => { setPct(String(semana.aumento_pct ?? 0)); }, [semana.id, semana.aumento_pct]);
-  async function salvar(ev: React.FormEvent) {
-    ev.preventDefault();
-    const { error } = await supabase.rpc("compras_semana_aumento", { p_semana: semana.id, p_pct: ler(pct) ?? 0 });
-    setMsg(error ? error.message : "Salvo. Vale para as próximas análises desta semana.");
+  const [salvo, setSalvo] = useState<number>(Number(semana.aumento_pct ?? 0));
+  const [pct, setPct] = useState(String(semana.aumento_pct ?? 0).replace(".", ","));
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState("");
+  const [res, setRes] = useState<{ pct: number; itens: number; listas: number; total_antes: number; total_depois: number } | null>(null);
+  // lê o % salvo da semana (pode ter mudado depois que a página abriu)
+  useEffect(() => {
+    setRes(null);
+    supabase.from("compras_semanas").select("aumento_pct").eq("id", semana.id).single().then(({ data }) => {
+      const v = Number(data?.aumento_pct ?? 0);
+      setSalvo(v); setPct(String(v).replace(".", ","));
+    });
+  }, [supabase, semana.id]);
+  async function aplicar(valor: number) {
+    setErro(""); setOcupado(true);
+    const { data, error } = await supabase.rpc("compras_semana_aumento", { p_semana: semana.id, p_pct: valor });
+    setOcupado(false);
+    if (error) return setErro(error.message);
+    setSalvo(valor); setPct(String(valor).replace(".", ","));
+    setRes(data as typeof res);
+    onSalvo();
   }
   if (semana.status !== "aberta") return null;
+  const digitado = ler(pct) ?? 0;
+  const mudou = digitado !== salvo;
+  const ATALHOS = [0, 10, 20, 30, 50];
+  const sinal = (v: number) => (v > 0 ? `+${num(v)}%` : `${num(v)}%`);
   return (
-    <form className="cp-aumento" onSubmit={salvar}>
-      <label>Aumento da semana (feriado, evento)
-        <span><input inputMode="decimal" value={pct} onChange={(v) => setPct(v.target.value)} aria-label="Aumento da semana em %" />%</span>
-      </label>
-      <button className="ghost small">Salvar</button>
-      <small className="muted">{msg || "A projeção de cada item é a média das últimas 4 semanas mais esta porcentagem."}</small>
-    </form>
+    <section className="cp-aum">
+      <div className="cp-aum-texto">
+        <span className="cp-aum-selo" aria-hidden="true">%</span>
+        <div>
+          <h3>Movimento da semana</h3>
+          <p>Feriado, evento ou casa cheia? Coloque quanto a mais (ou a menos) vai precisar. Ao salvar, <b>todas as listas da semana são recalculadas na hora</b>: sugestão, quantidade a pedir e totais.</p>
+        </div>
+      </div>
+      <form className="cp-aum-controle" onSubmit={(ev) => { ev.preventDefault(); aplicar(digitado); }}>
+        <div className="cp-aum-atalhos" role="group" aria-label="Atalhos de porcentagem">
+          {ATALHOS.map((v) => (
+            <button key={v} type="button" className={salvo === v && !mudou ? "on" : ""} disabled={ocupado} onClick={() => aplicar(v)}>{v === 0 ? "Normal" : `+${v}%`}</button>
+          ))}
+        </div>
+        <label className="cp-aum-campo">
+          <input inputMode="decimal" value={pct} onChange={(v) => setPct(v.target.value)} aria-label="Porcentagem da semana" />
+          <span aria-hidden="true">%</span>
+        </label>
+        <button className="small" disabled={ocupado || !mudou}>{ocupado ? "Recalculando…" : "Salvar e recalcular"}</button>
+      </form>
+      <div className="cp-aum-status" role="status">
+        {erro ? <span className="tv-alerta">{erro}</span>
+          : ocupado ? <span>Recalculando as listas…</span>
+          : res ? <span><b>{sinal(res.pct)} aplicado.</b> {res.itens} itens recalculados em {res.listas} {res.listas === 1 ? "lista" : "listas"} · total {brl(res.total_antes)} → <b>{brl(res.total_depois)}</b>. O que cada pessoa já tinha mudado no Pedir ficou como estava.</span>
+          : <span>Agora: <b>{salvo === 0 ? "semana normal" : `${sinal(salvo)} sobre a média`}</b>. Itens com pedido já feito ao fornecedor não mudam.</span>}
+      </div>
+    </section>
   );
 }
 
@@ -639,7 +678,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
   useEffect(() => {
     supabase.from("compras_fornecedores").select("*").eq("ativo", true).then(({ data }) => setCadastro((data ?? []) as Forn[]));
   }, [supabase]);
-  // o fornecedor da lista única no cadastro: pela razão social, pelo nome ou por um apelido
+  // o fornecedor da lista geral no cadastro: pela razão social, pelo nome ou por um apelido
   const doCadastro = (nome: string) => {
     const n = nome.trim().toUpperCase();
     return cadastro.find((f) => (f.razao_social ?? "").toUpperCase() === n || f.nome.toUpperCase() === n || f.apelidos.some((a) => a.toUpperCase() === n));
@@ -712,7 +751,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
     });
   const comItens = empresas.filter((x) => x.itens.length);
   const nPedidos = comItens.reduce((s, x) => s + x.grupos.filter((g) => g.itens.length).length, 0);
-  // Opções do select de fornecedor: todos do cadastro. Se o fornecedor já está na lista única com o nome da nota,
+  // Opções do select de fornecedor: todos do cadastro. Se o fornecedor já está na lista geral com o nome da nota,
   // a opção usa esse nome, para o item cair no mesmo pedido (e não abrir um segundo com outro nome).
   const opcoesForn = cadastro.map((c) => ({ nome: c.nome, valor: vivas.find((l) => doCadastro(l.fornecedor)?.id === c.id)?.fornecedor ?? c.nome }))
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -735,14 +774,14 @@ function ListaUnica({ semana }: { semana: Semana }) {
   return (
     <section className="cp-final">
       <div className="ip-numeros no-print">
-        <div className="ip-numero"><span className="ip-rotulo">Itens</span><span className="ip-valor">{vivas.length}</span><span className="ip-var neutro">na lista única</span></div>
+        <div className="ip-numero"><span className="ip-rotulo">Itens</span><span className="ip-valor">{vivas.length}</span><span className="ip-var neutro">na lista geral</span></div>
         <div className="ip-numero"><span className="ip-rotulo">Empresas</span><span className="ip-valor">{comItens.length}</span><span className="ip-var neutro">CNPJs que vão comprar</span></div>
         <div className="ip-numero"><span className="ip-rotulo">Pedidos</span><span className="ip-valor">{nPedidos}</span><span className="ip-var neutro">um por empresa e fornecedor</span></div>
         <div className="ip-numero"><span className="ip-rotulo">Total estimado</span><span className="ip-valor">{brl(total)}</span><span className="ip-var neutro">semana {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)} · {aberta ? "aberta" : "fechada"}</span></div>
       </div>
       <div className="es-bloco-cabeca no-print cp-final-acoes">
         <div>
-          <h2>Lista única por empresa</h2>
+          <h2>Lista Geral por empresa</h2>
           {aberta && vivas.length > 0 && <p className="muted cp-dica">Para mudar um item de empresa ou de fornecedor, arraste-o pela alça <b>⠿</b> ou use <b>Mover</b>. O PDF de cada pedido vai para o fornecedor sem preços.</p>}
         </div>
         <div className="nf-acoes">
@@ -895,7 +934,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
           <input value={novo.qtd} onChange={(v) => setNovo({ ...novo, qtd: v.target.value })} inputMode="decimal" placeholder="Qtd." aria-label="Quantidade" />
           <input value={novo.unidade} onChange={(v) => setNovo({ ...novo, unidade: v.target.value })} placeholder="Unid." aria-label="Unidade" />
           <input value={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v.target.value })} inputMode="decimal" placeholder="Preço unit." aria-label="Preço unitário" />
-          <button className="ghost small">Incluir na lista única</button>
+          <button className="ghost small">Incluir na lista geral</button>
         </form>
       )}
       <datalist id="cp-fornecedores">{fornecedoresConhecidos.map((f) => <option key={f} value={f} />)}</datalist>
@@ -903,7 +942,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
   );
 }
 
-// Painel "Mover" de um item da lista única: escolhe a empresa e o fornecedor
+// Painel "Mover" de um item da lista geral: escolhe a empresa e o fornecedor
 function MoverItem({ item, onMover, onCancelar }: { item: Final; fornecedores: string[]; onMover: (empresa: string, fornecedor: string) => void; onCancelar: () => void }) {
   const [empresa, setEmpresa] = useState(item.empresa);
   const [fornecedor, setFornecedor] = useState(item.fornecedor);
@@ -970,7 +1009,7 @@ function AvisosGestor({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => 
       {avisos.map((a) => (
         <div key={a.id} className={a.aprovada ? "cp-aviso aprovada" : "cp-aviso"}>
           <span>{a.t}</span>
-          <button className="ghost small" onClick={() => irPara(a.aprovada ? "final" : "andamento")}>{a.aprovada ? "Lista única" : "Ver"}</button>
+          <button className="ghost small" onClick={() => irPara(a.aprovada ? "final" : "andamento")}>{a.aprovada ? "Lista Geral" : "Ver"}</button>
         </div>
       ))}
     </div>
@@ -1021,14 +1060,14 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
   const etapas = [
     { t: "Pedidos no grupo", v: `${d.listas.com_lista}/${d.listas.pessoas}`, p: pct(d.listas.com_lista, d.listas.pessoas), d: "pessoas que já pediram" },
     { t: "Aprovação", v: `${d.listas.pessoas_tudo_aprovado}/${d.listas.com_lista}`, p: pct(d.listas.pessoas_tudo_aprovado, d.listas.com_lista), d: "aprovaram todas as listas" },
-    { t: "Lista única", v: fs.length ? `${fs.length}` : "—", p: fs.length ? 100 : 0, d: fs.length ? "fornecedores" : "ainda não juntada" },
+    { t: "Lista Geral", v: fs.length ? `${fs.length}` : "—", p: fs.length ? 100 : 0, d: fs.length ? "fornecedores" : "ainda não juntada" },
     { t: "Pedidos feitos", v: `${fs.length - aPedir.length}/${fs.length || 0}`, p: pct(fs.length - aPedir.length, fs.length), d: "fornecedores com pedido" },
     { t: "Recebido", v: `${recebidos.length}/${fs.length || 0}`, p: pct(recebidos.length, fs.length), d: "entregas conferidas" },
   ];
   const tarefas: { t: string; d: string; tom: "aviso" | "acao" | "info"; acao?: [string, Aba] }[] = [];
   if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ tom: "info", t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda não pediram`, d: "o pedido é feito no grupo COMPRAS" });
   if (d.pendentes.length) tarefas.push({ tom: "aviso", t: `${d.pendentes.length} pessoas ainda não aprovaram tudo`, d: d.pendentes.map((p) => `${p.pessoa} (${p.aprovadas} de ${p.listas})`).join(" · "), acao: ["Ver as listas", "andamento"] });
-  if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ tom: "acao", t: "Juntar as listas aprovadas", d: "monta a lista única, separada por fornecedor", acao: ["Abrir a lista única", "final"] });
+  if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ tom: "acao", t: "Juntar as listas aprovadas", d: "monta a lista geral, separada por fornecedor", acao: ["Abrir a lista geral", "final"] });
   if (aPedir.length) tarefas.push({ tom: "acao", t: `Fazer o pedido a ${aPedir.length} ${aPedir.length === 1 ? "fornecedor" : "fornecedores"}`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
   if (esperando.length) tarefas.push({ tom: "info", t: `Esperando a entrega de ${esperando.length}`, d: esperando.map((f) => f.fornecedor).join(" · "), acao: ["Marcar recebido", "final"] });
   if (d.itens.baixa) tarefas.push({ tom: "aviso", t: `${d.itens.baixa} itens sem produto nas notas`, d: "a análise não achou compra parecida: confira fornecedor e preço", acao: ["Ver as listas", "andamento"] });
@@ -1050,7 +1089,7 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
       <div className="cp-kpis">
         <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🧾</span><span className="cp-kpi-rotulo">Estimado nas listas</span><b>{brl(Number(d.itens.valor_todas))}</b><small>{brl(Number(d.itens.valor_aprovado))} já aprovado</small></div>
         <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📦</span><span className="cp-kpi-rotulo">Itens pedidos</span><b>{d.itens.total}</b><small className={d.itens.baixa ? "cf-alerta" : ""}>{d.itens.baixa} sem produto nas notas</small></div>
-        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🚚</span><span className="cp-kpi-rotulo">Lista única</span><b>{brl(totalFinal)}</b><small>{fs.length} fornecedores · {recebidos.length} recebidos</small></div>
+        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🚚</span><span className="cp-kpi-rotulo">Lista Geral</span><b>{brl(totalFinal)}</b><small>{fs.length} fornecedores · {recebidos.length} recebidos</small></div>
         <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📈</span><span className="cp-kpi-rotulo">Altas de preço</span><b>{d.alertas_preco.length}</b><small>itens 15% ou mais acima da média</small></div>
       </div>
 
