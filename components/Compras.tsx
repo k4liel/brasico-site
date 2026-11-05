@@ -110,7 +110,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
               ))}
             </div>
             <AvisosGestor semana={semana} irPara={setAba} />
-            {aba === "painel" && <Painel semana={semana} irPara={setAba} />}
+            {aba === "painel" && <Painel semana={semana} />}
             {aba === "andamento" && <Andamento semana={semana} />}
             {aba === "final" && <ListaUnica semana={semana} />}
             {aba === "fornecedores" && <Fornecedores />}
@@ -1027,7 +1027,7 @@ type PainelDados = {
   alertas_preco: { descricao: string; fornecedor: string; preco: number; media_anterior: number; alta_pct: number; unidade: string; emissao: string }[];
 };
 type Casa = { unidade: string; pessoas: number; com_lista: number; aprovadas: number; listas: number; valor: number };
-function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }) {
+function Painel({ semana }: { semana: Semana }) {
   const supabase = useMemo(() => createClient(), []);
   const [d, setD] = useState<PainelDados | null>(null);
   const [casas, setCasas] = useState<Casa[]>([]);
@@ -1051,7 +1051,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
 
   const fs = d.fornecedores;
   const aPedir = fs.filter((f) => f.status === "a_pedir");
-  const esperando = fs.filter((f) => f.status === "pedido");
   const recebidos = fs.filter((f) => f.status === "recebido");
   const totalFinal = fs.reduce((s, f) => s + Number(f.valor ?? 0), 0);
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
@@ -1064,14 +1063,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
     { t: "Pedidos feitos", v: `${fs.length - aPedir.length}/${fs.length || 0}`, p: pct(fs.length - aPedir.length, fs.length), d: "fornecedores com pedido" },
     { t: "Recebido", v: `${recebidos.length}/${fs.length || 0}`, p: pct(recebidos.length, fs.length), d: "entregas conferidas" },
   ];
-  const tarefas: { t: string; d: string; tom: "aviso" | "acao" | "info"; acao?: [string, Aba] }[] = [];
-  if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ tom: "info", t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda não pediram`, d: "o pedido é feito no grupo COMPRAS" });
-  if (d.pendentes.length) tarefas.push({ tom: "aviso", t: `${d.pendentes.length} pessoas ainda não aprovaram tudo`, d: d.pendentes.map((p) => `${p.pessoa} (${p.aprovadas} de ${p.listas})`).join(" · "), acao: ["Ver as listas", "andamento"] });
-  if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ tom: "acao", t: "Juntar as listas aprovadas", d: "monta a lista geral, separada por fornecedor", acao: ["Abrir a lista geral", "final"] });
-  if (aPedir.length) tarefas.push({ tom: "acao", t: `Fazer o pedido a ${aPedir.length} ${aPedir.length === 1 ? "fornecedor" : "fornecedores"}`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
-  if (esperando.length) tarefas.push({ tom: "info", t: `Esperando a entrega de ${esperando.length}`, d: esperando.map((f) => f.fornecedor).join(" · "), acao: ["Marcar recebido", "final"] });
-  if (d.itens.baixa) tarefas.push({ tom: "aviso", t: `${d.itens.baixa} itens sem produto nas notas`, d: "a análise não achou compra parecida: confira fornecedor e preço", acao: ["Ver as listas", "andamento"] });
-
   return (
     <section className="cp-painel">
       <ol className="cp-trilha" aria-label="Andamento da semana">
@@ -1090,23 +1081,8 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
         <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🧾</span><span className="cp-kpi-rotulo">Estimado nas listas</span><b>{brl(Number(d.itens.valor_todas))}</b><small>{brl(Number(d.itens.valor_aprovado))} já aprovado</small></div>
         <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📦</span><span className="cp-kpi-rotulo">Itens pedidos</span><b>{d.itens.total}</b><small className={d.itens.baixa ? "cf-alerta" : ""}>{d.itens.baixa} sem produto nas notas</small></div>
         <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🚚</span><span className="cp-kpi-rotulo">Lista Geral</span><b>{brl(totalFinal)}</b><small>{fs.length} fornecedores · {recebidos.length} recebidos</small></div>
-        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📈</span><span className="cp-kpi-rotulo">Altas de preço</span><b>{d.alertas_preco.length}</b><small>itens 15% ou mais acima da média</small></div>
       </div>
 
-      <div className="cp-painel-grade">
-        <section className="av-bloco">
-          <h2>O que fazer agora</h2>
-          {!tarefas.length ? <p className="es-tudo-certo">Tudo em dia nesta semana.</p> : (
-            <ol className="cp-tarefas">
-              {tarefas.map((x) => (
-                <li key={x.t} className={`cp-tarefa t-${x.tom}`}>
-                  <span><b>{x.t}</b><small>{x.d}</small></span>
-                  {x.acao && <button className={x.tom === "acao" ? "small" : "ghost small"} onClick={() => irPara(x.acao![1])}>{x.acao[0]}</button>}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
         <section className="av-bloco">
           <h2>Por casa</h2>
           <div className="cp-casas">
@@ -1123,7 +1099,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
             })}
           </div>
         </section>
-      </div>
 
       {fs.length > 0 && (
         <section className="av-bloco">
@@ -1142,19 +1117,6 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
         </section>
       )}
 
-      <section className="av-bloco">
-        <h2>Altas de preço nas notas</h2>
-        {!d.alertas_preco.length ? <p className="muted">Nenhuma alta de 15% ou mais nos últimos 14 dias.</p> : (
-          <ul className="cp-altas">
-            {d.alertas_preco.map((a, k) => (
-              <li key={k}>
-                <span><b>{a.descricao}</b><small>{a.fornecedor} · {new Date(a.emissao).toLocaleDateString("pt-BR")}</small></span>
-                <span className="n"><b className="cf-alerta">+{num(a.alta_pct)}%</b><small>{brl(a.preco)} / {a.unidade} · média {brl(a.media_anterior)}</small></span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </section>
   );
 }
