@@ -80,7 +80,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
       <div>
         <span className="es-sobre">Operação · Compras</span>
         <h1>{gestor ? "Compras da semana" : `Sua lista · ${SETORES[eu?.setor ?? ""] ?? ""} · ${UNIDADES[eu?.unidade ?? ""] ?? ""}`}</h1>
-        <p>Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}. Pedidos no grupo até terça à noite; quando todos tiverem pedido, o setor de compras monta e libera a lista sugerida de cada pessoa.
+        <p>Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}. A semana vai de domingo a sábado: cada pedido do grupo COMPRAS entra na semana em que foi mandado e a lista aparece aqui em poucos minutos.
           {semana.status === "fechada" && " Esta semana já foi fechada."}</p>
       </div>
       {semanas.length > 1 && (
@@ -270,7 +270,7 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
         <Etapas atual={0} />
         <section className="av-bloco cp-vazio">
           <h2>Sua lista ainda não saiu</h2>
-          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS (texto, planilha, PDF ou foto) até terça à noite. Quando todos tiverem pedido, a lista sugerida é montada e aparece aqui para você revisar (você recebe um aviso nesta página).</p>
+          <p className="muted">Mande o pedido do seu setor no grupo COMPRAS (texto, planilha, PDF ou foto). Em poucos minutos a lista sugerida aparece aqui para você revisar (você recebe um aviso nesta página).</p>
         </section>
       </>
     );
@@ -1019,7 +1019,7 @@ function Painel({ semana, irPara }: { semana: Semana; irPara: (a: Aba) => void }
     { t: "Recebido", v: `${recebidos.length}/${fs.length || 0}`, p: pct(recebidos.length, fs.length), d: "entregas conferidas" },
   ];
   const tarefas: { t: string; d: string; tom: "aviso" | "acao" | "info"; acao?: [string, Aba] }[] = [];
-  if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ tom: "info", t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda não pediram`, d: "o pedido é feito no grupo COMPRAS até terça à noite" });
+  if (d.listas.com_lista < d.listas.pessoas) tarefas.push({ tom: "info", t: `${d.listas.pessoas - d.listas.com_lista} pessoas ainda não pediram`, d: "o pedido é feito no grupo COMPRAS" });
   if (d.pendentes.length) tarefas.push({ tom: "aviso", t: `${d.pendentes.length} pessoas ainda não aprovaram tudo`, d: d.pendentes.map((p) => `${p.pessoa} (${p.aprovadas} de ${p.listas})`).join(" · "), acao: ["Ver as listas", "andamento"] });
   if (d.listas.pessoas_tudo_aprovado > 0 && !fs.length) tarefas.push({ tom: "acao", t: "Juntar as listas aprovadas", d: "monta a lista única, separada por fornecedor", acao: ["Abrir a lista única", "final"] });
   if (aPedir.length) tarefas.push({ tom: "acao", t: `Fazer o pedido a ${aPedir.length} ${aPedir.length === 1 ? "fornecedor" : "fornecedores"}`, d: aPedir.map((f) => f.fornecedor).join(" · "), acao: ["Abrir os pedidos", "final"] });
