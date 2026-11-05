@@ -1032,6 +1032,17 @@ function Painel({ semana }: { semana: Semana }) {
   const [d, setD] = useState<PainelDados | null>(null);
   const [casas, setCasas] = useState<Casa[]>([]);
   const [erro, setErro] = useState("");
+  // nome do fornecedor como a equipe chama (cadastro), no lugar da razão social da nota
+  const [nomes, setNomes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    supabase.from("compras_fornecedores").select("nome,razao_social,apelidos").eq("ativo", true).then(({ data }) => {
+      const m: Record<string, string> = {};
+      for (const f of (data ?? []) as { nome: string; razao_social: string | null; apelidos: string[] | null }[]) {
+        for (const k of [f.razao_social, f.nome, ...(f.apelidos ?? [])]) if (k) m[k.trim().toUpperCase()] = f.nome;
+      }
+      setNomes(m);
+    });
+  }, [supabase]);
   const carregar = useCallback(() => {
     supabase.rpc("compras_painel", { p_semana: semana.id }).then(({ data, error }) => {
       if (error) setErro(error.message); else setD(data as PainelDados);
@@ -1049,74 +1060,115 @@ function Painel({ semana }: { semana: Semana }) {
   if (erro) return <p className="tv-alerta">{erro}</p>;
   if (!d) return <p className="muted">Carregando o painel…</p>;
 
-  const fs = d.fornecedores;
+  const fs = [...d.fornecedores].sort((a, b) => Number(b.valor) - Number(a.valor));
   const aPedir = fs.filter((f) => f.status === "a_pedir");
+  const pedidos = fs.filter((f) => f.status === "pedido");
   const recebidos = fs.filter((f) => f.status === "recebido");
-  const totalFinal = fs.reduce((s, f) => s + Number(f.valor ?? 0), 0);
+  const soma = (xs: typeof fs) => xs.reduce((t, f) => t + Number(f.valor ?? 0), 0);
+  const totalFinal = soma(fs);
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+  const todas = Number(d.itens.valor_todas), aprovado = Number(d.itens.valor_aprovado);
 
   // As cinco etapas da semana, cada uma com quanto já foi feito
   const etapas = [
-    { t: "Pedidos no grupo", v: `${d.listas.com_lista}/${d.listas.pessoas}`, p: pct(d.listas.com_lista, d.listas.pessoas), d: "pessoas que já pediram" },
-    { t: "Aprovação", v: `${d.listas.pessoas_tudo_aprovado}/${d.listas.com_lista}`, p: pct(d.listas.pessoas_tudo_aprovado, d.listas.com_lista), d: "aprovaram todas as listas" },
-    { t: "Lista Geral", v: fs.length ? `${fs.length}` : "—", p: fs.length ? 100 : 0, d: fs.length ? "fornecedores" : "ainda não juntada" },
-    { t: "Pedidos feitos", v: `${fs.length - aPedir.length}/${fs.length || 0}`, p: pct(fs.length - aPedir.length, fs.length), d: "fornecedores com pedido" },
-    { t: "Recebido", v: `${recebidos.length}/${fs.length || 0}`, p: pct(recebidos.length, fs.length), d: "entregas conferidas" },
+    { t: "Pedidos", v: `${d.listas.com_lista} de ${d.listas.pessoas}`, p: pct(d.listas.com_lista, d.listas.pessoas), d: "pessoas pediram" },
+    { t: "Aprovação", v: `${d.listas.pessoas_tudo_aprovado} de ${d.listas.com_lista}`, p: pct(d.listas.pessoas_tudo_aprovado, d.listas.com_lista), d: "aprovaram tudo" },
+    { t: "Lista Geral", v: fs.length ? `${fs.length}` : "—", p: fs.length ? 100 : 0, d: fs.length ? "fornecedores" : "ainda vazia" },
+    { t: "Pedidos feitos", v: `${fs.length - aPedir.length} de ${fs.length}`, p: pct(fs.length - aPedir.length, fs.length), d: "fornecedores" },
+    { t: "Recebido", v: `${recebidos.length} de ${fs.length}`, p: pct(recebidos.length, fs.length), d: "entregas" },
+  ];
+  const COLUNAS: { k: Pedido["status"]; t: string; xs: typeof fs }[] = [
+    { k: "a_pedir", t: "A pedir", xs: aPedir }, { k: "pedido", t: "Pedido feito", xs: pedidos }, { k: "recebido", t: "Recebido", xs: recebidos },
   ];
   return (
-    <section className="cp-painel">
-      <ol className="cp-trilha" aria-label="Andamento da semana">
+    <section className="pn">
+      {/* Resumo da semana */}
+      <div className="pn-topo">
+        <div className="pn-destaque">
+          <span className="pn-eyebrow">Semana de {diaSemana(semana.inicio)} a {fimSemana(semana.inicio)}</span>
+          <span className="pn-rotulo">Estimado nas listas</span>
+          <b className="pn-valor">{brl(todas)}</b>
+          <span className="pn-barra-valor" aria-hidden="true"><span style={{ width: `${pct(aprovado, todas)}%` }} /></span>
+          <span className="pn-legenda"><i className="ok" /> {brl(aprovado)} aprovado <i /> {brl(Math.max(todas - aprovado, 0))} em revisão</span>
+        </div>
+        <div className="pn-mini">
+          <div><span className="pn-rotulo">Itens nas listas</span><b>{d.itens.total}</b>
+            <small className={d.itens.baixa ? "pn-alerta" : ""}>{d.itens.baixa ? `${d.itens.baixa} sem produto nas notas` : "todos ligados às notas"}</small></div>
+          <div><span className="pn-rotulo">Lista Geral</span><b>{brl(totalFinal)}</b><small>{fs.length} {fs.length === 1 ? "fornecedor" : "fornecedores"}</small></div>
+          <div><span className="pn-rotulo">Entregas</span><b>{recebidos.length}<small> de {fs.length}</small></b><small>{pedidos.length} aguardando chegar</small></div>
+        </div>
+      </div>
+
+      {/* Andamento */}
+      <ol className="pn-trilha" aria-label="Andamento da semana">
         {etapas.map((e, k) => (
           <li key={e.t} className={e.p >= 100 ? "feita" : e.p > 0 ? "andando" : ""}>
-            <span className="cp-trilha-n" aria-hidden="true">{e.p >= 100 ? "✓" : k + 1}</span>
-            <span className="cp-trilha-t">{e.t}</span>
-            <b className="cp-trilha-v">{e.v}</b>
-            <small>{e.d}</small>
-            <span className="cp-barra" aria-hidden="true"><span style={{ width: `${e.p}%` }} /></span>
+            <span className="pn-trilha-n" aria-hidden="true">{e.p >= 100 ? "✓" : k + 1}</span>
+            <span className="pn-trilha-txt"><span>{e.t}</span><b>{e.v}</b><small>{e.d}</small></span>
           </li>
         ))}
       </ol>
 
-      <div className="cp-kpis">
-        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🧾</span><span className="cp-kpi-rotulo">Estimado nas listas</span><b>{brl(Number(d.itens.valor_todas))}</b><small>{brl(Number(d.itens.valor_aprovado))} já aprovado</small></div>
-        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">📦</span><span className="cp-kpi-rotulo">Itens pedidos</span><b>{d.itens.total}</b><small className={d.itens.baixa ? "cf-alerta" : ""}>{d.itens.baixa} sem produto nas notas</small></div>
-        <div className="cp-kpi"><span className="cp-kpi-icone" aria-hidden="true">🚚</span><span className="cp-kpi-rotulo">Lista Geral</span><b>{brl(totalFinal)}</b><small>{fs.length} fornecedores · {recebidos.length} recebidos</small></div>
-      </div>
-
-        <section className="av-bloco">
-          <h2>Por casa</h2>
-          <div className="cp-casas">
+      <div className="pn-duas">
+        {/* Por casa */}
+        <section className="pn-bloco">
+          <header><h2>Por casa</h2><small>aprovação e valor das listas</small></header>
+          <ul className="pn-casas">
             {casas.map((c) => {
               const p = pct(c.aprovadas, c.com_lista || c.pessoas);
               return (
-                <div key={c.unidade} className="cp-casa">
-                  <span className="cp-anel" style={{ ["--p" as string]: `${p}` }} aria-label={`${p}% aprovado`}><b>{p}%</b></span>
-                  <span className="cp-casa-txt"><b>{UNIDADES[c.unidade] ?? c.unidade}</b>
-                    <small>{c.aprovadas} de {c.com_lista} aprovaram · {c.listas} listas</small>
-                    <small>{brl(Number(c.valor))} estimado</small></span>
-                </div>
+                <li key={c.unidade}>
+                  <span className="pn-casa-nome"><b>{UNIDADES[c.unidade] ?? c.unidade}</b><small>{c.com_lista} de {c.pessoas} pediram · {c.listas} {c.listas === 1 ? "lista" : "listas"}</small></span>
+                  <span className="pn-casa-valor">{brl(Number(c.valor))}</span>
+                  <span className="pn-casa-barra" aria-label={`${p}% aprovado`}><span style={{ width: `${p}%` }} /></span>
+                  <small className="pn-casa-pct">{c.aprovadas} de {c.com_lista} aprovaram</small>
+                </li>
               );
             })}
-          </div>
+          </ul>
         </section>
 
+        {/* Quem ainda não aprovou */}
+        <section className="pn-bloco">
+          <header><h2>Falta aprovar</h2><small>{d.pendentes.length ? `${d.pendentes.length} ${d.pendentes.length === 1 ? "pessoa" : "pessoas"}` : "ninguém"}</small></header>
+          {!d.pendentes.length ? <p className="pn-vazio">Todo mundo aprovou as listas desta semana. ✓</p> : (
+            <ul className="pn-pessoas">
+              {d.pendentes.map((x) => (
+                <li key={x.pessoa}>
+                  <span className="pn-avatar" aria-hidden="true">{x.pessoa.slice(0, 1)}</span>
+                  <span className="pn-pessoa-nome"><b>{x.pessoa}</b><small>{UNIDADES[x.unidade] ?? x.unidade} · {SETORES[x.setor] ?? x.setor}</small></span>
+                  <span className="pn-pessoa-qtd">{x.aprovadas} de {x.listas}<small>{x.listas === 1 ? "lista" : "listas"}</small></span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {/* Pedidos aos fornecedores, por situação */}
       {fs.length > 0 && (
-        <section className="av-bloco">
-          <h2>Pedidos por empresa e fornecedor</h2>
-          <div className="cp-forn-cards">
-            {fs.map((f) => (
-              <div key={`${f.empresa}|${f.fornecedor}`} className={`cp-forn-card ${f.status}`}>
-                <span className="cp-forn-card-nome">{f.fornecedor}</span>
-                <small className="cp-forn-card-emp">{empresaDe(f.empresa).nome}</small>
-                <b>{brl(Number(f.valor))}</b>
-                <small>{f.itens} itens · {PEDIDO[f.status]}{quando(f.status === "recebido" ? f.recebido_em : f.pedido_em) ? ` · ${quando(f.status === "recebido" ? f.recebido_em : f.pedido_em)}` : ""}</small>
-                {f.nota && <a href={`/api/notas/danfe/${f.nota}`} target="_blank" rel="noreferrer">Ver a nota</a>}
+        <section className="pn-bloco">
+          <header><h2>Pedidos aos fornecedores</h2><small>um por empresa e fornecedor · {brl(totalFinal)}</small></header>
+          <div className="pn-colunas">
+            {COLUNAS.map((c) => (
+              <div key={c.k} className={`pn-coluna ${c.k}`}>
+                <div className="pn-coluna-cab"><b>{c.t}</b><span>{c.xs.length}</span><small>{brl(soma(c.xs))}</small></div>
+                {!c.xs.length ? <p className="pn-vazio">Nenhum.</p> : (
+                  <ul>
+                    {c.xs.map((f) => (
+                      <li key={`${f.empresa}|${f.fornecedor}`}>
+                        <span className="pn-forn"><b title={f.fornecedor}>{nomes[f.fornecedor.trim().toUpperCase()] ?? f.fornecedor}</b>
+                          <small>{empresaDe(f.empresa).nome} · {f.itens} {f.itens === 1 ? "item" : "itens"}{quando(f.status === "recebido" ? f.recebido_em : f.pedido_em) ? ` · ${quando(f.status === "recebido" ? f.recebido_em : f.pedido_em)}` : ""}</small></span>
+                        <span className="pn-forn-valor">{brl(Number(f.valor))}{f.nota && <a href={`/api/notas/danfe/${f.nota}`} target="_blank" rel="noreferrer">nota</a>}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             ))}
           </div>
         </section>
       )}
-
     </section>
   );
 }
