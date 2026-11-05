@@ -37,6 +37,10 @@ type Resposta = { empresa_id: string; servico: string; pedido: Record<string, un
 type Certificado = { cnpj: string; validade: string | null };
 type Rotina = { id: string; nome: string; quando: string; ligada: boolean; ultima_vez: string | null };
 type Confirmar = { empresa: string; tipo: Tipo; parametros: Record<string, unknown>; titulo: string; custo: string };
+// Notas fiscais por CNPJ e mês (notas_meses e nfse_meses) e a leitura de cada CNPJ (notas_empresas e nfse_empresas)
+type NotaMes = { mes: string; empresa_cnpj: string; notas: number; canceladas: number; so_resumo: number; valor: number };
+type NfseMes = { mes: string; empresa_cnpj: string; papel: "emitida" | "tomada" | "intermediada"; notas: number; canceladas: number; valor: number; iss: number; iss_retido: number };
+type LeituraNotas = { cnpj: string; ativa: boolean; ultima_consulta: string | null; ultimo_status: string | null };
 type Alerta = { nivel: "erro" | "atencao" | "info"; empresa: string; titulo: string; detalhe: string; data?: string | null };
 
 // ---------- formatos (horário de Brasília) ----------
@@ -79,6 +83,10 @@ const GRUPOS: Record<string, string> = { operacao: "Operação", social: "Social
 type Leitura = {
   sit: Sitfis | null; sitEm: string | null; relatorio: Relatorio | null;
   parcelasAtraso: number; valorAtraso: number;
+  // Cada parcelamento com parcela em atraso (do relatório de situação fiscal) e as transações da PGFN com pendência
+  atrasos: { sistema: string; numero: string; parcelas: number; valor: number | null }[];
+  transacoesPendentes: string[];
+  ultimaParcelaPaga: { mes: string; em: string | null } | null;
   naoLidas: Mensagem[]; importantes: Mensagem[];
   pagamentos: Pagamento[]; pago12m: number; ultimoPagamento: string | null;
   dctf: { mes: string; entregue: boolean; resposta: Resposta }[];
@@ -108,6 +116,10 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
   const [acervo, setAcervo] = useState<Capitulo[]>([]);
   const [fontes, setFontes] = useState<Fonte[]>([]);
   const [levantamento, setLevantamento] = useState<Divida[]>([]);
+  const [notasMeses, setNotasMeses] = useState<NotaMes[]>([]);
+  const [nfseMeses, setNfseMeses] = useState<NfseMes[]>([]);
+  const [leiturasNfe, setLeiturasNfe] = useState<LeituraNotas[]>([]);
+  const [leiturasNfse, setLeiturasNfse] = useState<LeituraNotas[]>([]);
   const [aberta, setAberta] = useState<string | null>(null); // cnpj no painel
   const [aba, setAba] = useState("resumo");
   const [leitor, setLeitor] = useState<string | null>(null); // seção do acervo aberta
@@ -125,7 +137,8 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
 
   const carregar = useCallback(async () => {
     const desde = new Date(Date.now() - 400 * 86400000).toISOString();
-    const [fe, cf, ce, x, sf, m, rl, pg, rs, ch, ro, dv] = await Promise.all([
+    const seisMeses = new Date(Date.now() - 190 * 86400000).toISOString().slice(0, 7);
+    const [fe, cf, ce, x, sf, m, rl, pg, rs, ch, ro, dv, nm, sm, ln, ls] = await Promise.all([
       supabase.from("fiscal_empresas").select("cnpj,raiz,ordem,apelido,papel,grupo,unidades,observacao,razao,fantasia,situacao,municipio,uf,cnae,natureza,porte,capital,abertura,simples,simples_desde,simples_exclusao,regime,regime_ano,socios,socios_exterior,atualizado_em,desligada_em,desligada_motivo").order("ordem"),
       supabase.from("receita_empresas").select("id,producao_ligada,limite_diario_cobradas,orcamento_ciclo"),
       supabase.from("certificados").select("cnpj,validade"),
@@ -138,6 +151,11 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       supabase.from("receita_chamadas").select("id,execucao_id,empresa_id,id_servico,cobrada,custo,created_at").eq("ambiente", "producao").gte("created_at", desde).order("created_at", { ascending: false }).limit(5000),
       supabase.from("receita_rotinas").select("id,nome,quando,ligada,ultima_vez").order("ordem"),
       supabase.from("fiscal_dividas").select("id,cnpj,orgao,categoria,detalhe,competencia,vencimento,principal,multa,juros,total,situacao,sensivel,fonte,data_base").is("arquivado_em", null),
+      // Notas fiscais (só para quem vê as notas; sem acesso volta vazio)
+      supabase.from("notas_meses").select("mes,empresa_cnpj,notas,canceladas,so_resumo,valor").gte("mes", seisMeses),
+      supabase.from("nfse_meses").select("mes,empresa_cnpj,papel,notas,canceladas,valor,iss,iss_retido").gte("mes", seisMeses),
+      supabase.from("notas_empresas").select("cnpj,ativa,ultima_consulta,ultimo_status"),
+      supabase.from("nfse_empresas").select("cnpj,ativa,ultima_consulta,ultimo_status"),
     ]);
     const todas = (fe.data ?? []) as FiscalEmpresa[];
     setEmpresas(todas.filter((e) => !e.desligada_em));
@@ -152,6 +170,10 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
     setRespostas((rs.data ?? []) as Resposta[]);
     setChamadas(((ch.data ?? []) as Chamada[]).map((k) => ({ ...k, custo: Number(k.custo) })));
     setRotinas((ro.data ?? []) as Rotina[]);
+    setNotasMeses(((nm.data ?? []) as NotaMes[]).map((n) => ({ ...n, notas: Number(n.notas), canceladas: Number(n.canceladas), so_resumo: Number(n.so_resumo), valor: Number(n.valor) })));
+    setNfseMeses(((sm.data ?? []) as NfseMes[]).map((n) => ({ ...n, notas: Number(n.notas), canceladas: Number(n.canceladas), valor: Number(n.valor), iss: Number(n.iss), iss_retido: Number(n.iss_retido) })));
+    setLeiturasNfe((ln.data ?? []) as LeituraNotas[]);
+    setLeiturasNfse((ls.data ?? []) as LeituraNotas[]);
     // Guia do levantamento que já passou do vencimento conta como vencida até a Receita dizer o contrário
     const hoje = hojeSP();
     setLevantamento(((dv.data ?? []) as (Omit<Divida, "aoVivo" | "dataBase" | "id"> & { id: number; data_base: string })[]).map((d) => ({
@@ -217,10 +239,20 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       const ultSit = sitfis.find((s) => s.empresa_id === raiz && s.texto);
       const sit = ultSit?.texto ? lerSitfis(ultSit.texto) : null;
       let parcelasAtraso = 0, valorAtraso = 0;
+      const atrasos: Leitura["atrasos"] = [];
+      const transacoesPendentes: string[] = [];
       for (const s of sit?.secoes ?? []) {
         if (s.suspensa) continue;
         for (const m of s.texto.matchAll(/Parcelas em atraso:?\s*(\d+)/gi)) parcelasAtraso += Number(m[1]);
         for (const m of s.texto.matchAll(/Valor em Atraso:\s*([\d.]+,\d{2})/gi)) valorAtraso += Number(m[1].replace(/\./g, "").replace(",", "."));
+        if (!/Parcelamento/i.test(s.titulo)) continue;
+        if (/SISPAR/i.test(s.titulo)) { for (const m of s.texto.matchAll(/\b(\d{9})\b/g)) transacoesPendentes.push(m[1]); continue; }
+        // Parcelamento simplificado (SIEFPAR): número, parcelas e valor de cada um
+        for (const m of s.texto.matchAll(/Parcelamento:\s*([\d.-]+)\s+Parcelas em Atraso:\s*(\d+)(?:\s+Valor em Atraso:\s*([\d.]+,\d{2}))?/gi))
+          atrasos.push({ sistema: "Parcelamento simplificado", numero: m[1], parcelas: Number(m[2]), valor: m[3] ? Number(m[3].replace(/\./g, "").replace(",", ".")) : null });
+        // Parcelamento do Simples (PARCSN/PARCMEI): só a quantidade
+        const sn = /PARCSN|PARCMEI/i.test(s.titulo) ? s.texto.match(/Parcelas em atraso\s*(\d+)/i) : null;
+        if (sn) atrasos.push({ sistema: "Parcelamento do Simples", numero: "", parcelas: Number(sn[1]), valor: null });
       }
       const msgs = mensagens.filter((m) => m.empresa_id === raiz);
       const pags = pagamentos.filter((p) => p.empresa_id === raiz);
@@ -244,16 +276,19 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       const parcelamentos = resp.filter((r) => /PEDIDOSPARC/.test(r.servico))
         .flatMap((r) => ((r.dados?.parcelamentos as { numero: number; situacao: string; dataDoPedido: number; dataDaSituacao: number }[]) ?? [])
           .map((p) => ({ sistema: r.servico.split("/")[0], numero: String(p.numero), situacao: p.situacao, desde: yyyymmdd(p.dataDaSituacao), detalhe: undefined as string | undefined })));
-      const det = resp.find((r) => r.servico === "PARCSN/OBTERPARC164")?.dados as { numero?: number; consolidacaoOriginal?: { parcelaBasica?: number; quantidadeParcelas?: number } } | undefined;
+      const det = resp.find((r) => r.servico === "PARCSN/OBTERPARC164")?.dados as { numero?: number; consolidacaoOriginal?: { parcelaBasica?: number; quantidadeParcelas?: number }; demonstrativoPagamentos?: { mesDaParcela: number; dataDeArrecadacao?: number }[] } | undefined;
+      // Última parcela paga do parcelamento do Simples (demonstrativo de pagamentos)
+      const pagas = (det?.demonstrativoPagamentos ?? []).slice().sort((a, b) => String(b.mesDaParcela).localeCompare(String(a.mesDaParcela)));
+      const ultimaParcelaPaga = pagas[0] ? { mes: competencia(pagas[0].mesDaParcela), em: yyyymmdd(pagas[0].dataDeArrecadacao) } : null;
       if (det?.numero) {
         const p = parcelamentos.find((x) => x.sistema === "PARCSN" && x.numero === String(det.numero));
-        if (p && det.consolidacaoOriginal) p.detalhe = `${det.consolidacaoOriginal.quantidadeParcelas} parcelas de cerca de ${reais(det.consolidacaoOriginal.parcelaBasica)}`;
+        if (p && det.consolidacaoOriginal) p.detalhe = `${det.consolidacaoOriginal.quantidadeParcelas} parcelas de cerca de ${reais(det.consolidacaoOriginal.parcelaBasica)}${ultimaParcelaPaga ? ` · última parcela paga: ${ultimaParcelaPaga.mes}${ultimaParcelaPaga.em ? ` (em ${dia(ultimaParcelaPaga.em)})` : ""}` : ""}`;
       }
       const dte = (resp.find((r) => r.servico === "DTE/CONSULTASITUACAODTE111")?.dados?.statusEnquadramento as string) ?? null;
       const pags12 = pags.filter((p) => (p.data_arrecadacao ?? "") >= um);
       out.set(raiz, {
         sit, sitEm: ultSit?.created_at ?? null, relatorio: relatorios.find((r) => r.empresa_id === raiz) ?? null,
-        parcelasAtraso, valorAtraso,
+        parcelasAtraso, valorAtraso, atrasos, transacoesPendentes, ultimaParcelaPaga,
         naoLidas: msgs.filter((m) => !m.lida_na_receita),
         importantes: msgs.filter((m) => temas(m.assunto).some((t) => t.nivel === "erro")),
         pagamentos: pags, pago12m: pags12.reduce((s, p) => s + Number(p.valor_total ?? 0), 0), ultimoPagamento: pags[0]?.data_arrecadacao ?? null,
@@ -274,7 +309,21 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       const raiz = matriz(r0)?.cnpj ?? r0;
       const nomeR = nome(r0);
       if (l.sit?.certidao?.vencida) a.push({ nivel: "erro", empresa: raiz, titulo: `Certidão federal vencida desde ${dia(l.sit.certidao.validade)}`, detalhe: `${nomeR} · a última era ${l.sit.certidao.tipo.toLowerCase()}` });
-      if (l.parcelasAtraso) a.push({ nivel: "erro", empresa: raiz, titulo: `${plural(l.parcelasAtraso, "parcela", "parcelas")} de parcelamento em atraso`, detalhe: `${nomeR}${l.valorAtraso ? ` · ${reais(l.valorAtraso)} em atraso nos parcelamentos simplificados` : ""} · pela situação fiscal de ${l.sitEm ? dataHora(l.sitEm) : "—"}` });
+      // Risco de rescisão: a lei rescinde o parcelamento com 3 parcelas em atraso, seguidas ou não
+      // (Lei 10.522/2002, art. 14-B, no simplificado; Resolução CGSN 140/2018, art. 55, no do Simples)
+      for (const p of l.atrasos) {
+        const ultima = p.sistema === "Parcelamento do Simples" && l.ultimaParcelaPaga ? ` · última parcela paga: ${l.ultimaParcelaPaga.mes}${l.ultimaParcelaPaga.em ? ` (em ${dia(l.ultimaParcelaPaga.em)})` : ""}` : "";
+        const quem = `${nomeR} · ${p.sistema}${p.numero ? ` nº ${p.numero}` : ""}${p.valor ? ` · ${reais(p.valor)} em atraso` : ""}${ultima}`;
+        a.push(p.parcelas >= 3
+          ? { nivel: "erro", empresa: raiz, titulo: `Parcelamento pode ser rescindido: ${plural(p.parcelas, "parcela", "parcelas")} em atraso`, detalhe: `${quem} · a lei rescinde com 3 em atraso; pagar as atrasadas evita perder o parcelamento` }
+          : { nivel: "erro", empresa: raiz, titulo: `${plural(p.parcelas, "parcela", "parcelas")} em atraso no parcelamento`, detalhe: `${quem} · com 3 em atraso o parcelamento é rescindido` });
+      }
+      if (l.transacoesPendentes.length)
+        a.push({ nivel: "atencao", empresa: raiz, titulo: `Transação na PGFN com pendência (${plural(l.transacoesPendentes.length, "conta", "contas")})`, detalhe: `${nomeR} · conta ${l.transacoesPendentes.join(", ")} · conferir as parcelas no Regularize; parcela em atraso pode rescindir a transação` });
+      // Simples Nacional recente com débito sem pagar nem parcelar: a Receita pode excluir a empresa do Simples
+      const simplesAberto = (l.sit?.debitos ?? []).filter((d) => /SIMPLES/i.test(d.receita) && Number(d.periodo.slice(-4)) >= Number(hoje.slice(0, 4)) - 1);
+      if (simplesAberto.length)
+        a.push({ nivel: "erro", empresa: raiz, titulo: "Simples Nacional em aberto: risco de exclusão do Simples", detalhe: `${nomeR} · ${plural(simplesAberto.length, "mês", "meses")} sem pagar (${simplesAberto.map((d) => d.periodo).join(", ")}) · ${reais(simplesAberto.reduce((s, d) => s + d.total, 0))} · débito sem pagar nem parcelar pode levar à exclusão de ofício` });
       if (l.sit && l.sit.totalDebitos > 0) a.push({ nivel: "atencao", empresa: raiz, titulo: `${reais(l.sit.totalDebitos)} em débitos em aberto na Receita`, detalhe: `${nomeR} · ${plural(l.sit.debitos.length, "débito", "débitos")}, o mais antigo de ${l.sit.debitos.map((d) => d.periodo).sort((x, y) => x.slice(-4) + x.slice(0, 2) < y.slice(-4) + y.slice(0, 2) ? -1 : 1)[0] ?? "—"}` });
       for (const p of l.parcelamentos.filter((p) => /rescis/i.test(p.situacao) && p.desde && diasEntre(p.desde, hoje) < 120))
         a.push({ nivel: "erro", empresa: raiz, titulo: `${p.sistema} nº ${p.numero} encerrado por rescisão`, detalhe: `${nomeR} · em ${dia(p.desde)}`, data: p.desde });
@@ -410,7 +459,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
                     const e = empresas.find((y) => y.cnpj === x.empresa);
                     return (
                       <li key={i} className={`fx-alerta-item ${x.nivel}`}>
-                        <button onClick={() => e && abrir(e.cnpj, /caixa postal/.test(x.detalhe) ? "mensagens" : /débito|parcela|certid/i.test(x.titulo) ? "debitos" : "resumo")}>
+                        <button onClick={() => e && abrir(e.cnpj, /caixa postal/.test(x.detalhe) ? "mensagens" : /débito|parcela|certid|simples|transação/i.test(x.titulo) ? "debitos" : "resumo")}>
                           <span className="fx-marca" aria-hidden="true" />
                           <span className="fx-alerta-texto"><strong>{x.titulo}</strong><span>{x.detalhe}</span></span>
                           <span className="fx-seta" aria-hidden="true">›</span>
@@ -524,6 +573,12 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
             config={configs.find((c) => c.id === empresaAberta.raiz)} certs={certs} aba={aba} setAba={setAba}
             fechar={() => abrir(null)} gasto={gasto} ciclo={ciclo} rodando={rodando(empresaAberta.raiz)}
             pedir={pedir} abrirRelatorio={abrirRelatorio} abrirRecibo={abrirRecibo}
+            notas={{
+              nfe: notasMeses.filter((n) => n.empresa_cnpj.startsWith(empresaAberta.raiz)),
+              nfse: nfseMeses.filter((n) => n.empresa_cnpj.startsWith(empresaAberta.raiz)),
+              leiturasNfe: leiturasNfe.filter((n) => n.cnpj.startsWith(empresaAberta.raiz)),
+              leiturasNfse: leiturasNfse.filter((n) => n.cnpj.startsWith(empresaAberta.raiz)),
+            }}
           />
         )}
 
@@ -554,15 +609,25 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
 // ---------------------------------------------------------------------
 // Painel de uma empresa
 // ---------------------------------------------------------------------
-function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto, ciclo, rodando, pedir, abrirRelatorio, abrirRecibo }: {
+type NotasDaRaiz = { nfe: NotaMes[]; nfse: NfseMes[]; leiturasNfe: LeituraNotas[]; leiturasNfse: LeituraNotas[] };
+function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto, ciclo, rodando, pedir, abrirRelatorio, abrirRecibo, notas }: {
   e: FiscalEmpresa; l: Leitura | null; ligada: boolean; config?: Config; certs: Certificado[]; aba: string; setAba: (a: string) => void; fechar: () => void;
   gasto: (raiz: string | null, de: string, ate?: string) => number; ciclo: { inicio: string; fim: string }; rodando: boolean;
   pedir: (empresa: string, tipo: Tipo, p: Record<string, unknown>, titulo: string, custo: string) => void;
-  abrirRelatorio: (id: string) => void; abrirRecibo: (r: Resposta) => void;
+  abrirRelatorio: (id: string) => void; abrirRecibo: (r: Resposta) => void; notas: NotasDaRaiz;
 }) {
   const [aberta, setAberta] = useState<string | null>(null);
   const cert = certs.find((c) => c.cnpj === e.cnpj);
-  const abas = ligada && l ? [["resumo", "Resumo"], ["debitos", "Débitos"], ["mensagens", "Caixa postal"], ["declaracoes", "Declarações"], ["pagamentos", "Pagamentos"], ["cadastro", "Cadastro"]] : [["resumo", "Resumo"], ["cadastro", "Cadastro"]];
+  const temNotas = notas.nfe.length + notas.nfse.length + notas.leiturasNfe.length + notas.leiturasNfse.length > 0;
+  const abas = [
+    ["resumo", "Resumo"],
+    ...(ligada && l ? [["debitos", "Débitos"], ["mensagens", "Caixa postal"], ["declaracoes", "Declarações"], ["pagamentos", "Pagamentos"]] : []),
+    ...(temNotas ? [["notas", "Notas fiscais"]] : []),
+    ["cadastro", "Cadastro"],
+  ];
+  const mesAtual = hojeSP().slice(0, 7);
+  const nfeMes = notas.nfe.filter((n) => n.mes === mesAtual);
+  const nfseMes = (papel: NfseMes["papel"]) => notas.nfse.filter((n) => n.mes === mesAtual && n.papel === papel);
   const atual = abas.some(([id]) => id === aba) ? aba : "resumo";
   return (
     <Gaveta titulo={e.apelido} sub={`${cnpjFmt(e.cnpj)} · ${e.razao ?? ""}`} fechar={fechar}
@@ -581,6 +646,8 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
                 <div><dt>DTE (caixa postal vale como intimação)</dt><dd>{l.dte ?? "—"}</dd></div>
                 <div><dt>Certificado digital</dt><dd className={cert?.validade && diasEntre(hojeSP(), diaSP(cert.validade)) < 45 ? "fx-alerta" : ""}>{cert?.validade ? `vale até ${dia(diaSP(cert.validade))}` : "—"}</dd></div>
                 <div><dt>Gasto SERPRO no ciclo</dt><dd>{reais(gasto(e.raiz, ciclo.inicio))} de {reais(config?.orcamento_ciclo)}</dd></div>
+                {temNotas && <div><dt>NF-e recebidas no mês</dt><dd>{plural(nfeMes.reduce((x, n) => x + n.notas, 0), "nota", "notas")} · {reais(nfeMes.reduce((x, n) => x + n.valor, 0))}</dd></div>}
+                {temNotas && <div><dt>NFS-e emitidas no mês</dt><dd>{plural(nfseMes("emitida").reduce((x, n) => x + n.notas, 0), "nota", "notas")} · {reais(nfseMes("emitida").reduce((x, n) => x + n.valor, 0))}</dd></div>}
               </dl>
               <div className="fx-acoes">
                 <button className="botao-painel" disabled={rodando} onClick={() => pedir(e.raiz, "situacao_fiscal", {}, `Situação fiscal · ${e.apelido}`, "R$ 0,32")}>{rodando ? "Consultando…" : "Gerar situação fiscal de hoje"}</button>
@@ -628,6 +695,23 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
                 </div>
               ))}
               {l.sit.pgfnLimpo && <p className="es-tudo-certo">✓ Procuradoria (PGFN): nada inscrito em dívida ativa.</p>}
+            </>
+          )}
+          {(l.atrasos.length > 0 || l.transacoesPendentes.length > 0) && (
+            <>
+              <h3 className="fx-h3">Parcelamentos em risco</h3>
+              <ul className="fx-lista">
+                {l.atrasos.map((p, i) => (
+                  <li key={i}>
+                    <span><strong>{p.sistema}{p.numero ? ` nº ${p.numero}` : ""}</strong> · {plural(p.parcelas, "parcela", "parcelas")} em atraso{p.valor ? ` · ${reais(p.valor)}` : ""}
+                      <br /><span className="small muted">{p.parcelas >= 3 ? "Já pode ser rescindido: a lei rescinde com 3 parcelas em atraso, seguidas ou não." : `Com 3 em atraso é rescindido (faltam ${3 - p.parcelas}).`}</span></span>
+                    <span className={p.parcelas >= 3 ? "fx-tag perigo" : "fx-tag alerta"}>{p.parcelas >= 3 ? "risco de rescisão" : "atenção"}</span>
+                  </li>
+                ))}
+                {l.transacoesPendentes.length > 0 && (
+                  <li><span><strong>Transação na PGFN</strong> · conta {l.transacoesPendentes.join(", ")}<br /><span className="small muted">O relatório marca pendência: conferir as parcelas no Regularize.</span></span><span className="fx-tag alerta">PGFN</span></li>
+                )}
+              </ul>
             </>
           )}
           {l.parcelamentos.length > 0 && (
@@ -706,6 +790,8 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
         )
       )}
 
+      {atual === "notas" && <NotasFiscais e={e} notas={notas} />}
+
       {atual === "cadastro" && (
         <dl className="fx-kv">
           <div><dt>Razão social</dt><dd>{e.razao ?? "—"}</dd></div>
@@ -724,6 +810,58 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
         </dl>
       )}
     </Gaveta>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Notas fiscais da empresa (raiz): NF-e recebidas (SEFAZ) e NFS-e emitidas e tomadas (Portal Nacional)
+// ---------------------------------------------------------------------
+function NotasFiscais({ e, notas }: { e: FiscalEmpresa; notas: NotasDaRaiz }) {
+  const meses = [...new Set([...notas.nfe.map((n) => n.mes), ...notas.nfse.map((n) => n.mes)])].sort().reverse().slice(0, 6);
+  const nfe = (mes: string) => notas.nfe.filter((n) => n.mes === mes);
+  const nfse = (mes: string, papel: NfseMes["papel"]) => notas.nfse.filter((n) => n.mes === mes && n.papel === papel);
+  const soma = <T,>(l: T[], f: (x: T) => number) => l.reduce((x, n) => x + f(n), 0);
+  const cnpjs = [...new Set([...notas.leiturasNfe.map((x) => x.cnpj), ...notas.leiturasNfse.map((x) => x.cnpj)])].sort();
+  const leitura = (x: LeituraNotas | undefined) => !x ? "não lida" : !x.ativa ? "leitura desligada" : x.ultima_consulta ? `lida ${dataHora(x.ultima_consulta)}` : "ainda não lida";
+  const nomeCnpj = (c: string) => `${cnpjFmt(c)} · ${c.slice(8, 12) === "0001" ? "matriz" : `filial ${c.slice(8, 12)}`}`;
+  const resumo = notas.nfe.reduce((x, n) => x + n.so_resumo, 0);
+  return (
+    <>
+      <p className="muted small">
+        Notas de todos os CNPJs de {e.apelido} (matriz e filiais), lidas direto do governo com o certificado: NF-e na SEFAZ (Ambiente Nacional)
+        e NFS-e no Portal Nacional. Cada CNPJ é lido em separado. O detalhe de cada nota, com o PDF, fica na página Notas.
+      </p>
+      {meses.length === 0 ? <p className="muted">Nenhuma nota nos últimos 6 meses.</p> : (
+        <div className="tv-tabela-caixa"><table className="tv-tabela">
+          <thead><tr><th>Mês</th><th>NF-e recebidas (compras)</th><th>NFS-e emitidas (serviços prestados)</th><th>NFS-e tomadas (serviços contratados)</th></tr></thead>
+          <tbody>{meses.map((m) => {
+            const a = nfe(m), em = nfse(m, "emitida"), to = nfse(m, "tomada");
+            return (
+              <tr key={m}>
+                <td>{m.slice(5, 7)}/{m.slice(0, 4)}</td>
+                <td>{a.length ? <>{plural(soma(a, (n) => n.notas), "nota", "notas")} · {reais(soma(a, (n) => n.valor))}{soma(a, (n) => n.canceladas) ? <div className="muted small">{soma(a, (n) => n.canceladas)} cancelada(s)</div> : null}</> : <span className="muted">—</span>}</td>
+                <td>{em.length ? <>{plural(soma(em, (n) => n.notas), "nota", "notas")} · {reais(soma(em, (n) => n.valor))}<div className="muted small">ISS {reais(soma(em, (n) => n.iss))}</div></> : <span className="muted">—</span>}</td>
+                <td>{to.length ? <>{plural(soma(to, (n) => n.notas), "nota", "notas")} · {reais(soma(to, (n) => n.valor))}{soma(to, (n) => n.iss_retido) ? <div className="muted small">ISS retido {reais(soma(to, (n) => n.iss_retido))}</div> : null}</> : <span className="muted">—</span>}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      )}
+      {resumo > 0 && <p className="fx-nota">{plural(resumo, "NF-e ainda está", "NF-e ainda estão")} só em resumo (sem itens): a ciência da operação é pedida sozinha e a nota completa chega em seguida.</p>}
+      {cnpjs.length > 0 && (
+        <>
+          <h3 className="fx-h3">Leitura de cada CNPJ</h3>
+          <ul className="fx-lista">
+            {cnpjs.map((c) => (
+              <li key={c}>
+                <span><strong>{nomeCnpj(c)}</strong><br /><span className="small muted">NF-e (SEFAZ): {leitura(notas.leiturasNfe.find((x) => x.cnpj === c))} · NFS-e (Portal Nacional): {leitura(notas.leiturasNfse.find((x) => x.cnpj === c))}</span></span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="fx-acoes"><a className="botao-painel" href="/notas">Abrir a página Notas</a></div>
+    </>
   );
 }
 
@@ -820,9 +958,11 @@ function sitfisParaDividas(cnpj: string, sit: Sitfis, em: string): Divida[] {
     const tri = d.periodo.match(/^(\d)º TRIM\/(\d{4})$/i);
     const compet = /^\d{2}\/\d{4}$/.test(d.periodo) ? `${d.periodo.slice(3)}-${d.periodo.slice(0, 2)}` : tri ? `${tri[2]}-T${tri[1]}` : d.periodo;
     return {
-      ...base, id: `v${cnpj}d${i}`, orgao: "Receita Federal", categoria: c.categoria, sensivel: c.sensivel, detalhe: d.receita,
+      ...base, id: `v${cnpj}d${i}`, orgao: "Receita Federal", categoria: c.categoria, sensivel: c.sensivel,
+      // "A ANALISAR · a vencer": a Receita ainda está processando a guia do período (não conta como atraso)
+      detalhe: /ANALISAR/i.test(d.situacao) ? `${d.receita} · em análise na Receita` : d.receita,
       competencia: compet, vencimento: d.vencimento, principal: d.saldo, multa: d.multa, juros: d.juros, total: d.total,
-      situacao: d.vencimento < hoje ? "vencido" : "a_vencer",
+      situacao: /VENCER/i.test(d.situacao) || d.vencimento >= hoje ? "a_vencer" : "vencido",
     };
   });
   sit.secoes.forEach((s, k) => {

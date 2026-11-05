@@ -96,18 +96,32 @@ function lerDebitos(corpo: string[]): Debito[] {
   for (let i = 0; i < t.length - 3; i++) if ((ehPA(t[i]) || ehTrim(t[i])) && ehData(t[i + 1]) && ehValor(t[i + 2]) && ehValor(t[i + 3])) marcas.push(i);
   const out: Debito[] = [];
   let inicioDesc = 0;
-  marcas.forEach((m) => {
+  marcas.forEach((m, k) => {
     const trim = ehTrim(t[m]) && /^\dº$/.test(t[m - 1] ?? "");
     const cinco = ehValor(t[m + 4] ?? "") && ehValor(t[m + 5] ?? "") && ehValor(t[m + 6] ?? "");
     const fimValores = cinco ? m + 7 : m + 4;
+    // Débito "a analisar" vem com "Situação:" e a situação em várias linhas ("A ANALISAR-A" + "VENCER"),
+    // seguida de um novo cabeçalho da tabela antes do próximo débito
+    let situacao = t[fimValores] ?? "";
+    let fim = fimValores;
+    if (situacao === "Situação:") {
+      const proximo = k + 1 < marcas.length ? marcas[k + 1] : t.length;
+      const partes: string[] = [];
+      for (let j = fimValores + 1; j < proximo && !CABECALHO.has(t[j]) && !/^\d{4}-\d{2} - |^SIMPLES$/.test(t[j]); j++) { partes.push(t[j]); fim = j; }
+      situacao = partes.join(" ").replace(/-\s*A\s+VENCER/i, " · a vencer").trim();
+    }
     out.push({
-      receita: t.slice(inicioDesc, trim ? m - 1 : m).join(" ").replace(/\s+/g, " "),
+      receita: semCabecalho(t.slice(inicioDesc, trim ? m - 1 : m)),
       periodo: trim ? `${t[m - 1]} ${t[m]}` : t[m], vencimento: iso(t[m + 1]),
       original: valor(t[m + 2]), saldo: valor(t[m + 3]),
       multa: cinco ? valor(t[m + 4]) : 0, juros: cinco ? valor(t[m + 5]) : 0, total: cinco ? valor(t[m + 6]) : valor(t[m + 3]),
-      situacao: t[fimValores] ?? "",
+      situacao,
     });
-    inicioDesc = fimValores + 1;
+    inicioDesc = fim + 1;
   });
   return out;
 }
+
+// Palavras do cabeçalho da tabela de débitos, que a Receita repete no meio da lista
+const CABECALHO = new Set(["Receita", "PA/Exerc.", "Dt.", "Vcto", "Vl. Original", "Sdo. Devedor", "Multa", "Juros", "Sdo. Dev. Cons.", "Situação"]);
+const semCabecalho = (partes: string[]) => partes.filter((p) => !CABECALHO.has(p)).join(" ").replace(/\s+/g, " ").trim();
