@@ -551,7 +551,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
               <div className="fx-atalhos">
                 {[
                   { id: "acessos", t: "O que temos e o que falta", d: `${fontes.filter((f) => f.situacao === "temos").length} fontes ligadas · ${fontes.filter((f) => f.situacao !== "temos").length} por ligar` },
-                  { id: "dividas", t: "Levantamento de dívidas e plano", d: "fotografia de 20/10/2026 e o plano de pagamento" },
+                  { id: "dividas", t: "Levantamento de dívidas e plano", d: "levantamento de 20/10, PERSE e parcelamentos em risco (05/11) e o plano" },
                   { id: "empresas", t: "Mapa societário e organograma", d: "quem é sócio de quem e as obrigações de cada um" },
                   { id: "mapa", t: "Órgãos e obrigações", d: "Receita, eSocial, notas, Estado, prefeituras, certidões, bancos" },
                   { id: "calendario", t: "Calendário fiscal", d: "os prazos de cada mês" },
@@ -590,7 +590,7 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
             ) : leitor === "acessos" ? (
               <Acessos fontes={fontes} />
             ) : (
-              <Acervo capitulos={acervo.filter((c) => c.secao === leitor)} aviso={leitor === "dividas" ? "Levantamento de 20/10/2026, feito à mão. Os débitos de hoje estão em cada empresa, lidos do relatório oficial da Receita." : undefined} />
+              <Acervo capitulos={acervo.filter((c) => c.secao === leitor)} aviso={leitor === "dividas" ? "Levantamento de 20/10/2026, feito à mão, e a atualização de 05/11/2026 (capítulo 25: PERSE e parcelamentos em risco). Os débitos de hoje estão em cada empresa, lidos do relatório oficial da Receita." : undefined} />
             )}
           </Gaveta>
         )}
