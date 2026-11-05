@@ -5,8 +5,13 @@ import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
 const OPERACAO = ["notas", "compras", "fichas", "estoque", "producao"];
+// Hotéis: uma página por hotel (/hoteis/<id>, tabela hoteis)
+const HOTEIS = [
+  { id: "filha-da-lua", nome: "Filha da Lua", icone: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /> },
+  { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
+];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "notas" | "compras" | "fichas" | "estoque" | "producao" | "filhadalua" }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -49,6 +54,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   const [aberto, setAberto] = useState(false);
   // Operação começa fechada, a não ser quando a página aberta é uma das dela
   const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
+  const [hotAberta, setHotAberta] = useState((ativo ?? "").startsWith("hotel:"));
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
     if (!aberto) return;
@@ -107,10 +113,6 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" /></svg>
             Receita Federal
           </a>
-          <a className={ativo === "filhadalua" ? "ativo" : ""} href="/filha-da-lua" tabIndex={aberto ? 0 : -1}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /></svg>
-            Filha da Lua
-          </a>
           <a className={ativo === "certificados" ? "ativo" : ""} href="/certificados" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="5" /><path d="M9 13.5 8 21l4-2 4 2-1-7.5" /></svg>
             Certificados digitais
@@ -119,6 +121,22 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 4.5a3 3 0 0 1 0 6M17.5 14.2A5 5 0 0 1 20.5 19" /></svg>
             Claude e equipe
           </a>
+
+          {/* Hotéis: um item que abre e fecha, com uma página por hotel */}
+          <button className={(ativo ?? "").startsWith("hotel:") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setHotAberta((o) => !o)}
+            aria-expanded={hotAberta} aria-controls="menu-hoteis" tabIndex={aberto ? 0 : -1}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></svg>
+            Hotéis
+            <span className={hotAberta ? "menu-pasta-seta aberta" : "menu-pasta-seta"} aria-hidden="true" />
+          </button>
+          <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}>
+            {HOTEIS.map((h) => (
+              <a key={h.id} className={ativo === `hotel:${h.id}` ? "ativo" : ""} href={`/hoteis/${h.id}`} tabIndex={aberto && hotAberta ? 0 : -1}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{h.icone}</svg>
+                {h.nome}
+              </a>
+            ))}
+          </div>
 
           {/* Operação: um item que abre e fecha, com as páginas de notas, compras, fichas, estoque e produção dentro */}
           <button className={OPERACAO.includes(ativo ?? "") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setOpAberta((o) => !o)}

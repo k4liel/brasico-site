@@ -10,8 +10,8 @@ import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
 
-// Página Filha da Lua: o antigo projeto "Filha da Lua Ecolodge" (cardápios das ceias, fichas técnicas,
-// compras e produção, ajustes) copiado para filhadalua_capitulos / filhadalua_estilo (supabase/filha_da_lua.sql).
+// Página de um hotel (grupo Hotéis do menu, /hoteis/<hotel>): documento de capítulos em 5 idiomas, com CSS e abas,
+// guardado em hoteis / hoteis_capitulos (supabase/hoteis.sql). Filha da Lua = o antigo projeto "Filha da Lua Ecolodge".
 // O conteúdo fica só no banco: o repositório é público.
 
 type Cap = {
@@ -19,9 +19,9 @@ type Cap = {
   titulo_en: string | null; conteudo_en: string | null; titulo_pl: string | null; conteudo_pl: string | null;
   titulo_fr: string | null; conteudo_fr: string | null; titulo_de: string | null; conteudo_de: string | null;
 };
-type Estilo = { css: string; rodape: string | null; rodape_en: string | null; rodape_pl: string | null; rodape_fr: string | null; rodape_de: string | null; abas_grupos: boolean };
+type Estilo = { nome: string; css: string; rodape: string | null; rodape_en: string | null; rodape_pl: string | null; rodape_fr: string | null; rodape_de: string | null; abas_grupos: boolean };
 
-export default function FilhaDaLua({ userEmail }: { userEmail: string }) {
+export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [caps, setCaps] = useState<Cap[] | null>(null);
   const [estilo, setEstilo] = useState<Estilo | null>(null);
@@ -33,14 +33,14 @@ export default function FilhaDaLua({ userEmail }: { userEmail: string }) {
   useEffect(() => {
     (async () => {
       const [c, e] = await Promise.all([
-        supabase.from("filhadalua_capitulos").select("*").is("arquivado_em", null).order("ordem").order("titulo"),
-        supabase.from("filhadalua_estilo").select("*").maybeSingle(),
+        supabase.from("hoteis_capitulos").select("*").eq("hotel", hotel).is("arquivado_em", null).order("ordem").order("titulo"),
+        supabase.from("hoteis").select("*").eq("id", hotel).maybeSingle(),
       ]);
       if (c.error) setErro(c.error.message);
       setCaps((c.data as Cap[]) ?? []);
       setEstilo((e.data as Estilo) ?? null);
     })();
-  }, [supabase]);
+  }, [supabase, hotel]);
 
   useEffect(() => {
     try {
@@ -94,15 +94,15 @@ export default function FilhaDaLua({ userEmail }: { userEmail: string }) {
     const antes = document.title;
     const voltar = () => { document.title = antes; window.removeEventListener("afterprint", voltar); };
     window.addEventListener("afterprint", voltar);
-    setTimeout(() => { document.title = "Filha da Lua"; window.print(); }, 500);
+    setTimeout(() => { document.title = estilo?.nome ?? nome; window.print(); }, 500);
   }
 
   return (
     <div className={modo === "pagina" ? "pagina pagina-doc modo-pagina" : "pagina pagina-doc"}>
-      <Topo email={userEmail} ativo="filhadalua" />
+      <Topo email={userEmail} ativo={`hotel:${hotel}`} />
 
       <div className="proj-barra">
-        <h1 className="proj-nome">Filha da Lua</h1>
+        <h1 className="proj-nome">{estilo?.nome ?? nome}</h1>
         <div className="spacer" />
         <div className="proj-acoes">
           {capitulos.length > 0 && (
@@ -135,7 +135,10 @@ export default function FilhaDaLua({ userEmail }: { userEmail: string }) {
         ) : erro ? (
           <p className="muted">Não foi possível abrir: {erro}</p>
         ) : capitulos.length === 0 ? (
-          <p className="muted">Nada para mostrar aqui (só os sócios veem esta página).</p>
+          <div className="vazio">
+            <p>A página {estilo?.nome ?? nome} ainda está vazia.</p>
+            <p className="muted">Peça ao seu Claude: “na página {estilo?.nome ?? nome} do Brasico, crie a capa e o primeiro capítulo com …”.</p>
+          </div>
         ) : modo === "pagina" && abaAtual ? (
           <>
             <Abas capitulos={capitulos} atual={abaAtual.id} grupos={estilo?.abas_grupos ?? true} abrir={abrirAba} />
