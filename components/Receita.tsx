@@ -675,6 +675,15 @@ function PainelEmpresa({ e, l, ligada, config, certs, aba, setAba, fechar, gasto
           {!l.sit ? <p className="muted">Ainda não há relatório de situação fiscal lido para esta empresa. Gere um no Resumo.</p> : (
             <>
               <p className="muted small">Do relatório oficial da Receita de {l.sitEm ? dataHora(l.sitEm) : "—"}. “Suspenso” quer dizer em parcelamento ou discussão: não impede a certidão.</p>
+              {(() => {
+                // Pagamento que a Receita registrou depois do relatório: a baixa do débito leva até 2 dias
+                const desde = l.sitEm ? diaSP(l.sitEm) : null;
+                const depois = desde ? l.pagamentos.filter((p) => (p.data_arrecadacao ?? "") >= desde) : [];
+                const ultimo = l.ultimoPagamento;
+                return depois.length > 0
+                  ? <p className="fx-nota">{plural(depois.length, "pagamento", "pagamentos")} ({reais(depois.reduce((s, p) => s + Number(p.valor_total ?? 0), 0))}) feito{depois.length > 1 ? "s" : ""} no dia deste relatório ou depois: a Receita leva até 2 dias para baixar o débito, e a situação fiscal é relida sozinha 2 dias depois de cada pagamento.</p>
+                  : <p className="muted small">Último pagamento registrado pela Receita: {ultimo ? dia(ultimo) : "—"}. Pagamento feito depois disso aparece aqui em 1 a 2 dias úteis e entra nos débitos na releitura automática.</p>;
+              })()}
               {l.sit.debitos.length > 0 && (
                 <div className="tv-tabela-caixa">
                   <table className="tv-tabela">
