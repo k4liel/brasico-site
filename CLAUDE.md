@@ -56,7 +56,7 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 ## Hotéis (Filha da Lua e Sempre Vivo)
 - Grupo **Hotéis** do menu (abre e fecha, como Operação), uma página por hotel em `/hoteis/<id>` (components/Hotel.tsx; lista `HOTEIS` em components/Topo.tsx e `NOMES` em app/hoteis/[hotel]/page.tsx). Cada página é um documento de capítulos (5 idiomas, CSS próprio, abas agrupadas) guardado só no banco: `hoteis` (nome, CSS, rodapé) e `hoteis_capitulos` (supabase/hoteis.sql). Quem vê: os sócios (`notas_pode_ver`). Nada se apaga: tirar = `arquivado_em`. Hotel novo: linha em `hoteis` + as duas listas do código.
 - **Filha da Lua** (`filha-da-lua`, 05/11/2026): todo o projeto "Filha da Lua Ecolodge" (12 capítulos: cardápios das ceias, fichas técnicas, compras e produção, ajustes) foi copiado e o projeto foi para a **Lixeira**: não o recrie. `/filha-da-lua` redireciona; `filhadalua_capitulos`/`filhadalua_estilo` (supabase/filha_da_lua.sql) ficaram sem uso.
-- **Sempre Vivo** (`sempre-vivo`): começou vazia em 05/11/2026.
+- **Sempre Vivo** (`sempre-vivo`, 05/11/2026): cópia dos 13 capítulos do projeto "Sempre vivo fim do ano" (visão geral, cardápio dia a dia, crianças e quantidades, fichas técnicas de 28/12 a 02/01, lista de compras, custo por pessoa, checklists), com o rodapé e as abas. O projeto continua na lista até o dono pedir para mandá-lo à Lixeira. Não confundir com o projeto "Produção Sempre Vivo", que segue em uso pela página Produção.
 
 ## Cicchetti Midway: encerrado (só arquivo)
 - O Cicchetti Midway (Midway Mall, Natal; CNPJ da V6) **encerrou todas as atividades em 31/10/2026**. Fica só como dado histórico: nenhuma rotina puxa nada dele (supabase/midway_encerrado.sql).

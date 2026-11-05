@@ -50,3 +50,16 @@ select c.id, 'filha-da-lua', c.ordem, c.titulo, c.conteudo, c.titulo_en, c.conte
   c.titulo_fr, c.conteudo_fr, c.titulo_de, c.conteudo_de, c.origem, c.arquivado_em
 from public.filhadalua_capitulos c
 on conflict (id) do nothing;
+
+-- Sempre Vivo (05/11/2026): cópia do projeto "Sempre vivo fim do ano" (13 capítulos, rodapé, abas sem grupos)
+update public.hoteis h set css = coalesce(w.doc_css, ''), rodape = w.doc_rodape, rodape_en = w.doc_rodape_en, rodape_pl = w.doc_rodape_pl,
+  rodape_fr = w.doc_rodape_fr, rodape_de = w.doc_rodape_de, abas_grupos = coalesce(w.doc_abas_grupos, false)
+from public.workspaces w where h.id = 'sempre-vivo' and w.id = '93c3471b-9675-4419-9817-6d7738e1719b';
+
+insert into public.hoteis_capitulos (id, hotel, ordem, titulo, conteudo, titulo_en, conteudo_en, titulo_pl, conteudo_pl,
+  titulo_fr, conteudo_fr, titulo_de, conteudo_de, origem)
+select n.id, 'sempre-vivo', coalesce(substring(n.title from '^(\d+)')::int, 99), n.title, coalesce(n.content, ''),
+  n.title_en, n.content_en, n.title_pl, n.content_pl, n.title_fr, n.content_fr, n.title_de, n.content_de, 'Sempre vivo fim do ano'
+from public.notes n
+where n.workspace_id = '93c3471b-9675-4419-9817-6d7738e1719b' and n.archived_at is null
+on conflict (id) do nothing;
