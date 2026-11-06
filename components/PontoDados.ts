@@ -166,20 +166,39 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
     })();
   }, [supabase, carregar]);
 
+  // A leitura "agora" (a cada minuto) só mexe em ontem e hoje: troca só esses dias na tela, sem reler o resto
+  const atualizarHoje = useCallback(async (ex: Execucao) => {
+    try {
+      const novos = await lerDias(somarDias(hoje(), -1), hoje());
+      const trocados = new Set(novos.map((d) => `${d.cliente_id}:${d.pessoa_id}:${d.dia}`));
+      setDias((v) => [...v.filter((d) => !trocados.has(`${d.cliente_id}:${d.pessoa_id}:${d.dia}`)), ...novos]);
+      setExecucoes((v) => [ex, ...v.filter((x) => x.id !== ex.id)].slice(0, 6));
+      setRelogio(agoraHM());
+    } catch {
+      // A próxima leitura (daqui a um minuto) tenta de novo
+    }
+  }, [lerDias]);
+
   // Atualiza sozinho quando uma leitura do ponto termina; e o relógio da tela a cada minuto (quem está atrasado)
   useEffect(() => {
     if (!acesso) return;
     const ch = supabase.channel("rhid-ponto")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rhid_execucoes" }, () => carregar())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rhid_execucoes" }, (m) => {
+        const ex = m.new as Execucao;
+        if (ex.status !== "ok") return;
+        if (ex.tipo === "agora") atualizarHoje(ex);
+        else carregar();
+      })
       .subscribe();
     const t = setInterval(() => setRelogio(agoraHM()), 60_000);
     return () => {
       supabase.removeChannel(ch);
       clearInterval(t);
     };
-  }, [supabase, acesso, carregar]);
+  }, [supabase, acesso, carregar, atualizarHoje]);
 
-  const lendo = execucoes.some((x) => ["na_fila", "rodando"].includes(x.status) && Date.now() - new Date(x.created_at).getTime() < 10 * 60 * 1000);
+  // "Lendo o RHiD…" só para a leitura completa (a de hoje roda a cada minuto e se atualiza sozinha)
+  const lendo = execucoes.some((x) => x.tipo === "batidas" && ["na_fila", "rodando"].includes(x.status) && Date.now() - new Date(x.created_at).getTime() < 10 * 60 * 1000);
   useEffect(() => {
     if (!lendo) return;
     const t = setInterval(carregar, 5000);

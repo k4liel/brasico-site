@@ -377,7 +377,7 @@ export function PontoGoverno({ ponto, icone, verCpf, onAbrirPessoa }: {
             );
           })}
         </ul>
-        <p className="muted pt-nota">Leitura do ponto: a cada 10 minutos (das 6h à meia-noite) o Brasico vê as últimas batidas de cada empresa e atualiza o dia de quem bateu; de hora em hora confere o dia de quem tem escala hoje; às 5h, 12h, 17h e 22h relê a semana e a escala das próximas 5 semanas.</p>
+        <p className="muted pt-nota">Leitura do ponto: a cada minuto (das 6h à meia-noite) o Brasico vê as últimas batidas de cada empresa e atualiza o dia de quem bateu; de hora em hora confere o dia de quem tem escala hoje; às 5h, 12h, 17h e 22h relê a semana e a escala das próximas 5 semanas.</p>
       </section>
     </div>
   );

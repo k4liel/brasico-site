@@ -1058,3 +1058,8 @@ begin
 end $$;
 revoke execute on function public.rhid_escala_ordenar(jsonb, boolean) from public, anon;
 grant execute on function public.rhid_escala_ordenar(jsonb, boolean) to authenticated;
+
+-- Leitura "agora" do RHiD a cada minuto, das 6h à meia-noite de Fortaleza (pedido do dono, 06/11/2026;
+-- migration rhid_agora_cada_minuto). rhid_pedir não abre outra enquanto a anterior roda.
+select cron.unschedule('rhid-agora') where exists (select 1 from cron.job where jobname = 'rhid-agora');
+select cron.schedule('rhid-agora', '* 0-2,9-23 * * *', $job$ select public.rhid_agenda_agora() $job$);
