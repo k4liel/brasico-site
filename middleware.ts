@@ -42,7 +42,7 @@ export async function middleware(request: NextRequest) {
   if (path.startsWith("/p/")) return response;
   // /colaboradores: login próprio da equipe das casas (só usuário e senha)
   const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/colaboradores");
-  const areaEquipe = path.startsWith("/compras") || path.startsWith("/estoque") || path.startsWith("/producao");
+  const areaEquipe = path.startsWith("/compras") || path.startsWith("/estoque") || path.startsWith("/producao") || path.startsWith("/escala");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
@@ -62,9 +62,14 @@ export async function middleware(request: NextRequest) {
   // A trava de verdade é a do banco (RLS): aqui é só o caminho certo na tela.
   if (user && !isPublic && !path.startsWith("/estoque") && !path.startsWith("/producao")) {
     const { data: papel } = await supabase.rpc("operacao_papel", { p_user: user.id });
-    const destino = papel === "estoque" ? "/estoque" : papel === "solicitante" || papel === "compras" ? "/compras" : null;
+    const destino = papel === "estoque" ? "/estoque" : papel === "solicitante" || papel === "compras" ? "/compras" : papel === "lider" ? "/escala" : null;
     // o setor de compras (Fernanda) também abre as Notas fiscais (só NF-e, índice e nota avulsa)
     const liberadas = papel === "compras" ? ["/compras", "/notas"] : destino ? [destino] : [];
+    // quem lidera um grupo da escala também abre a Escala
+    if (destino && destino !== "/escala" && path.startsWith("/escala")) {
+      const { data: lider } = await supabase.rpc("escala_eh_lider", { p_user: user.id });
+      if (lider) liberadas.push("/escala");
+    }
     if (destino && !liberadas.some((p) => path.startsWith(p))) {
       const url = request.nextUrl.clone();
       url.pathname = destino;

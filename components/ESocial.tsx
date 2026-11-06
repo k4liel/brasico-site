@@ -12,6 +12,8 @@ import {
 import Topo from "./Topo";
 import { EscalaSecao, HojeNoPonto, Justificativas, PontoGoverno, PontoMes } from "./Ponto";
 import { usePonto } from "./PontoDados";
+import EscalaPlanejada, { ModosEscala } from "./EscalaPlanejada";
+import type { ModoEscala } from "./PontoEscala";
 import BancoHoras from "./BancoHoras";
 import Salarios from "./Salarios";
 
@@ -102,6 +104,16 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [filtroUnidade, setFiltroUnidade] = useState("");
   const [secao, setSecao] = useState<Secao>(SECAO_PADRAO);
   const [visaoEquipe, setVisaoEquipe] = useState<VisaoEquipe>("pessoas");
+  // Aba Escala: Ponto (RHiD) ao vivo, Planejada (a que a casa monta) ou Comparar
+  const [modoEscala, setModoEscala] = useState<ModoEscala>("real");
+  useEffect(() => {
+    const m = lerLocal("brasico-escala-modo");
+    if (m === "real" || m === "planejada" || m === "comparar") setModoEscala(m);
+  }, []);
+  function escolherModoEscala(m: ModoEscala) {
+    setModoEscala(m);
+    gravarLocal("brasico-escala-modo", m);
+  }
   // A seção fica no endereço (#pessoas, #folha…) para dar para voltar e compartilhar
   useEffect(() => {
     const ler = () => {
@@ -227,6 +239,8 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const bloqueado = diaDoMes() <= 7;
   const ponto = usePonto(supabase, filtroEmpresa);
   const atrasadosPonto = ponto.vistas.filter((l) => l.estado === "Atrasado").length;
+  // Os grupos da escala planejada acompanham o local e o setor da escala do RH (com o que foi organizado à mão)
+  const sincronizarEscala = useMemo(() => ponto.linhas.map((l) => ({ cliente_id: l.p.cliente_id, pessoa_id: l.p.id, local: l.local, setor: l.setor })), [ponto.linhas]);
 
   const termo = busca.trim().toLowerCase();
   const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
@@ -464,7 +478,18 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
               )}
 
               {/* ===================== Escala ===================== */}
-              {secao === "escala" && <EscalaSecao ponto={ponto} chavesRH={chavesRH} onAbrirPessoa={setAberta} />}
+              {secao === "escala" && (
+                <>
+                  <ModosEscala modo={modoEscala} onMudar={escolherModoEscala} />
+                  {modoEscala === "real" ? <EscalaSecao ponto={ponto} chavesRH={chavesRH} onAbrirPessoa={setAberta} />
+                    : !ponto.carregado ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
+                    : <EscalaPlanejada supabase={supabase} modo={modoEscala} sincronizar={sincronizarEscala}
+                        onAbrirPessoa={(k) => {
+                          const l = ponto.linhas.find((x) => x.k === k);
+                          if (l && chavesRH.has(l.chaveRH)) setAberta(l.chaveRH);
+                        }} />}
+                </>
+              )}
 
               {/* ===================== Equipe ===================== */}
               {secao === "equipe" && (

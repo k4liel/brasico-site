@@ -49,6 +49,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [papel, setPapel] = useState<Papel | undefined>(undefined);
   const [eu, setEu] = useState<Pessoa | null>(null);
+  const [lider, setLider] = useState(false);
   const [semanas, setSemanas] = useState<Semana[]>([]);
   const [semana, setSemana] = useState<Semana | null>(null);
   const [aba, setAba] = useState<Aba>("painel");
@@ -56,8 +57,9 @@ export default function Compras({ userEmail }: { userEmail: string }) {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.rpc("operacao_eu");
-      const r = (data ?? {}) as { papel: Papel; pessoa: Pessoa | null };
+      const r = (data ?? {}) as { papel: Papel; pessoa: Pessoa | null; lider?: boolean };
       setPapel(r.papel ?? null);
+      setLider(!!r.lider);
       setEu(r.pessoa);
       if (!r.papel) return;
       const { data: atual } = await supabase.rpc("compras_semana_atual");
@@ -98,7 +100,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 
   return (
     <div className="pagina">
-      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={papel === "compras" ? { href: "/notas", nome: "Notas fiscais" } : eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : undefined} />}
+      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={papel === "compras" ? { href: "/notas", nome: "Notas fiscais" } : eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : lider ? { href: "/escala", nome: "Escala" } : undefined} />}
       <main className="miolo tv es cp-area nf-larga">
         {cabecalho}
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
@@ -129,7 +131,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 }
 
 // Para quem só tem a área de Compras: sem o menu do Brasico
-const ORDEM_AREAS = ["Compras", "Notas fiscais", "Câmara fria", "Produção"];
+const ORDEM_AREAS = ["Compras", "Notas fiscais", "Câmara fria", "Produção", "Escala"];
 // Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
 export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
   const [senha, setSenha] = useState(false);

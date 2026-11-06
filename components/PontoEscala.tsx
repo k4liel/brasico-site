@@ -1,15 +1,19 @@
 "use client";
 
 // Grade de escala do RH, na largura toda da página: uma linha por pessoa e uma coluna por dia, no mesmo
-// visual das escalas dos projetos (:::escala, lib/markdown.ts). O horário vem da apuração do RHiD
-// (escala contratual do dia). Três visões: semana (células grandes, com o batido), 2 semanas e mês.
-// O cabeçalho dos dias e a coluna dos nomes ficam presos ao rolar. Pessoas agrupadas por local
-// (restaurante/pousada), que abre e fecha e mostra quantos trabalham em cada dia, e por setor.
-// Ao passar o mouse (ou tocar), o balão mostra o PREVISTO e o que foi BATIDO de fato.
-import { useEffect, useRef, useState } from "react";
+// visual das escalas dos projetos (:::escala, lib/markdown.ts). Três modos:
+//   real      — o horário vem da apuração do RHiD (escala contratual) e a marca diz o que foi batido;
+//   planejada — a escala que a casa monta (escala_planejada): pinta-se arrastando sobre os dias, com os
+//               avisos de lei em cada dia e no nome (lib/escala/regras.ts);
+//   comparar  — a planejada com a marca do que foi batido (faltou, atrasou, trabalhou na folga).
+// Três visões: semana (células grandes), 2 semanas e mês. O cabeçalho dos dias e a coluna dos nomes ficam
+// presos ao rolar. Pessoas agrupadas por local (abre e fecha, com quantos trabalham por dia) e por setor.
+// Ao passar o mouse (ou tocar), o balão mostra o previsto, o batido e os avisos do dia.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { tipoPorEntrada, type TipoTurno } from "@/lib/markdown";
 import { TEXTOS } from "@/lib/idioma";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
+import { CODIGOS, minutos, type Aviso, type DiaPlano } from "@/lib/escala/regras";
 
 export type BatidaEscala = { hora: string; tipo?: string; origem?: string; classificacao?: string; justificada?: boolean };
 export type DiaEscala = {
@@ -23,11 +27,14 @@ export type PessoaEscala = {
   // Situação de hoje (bolinha ao lado do nome)
   hoje?: { texto: string; classe: string };
 };
+export type ModoEscala = "real" | "planejada" | "comparar";
+export type Celula = { chave: string; dia: string };
+export type ColunaExtra = { titulo: string; dica: string; valor: (p: PessoaEscala) => ReactNode };
 
-type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean };
+type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean; codigo?: string; vazio?: boolean };
 type Dica = {
-  x: number; y: number; acima: boolean; quem: string; dia: string; previsto: string; intervalo: string; turno: string;
-  batidas: BatidaEscala[]; situacao: string; classe: string; alerta: string; futuro: boolean;
+  x: number; y: number; acima: boolean; quem: string; dia: string; previsto: string; intervalo: string; turno: string; rotulo: string;
+  batidas: BatidaEscala[]; situacao: string; classe: string; alerta: string; futuro: boolean; avisos: Aviso[]; obs: string;
 };
 export type Visao = "semana" | "quinzena" | "mes";
 // Onde soltar uma pessoa arrastada: antes ou depois de outra, ou no começo de um grupo (setor/local)
@@ -39,9 +46,12 @@ const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const MESES_CURTOS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const ORDEM: TipoTurno[] = ["abertura", "manha", "inter", "tarde", "noite", "dia", "partido", "plantao", "folga", "descanso"];
-// Até onde dá para andar: o RHiD guarda 1 ano para trás e a apuração traz a escala de 5 semanas à frente
+const NIVEL = { erro: 3, aviso: 2, info: 1 } as const;
+// Até onde dá para andar: o RHiD guarda 1 ano para trás e a apuração traz a escala de 5 semanas à frente;
+// a planejada pode ir até 3 meses à frente
 const VOLTA_DIAS = 370;
-const FRENTE_DIAS = 34;
+const FRENTE_REAL = 34;
+const FRENTE_PLANO = 92;
 
 // "07:00-12:00\r\n13:00-15:20" → entrada 07:00, saída 15:20, intervalo 12:00–13:00
 function lerHorario(d: DiaEscala | undefined): Turno {
@@ -64,6 +74,22 @@ function lerHorario(d: DiaEscala | undefined): Turno {
   };
 }
 
+// Um dia da escala planejada como turno da grade
+function lerPlano(pd: DiaPlano | undefined): Turno {
+  const vazio = { horario: "", intervalo: "", trabalha: false };
+  if (!pd || !pd.codigo) return { tipo: "descanso", linhas: ["+"], ...vazio, horario: "Sem escala", vazio: true };
+  if (pd.codigo === "T") {
+    const a = minutos(pd.entrada) ?? 0, b = minutos(pd.saida) ?? 0;
+    return {
+      tipo: tipoPorEntrada(Math.floor(a / 60), Math.floor(b / 60)), trabalha: true, codigo: "T",
+      intervalo: pd.intervalo?.replace("-", "–") ?? "", linhas: [pd.entrada ?? "", pd.saida ?? ""], horario: `${pd.entrada}–${pd.saida}`,
+    };
+  }
+  if (pd.codigo === "F") return { tipo: "folga", linhas: ["F"], ...vazio, horario: "Folga", codigo: "F" };
+  const c = CODIGOS.find((x) => x.codigo === pd.codigo);
+  return { tipo: "descanso", linhas: [c?.curto ?? pd.codigo], ...vazio, horario: c?.nome ?? pd.codigo, codigo: pd.codigo };
+}
+
 // Segunda-feira da semana de um dia (YYYY-MM-DD)
 function segunda(d: string) {
   const dow = new Date(`${d}T12:00:00Z`).getUTCDay();
@@ -75,7 +101,7 @@ const somarMeses = (d: string, n: number) => {
   return new Date(Date.UTC(a, m - 1 + n, 1)).toISOString().slice(0, 10);
 };
 // Os dias que a visão mostra a partir de um dia de referência
-function diasDoPeriodo(visao: Visao, ref: string) {
+export function diasDoPeriodo(visao: Visao, ref: string) {
   if (visao === "mes") {
     const ini = `${ref.slice(0, 7)}-01`;
     const n = new Date(Date.UTC(Number(ref.slice(0, 4)), Number(ref.slice(5, 7)), 0)).getUTCDate();
@@ -118,7 +144,7 @@ export function ordemDaGrade(ps: PessoaEscala[]) {
 // Origem "O" = batida original do relógio; "I" = incluída/alterada no RHiD (justificativa, ajuste do gestor)
 const ajustada = (b: BatidaEscala) => !!b.justificada || b.classificacao === "J" || b.origem === "I";
 
-// O que aconteceu num dia já passado (ou em andamento)
+// O que aconteceu num dia já passado (ou em andamento), conforme o RHiD
 function situacaoDo(d: DiaEscala | undefined, t: Turno, dia: string, agora: string) {
   if (!d || !t.trabalha) return { classe: "", texto: "" };
   if (dia > agora) return { classe: "", texto: "" };
@@ -129,6 +155,24 @@ function situacaoDo(d: DiaEscala | undefined, t: Turno, dia: string, agora: stri
   if (d.minutos_atraso >= 10) return { classe: "m-atraso", texto: `Atraso de ${d.minutos_atraso} min` };
   if (bateu) return { classe: "m-ok", texto: d.batidas.some(ajustada) ? "Trabalhou · com ajuste" : "Trabalhou" };
   return { classe: "m-sem", texto: "Sem batida" };
+}
+
+// Comparar: o que foi batido × a escala planejada
+function situacaoComparada(d: DiaEscala | undefined, t: Turno, dia: string, agora: string) {
+  if (dia > agora) return { classe: "", texto: "" };
+  const bateu = !!d && (d.batidas.length > 0 || d.minutos_trabalhados > 0);
+  if (t.trabalha) {
+    if (dia === agora) return bateu ? { classe: "m-ok", texto: d!.batidas.length % 2 ? "Trabalhando agora" : "Já saiu" } : { classe: "", texto: "Ainda sem batida" };
+    if (!bateu) return d?.justificado ? { classe: "m-just", texto: "Falta justificada" } : { classe: "m-falta", texto: "Não veio (estava na escala)" };
+    const ent = d!.batidas[0]?.hora, plan = t.linhas[0];
+    let dif = (minutos(ent) ?? 0) - (minutos(plan) ?? 0);
+    if (dif < -720) dif += 1440;
+    if (ent && dif > 10) return { classe: "m-atraso", texto: `Chegou ${ent} (escala ${plan})` };
+    return { classe: "m-ok", texto: "Trabalhou como na escala" };
+  }
+  if (!bateu) return { classe: "", texto: "" };
+  if (t.vazio) return { classe: "m-extra", texto: "Trabalhou sem estar na escala" };
+  return { classe: "m-extra", texto: `Trabalhou em dia de ${t.horario.toLowerCase()}` };
 }
 
 function lerLocal(k: string) {
@@ -144,12 +188,20 @@ function gravarLocal(k: string, v: string) {
   } catch {}
 }
 
-export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar }: {
+export default function PontoEscala({
+  pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar,
+  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo,
+}: {
   pessoas: PessoaEscala[]; onAbrir?: (chave: string) => void; garantir?: (de: string, ate: string) => void;
   // Modo Organizar: segura o nome e arrasta (ou usa as setas do teclado na alça)
   organizar?: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; onSoltar?: (chave: string, alvo: Alvo) => void;
   // Botões a mais na barra da escala (ex.: Atualizar)
-  extra?: React.ReactNode;
+  extra?: ReactNode;
+  // Escala planejada: o dia de cada pessoa, os avisos de lei e a função de pintar (quando há um código escolhido)
+  modo?: ModoEscala; plano?: Map<string, Map<string, DiaPlano>>; avisos?: Map<string, Aviso[]>;
+  pintar?: (celulas: Celula[]) => void; colunasExtras?: ColunaExtra[]; feriados?: Set<string>;
+  // Avisa o período que está na tela (para copiar do RHiD só ele)
+  onPeriodo?: (dias: string[]) => void;
 }) {
   const agora = hoje();
   const [visao, setVisao] = useState<Visao>("quinzena");
@@ -165,24 +217,33 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   const soltarRef = useRef<Alvo | null>(null);
   const [fantasma, setFantasma] = useState<{ chave: string; nome: string; cargo?: string; x: number; y: number } | null>(null);
   const [soltarEm, setSoltarEm] = useState<Alvo | null>(null);
+  // Pintar: o retângulo de dias × pessoas que está sendo marcado
+  const [selecao, setSelecao] = useState<{ r0: number; d0: number; r1: number; d1: number } | null>(null);
+  const selRef = useRef<{ r0: number; d0: number; r1: number; d1: number } | null>(null);
   const dias = diasDoPeriodo(visao, ref);
+  const plan = modo !== "real";
   const podeVoltar = dias[0] > somarDias(agora, -VOLTA_DIAS);
-  const podeAvancar = diasDoPeriodo(visao, passo(visao, ref, 1))[0] <= somarDias(agora, FRENTE_DIAS);
+  const podeAvancar = diasDoPeriodo(visao, passo(visao, ref, 1))[0] <= somarDias(agora, plan ? FRENTE_PLANO : FRENTE_REAL);
   const T = TEXTOS.pt;
 
   useEffect(() => {
-    const v = lerLocal("brasico-escala-visao");
+    const v = lerLocal(plan ? "brasico-escala-visao-plano" : "brasico-escala-visao");
     if (v === "semana" || v === "quinzena" || v === "mes") setVisao(v);
-  }, []);
+    else if (plan) setVisao("mes");
+  }, [plan]);
   function escolherVisao(v: Visao) {
     setVisao(v);
-    gravarLocal("brasico-escala-visao", v);
+    gravarLocal(plan ? "brasico-escala-visao-plano" : "brasico-escala-visao", v);
   }
   // Dias fora do que já foi lido do banco: pede o trecho
   const de = dias[0], ate = dias[dias.length - 1];
   useEffect(() => {
     garantir?.(de, ate);
   }, [garantir, de, ate]);
+  const diasChave = dias.join(",");
+  useEffect(() => {
+    onPeriodo?.(diasChave.split(","));
+  }, [onPeriodo, diasChave]);
 
   // Balão: fecha ao rolar ou redimensionar
   useEffect(() => {
@@ -203,19 +264,83 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   const turnosDe = new Map<string, Turno[]>();
   for (const p of pessoas) {
     turnosDe.set(p.chave, dias.map((d) => {
-      const t = lerHorario(p.dias.get(d));
-      if (!usados.has(t.tipo)) usados.set(t.tipo, new Set());
-      if (t.trabalha) usados.get(t.tipo)!.add(parseInt(t.linhas[0], 10));
+      const t = plan ? lerPlano(plano?.get(p.chave)?.get(d)) : lerHorario(p.dias.get(d));
+      if ((!t.vazio && !t.codigo) || t.codigo === "T" || t.codigo === "F") {
+        if (!usados.has(t.tipo)) usados.set(t.tipo, new Set());
+        if (t.trabalha) usados.get(t.tipo)!.add(parseInt(t.linhas[0], 10));
+      }
       return t;
     }));
   }
+  const codigosUsados = new Set(plan ? [...turnosDe.values()].flat().map((t) => t.codigo).filter((c): c is string => !!c && c !== "T" && c !== "F") : []);
   const contar = (ps: PessoaEscala[]) => dias.map((_, i) => ps.filter((p) => turnosDe.get(p.chave)![i].trabalha).length);
   const trabalhando = contar(pessoas);
   const min = Math.min(...trabalhando, Infinity);
   const max = Math.max(...trabalhando, -Infinity);
   const corte = min + (max - min) * 0.25;
-
   const locais = locaisDe(pessoas);
+
+  // Avisos por pessoa e dia (o pior nível do dia) e os de cada pessoa (no nome)
+  const avisoDia = new Map<string, { nivel: keyof typeof NIVEL; lista: Aviso[] }>();
+  if (plan) for (const [k, lista] of avisos ?? []) for (const a of lista) for (const d of a.dias) {
+    const c = `${k}|${d}`, atual = avisoDia.get(c);
+    if (!atual) avisoDia.set(c, { nivel: a.nivel, lista: [a] });
+    else {
+      atual.lista.push(a);
+      if (NIVEL[a.nivel] > NIVEL[atual.nivel]) atual.nivel = a.nivel;
+    }
+  }
+
+  // Linhas visíveis, na ordem da tela (para o retângulo de pintar)
+  const visiveis = ordemDaGrade(pessoas).filter((p) => organizar || !fechados.has(localDe(p))).map((p) => p.chave);
+  const linhaDe = new Map(visiveis.map((k, i) => [k, i]));
+  const selecionada = (k: string, i: number) => {
+    if (!selecao) return false;
+    const r = linhaDe.get(k);
+    if (r == null) return false;
+    return r >= Math.min(selecao.r0, selecao.r1) && r <= Math.max(selecao.r0, selecao.r1)
+      && i >= Math.min(selecao.d0, selecao.d1) && i <= Math.max(selecao.d0, selecao.d1);
+  };
+  function celulaEm(x: number, y: number) {
+    const td = document.elementFromPoint(x, y)?.closest("td[data-i]") as HTMLElement | null;
+    if (!td || !quadro.current?.contains(td)) return null;
+    const k = (td.closest("tr") as HTMLElement | null)?.dataset.chave;
+    const r = k != null ? linhaDe.get(k) : undefined;
+    return r == null ? null : { r, d: Number(td.dataset.i) };
+  }
+  function comecarPintura(e: React.PointerEvent, k: string, i: number) {
+    if (!pintar || e.button !== 0) return;
+    const r = linhaDe.get(k);
+    if (r == null) return;
+    e.preventDefault();
+    esconder();
+    const s = { r0: r, d0: i, r1: r, d1: i };
+    selRef.current = s;
+    setSelecao(s);
+    const mexer = (ev: PointerEvent) => {
+      const c = celulaEm(ev.clientX, ev.clientY);
+      if (!c || !selRef.current) return;
+      if (c.r === selRef.current.r1 && c.d === selRef.current.d1) return;
+      selRef.current = { ...selRef.current, r1: c.r, d1: c.d };
+      setSelecao(selRef.current);
+    };
+    const largar = () => {
+      window.removeEventListener("pointermove", mexer);
+      window.removeEventListener("pointerup", largar);
+      window.removeEventListener("pointercancel", largar);
+      const sel = selRef.current;
+      selRef.current = null;
+      setSelecao(null);
+      if (!sel) return;
+      const celulas: Celula[] = [];
+      for (let rr = Math.min(sel.r0, sel.r1); rr <= Math.max(sel.r0, sel.r1); rr++)
+        for (let dd = Math.min(sel.d0, sel.d1); dd <= Math.max(sel.d0, sel.d1); dd++) celulas.push({ chave: visiveis[rr], dia: dias[dd] });
+      pintar(celulas);
+    };
+    window.addEventListener("pointermove", mexer);
+    window.addEventListener("pointerup", largar);
+    window.addEventListener("pointercancel", largar);
+  }
 
   // A linha embaixo do ponteiro: outra pessoa (cai antes ou depois, pela metade da linha) ou o título de um grupo
   function alvoEm(x: number, y: number, eu: string): Alvo | null {
@@ -296,19 +421,23 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   });
 
   function mostrar(td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) {
+    if (selRef.current) return;
     const d = p.dias.get(dia);
     ativo.current?.classList.remove("esc-ativo");
     ativo.current = td;
     td.classList.add("esc-ativo");
     const r = td.getBoundingClientRect();
-    const acima = r.top > 220;
-    const sit = situacaoDo(d, t, dia, agora);
+    const acima = r.top > 260;
+    const sit = modo === "comparar" ? situacaoComparada(d, t, dia, agora) : modo === "planejada" ? { classe: "", texto: "" } : situacaoDo(d, t, dia, agora);
     setDica({
-      x: Math.min(Math.max(r.left + r.width / 2, 170), window.innerWidth - 170), y: acima ? r.top - 10 : r.bottom + 10, acima,
-      quem: p.nome, dia: `${DIAS_SEMANA[diaSemana(dia)]} ${dataBR(dia)}`,
+      x: Math.min(Math.max(r.left + r.width / 2, 180), window.innerWidth - 180), y: acima ? r.top - 10 : r.bottom + 10, acima,
+      quem: p.nome, dia: `${DIAS_SEMANA[diaSemana(dia)]} ${dataBR(dia)}${feriados?.has(dia) || d?.feriado ? " · feriado" : ""}`,
+      rotulo: plan ? "Escala" : "Previsto",
       previsto: t.horario, intervalo: t.intervalo, turno: t.trabalha ? T.turnos[t.tipo] : "",
       // Hoje o RHiD ainda marca "Falta" enquanto o dia não fecha: com batida, o alerta do dia não vale
-      batidas: d?.batidas ?? [], situacao: sit.texto, classe: sit.classe, alerta: dia === agora && d?.batidas.length ? "" : d?.alerta ?? "", futuro: dia > agora,
+      batidas: d?.batidas ?? [], situacao: sit.texto, classe: sit.classe,
+      alerta: modo !== "real" || (dia === agora && d?.batidas.length) ? "" : d?.alerta ?? "", futuro: dia > agora || modo === "planejada",
+      avisos: avisoDia.get(`${p.chave}|${dia}`)?.lista ?? [], obs: plano?.get(p.chave)?.get(dia)?.obs ?? "",
     });
   }
   function esconder() {
@@ -317,10 +446,10 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
     setDica(null);
   }
 
-  const colunas = dias.length + 3;
+  const colunas = dias.length + 3 + colunasExtras.length;
   const contem = dias.includes(agora);
   return (
-    <div className="pt-escala" data-visao={visao} onMouseLeave={esconder}>
+    <div className={`pt-escala${pintar ? " pintando" : ""}`} data-visao={visao} data-modo={modo} onMouseLeave={esconder}>
       <div className="pe-barra">
         <div className="pe-periodo">
           <button className="pe-seta" onClick={() => setRef(passo(visao, ref, -1))} disabled={!podeVoltar} aria-label="Período anterior">‹</button>
@@ -338,25 +467,29 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
         </div>
       </div>
 
-      <div className="pe-quadro" ref={quadro} style={{ "--dias": dias.length } as React.CSSProperties}>
+      <div className="pe-quadro" ref={quadro} style={{ "--dias": dias.length, "--extras": colunasExtras.length } as React.CSSProperties}>
         <table className="pe-grade">
           <colgroup>
             <col className="pe-col-nome" />
             {dias.map((d) => <col key={d} />)}
             <col className="pe-col-tot" /><col className="pe-col-tot" />
+            {colunasExtras.map((c) => <col key={c.titulo} className="pe-col-tot" />)}
           </colgroup>
           <thead>
             <tr>
               <th className="pe-nome">{pessoas.length} {pessoas.length === 1 ? "pessoa" : "pessoas"}</th>
               {dias.map((d) => {
                 const dow = diaSemana(d);
+                const fer = feriados?.has(d);
                 return (
-                  <th key={d} className={`pe-dia${dow === 0 ? " dom" : ""}${dow === 1 ? " seg" : ""}${d === agora ? " hoje" : ""}${d < agora ? " passado" : ""}`}>
+                  <th key={d} className={`pe-dia${dow === 0 ? " dom" : ""}${dow === 1 ? " seg" : ""}${d === agora ? " hoje" : ""}${d < agora ? " passado" : ""}${fer ? " feriado" : ""}`}
+                    title={fer ? "Feriado" : undefined}>
                     <span>{visao === "mes" ? DIAS_SEMANA[dow].slice(0, 1) : DIAS_SEMANA[dow]}</span><b>{Number(d.slice(8, 10))}</b>
                   </th>
                 );
               })}
               <th className="pe-tot" title="Dias de trabalho no período">Dias</th><th className="pe-tot" title="Folgas no período">Folgas</th>
+              {colunasExtras.map((c) => <th key={c.titulo} className="pe-tot" title={c.dica}>{c.titulo}</th>)}
             </tr>
           </thead>
           {locais.map((local) => {
@@ -377,13 +510,16 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
                     <td key={dias[i]} className={`pe-conta${diaSemana(dias[i]) === 0 ? " dom" : ""}${dias[i] === agora ? " hoje" : ""}`} title={`${v} trabalhando em ${dataBR(dias[i])}`}>{v || ""}</td>
                   ))}
                   <td className="pe-tot" /><td className="pe-tot" />
+                  {colunasExtras.map((c) => <td key={c.titulo} className="pe-tot" />)}
                 </tr>
                 {!fechado && setoresDe(doLocal).map((setor) => {
                   const ps = doLocal.filter((p) => p.setor === setor);
                   return (
                     <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(doLocal).length > 1 || !!setor}
                       pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar}
-                      organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave} />
+                      organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave}
+                      modo={modo} avisoDia={avisoDia} avisos={avisos} pintando={!!pintar} comecarPintura={comecarPintura}
+                      selecionada={selecionada} colunasExtras={colunasExtras} feriados={feriados} />
                   );
                 })}
               </tbody>
@@ -397,6 +533,7 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
                   <td key={dias[i]} className={`esc-c${max > min && v <= corte ? " baixo" : ""}${diaSemana(dias[i]) === 0 ? " dom" : ""}${dias[i] === agora ? " hoje" : ""}`}>{v}</td>
                 ))}
                 <td className="pe-tot" /><td className="pe-tot" />
+                {colunasExtras.map((c) => <td key={c.titulo} className="pe-tot" />)}
               </tr>
             </tfoot>
           )}
@@ -412,13 +549,28 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
             </span>
           );
         })}
+        {CODIGOS.filter((c) => codigosUsados.has(c.codigo)).map((c) => (
+          <span key={c.codigo}><i className={`pe-chip c-${c.codigo}`} /><b>{c.nome}</b></span>
+        ))}
         <span className="pe-legenda-sep" aria-hidden="true" />
-        <span><i className="pe-marca m-ok" /><b>Trabalhou</b></span>
-        <span><i className="pe-marca m-atraso" /><b>Atraso</b></span>
-        <span><i className="pe-marca m-falta" /><b>Falta</b></span>
-        <span><i className="pe-marca m-just" /><b>Falta justificada</b></span>
-        <span><b className="pe-ajuste-ex">•</b><b>com batida ajustada</b></span>
-        <span className="muted">Passe o mouse (ou toque) num dia para ver o previsto e o batido.</span>
+        {modo === "real" && <>
+          <span><i className="pe-marca m-ok" /><b>Trabalhou</b></span>
+          <span><i className="pe-marca m-atraso" /><b>Atraso</b></span>
+          <span><i className="pe-marca m-falta" /><b>Falta</b></span>
+          <span><i className="pe-marca m-just" /><b>Falta justificada</b></span>
+          <span><b className="pe-ajuste-ex">•</b><b>com batida ajustada</b></span>
+        </>}
+        {modo === "comparar" && <>
+          <span><i className="pe-marca m-ok" /><b>Como na escala</b></span>
+          <span><i className="pe-marca m-atraso" /><b>Chegou depois</b></span>
+          <span><i className="pe-marca m-falta" /><b>Não veio</b></span>
+          <span><i className="pe-marca m-extra" /><b>Trabalhou fora da escala</b></span>
+        </>}
+        {plan && <>
+          <span><i className="pe-alerta erro" /><b>Fora da lei</b></span>
+          <span><i className="pe-alerta aviso" /><b>Atenção</b></span>
+        </>}
+        <span className="muted">{pintar ? "Arraste sobre os dias para pintar com o código escolhido." : "Passe o mouse (ou toque) num dia para ver os detalhes."}</span>
       </div>
 
       {fantasma && (
@@ -431,7 +583,7 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
         <div className="esc-dica pt-dica on" role="tooltip" style={{ left: dica.x, top: dica.y, transform: `translate(-50%, ${dica.acima ? "-100%" : "0"})` }}>
           <div className="esc-dica-top">{dica.quem} · {dica.dia}</div>
           <div className="pt-dica-linha">
-            <span>Previsto</span>
+            <span>{dica.rotulo}</span>
             <b>{dica.previsto}{dica.turno ? <small> · {dica.turno}</small> : null}{dica.intervalo ? <small> · intervalo {dica.intervalo}</small> : null}</b>
           </div>
           {!dica.futuro && (
@@ -442,11 +594,15 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
               )) : <small>nenhuma batida</small>}</b>
             </div>
           )}
+          {dica.obs && <div className="pt-dica-linha"><span>Obs.</span><b><small>{dica.obs}</small></b></div>}
           {(dica.situacao || dica.alerta) && (
             <div className={`pt-dica-sit ${dica.classe}`}>
               {dica.situacao}{dica.alerta && dica.alerta !== dica.situacao ? ` · ${dica.alerta}` : ""}
             </div>
           )}
+          {dica.avisos.map((a, i) => (
+            <div key={i} className={`pt-dica-aviso ${a.nivel}`}><b>{a.titulo}</b> {a.texto}<small>{a.lei}</small></div>
+          ))}
           {dica.batidas.some(ajustada) && <div className="pt-dica-nota">* batida incluída ou alterada por justificativa no RHiD</div>}
         </div>
       )}
@@ -454,11 +610,15 @@ export default function PontoEscala({ pessoas, onAbrir, garantir, extra, organiz
   );
 }
 
-function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, pegar, soltarEm, levando }: {
+function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, pegar, soltarEm, levando,
+  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados }: {
   setor: string; mostrarSetor: boolean; pessoas: PessoaEscala[]; dias: string[]; agora: string; visao: Visao; turnosDe: Map<string, Turno[]>;
   onAbrir?: (chave: string) => void; colunas: number; mostrar: (td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) => void;
   organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; pegar: (e: React.PointerEvent, p: PessoaEscala) => void;
   soltarEm: Alvo | null; levando?: string;
+  modo: ModoEscala; avisoDia: Map<string, { nivel: keyof typeof NIVEL; lista: Aviso[] }>; avisos?: Map<string, Aviso[]>;
+  pintando: boolean; comecarPintura: (e: React.PointerEvent, k: string, i: number) => void; selecionada: (k: string, i: number) => boolean;
+  colunasExtras: ColunaExtra[]; feriados?: Set<string>;
 }) {
   const grupoAlvo = !!soltarEm && !("chave" in soltarEm) && soltarEm.local === pessoas[0]?.local && soltarEm.setor === pessoas[0]?.setor;
   return (
@@ -471,12 +631,17 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
       {pessoas.map((p) => {
         const ts = turnosDe.get(p.chave)!;
         const trab = ts.filter((t) => t.trabalha).length;
-        const folgas = ts.filter((t) => t.tipo === "folga").length;
+        const folgas = ts.filter((t) => t.tipo === "folga" || t.codigo === "FC" || t.codigo === "BH").length;
+        const meusTodos = (avisos?.get(p.chave) ?? []).filter((a) => a.nivel !== "info" && a.dias.some((d) => dias.includes(d)));
+        // Um número por tipo de aviso (o mesmo aviso em vários dias conta uma vez)
+        const meus = [...new Map(meusTodos.map((a) => [`${a.regra}|${a.titulo}`, a])).values()];
+        const erros = meus.filter((a) => meusTodos.some((x) => x.regra === a.regra && x.titulo === a.titulo && x.nivel === "erro")).length;
         return (
           <tr key={p.chave} data-chave={p.chave}
             className={`pe-pessoa${organizar ? " organizando" : ""}${levando === p.chave ? " levando" : ""}${soltarEm && "chave" in soltarEm && soltarEm.chave === p.chave ? ` soltar-${soltarEm.lado}` : ""}`}>
             <th className="pe-nome" scope="row" onPointerDown={organizar ? (e) => pegar(e, p) : undefined}
-              title={organizar ? "Segure e arraste para mudar de lugar" : [p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : ""].filter(Boolean).join("\n")}>
+              title={organizar ? "Segure e arraste para mudar de lugar"
+                : [p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : "", ...meus.map((a) => `⚠ ${a.titulo}: ${a.texto}`)].filter(Boolean).join("\n")}>
               {organizar ? (
                 <button className="pe-pega" aria-label={`Mover ${p.nome}: use as setas para cima e para baixo`}
                   onKeyDown={(e) => {
@@ -491,29 +656,36 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
               {onAbrir && !organizar
                 ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.ficha ?? p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>
                 : <span className="esc-pessoa">{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</span>}
+              {meus.length > 0 && <b className={`pe-avisos-n${erros ? " erro" : ""}`} aria-label={`${meus.length} avisos`}>{meus.length}</b>}
               {p.cargo && <small className="pe-cargo">{p.cargo}</small>}
             </th>
             {dias.map((d, i) => {
               const t = ts[i];
               const dd = p.dias.get(d);
-              const m = situacaoDo(dd, t, d, agora);
+              const m = modo === "comparar" ? situacaoComparada(dd, t, d, agora) : modo === "planejada" ? { classe: "", texto: "" } : situacaoDo(dd, t, d, agora);
               const dow = diaSemana(d);
-              const temAjuste = !!dd?.batidas.some(ajustada);
+              const temAjuste = modo === "real" && !!dd?.batidas.some(ajustada);
+              const av = avisoDia.get(`${p.chave}|${d}`);
+              const avNivel = av && av.nivel !== "info" ? av.nivel : "";
               // Semana: horário numa linha e, embaixo, o que foi batido (ou o nome do turno, se ainda não chegou)
               const linhas = !t.trabalha ? t.linhas
-                : visao === "mes" ? [t.linhas[0]]
-                : visao === "semana" ? [t.horario, d <= agora && dd?.batidas.length ? dd.batidas.map((b) => b.hora).join(" · ") : TEXTOS.pt.turnos[t.tipo]]
+                : visao === "mes" ? [t.linhas[0].replace(/^0?(\d{1,2}):00$/, "$1h").replace(/^0?(\d{1,2}):(\d{2})$/, "$1h$2")]
+                : visao === "semana" ? [t.horario, modo !== "planejada" && d <= agora && dd?.batidas.length ? dd.batidas.map((b) => b.hora).join(" · ") : TEXTOS.pt.turnos[t.tipo]]
                 : t.linhas;
               return (
-                <td key={d} className={`esc-c t-${t.tipo}${dow === 0 ? " dom" : ""}${dow === 1 ? " seg" : ""}${d === agora ? " hoje" : ""}${d < agora ? " passado" : ""}${m.classe ? ` ${m.classe}` : ""}${temAjuste ? " ajuste" : ""}`}
-                  onMouseEnter={(e) => mostrar(e.currentTarget, p, d, t)} onClick={(e) => mostrar(e.currentTarget, p, d, t)}
-                  aria-label={`${dataBR(d)}: ${t.horario}${t.intervalo ? `, intervalo ${t.intervalo}` : ""}${m.texto ? `, ${m.texto}` : ""}`}>
+                <td key={d} data-i={i}
+                  className={`esc-c t-${t.tipo}${t.codigo && t.codigo !== "T" && t.codigo !== "F" ? ` c-${t.codigo}` : ""}${t.vazio ? " vazio" : ""}${dow === 0 ? " dom" : ""}${dow === 1 ? " seg" : ""}${d === agora ? " hoje" : ""}${d < agora ? " passado" : ""}${feriados?.has(d) ? " feriado" : ""}${m.classe ? ` ${m.classe}` : ""}${temAjuste ? " ajuste" : ""}${pintando && selecionada(p.chave, i) ? " selecionada" : ""}`}
+                  onMouseEnter={(e) => mostrar(e.currentTarget, p, d, t)} onClick={pintando ? undefined : (e) => mostrar(e.currentTarget, p, d, t)}
+                  onPointerDown={pintando ? (e) => comecarPintura(e, p.chave, i) : undefined}
+                  aria-label={`${dataBR(d)}: ${t.horario}${t.intervalo ? `, intervalo ${t.intervalo}` : ""}${m.texto ? `, ${m.texto}` : ""}${av ? `, ${av.lista.map((a) => a.titulo).join(", ")}` : ""}`}>
                   {linhas.map((x, k) => <span key={k} className={k ? "pe-sub" : ""}>{x}</span>)}
                   {m.classe && <i className={`pe-marca ${m.classe}`} aria-hidden="true" />}
+                  {avNivel && <i className={`pe-alerta ${avNivel}`} aria-hidden="true" />}
                 </td>
               );
             })}
             <td className="pe-tot">{trab}</td><td className="pe-tot">{folgas}</td>
+            {colunasExtras.map((c) => <td key={c.titulo} className="pe-tot">{c.valor(p)}</td>)}
           </tr>
         );
       })}
