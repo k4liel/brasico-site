@@ -147,3 +147,5 @@ update public.estoque_itens set pacote_tamanho = 2 where nome = 'Ragu de ossobuc
 -- A contagem de 07/11/2026 (fotos do WhatsApp) foi regravada um lote por validade:
 -- as 17 contagens sem validade ficaram removido = true e entraram as linhas por lote.
 -- Quando a legenda e a etiqueta divergiam, valeu a data mais cedo.
+-- "Carne de ossobuco" é o mesmo produto que "Ragu de ossobuco" (dono, 07/11/2026): o lote dela
+-- (20 kg, 25/10/2026) passou para a contagem do Ragu, o item ficou ativo = false e o nome virou apelido do Ragu.
