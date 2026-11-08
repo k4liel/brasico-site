@@ -54,6 +54,9 @@ async function entrar(page, usuario, senha) {
   await f.locator('input:not([type="password"]):not([type="checkbox"]):not([type="hidden"])').first().fill(usuario);
   await f.locator('input[type="password"]').first().fill(senha);
   await espera(500);
+  // Registra só o código de resposta do pedido de login (nunca o corpo)
+  page.on("response", (r) => { if (/thexidentity-auth\/api\/signin/.test(r.url())) log(`[login] resposta ${r.status()} de ${new URL(r.url()).pathname}`); });
+  log(`[login] navegador: ${await page.evaluate(() => navigator.userAgent)}`);
   const botao = f.getByRole("button", { name: /^\s*Entrar\s*$/i }).first();
   if (await botao.isDisabled().catch(() => false)) await f.locator('input[type="password"]').first().press("Enter");
   else await botao.click();
