@@ -122,7 +122,7 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
   return (
     <div className="hx-pilha">
       <div className="hx-barra-periodo">
-        <div><span className="hx-sobre">Lançamentos do PMS</span><h2>Transações</h2></div>
+        <h2>Transações</h2>
         <div className="hx-controles">
           <Segmentos valor={atalho} rotulo="Período" mudar={(a) => { setAtalho(a); if (a !== "livre") setIntervalo(intervalo(a, h)); }}
             opcoes={[["7d", "7 dias"], ["30d", "30 dias"], ["mes", "Este mês"], ["mesant", "Mês passado"], ["ano", "Este ano"]]} />
