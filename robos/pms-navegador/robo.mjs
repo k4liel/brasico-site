@@ -420,9 +420,26 @@ async function historico(page, ctx, h, token, lidos) {
         const temMovimento = e.relatorio === "kpi" ? linhas.some((x) => (x.ocupadas || 0) > 0 || (x.receita || 0) !== 0) : linhas.length > 0;
         if (passado) e.vazios = temMovimento ? 0 : e.vazios + 1;
         if (e.relatorio === "transacoes") {
-          // O relatório devolve no máximo 2000 linhas: mês cheio fica marcado para conferir (o resto entra na releitura por quinzena)
-          if ((j?.data?.rows ?? []).length >= 2000) log(`  ${h.id} transacoes ${mes.slice(0, 7)}: 2000 linhas (limite do relatório) — mês pode estar incompleto`);
           await rpc("pms_robo_gravar_transacoes", { p_segredo: SEGREDO, p_hotel: h.id, p_mes: mes, p_linhas: linhas });
+          // O relatório devolve no máximo 2000 linhas: perto disso, relê o mês em quinzenas (a chave de cada lançamento é a mesma)
+          if ((j?.data?.rows ?? []).length >= 1900) {
+            const fimM = ymd(fimMes(new Date(`${mes}T00:00:00Z`)));
+            for (const [a, b] of [[mes, `${mes.slice(0, 8)}15`], [`${mes.slice(0, 8)}16`, fimM]]) {
+              let p = null;
+              for (let k = 0; k < 40 && !p; k++) { const q = await pedirPermissao(e.id).catch(() => null); if (q && !e.usadas.has(q)) p = q; else await espera(1500); }
+              if (!p) { resumo.erros.push(`transacoes ${mes}: sem permissão para a quinzena`); break; }
+              e.usadas.add(p);
+              const pg = await ctx.newPage();
+              try {
+                const jq = await lerMetabase(pg, p, a, b);
+                navegacoes++;
+                const lq = normalizar("transacoes", jq);
+                if ((jq?.data?.rows ?? []).length >= 2000) log(`  ${h.id} transacoes ${a}..${b}: 2000 linhas mesmo na quinzena — pode faltar lançamento`);
+                await rpc("pms_robo_gravar_transacoes", { p_segredo: SEGREDO, p_hotel: h.id, p_mes: mes, p_linhas: lq });
+                log(`  ${h.id} transacoes ${a}..${b}: ${lq.length} linhas (quinzena)`);
+              } finally { await pg.close().catch(() => {}); }
+            }
+          }
         } else {
           await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: e.relatorio, p_mes: mes, p_linhas: linhas });
         }
