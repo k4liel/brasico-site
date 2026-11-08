@@ -11,6 +11,7 @@ import Cabecalho, { type Vista } from "./hotel/Cabecalho";
 import VisaoGeral from "./hotel/VisaoGeral";
 import Reservas from "./hotel/Reservas";
 import Transacoes from "./hotel/Transacoes";
+import Hospedes from "./hotel/Hospedes";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
@@ -43,6 +44,7 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
     else if (h === "#reservas") setVista("reservas");
     else if (h === "#mapa") setVista("mapa");
     else if (h === "#transacoes") setVista("transacoes");
+    else if (h === "#hospedes") setVista("hospedes");
   }, []);
   function trocarVista(v: Vista) {
     setVista(v);
@@ -152,6 +154,8 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
         <main className="hx-pagina"><Reservas hotel={hotel} nome={estilo?.nome ?? nome} /></main>
       ) : vista === "mapa" ? (
         <main className="hx-pagina hx-largo"><HotelMapa hotel={hotel} /></main>
+      ) : vista === "hospedes" ? (
+        <main className="hx-pagina"><Hospedes hotel={hotel} nome={estilo?.nome ?? nome} /></main>
       ) : vista === "transacoes" ? (
         <main className="hx-pagina"><Transacoes hotel={hotel} nome={estilo?.nome ?? nome} /></main>
       ) : (

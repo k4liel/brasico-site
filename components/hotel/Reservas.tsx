@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   type Estadia, STATUS, antecedencia, canalNome, dataBr, faseDe, hojeFortaleza, nomeStatus, somaDias, todas,
 } from "@/lib/hotel-reservas";
-import { valorHotel, grupoDe } from "./Transacoes";
+import GavetaReserva from "./GavetaReserva";
 import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, moeda, num, pct } from "./ui";
 
 // Reservas do hotel para análise (aba Reservas da página /hoteis/<hotel>): todas as estadias do PMS (pms_estadias,
@@ -14,7 +14,6 @@ import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, mo
 
 type Base = "chegada" | "estadia" | "saida" | "criacao";
 type Atalho = "7d" | "30d" | "mes" | "prox30" | "ano" | "livre";
-type Tx = { chave: string; dia: string; grupo: string | null; descricao: string | null; valor: number; estornado: boolean };
 
 const COR_FASE: Record<string, string> = {
   reservada: "var(--fase-reservada)", pendente: "var(--fase-pendente)", hospedada: "var(--fase-hospedada)",
@@ -51,7 +50,6 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
   const [busca, setBusca] = useState("");
   const [pagina, setPagina] = useState(0);
   const [aberta, setAberta] = useState<Estadia | null>(null);
-  const [txs, setTxs] = useState<Tx[] | null>(null);
 
   useEffect(() => {
     setLista(null); setPagina(0);
@@ -69,18 +67,6 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
       } catch (e) { setErro(e instanceof Error ? e.message : "erro"); setLista([]); }
     })();
   }, [supabase, hotel, ini, fim, base]);
-
-  // Transações da reserva aberta
-  useEffect(() => {
-    setTxs(null);
-    if (!aberta?.codigo) return;
-    supabase.from("pms_transacoes").select("chave,dia,grupo,descricao,valor,estornado").eq("hotel_id", hotel).eq("reserva", aberta.codigo).order("dia").limit(500)
-      .then((r) => setTxs(((r.data as Tx[]) ?? []).map((t) => ({ ...t, grupo: grupoDe(t) }))));
-  }, [supabase, hotel, aberta]);
-  useEffect(() => {
-    const f = (e: KeyboardEvent) => { if (e.key === "Escape") setAberta(null); };
-    window.addEventListener("keydown", f); return () => window.removeEventListener("keydown", f);
-  }, []);
 
   const opCanal = useMemo(() => [...new Set((lista ?? []).map(canalNome))].sort(), [lista]);
   const opTipo = useMemo(() => [...new Set((lista ?? []).map((e) => e.tipo ?? "—"))].sort(), [lista]);
@@ -214,50 +200,7 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
         </>
       )}
 
-      {aberta && (
-        <>
-          <div className="hx-veu" onClick={() => setAberta(null)} />
-          <aside className="hx-gaveta" role="dialog" aria-label={`Reserva ${aberta.codigo ?? ""}`}>
-            <header>
-              <div><span className="hx-sobre mono">{aberta.codigo}</span><h3>{aberta.vip ? "★ " : ""}{aberta.hospede || "Hóspede não informado"}</h3>
-                <span className="hx-etiqueta" style={{ ["--c" as string]: COR_FASE[faseDe(aberta)] }}>{nomeStatus(aberta)}</span></div>
-              <button type="button" className="hx-fechar" aria-label="Fechar" onClick={() => setAberta(null)}>×</button>
-            </header>
-            <div className="hx-gaveta-grade">
-              <div><span>Chegada</span><b>{dataBr(aberta.checkin)}</b></div>
-              <div><span>Saída</span><b>{dataBr(aberta.checkout)}</b></div>
-              <div><span>Noites</span><b>{num(aberta.noites)}</b></div>
-              <div><span>Hóspedes</span><b>{aberta.adultos ?? 0} adultos{aberta.criancas ? ` · ${aberta.criancas} crianças` : ""}</b></div>
-              <div><span>UH</span><b>{aberta.uh_numero ?? "sem UH"}</b></div>
-              <div><span>Tipo</span><b>{aberta.tipo ?? "—"}</b></div>
-              <div><span>Canal</span><b>{canalNome(aberta)}</b></div>
-              <div><span>Tarifa</span><b>{aberta.tarifa ?? "—"}</b></div>
-              {aberta.grupo_nome && <div><span>Grupo</span><b>{aberta.grupo_nome}</b></div>}
-              {aberta.empresa && <div><span>Empresa</span><b>{aberta.empresa}</b></div>}
-              <div><span>Criada em</span><b>{aberta.criada_em ? dataBr(aberta.criada_em.slice(0, 10)) : "—"}</b></div>
-              <div><span>Antecedência</span><b>{antecedencia(aberta) == null ? "—" : `${Math.round(antecedencia(aberta)!)} dias`}</b></div>
-            </div>
-            <div className="hx-gaveta-total"><span>Diárias informadas pelo canal</span><b>{aberta.valor_diarias == null ? "A conferir" : moeda(Number(aberta.valor_diarias))}</b></div>
-            <h4>Transações da reserva</h4>
-            {txs === null ? <p className="muted">Carregando…</p> : txs.length === 0 ? <p className="muted">Nenhuma transação desta reserva no banco ainda.</p> : (
-              <>
-                <ul className="hx-gaveta-tx">
-                  {txs.map((t) => (
-                    <li key={t.chave} className={t.estornado ? "estornado" : ""}>
-                      <span className="mono">{dataBr(t.dia).slice(0, 5)}</span><span>{t.descricao}<small>{t.grupo}{t.estornado ? " · estornado" : ""}</small></span>
-                      <b className={valorHotel(t) < 0 ? "neg" : ""}>{moeda(valorHotel(t))}</b>
-                    </li>
-                  ))}
-                </ul>
-                <div className="hx-gaveta-somas">
-                  <div><span>Lançado</span><b>{moeda(txs.filter((t) => t.grupo !== "Pagamento").reduce((a, t) => a + valorHotel(t), 0))}</b></div>
-                  <div><span>Pago</span><b>{moeda(txs.filter((t) => t.grupo === "Pagamento").reduce((a, t) => a + valorHotel(t), 0))}</b></div>
-                </div>
-              </>
-            )}
-          </aside>
-        </>
-      )}
+      {aberta && <GavetaReserva hotel={hotel} estadia={aberta} fechar={() => setAberta(null)} />}
     </div>
   );
 }

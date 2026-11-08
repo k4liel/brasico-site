@@ -134,11 +134,12 @@ begin
 
   insert into public.pms_hospedes (hotel_id, guest_id, person_id, nome, email, telefone, celular, nascimento, sexo, documento_tipo_id, documento,
     rua, numero, complemento, bairro, cep, cidade, estado, uf, pais, motivo_viagem, tipo_hospede, atualizado_em)
-  select p_hotel, (x->>'guest_id')::bigint, x->>'person_id', x->>'nome', x->>'email', x->>'telefone', x->>'celular',
+  select distinct on ((x->>'guest_id')::bigint) p_hotel, (x->>'guest_id')::bigint, x->>'person_id', x->>'nome', x->>'email', x->>'telefone', x->>'celular',
          nullif(x->>'nascimento', '')::date, x->>'sexo', nullif(x->>'documento_tipo_id', '')::int, x->>'documento',
          x->>'rua', x->>'numero', x->>'complemento', x->>'bairro', x->>'cep', x->>'cidade', x->>'estado', x->>'uf', x->>'pais',
          x->>'motivo_viagem', x->>'tipo_hospede', now()
   from jsonb_array_elements(coalesce(p_dados->'hospedes', '[]')) x where x->>'guest_id' is not null
+  order by (x->>'guest_id')::bigint
   on conflict (hotel_id, guest_id) do update set person_id = coalesce(excluded.person_id, pms_hospedes.person_id),
     nome = coalesce(excluded.nome, pms_hospedes.nome), email = coalesce(excluded.email, pms_hospedes.email),
     telefone = coalesce(excluded.telefone, pms_hospedes.telefone), celular = coalesce(excluded.celular, pms_hospedes.celular),
@@ -153,10 +154,11 @@ begin
   get diagnostics nh = row_count;
 
   insert into public.pms_reserva_hospedes (hotel_id, guest_item_id, item_id, guest_id, nome, principal, crianca, idade_crianca, vip, status, atualizado_em)
-  select p_hotel, (x->>'guest_item_id')::bigint, (x->>'item_id')::bigint, nullif(x->>'guest_id', '')::bigint, x->>'nome',
+  select distinct on ((x->>'guest_item_id')::bigint) p_hotel, (x->>'guest_item_id')::bigint, (x->>'item_id')::bigint, nullif(x->>'guest_id', '')::bigint, x->>'nome',
          coalesce((x->>'principal')::boolean, false), coalesce((x->>'crianca')::boolean, false), nullif(x->>'idade_crianca', '')::int,
          coalesce((x->>'vip')::boolean, false), x->>'status', now()
   from jsonb_array_elements(coalesce(p_dados->'reserva_hospedes', '[]')) x where x->>'guest_item_id' is not null and x->>'item_id' is not null
+  order by (x->>'guest_item_id')::bigint
   on conflict (hotel_id, guest_item_id) do update set item_id = excluded.item_id, guest_id = coalesce(excluded.guest_id, pms_reserva_hospedes.guest_id),
     nome = excluded.nome, principal = excluded.principal, crianca = excluded.crianca, idade_crianca = excluded.idade_crianca,
     vip = excluded.vip, status = excluded.status, atualizado_em = now();
@@ -165,13 +167,14 @@ begin
   insert into public.pms_reserva_detalhes (hotel_id, item_id, reserva_codigo, codigo, guest_id, criada_por, criada_em, alterada_por, alterada_em,
     total, total_arr, segmento, origem, tarifa, grupo, tipo_hospede, adultos, criancas, obs_internas, obs_externas, obs_item_internas,
     obs_item_externas, numero_externo, detalhes_em, historico_em)
-  select p_hotel, (x->>'item_id')::bigint, x->>'reserva_codigo', x->>'codigo', nullif(x->>'guest_id', '')::bigint,
+  select distinct on ((x->>'item_id')::bigint) p_hotel, (x->>'item_id')::bigint, x->>'reserva_codigo', x->>'codigo', nullif(x->>'guest_id', '')::bigint,
          x->>'criada_por', nullif(x->>'criada_em', '')::timestamptz, x->>'alterada_por', nullif(x->>'alterada_em', '')::timestamptz,
          nullif(x->>'total', '')::numeric, nullif(x->>'total_arr', '')::numeric, x->>'segmento', x->>'origem', x->>'tarifa', x->>'grupo',
          x->>'tipo_hospede', nullif(x->>'adultos', '')::int, nullif(x->>'criancas', '')::int,
          x->>'obs_internas', x->>'obs_externas', x->>'obs_item_internas', x->>'obs_item_externas', x->>'numero_externo', now(),
          case when coalesce((x->>'com_historico')::boolean, false) then now() end
   from jsonb_array_elements(coalesce(p_dados->'detalhes', '[]')) x where x->>'item_id' is not null
+  order by (x->>'item_id')::bigint
   on conflict (hotel_id, item_id) do update set reserva_codigo = excluded.reserva_codigo, codigo = excluded.codigo,
     guest_id = coalesce(excluded.guest_id, pms_reserva_detalhes.guest_id), criada_por = excluded.criada_por, criada_em = excluded.criada_em,
     alterada_por = excluded.alterada_por, alterada_em = excluded.alterada_em, total = excluded.total, total_arr = excluded.total_arr,
@@ -182,9 +185,10 @@ begin
   get diagnostics nd = row_count;
 
   insert into public.pms_reserva_historico (hotel_id, evento_id, item_id, quando, usuario, tipo, acao, campos)
-  select p_hotel, x->>'evento_id', (x->>'item_id')::bigint, nullif(x->>'quando', '')::timestamptz, x->>'usuario', x->>'tipo', x->>'acao',
+  select distinct on (x->>'evento_id') p_hotel, x->>'evento_id', (x->>'item_id')::bigint, nullif(x->>'quando', '')::timestamptz, x->>'usuario', x->>'tipo', x->>'acao',
          coalesce(x->'campos', '[]')
   from jsonb_array_elements(coalesce(p_dados->'historico', '[]')) x where x->>'evento_id' is not null and x->>'item_id' is not null
+  order by x->>'evento_id'
   on conflict (hotel_id, evento_id) do update set item_id = excluded.item_id, quando = excluded.quando, usuario = excluded.usuario,
     tipo = excluded.tipo, acao = excluded.acao, campos = excluded.campos;
   get diagnostics ne = row_count;

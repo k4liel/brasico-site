@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import GavetaReserva from "./hotel/GavetaReserva";
 import {
   type Bloqueio, type Estadia, type Fase, type Uh, FASES, canalNome, dataBr, dataCurta, diaSemana, difDias, faseBloqueio, faseDe,
   fimDeSemana, hojeFortaleza, inteiro, nomeStatus, ordemNatural, reais, somaDias, todas, valida,
@@ -46,6 +47,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
   const [estado, setEstado] = useState<"carregando" | "ok" | "atualizando" | "falhou">("carregando");
   const [erro, setErro] = useState<string | null>(null);
   const [previa, setPrevia] = useState<{ b: Barra; x: number; y: number; fixa: boolean } | null>(null);
+  const [aberta, setAberta] = useState<Estadia | null>(null);
   const grade = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async (silencioso = false) => {
@@ -199,7 +201,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
         <span className={`mr-selo mr-selo-${estado}`}>{nomeEstado}</span>
         {atualizado && <span className="mr-ctx">PMS lido em {atualizado} · a tela confere a cada 60 s</span>}
       </div>
-      <p className="mr-ctx mr-dica">Deslize a grade para o lado para ver mais dias; a coluna das UHs fica parada.</p>
+      <p className="mr-ctx mr-dica">Clique numa reserva para abrir tudo dela (detalhes, observações, histórico e transações). Deslize a grade para o lado para ver mais dias.</p>
 
       {estado === "falhou" && !uhs ? (
         <div className="mr-vazio">
@@ -252,7 +254,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
                             style={{ left: l, width: w, top: 10 + 40 * b.faixa, height: ALT, clipPath: poly }}
                             onMouseEnter={(ev) => abrirPrevia(b, ev.currentTarget, false)} onFocus={(ev) => abrirPrevia(b, ev.currentTarget, false)}
                             onMouseLeave={() => setPrevia((p) => (p?.fixa ? p : null))} onBlur={() => setPrevia((p) => (p?.fixa ? p : null))}
-                            onClick={(ev) => abrirPrevia(b, ev.currentTarget, true)}>
+                            onClick={(ev) => { if (b.estadia) { setPrevia(null); setAberta(b.estadia); } else abrirPrevia(b, ev.currentTarget, true); }}>
                             <span className="mr-barra-nome">{e?.vip ? "★ " : ""}{b.rotulo}</span>
                             {!celular && b.sub && <span className="mr-barra-sub">{b.sub}</span>}
                           </button>
@@ -324,6 +326,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
           )}
         </div>
       )}
+      {aberta && <GavetaReserva hotel={hotel} estadia={aberta} fechar={() => setAberta(null)} />}
     </div>
   );
 }
