@@ -115,7 +115,8 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
     for (const bl of bloqueios) {
       if (!bl.uh_id || !bl.inicio || !bl.fim || !ids.has(bl.uh_id)) continue;
       const f = faseBloqueio(bl);
-      const b = montar(`b${bl.bloqueio_id}`, bl.inicio, somaDias(bl.fim, 1), f, { bloqueio: bl, rotulo: f === "manutencao" ? "Manutenção" : "Bloqueio", sub: bl.motivo ?? "" });
+      // Bloqueio ocupa dias inteiros: do começo do primeiro dia ao fim do último (no PMS ele termina às 23h do último dia)
+      const b = montar(`b${bl.bloqueio_id}`, bl.inicio, bl.fim, f, { bloqueio: bl, rotulo: f === "manutencao" ? "Manutenção" : "Bloqueio", sub: bl.comentario || bl.motivo || "" }, [0.03, 0.97]);
       if (b) m.set(bl.uh_id, [...(m.get(bl.uh_id) ?? []), b]);
     }
     for (const [k, l] of m) {

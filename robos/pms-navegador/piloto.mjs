@@ -21,7 +21,7 @@ const ESPERA_LOGIN_MIN = 10;
 const HOTEIS = [
   { id: "filha-da-lua", cnpj: "24.021.962/0001-95", nome: /FILHA DA LUA/i, propriedade: 475 },
   { id: "sempre-vivo", cnpj: "50.639.716/0001-01", nome: /LAIF/i, propriedade: 1504 },
-  { id: "filho-do-vento", cnpj: "39.988.182/0001-96", nome: /FILHO DO VENTO/i, propriedade: null },
+  { id: "filho-do-vento", cnpj: "39.988.182/0001-96", nome: /FILHO DO VENTO/i, propriedade: 1490 },
 ];
 
 const args = process.argv.slice(2);
