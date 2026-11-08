@@ -238,7 +238,7 @@ function normalizar(relatorio, j) {
 
 async function lerMetabase(pagina, permissao, ini, fim) {
   await pagina.goto(`${EBS}/MetabaseReport?auth=${permissao}&StartDate=${ini}&EndDate=${fim}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await pagina.waitForURL(/metabase\.totvshospitalidade\.com\/embed\/question\//, { timeout: 90000 });
+  await pagina.waitForURL(/metabase\.totvshospitalidade\.com\/embed\/question\//, { timeout: 30000 });
   const tok = new URL(pagina.url()).pathname.split("/").pop();
   return pagina.evaluate(async (t) => {
     let ultimo = "";
@@ -291,10 +291,10 @@ async function historico(page, ctx, h, token, lidos) {
     for (const [relatorio, chave] of Object.entries(RELATORIOS)) {
       const item = menu.find((m) => m.metabaseKey === chave);
       if (!item) { resumo.erros.push(`${relatorio}: relatório não está no menu`); continue; }
-      const filtros = await page.evaluate(async ([id, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${id}?culture=pt-BR`,
-        { headers: { Authorization: t, Accept: "application/json" } })).json(), [item.reportParameterUId, token]);
-      const permissao = filtros?.permissionToken;
-      if (!permissao) { resumo.erros.push(`${relatorio}: sem permissão no PMS`); continue; }
+      // A permissão de abrir o relatório vale para uma abertura só: pede uma nova a cada mês
+      const novaPermissao = async () => (await page.evaluate(async ([id, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${id}?culture=pt-BR`,
+        { headers: { Authorization: t, Accept: "application/json" } })).json(), [item.reportParameterUId, token]))?.permissionToken;
+      if (!(await novaPermissao())) { resumo.erros.push(`${relatorio}: sem permissão no PMS`); continue; }
       let vazios = 0;
       const atual = ymd(inicioMes(new Date()));
       for (const mes of mesesParaLer(h, relatorio, lidos, new Date())) {
@@ -304,6 +304,8 @@ async function historico(page, ctx, h, token, lidos) {
         const t0 = Date.now();
         try {
           const d = new Date(`${mes}T00:00:00Z`);
+          const permissao = await novaPermissao();
+          if (!permissao) throw new Error("o PMS não deu permissão para abrir o relatório");
           const j = await lerMetabase(pagina, permissao, mes, ymd(fimMes(d)));
           navegacoes++;
           const linhas = normalizar(relatorio, j);
