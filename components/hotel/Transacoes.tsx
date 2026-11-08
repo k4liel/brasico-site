@@ -25,12 +25,23 @@ function intervalo(a: Atalho, h: string): [string, string] {
   return [`${h.slice(0, 4)}-01-01`, h];
 }
 const GRUPOS = ["Diária", "Consumo", "Serviço", "Taxa", "Pagamento", "Outros"] as const;
+// No PMS a cobrança entra negativa na conta do hóspede e o pagamento positivo; aqui os dois aparecem positivos
+// (um estorno aparece negativo). Classificação refeita na tela para corrigir lançamentos antigos.
+export const valorHotel = (t: { grupo: string | null; valor: number }) => (t.grupo === "Pagamento" ? Number(t.valor) : -Number(t.valor));
+export function grupoDe(t: { grupo: string | null; item_tipo?: string | null; descricao: string | null }) {
+  const d = (t.descricao ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  if (t.grupo === "Pagamento") return "Pagamento";
+  if (/taxa de servico|\biss\b|taxa de turismo|taxa municipal/.test(d)) return "Taxa";
+  if (/^diaria|^hospedagem/.test(d)) return "Diária";
+  if (/restaurante|bar\b|a&b|aliment|bebida|frigobar|cafe|almoco|jantar|room service|pos\b/.test(d)) return "Consumo";
+  return t.grupo === "Diária" ? "Diária" : t.grupo === "Outros" ? "Outros" : "Serviço";
+}
 const COR_GRUPO: Record<string, string> = { "Diária": COR.azul, Consumo: COR.ambar, "Serviço": COR.violeta, Taxa: COR.ciano, Pagamento: COR.verde, Outros: COR.cinza };
 
 function planilha(l: Tx[], nome: string) {
   const cab = ["Data", "Grupo", "Tipo", "Código", "Descrição", "Valor", "Estornado", "Reserva", "UH", "Tipo de UH", "Status da reserva", "Origem", "Segmento", "Conta", "Observação"];
   const e = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const linhas = l.map((t) => [t.dia, t.grupo, t.item_tipo, t.codigo, t.descricao, String(t.valor).replace(".", ","), t.estornado ? "sim" : "", t.reserva, t.uh, t.tipo_uh, t.status_reserva, t.origem, t.segmento, t.conta_tipo, t.observacao].map(e).join(";"));
+  const linhas = l.map((t) => [t.dia, t.grupo, t.item_tipo, t.codigo, t.descricao, String(valorHotel(t)).replace(".", ","), t.estornado ? "sim" : "", t.reserva, t.uh, t.tipo_uh, t.status_reserva, t.origem, t.segmento, t.conta_tipo, t.observacao].map(e).join(";"));
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["﻿" + [cab.map(e).join(";"), ...linhas].join("\n")], { type: "text/csv;charset=utf-8" }));
   a.download = `${nome}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
@@ -57,7 +68,7 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
         const r = await supabase.from("pms_transacoes").select("chave,dia,reserva,uh,tipo_uh,status_reserva,origem,segmento,conta_tipo,item_tipo,grupo,codigo,descricao,valor,estornado,observacao")
           .eq("hotel_id", hotel).gte("dia", ini).lte("dia", fim).order("dia", { ascending: false }).range(de, de + 999);
         if (r.error) { setErro(r.error.message); break; }
-        out.push(...((r.data as Tx[]) ?? []));
+        out.push(...((r.data as Tx[]) ?? []).map((t) => ({ ...t, grupo: grupoDe(t) })));
         if ((r.data ?? []).length < 1000) break;
       }
       setTxs(out);
@@ -68,12 +79,12 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
     const b = busca.trim().toLowerCase();
     const l = (txs ?? []).filter((t) => (!grupo || t.grupo === grupo) && (mostrarEstornos || !t.estornado) &&
       (!b || [t.descricao, t.reserva, t.uh, t.codigo, t.origem, t.observacao].some((v) => (v ?? "").toLowerCase().includes(b))));
-    return ordem === "valor" ? [...l].sort((a, z) => Math.abs(Number(z.valor)) - Math.abs(Number(a.valor))) : l;
+    return ordem === "valor" ? [...l].sort((a, z) => Math.abs(valorHotel(z)) - Math.abs(valorHotel(a))) : l;
   }, [txs, grupo, mostrarEstornos, busca, ordem]);
 
   const ind = useMemo(() => {
     const l = txs ?? [];
-    const val = (f: (t: Tx) => boolean) => l.filter(f).reduce((a, t) => a + Number(t.valor), 0);
+    const val = (f: (t: Tx) => boolean) => l.filter(f).reduce((a, t) => a + valorHotel(t), 0);
     const receitas = val((t) => t.grupo !== "Pagamento");
     const pagamentos = val((t) => t.grupo === "Pagamento");
     const estornos = l.filter((t) => t.estornado);
@@ -81,25 +92,25 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
       lancamentos: l.length, reservas: new Set(l.map((t) => t.reserva).filter(Boolean)).size };
   }, [txs]);
 
-  const porGrupo = useMemo(() => GRUPOS.map((g) => ({ nome: g, valor: Math.abs((txs ?? []).filter((t) => t.grupo === g).reduce((a, t) => a + Number(t.valor), 0)), cor: COR_GRUPO[g] })).filter((x) => x.valor > 0), [txs]);
+  const porGrupo = useMemo(() => GRUPOS.map((g) => ({ nome: g, valor: (txs ?? []).filter((t) => t.grupo === g).reduce((a, t) => a + valorHotel(t), 0), cor: COR_GRUPO[g] })).filter((x) => x.valor > 0), [txs]);
   const porDia = useMemo(() => {
     const m = new Map<string, Record<string, number>>();
     for (const t of txs ?? []) {
       const x = m.get(t.dia) ?? {};
       const g = t.grupo === "Pagamento" ? "Pagamento" : t.grupo === "Diária" ? "Diária" : "Extras";
-      x[g] = (x[g] ?? 0) + (g === "Pagamento" ? Math.abs(Number(t.valor)) : Number(t.valor));
+      x[g] = (x[g] ?? 0) + valorHotel(t);
       m.set(t.dia, x);
     }
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([dia, x]) => ({ dia, ...x }));
   }, [txs]);
   const topDescricoes = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of txs ?? []) { if (t.grupo === "Pagamento" || t.grupo === "Diária") continue; const k = t.descricao ?? "—"; m.set(k, (m.get(k) ?? 0) + Number(t.valor)); }
+    for (const t of txs ?? []) { if (t.grupo === "Pagamento" || t.grupo === "Diária" || t.grupo === "Taxa") continue; const k = t.descricao ?? "—"; m.set(k, (m.get(k) ?? 0) + valorHotel(t)); }
     return [...m.entries()].map(([nome, valor]) => ({ nome, valor })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor).slice(0, 8);
   }, [txs]);
   const formasPag = useMemo(() => {
     const m = new Map<string, number>();
-    for (const t of txs ?? []) { if (t.grupo !== "Pagamento") continue; const k = t.descricao ?? "—"; m.set(k, (m.get(k) ?? 0) + Math.abs(Number(t.valor))); }
+    for (const t of txs ?? []) { if (t.grupo !== "Pagamento") continue; const k = t.descricao ?? "—"; m.set(k, (m.get(k) ?? 0) + valorHotel(t)); }
     return [...m.entries()].map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor);
   }, [txs]);
 
@@ -173,7 +184,7 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
                       <td><span className="hx-etiqueta" style={{ ["--c" as string]: COR_GRUPO[t.grupo ?? "Outros"] ?? COR.cinza }}>{t.grupo}</span></td>
                       <td>{t.descricao}{t.estornado && <small className="hx-tag-estorno">estornado</small>}{t.observacao && <small className="muted"> · {t.observacao}</small>}</td>
                       <td className="mono">{t.reserva ?? "—"}</td><td>{t.uh ?? "—"}</td><td>{t.origem ?? "—"}</td>
-                      <td className={`num mono ${Number(t.valor) < 0 ? "neg" : ""}`}>{moeda(Number(t.valor))}</td>
+                      <td className={`num mono ${valorHotel(t) < 0 ? "neg" : t.grupo === "Pagamento" ? "pag" : ""}`}>{moeda(valorHotel(t))}</td>
                     </tr>
                   ))}
                 </tbody>

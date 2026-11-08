@@ -208,11 +208,11 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
           )}
           <div className="hx-kpis">
             <Kpi rotulo="Taxa de ocupação" valor={pct(s.ocupacao)} delta={compPp(s.ocupacao, sAnt.ocupacao)} pontos cor={COR.azul}
-              serie={serie.map((x) => x.ocupacao)} nota={`${num(s.ocupadas)} de ${num(s.total)} UHs-noite`} ajuda="Diárias vendidas ÷ total de UHs no período" />
-            <Kpi rotulo="Diária média (ADR)" valor={moeda(s.diaria)} delta={comp(s.diaria, sAnt.diaria)} cor={COR.violeta} serie={serie.map((x) => x.diaria)} ajuda="Receita de hospedagem ÷ diárias vendidas" />
-            <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} delta={comp(s.revpar, sAnt.revpar)} cor={COR.ciano} serie={serie.map((x) => x.revpar)} ajuda="Receita de hospedagem ÷ UHs disponíveis" />
-            <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} delta={comp(s.receita, sAnt.receita)} cor={COR.verde} serie={serie.map((x) => x.receita)} />
-            <Kpi rotulo="Diárias vendidas" valor={num(s.ocupadas)} delta={comp(s.ocupadas, sAnt.ocupadas)} cor={COR.ambar} serie={serie.map((x) => x.diarias)}
+              serie={serie.filter((x) => x.ocupacao != null).map((x) => x.ocupacao)} nota={`${num(s.ocupadas)} de ${num(s.total)} UHs-noite`} ajuda="Diárias vendidas ÷ total de UHs no período" />
+            <Kpi rotulo="Diária média (ADR)" valor={moeda(s.diaria)} delta={comp(s.diaria, sAnt.diaria)} cor={COR.violeta} serie={serie.filter((x) => x.diaria != null).map((x) => x.diaria)} ajuda="Receita de hospedagem ÷ diárias vendidas" />
+            <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} delta={comp(s.revpar, sAnt.revpar)} cor={COR.ciano} serie={serie.filter((x) => x.revpar != null).map((x) => x.revpar)} ajuda="Receita de hospedagem ÷ UHs disponíveis" />
+            <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} delta={comp(s.receita, sAnt.receita)} cor={COR.verde} serie={serie.filter((x) => x.receita != null).map((x) => x.receita)} />
+            <Kpi rotulo="Diárias vendidas" valor={num(s.ocupadas)} delta={comp(s.ocupadas, sAnt.ocupadas)} cor={COR.ambar} serie={serie.filter((x) => x.diarias != null).map((x) => x.diarias)}
               nota={cobertura.antOk ? `vs. ${anoB} até a mesma data` : "sem ano anterior completo"} />
           </div>
 

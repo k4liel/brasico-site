@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   type Estadia, STATUS, antecedencia, canalNome, dataBr, faseDe, hojeFortaleza, nomeStatus, somaDias, todas,
 } from "@/lib/hotel-reservas";
+import { valorHotel, grupoDe } from "./Transacoes";
 import { COR, GraficoCombinado, Kpi, Painel, Rosca, Segmentos, Vazio, moeda, num, pct } from "./ui";
 
 // Reservas do hotel para análise (aba Reservas da página /hoteis/<hotel>): todas as estadias do PMS (pms_estadias,
@@ -74,7 +75,7 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
     setTxs(null);
     if (!aberta?.codigo) return;
     supabase.from("pms_transacoes").select("chave,dia,grupo,descricao,valor,estornado").eq("hotel_id", hotel).eq("reserva", aberta.codigo).order("dia").limit(500)
-      .then((r) => setTxs((r.data as Tx[]) ?? []));
+      .then((r) => setTxs(((r.data as Tx[]) ?? []).map((t) => ({ ...t, grupo: grupoDe(t) }))));
   }, [supabase, hotel, aberta]);
   useEffect(() => {
     const f = (e: KeyboardEvent) => { if (e.key === "Escape") setAberta(null); };
@@ -247,13 +248,13 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
                   {txs.map((t) => (
                     <li key={t.chave} className={t.estornado ? "estornado" : ""}>
                       <span className="mono">{dataBr(t.dia).slice(0, 5)}</span><span>{t.descricao}<small>{t.grupo}{t.estornado ? " · estornado" : ""}</small></span>
-                      <b className={Number(t.valor) < 0 ? "neg" : ""}>{moeda(Number(t.valor))}</b>
+                      <b className={valorHotel(t) < 0 ? "neg" : ""}>{moeda(valorHotel(t))}</b>
                     </li>
                   ))}
                 </ul>
                 <div className="hx-gaveta-somas">
-                  <div><span>Lançado</span><b>{moeda(txs.filter((t) => t.grupo !== "Pagamento").reduce((a, t) => a + Number(t.valor), 0))}</b></div>
-                  <div><span>Pago</span><b>{moeda(Math.abs(txs.filter((t) => t.grupo === "Pagamento").reduce((a, t) => a + Number(t.valor), 0)))}</b></div>
+                  <div><span>Lançado</span><b>{moeda(txs.filter((t) => t.grupo !== "Pagamento").reduce((a, t) => a + valorHotel(t), 0))}</b></div>
+                  <div><span>Pago</span><b>{moeda(txs.filter((t) => t.grupo === "Pagamento").reduce((a, t) => a + valorHotel(t), 0))}</b></div>
                 </div>
               </>
             )}
