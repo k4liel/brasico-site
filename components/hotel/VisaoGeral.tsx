@@ -16,6 +16,7 @@ type Mes = { mes: string; uh_disponiveis: number; uh_total: number; diarias_vend
 type Reserva = { canal: string | null; checkin: string | null; noites: number | null; valor_diarias: number | null; status: string | null; cancelada_em: string | null; criada_em: string | null };
 type Receb = { dia: string; grupo: string; tipo: string; valor: number };
 type Prev = { dia: string; uhs: number | null; ocupadas: number | null; ocupacao: number | null };
+type TxDia = { dia: string; grupo: string; valor: number };
 type Periodo = "mes" | "ano" | "12m";
 
 const n = (v: unknown) => (v == null ? 0 : Number(v) || 0);
@@ -46,6 +47,8 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
   const [prev, setPrev] = useState<Prev[]>([]);
   const [prevSemana, setPrevSemana] = useState<Prev[]>([]);
   const [prevPeriodo, setPrevPeriodo] = useState<Prev[]>([]);
+  const [txDia, setTxDia] = useState<TxDia[]>([]);
+  const [txDiaAnt, setTxDiaAnt] = useState<TxDia[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
   const [ini, fim] = useMemo(() => {
@@ -85,7 +88,7 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
       };
       const h0 = hoje();
       const ontem = new Date(Date.parse(`${h0}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
-      const [k, ka, rs, rc, pp] = await Promise.all([
+      const [k, ka, rs, rc, pp, tx, txa] = await Promise.all([
         pegar(ini, fim < h0 ? fim : ontem),
         pegar(anoAntes(ini), anoAntes(fim)),
         supabase.from("pms_reservas").select("canal,checkin,noites,valor_diarias,status,cancelada_em,criada_em").eq("hotel_id", hotel).gte("checkin", ini).lte("checkin", fim).limit(5000),
@@ -93,7 +96,10 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
         fim >= h0
           ? supabase.from("pms_previsao_atual").select("dia,uhs,ocupadas,ocupacao").eq("hotel_id", hotel).gte("dia", ini > h0 ? ini : h0).lte("dia", fim).order("dia").limit(400)
           : Promise.resolve({ data: [] as Prev[] }),
+        supabase.from("pms_transacoes_dia").select("dia,grupo,valor").eq("hotel_id", hotel).gte("dia", ini).lte("dia", fim < h0 ? fim : ontem).limit(5000),
+        supabase.from("pms_transacoes_dia").select("dia,grupo,valor").eq("hotel_id", hotel).gte("dia", anoAntes(ini)).lte("dia", anoAntes(fim < h0 ? fim : ontem)).limit(5000),
       ]);
+      setTxDia((tx.data as TxDia[]) ?? []); setTxDiaAnt((txa.data as TxDia[]) ?? []);
       setKpi(k); setKpiAnt(ka);
       setReservas((rs.data as Reserva[]) ?? []); setReceb((rc.data as Receb[]) ?? []);
       setPrevPeriodo(((pp as { data: Prev[] | null }).data) ?? []);
@@ -169,6 +175,21 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
     return [...m.entries()].map(([nome, valor]) => ({ nome: nome.charAt(0) + nome.slice(1).toLowerCase(), valor })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor);
   }, [receb]);
 
+  // Receita total do hotel pelas transações (diárias, consumo, spa, serviços; taxas à parte)
+  const areas = useMemo(() => {
+    const soma = (l: TxDia[]) => {
+      const m = new Map<string, number>();
+      for (const t of l) { if (t.grupo === "Pagamento") continue; m.set(t.grupo, (m.get(t.grupo) ?? 0) + Number(t.valor)); }
+      return m;
+    };
+    const a = soma(txDia), b = soma(txDiaAnt);
+    const total = (m: Map<string, number>) => [...m.entries()].filter(([g]) => g !== "Taxa").reduce((x, [, v]) => x + v, 0);
+    const ordem = ["Diária", "Consumo", "Spa", "Serviço", "Taxa"];
+    return { lista: ordem.filter((g) => a.has(g)).map((g) => ({ nome: g === "Diária" ? "Hospedagem" : g === "Taxa" ? "Taxas (serviço e ISS)" : g, valor: a.get(g) ?? 0,
+      cor: ({ "Diária": COR.azul, Consumo: COR.ambar, Spa: COR.rosa, "Serviço": COR.violeta, Taxa: COR.cinza } as Record<string, string>)[g] })),
+      total: total(a), totalAnt: b.size ? total(b) : null, temDados: txDia.length > 0 };
+  }, [txDia, txDiaAnt]);
+
   const ultimos = useMemo(() => meses.filter((m) => m.mes <= `${h0.slice(0, 7)}-01`).slice(-24), [meses, h0]);
   const primeiroMes = useMemo(() => meses.find((x) => n(x.diarias_vendidas) > 0)?.mes ?? null, [meses]);
   const pickup = useMemo(() => {
@@ -212,6 +233,8 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
             <Kpi rotulo="Diária média (ADR)" valor={moeda(s.diaria)} delta={comp(s.diaria, sAnt.diaria)} cor={COR.violeta} serie={serie.filter((x) => x.diaria != null).map((x) => x.diaria)} ajuda="Receita de hospedagem ÷ diárias vendidas" />
             <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} delta={comp(s.revpar, sAnt.revpar)} cor={COR.ciano} serie={serie.filter((x) => x.revpar != null).map((x) => x.revpar)} ajuda="Receita de hospedagem ÷ UHs disponíveis" />
             <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} delta={comp(s.receita, sAnt.receita)} cor={COR.verde} serie={serie.filter((x) => x.receita != null).map((x) => x.receita)} />
+            {areas.temDados && <Kpi rotulo="Receita total do hotel" valor={moeda(areas.total)} delta={comp(areas.total, areas.totalAnt)} cor={COR.rosa}
+              nota={s.ocupadas ? `${moeda(areas.total / s.ocupadas)} por diária vendida` : undefined} ajuda="Hospedagem + consumo + spa + serviços (sem taxas), pelas transações do PMS" />}
             <Kpi rotulo="Diárias vendidas" valor={num(s.ocupadas)} delta={comp(s.ocupadas, sAnt.ocupadas)} cor={COR.ambar} serie={serie.filter((x) => x.diarias != null).map((x) => x.diarias)}
               nota={cobertura.antOk ? `vs. ${anoB} até a mesma data` : "sem ano anterior completo"} />
           </div>
@@ -287,7 +310,7 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
             </Painel>
           )}
 
-          <div className="hx-duas">
+          <div className="hx-tres">
             {prev.length > 0 && (
               <Painel sub="O que já está vendido" titulo="Próximos 60 dias"
                 acoes={<span className="hx-legenda-mini">30 dias: {pct(pickup.ocupacao)} · {num(pickup.agora)} diárias{pickup.delta != null && <> · <b className={pickup.delta >= 0 ? "bom" : "ruim"}>{pickup.delta >= 0 ? "+" : ""}{num(pickup.delta)} na semana</b></>}</span>}>
@@ -297,6 +320,9 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
                   series={[{ chave: "ocupacao", nome: "Ocupação vendida", cor: COR.ciano, tipo: "area" }]} />
               </Painel>
             )}
+            <Painel sub="Pelas transações do PMS" titulo="Receita por área">
+              {areas.temDados ? <Rosca dados={areas.lista} fmt={(v) => moeda(v, true)} centro={moeda(areas.total, true)} sub="sem taxas" /> : <Vazio>As transações deste período ainda estão chegando do PMS.</Vazio>}
+            </Painel>
             <Painel sub="Caixa do período" titulo="Recebimentos">
               {formas.length ? <Rosca dados={formas} fmt={(v) => moeda(v, true)} sub="recebido" /> : <Vazio>Sem recebimentos lançados neste período.</Vazio>}
             </Painel>

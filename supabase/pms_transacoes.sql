@@ -77,3 +77,12 @@ begin
 end $$;
 revoke execute on function public.pms_robo_gravar_transacoes(text, text, date, jsonb) from public, authenticated;
 grant execute on function public.pms_robo_gravar_transacoes(text, text, date, jsonb) to anon;
+
+-- Resumo por dia e grupo (valor na visão do hotel: cobrança e pagamento positivos, estorno negativo)
+create or replace view public.pms_transacoes_dia with (security_invoker = true) as
+select hotel_id, dia, grupo,
+       sum(case when grupo = 'Pagamento' then valor else -valor end) valor,
+       count(*) lancamentos
+from public.pms_transacoes
+group by hotel_id, dia, grupo;
+grant select on public.pms_transacoes_dia to authenticated;
