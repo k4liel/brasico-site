@@ -7,6 +7,8 @@ import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
 import HotelGerencial from "./HotelGerencial";
+import HotelReservas from "./HotelReservas";
+import HotelMapa from "./HotelMapa";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
@@ -30,15 +32,19 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
   const [idioma, setIdioma] = useState<Idioma>("pt");
   const [aba, setAba] = useState<string | null>(null);
-  // Gerencial = números do PMS (HotelGerencial); Documento = os capítulos
-  const [vista, setVista] = useState<"gerencial" | "documento">("gerencial");
+  // Gerencial = números do PMS; Reservas = análise das reservas; Mapa = mapa de reservas; Documento = os capítulos
+  type Vista = "gerencial" | "reservas" | "mapa" | "documento";
+  const [vista, setVista] = useState<Vista>("gerencial");
 
   useEffect(() => {
-    if (window.location.hash.startsWith("#cap-") || window.location.hash === "#documento") setVista("documento");
+    const h = window.location.hash;
+    if (h.startsWith("#cap-") || h === "#documento") setVista("documento");
+    else if (h === "#reservas") setVista("reservas");
+    else if (h === "#mapa") setVista("mapa");
   }, []);
-  function trocarVista(v: "gerencial" | "documento") {
+  function trocarVista(v: Vista) {
     setVista(v);
-    try { history.replaceState(null, "", v === "documento" ? "#documento" : window.location.pathname); } catch {}
+    try { history.replaceState(null, "", v === "gerencial" ? window.location.pathname : `#${v}`); } catch {}
   }
 
   useEffect(() => {
@@ -118,6 +124,8 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
         <div className="proj-acoes">
           <div className="alternar" role="group" aria-label="Conteúdo da página">
             <button className={vista === "gerencial" ? "on" : ""} onClick={() => trocarVista("gerencial")}>Gerencial</button>
+            <button className={vista === "reservas" ? "on" : ""} onClick={() => trocarVista("reservas")}>Reservas</button>
+            <button className={vista === "mapa" ? "on" : ""} onClick={() => trocarVista("mapa")}>Mapa</button>
             <button className={vista === "documento" ? "on" : ""} onClick={() => trocarVista("documento")}>Documento</button>
           </div>
           {vista === "documento" && capitulos.length > 0 && (
@@ -147,6 +155,10 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
 
       {vista === "gerencial" ? (
         <main className="hg-pagina"><HotelGerencial hotel={hotel} /></main>
+      ) : vista === "reservas" ? (
+        <main className="hg-pagina"><HotelReservas hotel={hotel} nome={estilo?.nome ?? nome} /></main>
+      ) : vista === "mapa" ? (
+        <main className="hg-pagina mr-pagina"><HotelMapa hotel={hotel} /></main>
       ) : (
       <>
       {estilo?.css && <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(estilo.css, ".doc-escopo") }} />}
