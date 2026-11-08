@@ -368,7 +368,9 @@ async function lerDetalhes(page, h, token) {
         total: d?.total ?? null, total_arr: d?.totalARR ?? null, segmento: txt(d?.marketSegmentName), origem: txt(d?.businessSourceName), tarifa: txt(d?.ratePlanName),
         grupo: txt(d?.groupName), tipo_hospede: txt(d?.guestTypeName), adultos: d?.adultsCount ?? null, criancas: d?.childCount ?? null,
         obs_internas: txt(d?.internalComments), obs_externas: txt(d?.externalComments), obs_item_internas: txt(d?.reservationItemInternalComments),
-        obs_item_externas: txt(d?.reservationItemExternalComments), numero_externo: txt(d?.externalReservationNumber), com_historico: comHistorico });
+        obs_item_externas: txt(d?.reservationItemExternalComments), numero_externo: txt(d?.externalReservationNumber),
+        hospede_nome: txt(d?.guestName), hospede_email: txt(d?.guestEmail), hospede_telefone: fone(d?.mainGuestPhone) ?? txt(d?.guestPhoneNumber),
+        hospede_celular: d?.mainGuestMobilePhoneNumber ? `${d.mainGuestMobilePhoneCountrycode ? `+${d.mainGuestMobilePhoneCountrycode} ` : ""}${d.mainGuestMobilePhoneNumber}` : null, com_historico: comHistorico });
       soma.reservas++;
     } catch { soma.erros++; }
     if (lote.detalhes.length >= 15) await gravar();

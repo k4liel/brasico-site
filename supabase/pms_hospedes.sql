@@ -62,6 +62,7 @@ create table if not exists public.pms_reserva_detalhes (
   adultos int, criancas int,
   obs_internas text, obs_externas text, obs_item_internas text, obs_item_externas text,
   numero_externo text,
+  hospede_nome text, hospede_email text, hospede_telefone text, hospede_celular text,  -- contato do principal (existe antes da ficha)
   detalhes_em timestamptz not null default now(),
   historico_em timestamptz,
   primary key (hotel_id, item_id)
@@ -166,12 +167,13 @@ begin
 
   insert into public.pms_reserva_detalhes (hotel_id, item_id, reserva_codigo, codigo, guest_id, criada_por, criada_em, alterada_por, alterada_em,
     total, total_arr, segmento, origem, tarifa, grupo, tipo_hospede, adultos, criancas, obs_internas, obs_externas, obs_item_internas,
-    obs_item_externas, numero_externo, detalhes_em, historico_em)
+    obs_item_externas, numero_externo, hospede_nome, hospede_email, hospede_telefone, hospede_celular, detalhes_em, historico_em)
   select distinct on ((x->>'item_id')::bigint) p_hotel, (x->>'item_id')::bigint, x->>'reserva_codigo', x->>'codigo', nullif(x->>'guest_id', '')::bigint,
          x->>'criada_por', nullif(x->>'criada_em', '')::timestamptz, x->>'alterada_por', nullif(x->>'alterada_em', '')::timestamptz,
          nullif(x->>'total', '')::numeric, nullif(x->>'total_arr', '')::numeric, x->>'segmento', x->>'origem', x->>'tarifa', x->>'grupo',
          x->>'tipo_hospede', nullif(x->>'adultos', '')::int, nullif(x->>'criancas', '')::int,
-         x->>'obs_internas', x->>'obs_externas', x->>'obs_item_internas', x->>'obs_item_externas', x->>'numero_externo', now(),
+         x->>'obs_internas', x->>'obs_externas', x->>'obs_item_internas', x->>'obs_item_externas', x->>'numero_externo',
+         x->>'hospede_nome', x->>'hospede_email', x->>'hospede_telefone', x->>'hospede_celular', now(),
          case when coalesce((x->>'com_historico')::boolean, false) then now() end
   from jsonb_array_elements(coalesce(p_dados->'detalhes', '[]')) x where x->>'item_id' is not null
   order by (x->>'item_id')::bigint
@@ -181,6 +183,8 @@ begin
     segmento = excluded.segmento, origem = excluded.origem, tarifa = excluded.tarifa, grupo = excluded.grupo, tipo_hospede = excluded.tipo_hospede,
     adultos = excluded.adultos, criancas = excluded.criancas, obs_internas = excluded.obs_internas, obs_externas = excluded.obs_externas,
     obs_item_internas = excluded.obs_item_internas, obs_item_externas = excluded.obs_item_externas, numero_externo = excluded.numero_externo,
+    hospede_nome = coalesce(excluded.hospede_nome, pms_reserva_detalhes.hospede_nome), hospede_email = coalesce(excluded.hospede_email, pms_reserva_detalhes.hospede_email),
+    hospede_telefone = coalesce(excluded.hospede_telefone, pms_reserva_detalhes.hospede_telefone), hospede_celular = coalesce(excluded.hospede_celular, pms_reserva_detalhes.hospede_celular),
     detalhes_em = now(), historico_em = coalesce(excluded.historico_em, pms_reserva_detalhes.historico_em);
   get diagnostics nd = row_count;
 

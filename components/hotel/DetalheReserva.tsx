@@ -11,6 +11,7 @@ type Detalhes = {
   reserva_codigo: string | null; codigo: string | null; criada_por: string | null; criada_em: string | null; alterada_por: string | null; alterada_em: string | null;
   total: number | null; segmento: string | null; origem: string | null; tarifa: string | null; grupo: string | null; tipo_hospede: string | null;
   obs_internas: string | null; obs_externas: string | null; obs_item_internas: string | null; obs_item_externas: string | null; numero_externo: string | null;
+  hospede_nome: string | null; hospede_email: string | null; hospede_telefone: string | null; hospede_celular: string | null;
   detalhes_em: string; historico_em: string | null;
 };
 type HospRes = { guest_item_id: number; guest_id: number | null; nome: string | null; principal: boolean; crianca: boolean; idade_crianca: number | null; vip: boolean };
@@ -63,6 +64,16 @@ export default function DetalheReserva({ hotel, item, abrirHospede }: { hotel: s
         {d.grupo && <div><span>Grupo</span><b>{d.grupo}</b></div>}
         {d.tipo_hospede && <div><span>Tipo de hóspede</span><b>{d.tipo_hospede}</b></div>}
       </div>
+
+      {(d.hospede_email || d.hospede_telefone || d.hospede_celular) && (<>
+        <h4>Contato do hóspede principal</h4>
+        <div className="hx-gaveta-grade">
+          {d.hospede_nome && <div><span>Nome</span><b>{d.hospede_nome}</b></div>}
+          <div><span>E-mail</span><b>{d.hospede_email ?? "—"}</b></div>
+          <div><span>Celular</span><b>{d.hospede_celular ?? "—"}</b></div>
+          <div><span>Telefone</span><b>{d.hospede_telefone ?? "—"}</b></div>
+        </div>
+      </>)}
 
       <h4>Observações</h4>
       {obs.length ? obs.map(([t, v]) => <div key={t} className="hx-obs"><span>{t}</span><p>{v}</p></div>) : <p className="muted">Sem observações.</p>}
