@@ -6,6 +6,7 @@ import { cssDoProjeto } from "@/lib/livre";
 import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
+import HotelGerencial from "./HotelGerencial";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
@@ -29,6 +30,16 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
   const [idioma, setIdioma] = useState<Idioma>("pt");
   const [aba, setAba] = useState<string | null>(null);
+  // Gerencial = números do PMS (HotelGerencial); Documento = os capítulos
+  const [vista, setVista] = useState<"gerencial" | "documento">("gerencial");
+
+  useEffect(() => {
+    if (window.location.hash.startsWith("#cap-") || window.location.hash === "#documento") setVista("documento");
+  }, []);
+  function trocarVista(v: "gerencial" | "documento") {
+    setVista(v);
+    try { history.replaceState(null, "", v === "documento" ? "#documento" : window.location.pathname); } catch {}
+  }
 
   useEffect(() => {
     (async () => {
@@ -105,7 +116,11 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
         <h1 className="proj-nome">{estilo?.nome ?? nome}</h1>
         <div className="spacer" />
         <div className="proj-acoes">
-          {capitulos.length > 0 && (
+          <div className="alternar" role="group" aria-label="Conteúdo da página">
+            <button className={vista === "gerencial" ? "on" : ""} onClick={() => trocarVista("gerencial")}>Gerencial</button>
+            <button className={vista === "documento" ? "on" : ""} onClick={() => trocarVista("documento")}>Documento</button>
+          </div>
+          {vista === "documento" && capitulos.length > 0 && (
             <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
               {IDIOMAS.map((l) => (
                 <button key={l.id} className={idioma === l.id ? "on" : ""} onClick={() => trocarIdioma(l.id)}
@@ -115,11 +130,13 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
               ))}
             </div>
           )}
-          <div className="alternar" role="group" aria-label="Visualização">
-            <button className={modo === "pagina" ? "on" : ""} onClick={() => setModo("pagina")}>Página</button>
-            <button className={modo === "pdf" ? "on" : ""} onClick={() => setModo("pdf")}>PDF</button>
-          </div>
-          {capitulos.length > 0 && (
+          {vista === "documento" && (
+            <div className="alternar" role="group" aria-label="Visualização">
+              <button className={modo === "pagina" ? "on" : ""} onClick={() => setModo("pagina")}>Página</button>
+              <button className={modo === "pdf" ? "on" : ""} onClick={() => setModo("pdf")}>PDF</button>
+            </div>
+          )}
+          {vista === "documento" && capitulos.length > 0 && (
             <button className="acao" onClick={baixarPdf} title="Gerar o arquivo PDF para enviar">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
               Baixar PDF
@@ -128,6 +145,10 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
         </div>
       </div>
 
+      {vista === "gerencial" ? (
+        <main className="hg-pagina"><HotelGerencial hotel={hotel} /></main>
+      ) : (
+      <>
       {estilo?.css && <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(estilo.css, ".doc-escopo") }} />}
       <main className="proj-doc doc-escopo">
         {caps === null ? (
@@ -163,6 +184,8 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
           <DocView capitulos={capitulos} rodape={rodape} modo="pdf" idioma={idioma} />
         )}
       </main>
+      </>
+      )}
 
       <VisorPdf />
     </div>
