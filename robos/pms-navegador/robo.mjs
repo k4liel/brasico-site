@@ -50,10 +50,13 @@ async function quadroCom(page, alvo, ms = 30000) {
 async function entrar(page, usuario, senha) {
   await page.goto(`${BASE}/auth/login`, { waitUntil: "domcontentloaded" });
   const f = await quadroCom(page, { css: 'input[type="password"]' }, 60000);
-  if (!f) throw new Error("a tela de login não apareceu");
+  if (!f) { await diagnostico(page, "sem-login"); throw new Error("a tela de login não apareceu"); }
   await f.locator('input:not([type="password"]):not([type="checkbox"]):not([type="hidden"])').first().fill(usuario);
   await f.locator('input[type="password"]').first().fill(senha);
-  await f.getByRole("button", { name: /^\s*Entrar\s*$/i }).first().click();
+  await espera(500);
+  const botao = f.getByRole("button", { name: /^\s*Entrar\s*$/i }).first();
+  if (await botao.isDisabled().catch(() => false)) await f.locator('input[type="password"]').first().press("Enter");
+  else await botao.click();
   // Depois do login: lista de empresas, ou direto o sistema
   const fim = Date.now() + 60000;
   while (Date.now() < fim) {
@@ -68,7 +71,17 @@ async function entrar(page, usuario, senha) {
     }
     await espera(1000);
   }
+  await diagnostico(page, "login");
   throw new Error("o login não terminou em 60 s");
+}
+
+// Mostra no log onde a tela parou (endereços e começo do texto de cada quadro), sem senha nem dados de hóspede
+async function diagnostico(page, etapa) {
+  for (const f of page.frames()) {
+    const tx = (await f.locator("body").innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+    const campos = await f.locator("input").evaluateAll((els) => els.map((e) => `${e.type}:${e.name || e.getAttribute("formcontrolname") || e.placeholder || ""}:${e.value ? "preenchido" : "vazio"}`)).catch(() => []);
+    log(`[${etapa}] quadro ${f.url().slice(0, 80)} | campos ${campos.join(", ")} | texto: ${tx}`);
+  }
 }
 
 async function escolherHotel(page, cnpj) {
