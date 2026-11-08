@@ -277,10 +277,11 @@ async function lerReservas(page, h, token) {
 }
 
 // ---------- hóspedes, detalhes e histórico de cada reserva (pedido do dono, 08/11/2026) ----------
-// Fila vem do banco (pms_robo_detalhes_fila): ativas e do dia a cada ~2 h, nunca lidas aos poucos, futuras a cada 3 dias.
+// Fila vem do banco (pms_robo_detalhes_fila, supabase/pms_hospedes_releitura.sql): mudadas no PMS e do dia a cada rodada,
+// nunca lidas aos poucos, próximos 30 dias a cada 6 h, mais distantes e saídas da semana a cada 24 h.
 // Por reserva: hóspedes da reserva → detalhes (observações, criação, alteração, total) → cadastro de cada hóspede →
 // histórico de alterações. O IP de quem alterou no PMS não se copia.
-const LIMITE_DETALHES = Number(process.env.LIMITE_DETALHES || 60);
+const LIMITE_DETALHES = Number(process.env.LIMITE_DETALHES || 80);
 const localTz = (v) => {
   if (!v) return null;
   const s = String(v);
