@@ -208,6 +208,37 @@ async function lerReservas(page, h, token) {
       if (!j?.hasNext) break;
     }
   }
+  // A busca acima para em 1500 linhas por status (sem ordem de data): os check-outs recentes não vêm.
+  // Complementos: os check-outs do dia (checkOutToday) e, uma a uma pelo código (freeCodeSearch), as reservas que o
+  // banco pede para conferir (status velho ou só nas transações; pms_robo_reservas_conferir). Estas valem por cima.
+  const extras = [];
+  try {
+    for (let pg = 1; pg <= 20; pg++) {
+      const j = await get(`https://group03.totvshospitalidade.com/booking/api/booking/searchv2?checkOutToday=true&page=${pg}&pageSize=100&order=&culture=pt-BR`);
+      extras.push(...(j?.items ?? []));
+      if (!j?.hasNext) break;
+    }
+  } catch (e) { log(`  ${h.id}: check-outs do dia falharam: ${e.message}`); }
+  let conferidas = 0;
+  try {
+    const codigos = (await rpc("pms_robo_reservas_conferir", { p_segredo: SEGREDO, p_hotel: h.id, p_limite: 80 })) ?? [];
+    for (const c of codigos) {
+      try {
+        const j = await get(`https://group03.totvshospitalidade.com/booking/api/booking/searchv2?freeCodeSearch=${encodeURIComponent(c)}&page=1&pageSize=50&order=&culture=pt-BR`);
+        extras.push(...(j?.items ?? []).filter((x) => x.reservationItemCode === c));
+        conferidas++;
+      } catch { /* tenta de novo na próxima rodada */ }
+      await espera(150 + Math.random() * 250);
+    }
+  } catch (e) { log(`  ${h.id}: conferência por código falhou: ${e.message}`); }
+  if (extras.length) {
+    const idsExtras = new Set(extras.map((x) => x.reservationItemId));
+    const vistos = new Set();
+    const juntas = [...linhas.filter((x) => !idsExtras.has(x.reservationItemId)), ...extras]
+      .filter((x) => { const k = `${x.reservationItemId}|${x.guestReservationItemId ?? x.guestName ?? ""}`; if (vistos.has(k)) return false; vistos.add(k); return true; });
+    linhas.length = 0; linhas.push(...juntas);
+  }
+  log(`  ${h.id}: ${extras.length} linhas extras (check-outs do dia + ${conferidas} reservas conferidas pelo código)`);
   const porItem = new Map();
   for (const x of linhas) {
     const id = x.reservationItemId;
