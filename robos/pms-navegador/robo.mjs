@@ -1,8 +1,9 @@
 // Robô do PMS dos hotéis (TOTVS Hospitalidade, "PMS SaaS") para a VPS. Autorizado pelo dono e pela TOTVS (08/11/2026).
-// A cada hora: abre um Chromium novo (sessão nova, nada fica salvo), entra no PMS com o usuário do Vault,
+// A cada ~30 min: abre um Chromium novo (sessão nova, nada fica salvo), entra no PMS com o usuário do Vault,
 // escolhe cada hotel, lê o painel do dia e a disponibilidade dos próximos 60 dias e grava no Supabase.
 // O usuário e a senha vêm do banco a cada rodada (pms_robo_credenciais) e só ficam na memória.
-// Guarda só números do hotel: listas de hóspedes e tokens nunca são gravados nem impressos.
+// Grava no banco os números do hotel e, desde 08/11/2026 (pedido do dono), o cadastro dos hóspedes, os detalhes e o
+// histórico das reservas (só os sócios veem). Tokens e dados de hóspede nunca são impressos no registro.
 //
 // Variáveis: SUPABASE_URL, SUPABASE_ANON_KEY (públicas), PMS_ROBO_SEGREDO (Vault: pms_robo_segredo),
 //            INTERVALO_MIN (padrão 30; o banco manda, por pms_robo_intervalo), UMA_VEZ=1 (roda uma vez e sai).
@@ -275,6 +276,91 @@ async function lerReservas(page, h, token) {
   return { uhs: uhs.length, estadias: dados.estadias.length, bloqueios: dados.bloqueios.length, gravado: g };
 }
 
+// ---------- hóspedes, detalhes e histórico de cada reserva (pedido do dono, 08/11/2026) ----------
+// Fila vem do banco (pms_robo_detalhes_fila): ativas e do dia a cada ~2 h, nunca lidas aos poucos, futuras a cada 3 dias.
+// Por reserva: hóspedes da reserva → detalhes (observações, criação, alteração, total) → cadastro de cada hóspede →
+// histórico de alterações. O IP de quem alterou no PMS não se copia.
+const LIMITE_DETALHES = Number(process.env.LIMITE_DETALHES || 60);
+const localTz = (v) => {
+  if (!v) return null;
+  const s = String(v);
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}T${br[4]}:${br[5]}:${br[6] ?? "00"}-03:00`;
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2})?)/);
+  if (iso) return /[zZ]|[+-]\d{2}:?\d{2}$/.test(s) ? s : `${iso[1]}T${iso[2]}-03:00`;
+  return null;
+};
+const txt = (v) => (v == null || String(v).trim() === "" ? null : String(v).trim());
+const fone = (o) => (o && (o.number || o.Number) ? `${o.countryCode ? `+${String(o.countryCode).replace(/^\+/, "")} ` : ""}${o.number ?? o.Number}` : null);
+
+async function lerDetalhes(page, h, token) {
+  const get = (url) => page.evaluate(async ([u, t]) => {
+    const r = await fetch(u, { headers: { Authorization: t, Accept: "application/json" } });
+    if (!r.ok) throw new Error(`HTTP ${r.status} em ${new URL(u).pathname}`);
+    return r.json();
+  }, [url, token]);
+  const fila = (await rpc("pms_robo_detalhes_fila", { p_segredo: SEGREDO, p_hotel: h.id, p_limite: LIMITE_DETALHES })) ?? [];
+  const B = "https://group03.totvshospitalidade.com/booking/api";
+  let lote = { hospedes: [], reserva_hospedes: [], detalhes: [], historico: [] };
+  const soma = { reservas: 0, hospedes: 0, historico: 0, erros: 0 };
+  const gravar = async () => {
+    if (!lote.detalhes.length && !lote.hospedes.length) return;
+    await rpc("pms_robo_gravar_hospedes", { p_segredo: SEGREDO, p_hotel: h.id, p_dados: lote });
+    lote = { hospedes: [], reserva_hospedes: [], detalhes: [], historico: [] };
+  };
+  for (const { item_id: item } of fila) {
+    try {
+      const gs = await get(`${B}/reservationItem/${item}/guestReservationItems?culture=pt-BR`);
+      const hospedes = Array.isArray(gs) ? gs : gs?.items ?? [];
+      const principal = hospedes.find((g) => g.isMain) ?? hospedes[0];
+      const guestDe = new Map();
+      for (const g of hospedes.slice(0, 12)) {
+        try {
+          const p = await get(`${B}/guestReservationItem/${g.guestReservationItemId}?culture=pt-BR`);
+          if (p?.guestId) {
+            guestDe.set(g.guestReservationItemId, p.guestId);
+            const end = p.addressLocation ?? {};
+            lote.hospedes.push({ guest_id: p.guestId, person_id: txt(p.personId), nome: txt(p.fullName ?? g.fullName), email: txt(p.email),
+              telefone: fone(p.phone), celular: p.mobilePhoneNumber ? `${p.mobilePhoneCountrycode ? `+${p.mobilePhoneCountrycode} ` : ""}${p.mobilePhoneNumber}` : null,
+              nascimento: txt(p.birthDate)?.slice(0, 10) ?? null, sexo: txt(p.gender), documento_tipo_id: p.documentTypeId ?? null, documento: txt(p.documentInformation),
+              rua: txt(p.streetName ?? end.streetName), numero: txt(p.streetNumber ?? end.streetNumber), complemento: txt(p.additionalAddressDetails ?? end.additionalAddressDetails),
+              bairro: txt(p.neighborhood ?? end.neighborhood), cep: txt(p.postalCode ?? end.postalCode), cidade: txt(p.cityName), estado: txt(p.stateName),
+              uf: txt(p.divisionCode ?? end.divisionCode), pais: txt(p.countryName), motivo_viagem: txt(p.purposeOfTrip), tipo_hospede: null });
+            soma.hospedes++;
+          }
+        } catch { /* hóspede sem cadastro: fica só o nome */ }
+        lote.reserva_hospedes.push({ guest_item_id: g.guestReservationItemId, item_id: item, guest_id: guestDe.get(g.guestReservationItemId) ?? null,
+          nome: txt(g.fullName), principal: !!g.isMain, crianca: !!g.isChild, idade_crianca: g.childAge ?? null, vip: !!g.isVip, status: txt(g.status) });
+        await espera(80 + Math.random() * 150);
+      }
+      let d = null;
+      if (principal) { try { d = await get(`${B}/booking/searchDetails/${principal.guestReservationItemId}?culture=pt-BR`); } catch { /* sem detalhes */ } }
+      let comHistorico = false;
+      try {
+        const hi = await get(`https://pms.totvshospitalidade.com/dataextractor/api/reservation/${item}?culture=pt-BR`);
+        for (const ev of hi?.reservationList ?? []) {
+          const campos = (ev.events ?? []).flatMap((e) => (e.details ?? []).map((c) => ({ campo: c.fieldName ?? null, nome: c.fieldNameTranslated ?? c.fieldName ?? null,
+            antes: c.before === "" ? null : c.before ?? null, depois: c.after === "" ? null : c.after ?? null })));
+          lote.historico.push({ evento_id: String(ev.id), item_id: item, quando: localTz(ev.date), usuario: txt(ev.userName), tipo: txt(ev.aggregateType), acao: txt(ev.statusMessage), campos });
+          soma.historico++;
+        }
+        comHistorico = true;
+      } catch { /* sem histórico nesta rodada */ }
+      lote.detalhes.push({ item_id: item, reserva_codigo: txt(d?.reservationCode), codigo: txt(d?.reservationItemCode), guest_id: d?.guestId ?? guestDe.get(principal?.guestReservationItemId) ?? null,
+        criada_por: txt(d?.fullNameUserCreator), criada_em: localTz(d?.creationTime), alterada_por: txt(d?.fullNameUserModifield), alterada_em: localTz(d?.lastModificationTime),
+        total: d?.total ?? null, total_arr: d?.totalARR ?? null, segmento: txt(d?.marketSegmentName), origem: txt(d?.businessSourceName), tarifa: txt(d?.ratePlanName),
+        grupo: txt(d?.groupName), tipo_hospede: txt(d?.guestTypeName), adultos: d?.adultsCount ?? null, criancas: d?.childCount ?? null,
+        obs_internas: txt(d?.internalComments), obs_externas: txt(d?.externalComments), obs_item_internas: txt(d?.reservationItemInternalComments),
+        obs_item_externas: txt(d?.reservationItemExternalComments), numero_externo: txt(d?.externalReservationNumber), com_historico: comHistorico });
+      soma.reservas++;
+    } catch { soma.erros++; }
+    if (lote.detalhes.length >= 15) await gravar();
+    await espera(150 + Math.random() * 300);
+  }
+  await gravar();
+  return soma;
+}
+
 // ---------- histórico (relatórios Metabase do PMS, mês a mês) ----------
 const EBS = "https://ebs.totvshospitalidade.com/report";
 const RELATORIOS = { kpi: 7408, reservas: 364, recebimentos: 9, transacoes: 4 }; // metabaseKey de cada relatório no menu do PMS
@@ -540,6 +626,10 @@ async function rodada() {
           r.reservas = { uhs: rs.uhs, estadias: rs.estadias, bloqueios: rs.bloqueios };
           log(`${h.id}: reservas · ${rs.uhs} UHs · ${rs.estadias} estadias · ${rs.bloqueios} bloqueios`);
         } catch (e) { log(`${h.id}: reservas falharam: ${e.message.split("\n")[0]}`); }
+        try {
+          const dt = await lerDetalhes(page, h, token);
+          log(`${h.id}: hóspedes e detalhes · ${dt.reservas} reservas · ${dt.hospedes} cadastros · ${dt.historico} registros de histórico${dt.erros ? ` · ${dt.erros} erro(s)` : ""}`);
+        } catch (e) { log(`${h.id}: hóspedes e detalhes falharam: ${e.message.split("\n")[0]}`); }
         try {
           const hist = await historico(page, ctx, h, token, lidos);
           r.historico = hist;
