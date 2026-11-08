@@ -293,9 +293,20 @@ async function historico(page, ctx, h, token, lidos) {
       const item = menu.find((m) => m.metabaseKey === chave);
       if (!item) { resumo.erros.push(`${relatorio}: relatório não está no menu`); continue; }
       // A permissão de abrir o relatório vale para uma abertura só: pede uma nova a cada mês
-      const novaPermissao = async () => (await page.evaluate(async ([id, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${id}?culture=pt-BR`,
+      // e o PMS devolve a mesma por alguns segundos se pedida de novo: espera até vir uma que ainda não foi usada
+      const pedirPermissao = async () => (await page.evaluate(async ([id, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${id}?culture=pt-BR`,
         { headers: { Authorization: t, Accept: "application/json" } })).json(), [item.reportParameterUId, token]))?.permissionToken;
-      if (!(await novaPermissao())) { resumo.erros.push(`${relatorio}: sem permissão no PMS`); continue; }
+      const usadas = new Set();
+      const novaPermissao = async () => {
+        for (let i = 0; i < 40; i++) {
+          const p = await pedirPermissao();
+          if (p && !usadas.has(p)) { usadas.add(p); return p; }
+          await espera(1500);
+        }
+        return null;
+      };
+      const teste = await pedirPermissao();
+      if (!teste) { resumo.erros.push(`${relatorio}: sem permissão no PMS`); continue; }
       let vazios = 0;
       const atual = ymd(inicioMes(new Date()));
       for (const mes of mesesParaLer(h, relatorio, lidos, new Date())) {
