@@ -1,12 +1,23 @@
-# Robô do PMS dos hotéis na VPS. O código vem direto do GitHub (repositório público, sem segredos).
-# Preencha PMS_ROBO_SEGREDO com o valor de pms_robo_segredo do Vault do Supabase (nunca no GitHub).
+# Robô do PMS dos hotéis na VPS (projeto brasico-pms-robo na Hostinger). Sem segredos aqui: SUPABASE_ANON_KEY e
+# PMS_ROBO_SEGREDO (valor de pms_robo_segredo no Vault) vão nas variáveis do projeto na VPS.
+# Usa a imagem oficial do Playwright e baixa o robo.mjs do GitHub a cada início (reiniciar = pegar a versão nova).
 services:
   pms-robo:
-    build: https://github.com/k4liel/brasico-site.git#main:robos/pms-navegador
+    image: mcr.microsoft.com/playwright:v1.49.1-noble
     container_name: brasico-pms-robo
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - >-
+        node -e "fetch('https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/pms-navegador/robo.mjs').then(r=>{if(!r.ok)throw new Error(r.status);return r.text()}).then(t=>require('fs').writeFileSync('robo.mjs',t))"
+        && echo '{"type":"module"}' > package.json
+        && npm install playwright@1.49.1 --no-audit --no-fund --loglevel=error
+        && exec node robo.mjs
     restart: unless-stopped
     shm_size: "1gb"
     environment:
+      TZ: America/Fortaleza
       SUPABASE_URL: https://doajznzouxxqbqkvsclv.supabase.co
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       PMS_ROBO_SEGREDO: ${PMS_ROBO_SEGREDO}
