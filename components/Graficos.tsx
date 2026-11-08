@@ -19,8 +19,10 @@ function marcas(min: number, max: number, n = 4) {
 }
 
 /** Linhas por mês (ex.: índice de preços). */
-export function GraficoLinhas({ rotulos, series, altura = 260, formato = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }), base }: {
+export function GraficoLinhas({ rotulos, series, altura = 260, formato = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }), base, limites }: {
   rotulos: string[]; series: Serie[]; altura?: number; formato?: (v: number) => string; base?: number;
+  /** Eixo fixo (ex.: [0, 100] para porcentagens); sem folga */
+  limites?: [number, number];
 }) {
   const [foco, setFoco] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
@@ -29,7 +31,7 @@ export function GraficoLinhas({ rotulos, series, altura = 260, formato = (v: num
   if (base != null) valores.push(base);
   const min0 = Math.min(...valores), max0 = Math.max(...valores);
   const folga = (max0 - min0) * 0.15 || 1;
-  const min = min0 - folga, max = max0 + folga;
+  const min = limites ? limites[0] : min0 - folga, max = limites ? limites[1] : max0 + folga;
   const x = (i: number) => E + (rotulos.length <= 1 ? 0 : (i / (rotulos.length - 1)) * (W - E - D));
   const y = escala(min, max, H - B, T);
   const ticks = marcas(min, max);

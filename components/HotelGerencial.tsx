@@ -56,7 +56,11 @@ function Kpi({ rotulo, valor, atual, base, pontos, nota }: { rotulo: string; val
     <div className="tp-indicador">
       <span className="tp-rotulo">{rotulo}</span>
       <b className="tp-numero">{valor}</b>
-      <span className="tp-nota"><Var atual={atual} base={base} pontos={pontos} /> <span className="muted">vs. ano anterior</span></span>
+      <span className="tp-nota">
+        {atual == null || base == null || !isFinite(atual) || !isFinite(base) || (!pontos && base === 0)
+          ? "sem ano anterior para comparar"
+          : <><Var atual={atual} base={base} pontos={pontos} /> vs. ano anterior</>}
+      </span>
       {nota && <span className="tp-nota">{nota}</span>}
     </div>
   );
@@ -149,6 +153,22 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
   const limiteAnt = anoAntes(hojeStr);
   const s: Soma = useMemo(() => somarKpi(realizado), [realizado]);
   const sAnt: Soma = useMemo(() => somarKpi(fim < hojeStr ? kpiAnt : kpiAnt.filter((x) => x.dia < limiteAnt)), [kpiAnt, fim, hojeStr, limiteAnt]);
+  // Cobertura: quantos dias do período (e do mesmo período no ano anterior) já estão no banco.
+  // Sem cobertura completa, não compara (evita "▲ 600%" enquanto o histórico ainda está chegando).
+  const contarDias = (a: string, b: string) => (b < a ? 0 : Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000) + 1);
+  const ontem = new Date(Date.parse(`${hojeStr}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
+  const fimReal = fim < hojeStr ? fim : ontem;
+  const cobertura = useMemo(() => {
+    const esperadoAtual = contarDias(ini, fimReal);
+    const temAtual = new Set(realizado.map((x) => x.dia)).size;
+    const fimAnt = anoAntes(fimReal);
+    const esperadoAnt = contarDias(anoAntes(ini), fimAnt);
+    const temAnt = new Set(kpiAnt.filter((x) => x.dia <= fimAnt).map((x) => x.dia)).size;
+    const temAntTudo = new Set(kpiAnt.map((x) => x.dia)).size;
+    return { faltamAtual: Math.max(0, esperadoAtual - temAtual), anteriorOk: esperadoAnt > 0 && temAnt >= esperadoAnt * 0.97,
+      anteriorTudoOk: temAntTudo >= contarDias(anoAntes(ini), anoAntes(fim)) * 0.97 };
+  }, [ini, fim, fimReal, realizado, kpiAnt]);
+  const base = (v: number | null) => (cobertura.anteriorOk ? v : null);
   const sAntTudo: Soma = useMemo(() => somarKpi(kpiAnt), [kpiAnt]);
   const vendido = useMemo(() => {
     const ocup = prevPeriodo.reduce((a, p) => a + n(p.ocupadas), 0);
@@ -283,20 +303,26 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
         </div>
       ) : (
         <>
+          {cobertura.faltamAtual > 0 && (
+            <p className="tp-nota hg-nota-futuro hg-aviso">
+              Faltam {inteiro(cobertura.faltamAtual)} dias deste período no banco: o histórico ainda está sendo trazido do PMS (ou o hotel ainda não operava).
+              Os números abaixo cobrem só os dias que já chegaram.
+            </p>
+          )}
           {/* Indicadores do período */}
           <section className="tp-painel tp-kpis hg-kpis-5" aria-label="Indicadores do período">
-            <Kpi rotulo="Taxa de ocupação" valor={perc(s.ocupacao)} atual={s.ocupacao} base={sAnt.ocupacao} pontos />
-            <Kpi rotulo="Diária média (ADR)" valor={moeda(s.diaria)} atual={s.diaria} base={sAnt.diaria} />
-            <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} atual={s.revpar} base={sAnt.revpar} />
-            <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} atual={s.receita} base={sAnt.receita} />
-            <Kpi rotulo="Diárias vendidas" valor={inteiro(s.ocupadas)} atual={s.ocupadas} base={sAnt.ocupadas}
+            <Kpi rotulo="Taxa de ocupação" valor={perc(s.ocupacao)} atual={s.ocupacao} base={base(sAnt.ocupacao)} pontos />
+            <Kpi rotulo="Diária média (ADR)" valor={moeda(s.diaria)} atual={s.diaria} base={base(sAnt.diaria)} />
+            <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} atual={s.revpar} base={base(sAnt.revpar)} />
+            <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} atual={s.receita} base={base(sAnt.receita)} />
+            <Kpi rotulo="Diárias vendidas" valor={inteiro(s.ocupadas)} atual={s.ocupadas} base={base(sAnt.ocupadas)}
               nota={`de ${inteiro(s.total)} UHs-noite`} />
           </section>
           {vendido.dias > 0 && (
             <p className="tp-nota hg-nota-futuro">
               Realizado até ontem. Nos {inteiro(vendido.dias)} dias que faltam do período, já estão vendidas <b>{inteiro(vendido.ocupadas)} diárias</b>
               {" "}({perc(vendido.ocupacao)} de ocupação). Com isso, a ocupação do período fecha em pelo menos <b>{perc(vendido.projecao)}</b>
-              {sAntTudo.total ? <> (ano anterior, período inteiro: {perc(sAntTudo.ocupacao)})</> : null}.
+              {cobertura.anteriorTudoOk && sAntTudo.total ? <> (ano anterior, período inteiro: {perc(sAntTudo.ocupacao)})</> : null}.
             </p>
           )}
 
@@ -306,7 +332,7 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
               <div className="tp-painel-topo"><div><span className="tp-rotulo">Dia a dia</span><h3 className="hg-h3">Ocupação</h3></div>
                 <span className="tp-nota">dias a partir de hoje = já vendido</span></div>
               <GraficoLinhas rotulos={porDia.map((d) => String(+d.dia.slice(8, 10)))} altura={240}
-                formato={(v) => `${Math.round(v)}%`}
+                formato={(v) => `${Math.round(v)}%`} limites={[0, 100]}
                 series={[
                   { nome: mes.slice(0, 4), cor: "var(--serie-1)", pontos: porDia.map((d) => d.a.ocupacao) },
                   { nome: String(+mes.slice(0, 4) - 1), cor: "var(--serie-2)", pontos: porDia.map((d) => d.b?.ocupacao ?? null) },
@@ -400,7 +426,7 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
                     {pickup.semanaPassada != null && <> · {pickup.agora - pickup.semanaPassada >= 0 ? "+" : ""}{inteiro(pickup.agora - pickup.semanaPassada)} na última semana</>}
                   </span></div>
                 <GraficoLinhas rotulos={prev.slice(0, 60).map((p) => `${p.dia.slice(8, 10)}/${p.dia.slice(5, 7)}`)} altura={220}
-                  formato={(v) => `${Math.round(v)}%`}
+                  formato={(v) => `${Math.round(v)}%`} limites={[0, 100]}
                   series={[{ nome: "Ocupação vendida", cor: "var(--serie-1)", pontos: prev.slice(0, 60).map((p) => (p.ocupacao == null ? null : Number(p.ocupacao))) }]} />
               </section>
             )}

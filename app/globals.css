@@ -3749,3 +3749,4 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
   .hg-barras li { grid-template-columns: 1fr auto; }
   .hg-barras-trilho { grid-column: 1 / -1; grid-row: 2; }
 }
+.hg-aviso { border-color: var(--tp-alerta); }
