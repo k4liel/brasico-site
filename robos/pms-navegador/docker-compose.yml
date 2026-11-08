@@ -10,10 +10,10 @@ services:
       - sh
       - -c
       - >-
-        node -e "fetch('https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/pms-navegador/robo.mjs?t='+Date.now()).then(r=>{if(!r.ok)throw new Error(r.status);return r.text()}).then(t=>require('fs').writeFileSync('robo.mjs',t))"
+        node -e "fetch('https://api.github.com/repos/k4liel/brasico-site/contents/robos/pms-navegador/robo.mjs?ref=main',{headers:{Accept:'application/vnd.github.raw','User-Agent':'brasico-pms-robo'}}).then(r=>{if(!r.ok)throw new Error(r.status);return r.text()}).then(t=>require('fs').writeFileSync('robo.mjs',t))"
         && echo '{"type":"module"}' > package.json
         && npm install playwright@1.49.1 --no-audit --no-fund --loglevel=error
-        && exec node robo.mjs
+        && exec xvfb-run -a --server-args="-screen 0 1366x900x24" node robo.mjs
     restart: unless-stopped
     shm_size: "1gb"
     environment:
@@ -22,6 +22,7 @@ services:
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       PMS_ROBO_SEGREDO: ${PMS_ROBO_SEGREDO}
       INTERVALO_MIN: "60"
+      JANELA: "1"
     volumes:
       - pms-dados:/dados
     logging:
