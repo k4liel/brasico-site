@@ -312,14 +312,16 @@ async function lerDetalhes(page, h, token) {
     await rpc("pms_robo_gravar_hospedes", { p_segredo: SEGREDO, p_hotel: h.id, p_dados: lote });
     lote = { hospedes: [], reserva_hospedes: [], detalhes: [], historico: [] };
   };
-  for (const { item_id: item } of fila) {
+  for (const { item_id: item, status_id: st } of fila) {
+    // A ficha completa (documento, endereço, nascimento) só existe depois do check-in: nas futuras, só o contato dos detalhes
+    const comFicha = st === 2 || st === 3;
     try {
       const gs = await get(`${B}/reservationItem/${item}/guestReservationItems?culture=pt-BR`);
       const hospedes = Array.isArray(gs) ? gs : gs?.items ?? [];
       const principal = hospedes.find((g) => g.isMain) ?? hospedes[0];
       const guestDe = new Map();
       for (const g of hospedes.slice(0, 12)) {
-        try {
+        if (comFicha) try {
           const p = await get(`${B}/guestReservationItem/${g.guestReservationItemId}?culture=pt-BR`);
           if (p?.guestId) {
             guestDe.set(g.guestReservationItemId, p.guestId);

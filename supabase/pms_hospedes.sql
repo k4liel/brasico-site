@@ -102,9 +102,9 @@ returns jsonb language plpgsql security definer set search_path = public as $$
 declare v_hoje date := (now() at time zone 'America/Fortaleza')::date; r jsonb;
 begin
   if not public.pms_robo_ok(p_segredo) then raise exception 'sem permissão' using errcode = '42501'; end if;
-  select coalesce(jsonb_agg(jsonb_build_object('item_id', item_id, 'codigo', codigo)), '[]') into r from (
-    select item_id, codigo from (
-      select e.item_id, e.codigo,
+  select coalesce(jsonb_agg(jsonb_build_object('item_id', item_id, 'codigo', codigo, 'status_id', status_id)), '[]') into r from (
+    select item_id, codigo, status_id from (
+      select e.item_id, e.codigo, e.status_id,
              case when d.item_id is not null and (e.status_id = 2 or e.checkin between v_hoje and v_hoje + 1 or e.checkout between v_hoje - 1 and v_hoje + 1)
                        and d.detalhes_em < now() - interval '2 hours' then 1
                   when d.item_id is null then 2
