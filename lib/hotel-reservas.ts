@@ -8,6 +8,7 @@ export type Estadia = {
   adultos: number | null; criancas: number | null; hospedes: number | null; vip: boolean;
   canal: string | null; empresa: string | null; tarifa: string | null; valor_diarias: number | null;
   criada_em: string | null; cancelada_em: string | null; visto_em: string;
+  checkin_original?: string | null; teve_noshow?: boolean; // chegada original e se já passou por no-show
 };
 export type Uh = { uh_id: number; numero: string; tipo: string | null; andar: string | null; ativa: boolean; fora_inventario: boolean; visto_em: string };
 export type Bloqueio = { bloqueio_id: string; uh_id: number | null; inicio: string | null; fim: string | null; motivo: string | null; comentario: string | null };
@@ -27,6 +28,7 @@ export const FASES: { id: Fase; nome: string }[] = [
   { id: "pendente", nome: "Pendente" },
   { id: "hospedada", nome: "Hospedada" },
   { id: "finalizada", nome: "Finalizada" },
+  { id: "noshow", nome: "No-show" },
   { id: "bloqueio", nome: "Bloqueio" },
   { id: "manutencao", nome: "Manutenção" },
 ];

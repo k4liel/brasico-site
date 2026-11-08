@@ -24,7 +24,7 @@ services:
       SUPABASE_URL: https://doajznzouxxqbqkvsclv.supabase.co
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       PMS_ROBO_SEGREDO: ${PMS_ROBO_SEGREDO}
-      INTERVALO_MIN: "60"
+      INTERVALO_MIN: "30"
       JANELA: "1"
     volumes:
       - pms-dados:/dados

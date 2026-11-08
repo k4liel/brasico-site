@@ -54,7 +54,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
       const [u, e, b, h] = await Promise.all([
         todas<Uh>((de, ate) => supabase.from("pms_uhs").select("uh_id,numero,tipo,andar,ativa,fora_inventario,visto_em").eq("hotel_id", hotel).range(de, ate)),
         todas<Estadia>((de, ate) => supabase.from("pms_estadias_canal").select("*").eq("hotel_id", hotel)
-          .lt("checkin", fimExcl).gt("checkout", inicio).not("status_id", "in", "(5,6)").range(de, ate)),
+          .lt("checkin", fimExcl).gte("checkout", somaDias(inicio, -1)).neq("status_id", 6).range(de, ate)),
         todas<Bloqueio>((de, ate) => supabase.from("pms_bloqueios").select("bloqueio_id,uh_id,inicio,fim,motivo,comentario").eq("hotel_id", hotel)
           .lt("inicio", fimExcl).gte("fim", inicio).range(de, ate)),
         todas<Estadia>((de, ate) => supabase.from("pms_estadias_canal").select("*").eq("hotel_id", hotel)
@@ -85,17 +85,30 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
     const m = new Map<number, Barra[]>();
     const semUh: Estadia[] = [];
     const ids = new Set((uhs ?? []).map((u) => u.uh_id));
-    const montar = (chave: string, a: string, b: string, fase: Fase, extra: Partial<Barra>): Barra | null => {
-      const ini0 = difDias(inicio, a) + 0.5, fim0 = difDias(inicio, b) + 0.5;
+    // Barra do meio do dia de chegada ao meio do dia de saída; "frac" desloca as pontas (estadia de zero noites)
+    const montar = (chave: string, a: string, b: string, fase: Fase, extra: Partial<Barra>, frac: [number, number] = [0.5, 0.5]): Barra | null => {
+      const ini0 = difDias(inicio, a) + frac[0], fim0 = difDias(inicio, b) + frac[1];
       const ini = Math.max(0, ini0), fim = Math.min(janela, fim0);
       if (fim <= ini) return null;
       return { chave, fase, ini, fim, cortadoIni: ini0 < 0, cortadoFim: fim0 > janela, faixa: 0, rotulo: "", sub: "", ...extra };
     };
     for (const e of estadias) {
-      if (!valida(e)) continue;
-      if (!e.uh_id || !ids.has(e.uh_id)) { if (e.status_id === 1 || e.status_id === 4 || e.status_id === 2) semUh.push(e); continue; }
-      const b = montar(`e${e.item_id}`, e.checkin!, e.checkout!, faseDe(e), { estadia: e, rotulo: e.hospede || (e.item_id < 0 ? `Reserva ${e.codigo ?? ""}` : "Hóspede não informado"), sub: e.item_id < 0 ? "check-out · pelas transações" : e.codigo ?? "" });
-      if (b) m.set(e.uh_id, [...(m.get(e.uh_id) ?? []), b]);
+      if (e.status_id === 6 || !e.checkin || !e.checkout || e.checkout < e.checkin) continue;
+      if (!e.uh_id || !ids.has(e.uh_id)) { if (valida(e) && (e.status_id === 1 || e.status_id === 4 || e.status_id === 2)) semUh.push(e); continue; }
+      const nome = e.hospede || (e.item_id < 0 ? `Reserva ${e.codigo ?? ""}` : "Hóspede não informado");
+      const sub = e.item_id < 0 ? "check-out · pelas transações" : e.codigo ?? "";
+      const por = (b: Barra | null) => { if (b) m.set(e.uh_id!, [...(m.get(e.uh_id!) ?? []), b]); };
+      const original = e.checkin_original && e.checkin_original < e.checkin ? e.checkin_original : null;
+      if (e.status_id === 5) {
+        // No-show: o PMS põe a saída igual à chegada; mostra a noite reservada
+        const a = original ?? e.checkin, b = e.checkout > a ? e.checkout : somaDias(a, 1);
+        por(montar(`n${e.item_id}`, a, b, "noshow", { estadia: e, rotulo: `No-show · ${nome}`, sub }));
+        continue;
+      }
+      // Passou por no-show e o hóspede chegou depois: a noite perdida aparece como no-show, e a estadia em seguida
+      if (e.teve_noshow && original) por(montar(`n${e.item_id}`, original, e.checkin, "noshow", { estadia: e, rotulo: `No-show · ${nome}`, sub: "depois fez check-in" }));
+      if (e.checkout > e.checkin) por(montar(`e${e.item_id}`, e.checkin, e.checkout, faseDe(e), { estadia: e, rotulo: nome, sub }));
+      else por(montar(`e${e.item_id}`, e.checkin, e.checkin, faseDe(e), { estadia: e, rotulo: nome, sub: `entrou e saiu no mesmo dia · ${sub}` }, [0.5, 0.98]));
     }
     for (const bl of bloqueios) {
       if (!bl.uh_id || !bl.inicio || !bl.fim || !ids.has(bl.uh_id)) continue;
@@ -270,7 +283,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
       )}
 
       <p className="mr-ctx mr-nota">
-        Cada barra vai do meio do dia de chegada ao meio do dia de saída. A cor segue o status no PMS. Reservas canceladas e no-show não aparecem. Check-outs antigos que a busca do PMS não traz vêm das transações (sem o nome do hóspede).
+        Cada barra vai do meio do dia de chegada ao meio do dia de saída. A cor segue o status no PMS. Reservas canceladas não aparecem; no-show aparece em roxo na noite reservada (e, se o hóspede chegou depois, a estadia vem em seguida). Quem entrou e saiu no mesmo dia aparece como uma barra curta nesse dia. Check-outs antigos que a busca do PMS não traz vêm das transações (sem o nome do hóspede).
         O mapa é só para consulta: as reservas são feitas e alteradas no PMS.
       </p>
 

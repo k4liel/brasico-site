@@ -5,7 +5,7 @@
 // Guarda só números do hotel: listas de hóspedes e tokens nunca são gravados nem impressos.
 //
 // Variáveis: SUPABASE_URL, SUPABASE_ANON_KEY (públicas), PMS_ROBO_SEGREDO (Vault: pms_robo_segredo),
-//            INTERVALO_MIN (padrão 60), UMA_VEZ=1 (roda uma vez e sai).
+//            INTERVALO_MIN (padrão 30; o banco manda, por pms_robo_intervalo), UMA_VEZ=1 (roda uma vez e sai).
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -15,7 +15,7 @@ const DISPONIBILIDADE = "https://group05.totvshospitalidade.com/availability/api
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const ANON = process.env.SUPABASE_ANON_KEY;
 const SEGREDO = process.env.PMS_ROBO_SEGREDO;
-const INTERVALO_MIN = Number(process.env.INTERVALO_MIN || 60);
+const INTERVALO_MIN = Number(process.env.INTERVALO_MIN || 30);
 const DIAS_PREVISAO = 60;
 const FALHAS = "/dados/falhas";
 
@@ -543,8 +543,11 @@ log(`robô do PMS ligado (a cada ${INTERVALO_MIN} min)`);
 do {
   await rodada();
   if (process.env.UMA_VEZ) break;
-  // Intervalo variável entre as rodadas (75% a 125% do intervalo; com 60 min, entre 45 e 75 min)
-  const proxima = INTERVALO_MIN * 60000 * (0.75 + Math.random() * 0.5);
+  // Intervalo variável entre as rodadas (75% a 125% do intervalo; com 30 min, entre 22 e 38 min).
+  // O intervalo vem do banco a cada rodada (pms_robo_intervalo); sem resposta, vale o INTERVALO_MIN do ambiente.
+  let minutos = INTERVALO_MIN;
+  try { const v = Number(await rpc("pms_robo_intervalo", { p_segredo: SEGREDO })); if (v >= 10 && v <= 240) minutos = v; } catch { /* usa o do ambiente */ }
+  const proxima = minutos * 60000 * (0.75 + Math.random() * 0.5);
   log(`próxima rodada em ${Math.round(proxima / 60000)} min`);
   await espera(proxima);
 } while (true);
