@@ -241,13 +241,20 @@ async function lerMetabase(pagina, permissao, ini, fim) {
   await pagina.waitForURL(/metabase\.totvshospitalidade\.com\/embed\/question\//, { timeout: 90000 });
   const tok = new URL(pagina.url()).pathname.split("/").pop();
   return pagina.evaluate(async (t) => {
-    for (let i = 0; i < 4; i++) {
-      const r = await fetch(`/api/embed/card/${t}/query`);
-      const j = await r.json().catch(() => null);
-      if (j?.data?.rows) return j;
+    let ultimo = "";
+    for (let i = 0; i < 3; i++) {
+      const ctl = new AbortController();
+      const relogio = setTimeout(() => ctl.abort(), 45000);
+      try {
+        const r = await fetch(`/api/embed/card/${t}/query`, { signal: ctl.signal });
+        const j = await r.json().catch(() => null);
+        if (j?.data?.rows) return j;
+        ultimo = `HTTP ${r.status} ${j?.error ?? j?.status ?? ""}`.trim();
+      } catch (e) { ultimo = ctl.signal.aborted ? "tempo esgotado (45 s)" : String(e); }
+      finally { clearTimeout(relogio); }
       await new Promise((ok) => setTimeout(ok, 3000));
     }
-    throw new Error("o relatório não respondeu");
+    throw new Error(`o relatório não respondeu: ${ultimo}`);
   }, tok);
 }
 
@@ -278,7 +285,7 @@ async function historico(page, ctx, h, token, lidos) {
   const resumo = { kpi: 0, reservas: 0, recebimentos: 0, erros: [] };
   const menu = await page.evaluate(async (t) => (await fetch("https://ebs.totvshospitalidade.com/report/api/MenuReports?culture=pt-BR",
     { headers: { Authorization: t, Accept: "application/json" } })).json(), token);
-  const pagina = await ctx.newPage();
+  let pagina = await ctx.newPage();
   let navegacoes = 0;
   try {
     for (const [relatorio, chave] of Object.entries(RELATORIOS)) {
@@ -294,6 +301,7 @@ async function historico(page, ctx, h, token, lidos) {
         if (navegacoes >= LIMITE_NAVEGACOES) break;
         const passado = mes < atual;
         if (passado && vazios >= MESES_VAZIOS_PARA_PARAR) break; // chegou antes do começo do hotel
+        const t0 = Date.now();
         try {
           const d = new Date(`${mes}T00:00:00Z`);
           const j = await lerMetabase(pagina, permissao, mes, ymd(fimMes(d)));
@@ -303,9 +311,15 @@ async function historico(page, ctx, h, token, lidos) {
           if (passado) vazios = temMovimento ? 0 : vazios + 1;
           await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: relatorio, p_mes: mes, p_linhas: linhas });
           resumo[relatorio]++;
+          log(`  ${h.id} ${relatorio} ${mes.slice(0, 7)}: ${linhas.length} linhas em ${Math.round((Date.now() - t0) / 1000)} s`);
         } catch (e) {
           navegacoes++;
-          resumo.erros.push(`${relatorio} ${mes}: ${e.message.split("\n")[0]}`);
+          const msg = e.message.split("\n")[0];
+          resumo.erros.push(`${relatorio} ${mes}: ${msg}`);
+          log(`  ${h.id} ${relatorio} ${mes.slice(0, 7)}: falhou em ${Math.round((Date.now() - t0) / 1000)} s: ${msg}`);
+          // Página nova depois de uma falha (a anterior pode ter ficado presa)
+          await pagina.close().catch(() => {});
+          pagina = await ctx.newPage();
           if (resumo.erros.length > 10) break;
         }
       }
