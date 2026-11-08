@@ -273,7 +273,9 @@ async function lerReservas(page, h, token) {
   }
   const dados = { uhs, estadias: [...porItem.values()], bloqueios: [...bloqueios.values()] };
   const g = await rpc("pms_robo_gravar_reservas", { p_segredo: SEGREDO, p_hotel: h.id, p_dados: dados });
-  return { uhs: uhs.length, estadias: dados.estadias.length, bloqueios: dados.bloqueios.length, gravado: g };
+  // Primeira chegada do hotel no PMS: o histórico só para de buscar o passado depois de passar dela
+  const primeira = dados.estadias.map((e) => e.checkin).filter(Boolean).sort()[0] ?? null;
+  return { uhs: uhs.length, estadias: dados.estadias.length, bloqueios: dados.bloqueios.length, gravado: g, primeira };
 }
 
 // ---------- hóspedes, detalhes e histórico de cada reserva (pedido do dono, 08/11/2026) ----------
@@ -514,6 +516,15 @@ function mesesParaLer(h, relatorio, lidos, agora) {
       const fechou = new Date(fimMes(m).getTime() + 8 * 86400000);
       if (!x || new Date(x.lido_em) < fechou) fila.push(ymd(m));
     }
+  } else {
+    // Histórico completo: ainda busca os meses que ficaram sem leitura no meio (falharam numa rodada)
+    const lidosDesc = [...meus.keys()].sort();
+    const maisVelho = lidosDesc[0];
+    for (let n = -2; n >= -180 && maisVelho; n--) {
+      const m = ymd(somaMes(atual, n));
+      if (m < maisVelho) break;
+      if (!meus.get(m)) fila.push(m);
+    }
   }
   return fila;
 }
@@ -542,7 +553,10 @@ async function historico(page, ctx, h, token, lidos) {
       if (navegacoes >= LIMITE_NAVEGACOES) break;
       const mes = e.fila[0];
       const passado = mes < atual;
-      if (passado && e.vazios >= MESES_VAZIOS_PARA_PARAR) { e.parado = true; continue; } // passou do começo do hotel
+      // Para depois de 6 meses seguidos sem movimento, mas só antes da primeira chegada do hotel (um hotel que parou de
+      // usar o PMS tem meses vazios recentes e o histórico mais antigo)
+      const antesDoHotel = !h.primeiraChegada || mes < h.primeiraChegada;
+      if (passado && antesDoHotel && e.vazios >= MESES_VAZIOS_PARA_PARAR) { e.parado = true; continue; } // passou do começo do hotel
       const permissao = await pedirPermissao(e.id).catch(() => null);
       if (!permissao || e.usadas.has(permissao)) continue; // ainda a mesma: tenta outro relatório
       e.usadas.add(permissao);
@@ -599,7 +613,7 @@ async function historico(page, ctx, h, token, lidos) {
     } else semPermissaoSeguidas = 0;
   }
   for (const e of estados) {
-    if (e.vazios >= MESES_VAZIOS_PARA_PARAR) {
+    if (e.parado) {
       await rpc("pms_robo_historico_completo", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: e.relatorio }).catch(() => {});
     }
   }
@@ -644,6 +658,7 @@ async function rodada() {
         try {
           const rs = await lerReservas(page, h, token);
           r.reservas = { uhs: rs.uhs, estadias: rs.estadias, bloqueios: rs.bloqueios };
+          if (rs.primeira) h.primeiraChegada = `${rs.primeira.slice(0, 7)}-01`;
           log(`${h.id}: reservas · ${rs.uhs} UHs · ${rs.estadias} estadias · ${rs.bloqueios} bloqueios`);
         } catch (e) { log(`${h.id}: reservas falharam: ${e.message.split("\n")[0]}`); }
         try {
