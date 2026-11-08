@@ -20,6 +20,8 @@ export const moeda = (v: number | null | undefined, curto = false) => {
   if (Math.abs(v) >= 10000) return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0, minimumFractionDigits: 0 });
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 };
+// Reais sem centavos (listas e tabelas: todos os valores no mesmo formato)
+export const reais = (v: number | null | undefined) => (v == null || !isFinite(v) ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0, minimumFractionDigits: 0 }));
 // 36 mil · 1,2 mi · 850
 export const compacto = (v: number) => {
   const a = Math.abs(v);

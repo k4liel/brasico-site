@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { COR, GraficoCombinado, Kpi, Lista, Painel, Segmentos, Vazio, compacto, moeda, num, pct } from "./ui";
+import { COR, GraficoCombinado, Kpi, Lista, Painel, Segmentos, Vazio, compacto, moeda, num, reais, pct } from "./ui";
 
 // Transações do hotel (aba Transações da página /hoteis/<hotel>): todos os lançamentos do PMS — diárias, serviços,
 // consumo, taxas, pagamentos e estornos — de pms_transacoes (relatório "Lançamentos por Período (Analítico)").
@@ -155,15 +155,15 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
 
           <div className="hx-duas">
             <Painel titulo="Por tipo" sub="o que foi lançado na conta">
-              <Lista dados={porGrupo} fmt={(v) => moeda(v)} />
+              <Lista dados={porGrupo} fmt={reais} />
             </Painel>
             <Painel titulo="Formas de pagamento" sub="o que foi recebido">
-              <Lista dados={formasPag} fmt={(v) => moeda(v)} cor={COR.verde} limite={6} />
+              <Lista dados={formasPag} fmt={reais} cor={COR.verde} limite={6} />
             </Painel>
           </div>
 
           <Painel titulo="O que mais se vende" sub="consumo, spa e serviços (fora diárias e taxas)">
-            <Lista dados={topDescricoes} fmt={(v) => moeda(v)} cor={COR.ambar} limite={8} />
+            <Lista dados={topDescricoes} fmt={reais} cor={COR.ambar} limite={8} />
           </Painel>
 
           <Painel sub={`${num(filtradas.length)} lançamentos`} titulo="Todas as transações"

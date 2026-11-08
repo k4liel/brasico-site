@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { MESES, somarMeses } from "@/lib/totvs-painel";
-import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, compacto, moeda, num, pct } from "./ui";
+import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, compacto, moeda, num, reais, pct } from "./ui";
 
 // Visão geral do hotel (aba 1 da página /hoteis/<hotel>): indicadores do período com minigráficos e comparação com o
 // ano anterior até a mesma data, dia a dia, tipos de UH, canais, evolução de 24 meses, o que já está vendido e recebimentos.
@@ -17,6 +17,7 @@ type Reserva = { canal: string | null; checkin: string | null; noites: number | 
 type Receb = { dia: string; grupo: string; tipo: string; valor: number };
 type Prev = { dia: string; uhs: number | null; ocupadas: number | null; ocupacao: number | null };
 type TxDia = { dia: string; grupo: string; valor: number };
+type TxPag = { descricao: string | null; valor: number };
 type Periodo = "mes" | "ano" | "12m";
 
 const n = (v: unknown) => (v == null ? 0 : Number(v) || 0);
@@ -49,6 +50,7 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
   const [prevPeriodo, setPrevPeriodo] = useState<Prev[]>([]);
   const [txDia, setTxDia] = useState<TxDia[]>([]);
   const [txDiaAnt, setTxDiaAnt] = useState<TxDia[]>([]);
+  const [txPag, setTxPag] = useState<TxPag[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [verTabela, setVerTabela] = useState(false);
 
@@ -89,7 +91,7 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
       };
       const h0 = hoje();
       const ontem = new Date(Date.parse(`${h0}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
-      const [k, ka, rs, rc, pp, tx, txa] = await Promise.all([
+      const [k, ka, rs, rc, pp, tx, txa, tp] = await Promise.all([
         pegar(ini, fim < h0 ? fim : ontem),
         pegar(anoAntes(ini), anoAntes(fim)),
         supabase.from("pms_reservas").select("canal,checkin,noites,valor_diarias,status,cancelada_em,criada_em").eq("hotel_id", hotel).gte("checkin", ini).lte("checkin", fim).limit(5000),
@@ -99,7 +101,9 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
           : Promise.resolve({ data: [] as Prev[] }),
         supabase.from("pms_transacoes_dia").select("dia,grupo,valor").eq("hotel_id", hotel).gte("dia", ini).lte("dia", fim < h0 ? fim : ontem).limit(5000),
         supabase.from("pms_transacoes_dia").select("dia,grupo,valor").eq("hotel_id", hotel).gte("dia", anoAntes(ini)).lte("dia", anoAntes(fim < h0 ? fim : ontem)).limit(5000),
+        supabase.from("pms_transacoes").select("descricao,valor").eq("hotel_id", hotel).eq("grupo", "Pagamento").gte("dia", ini).lte("dia", fim).limit(10000),
       ]);
+      setTxPag((tp.data as TxPag[]) ?? []);
       setTxDia((tx.data as TxDia[]) ?? []); setTxDiaAnt((txa.data as TxDia[]) ?? []);
       setKpi(k); setKpiAnt(ka);
       setReservas((rs.data as Reserva[]) ?? []); setReceb((rc.data as Receb[]) ?? []);
@@ -172,9 +176,13 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
 
   const formas = useMemo(() => {
     const m = new Map<string, number>();
+    if (txPag.length) { // pagamentos lançados no PMS (mais completos e atualizados que o relatório de recebimentos)
+      for (const t of txPag) { const k = (t.descricao ?? "Outros").trim(); m.set(k, (m.get(k) ?? 0) + Number(t.valor)); }
+      return [...m.entries()].map(([nome, valor]) => ({ nome, valor })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor);
+    }
     for (const r of receb) { if (/devolu|estorno/i.test(r.tipo)) continue; m.set(r.grupo, (m.get(r.grupo) ?? 0) + n(r.valor)); }
     return [...m.entries()].map(([nome, valor]) => ({ nome: nome.charAt(0) + nome.slice(1).toLowerCase(), valor })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor);
-  }, [receb]);
+  }, [receb, txPag]);
 
   // Receita total do hotel pelas transações (diárias, consumo, spa, serviços; taxas à parte)
   const areas = useMemo(() => {
@@ -264,13 +272,13 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
 
           <div className="hx-duas">
             <Painel titulo="Receita por área" sub="pelas transações do PMS">
-              {areas.temDados ? <Lista dados={areas.lista} fmt={(v) => moeda(v)} total={areas.lista.filter((a) => a.nome !== "Taxas (serviço e ISS)").reduce((x, a) => x + a.valor, 0)} />
+              {areas.temDados ? <Lista dados={areas.lista} fmt={reais} total={areas.lista.filter((a) => a.nome !== "Taxas (serviço e ISS)").reduce((x, a) => x + a.valor, 0)} />
                 : <Vazio>As transações deste período ainda estão chegando do PMS.</Vazio>}
             </Painel>
             <Painel titulo="Canais de venda" sub="check-in no período, sem canceladas">
               {canais.lista.length
                 ? <Lista dados={canais.lista.map((c) => ({ nome: c.nome, valor: canais.lista.some((x) => x.valor > 0) ? c.valor : c.noites }))}
-                    fmt={canais.lista.some((x) => x.valor > 0) ? (v) => moeda(v) : (v) => `${num(v)} noites`} />
+                    fmt={canais.lista.some((x) => x.valor > 0) ? reais : (v) => `${num(v)} noites`} />
                 : <Vazio>Sem reservas de canais neste período.</Vazio>}
               <Resumo itens={[
                 { rotulo: "Estadia média", valor: canais.estadia == null ? "—" : `${num(canais.estadia, 1)} noites` },
@@ -288,14 +296,14 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
                     <thead><tr><th>Tipo</th><th className="num">Ocupação</th><th className="num">Diária</th><th className="num">Receita</th></tr></thead>
                     <tbody>{porTipo.map((t) => (
                       <tr key={t.cat}><td>{t.cat}<small className="muted">{num(t.uhs)} UH{t.uhs === 1 ? "" : "s"}</small></td>
-                        <td className="num">{pct(t.ocupacao)}</td><td className="num">{moeda(t.diaria)}</td><td className="num hx-forte">{moeda(t.receita)}</td></tr>
+                        <td className="num">{pct(t.ocupacao)}</td><td className="num">{moeda(t.diaria)}</td><td className="num hx-forte">{reais(t.receita)}</td></tr>
                     ))}</tbody>
                   </table>
                 </div>
               ) : <Vazio>Sem dados.</Vazio>}
             </Painel>
             <Painel titulo="Recebimentos" sub="formas de pagamento no período">
-              <Lista dados={formas} fmt={(v) => moeda(v)} cor={COR.verde} />
+              <Lista dados={formas} fmt={reais} cor={COR.verde} />
             </Painel>
           </div>
 
