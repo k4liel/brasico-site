@@ -177,6 +177,72 @@ async function lerHotel(page, h, ctx) {
     ...(erroDisp ? { aviso: erroDisp } : {}), _token: token };
 }
 
+// ---------- reservas por quarto, UHs e bloqueios (para a página de Reservas e o Mapa) ----------
+async function lerReservas(page, h, token) {
+  const pid = h.propriedade;
+  if (!pid) throw new Error("hotel sem número de propriedade");
+  const get = (url) => page.evaluate(async ([u, t]) => {
+    const r = await fetch(u, { headers: { Authorization: t, Accept: "application/json" } });
+    if (!r.ok) throw new Error(`HTTP ${r.status} em ${new URL(u).pathname}`);
+    return r.json();
+  }, [url, token]);
+  const lista = (j) => (Array.isArray(j) ? j : j?.items ?? []);
+
+  const quartos = lista(await get(`https://group02.totvshospitalidade.com/pms/api/properties/${pid}/rooms?_expandables=ChildRoomIdList&culture=pt-BR`));
+  const uhs = quartos.map((q) => ({ uh_id: q.id, numero: String(q.roomNumber ?? q.id), tipo_id: q.roomTypeId ?? q.roomType?.id ?? null,
+    tipo: q.roomType?.name ?? q.roomTypeName ?? null, andar: q.floor ?? null, ativa: q.isActive !== false, fora_inventario: !!q.outOfInventory }));
+
+  const motivos = new Map();
+  try {
+    for (const m of lista(await get(`https://group02.totvshospitalidade.com/pms/api/reason/${pid}/getallreason?culture=pt-BR`)))
+      motivos.set(Number(m.id), m.reasonName ?? m.name ?? m.description ?? null);
+  } catch { /* sem motivos: o bloqueio fica sem nome */ }
+
+  // Todas as reservas, status por status (1 Confirmada, 2 Check-In, 3 Check-Out, 4 Pendente, 5 No-Show, 6 Cancelada; 0 e 7–9 por garantia)
+  const linhas = [];
+  for (const st of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    for (let pg = 1; pg <= 200; pg++) {
+      const j = await get(`https://group03.totvshospitalidade.com/booking/api/booking/searchv2?page=${pg}&pageSize=100&order=&guestReservationItemStatusId=${st}&culture=pt-BR`);
+      linhas.push(...(j?.items ?? []));
+      if (!j?.hasNext) break;
+    }
+  }
+  const porItem = new Map();
+  for (const x of linhas) {
+    const id = x.reservationItemId;
+    if (id == null) continue;
+    const e = porItem.get(id) ?? { item_id: id, codigo: x.reservationItemCode ?? null, grupo_codigo: x.reservationGroupCode ?? null,
+      grupo_nome: x.groupName || null, uh_id: x.roomId || null, uh_numero: x.roomNumber || null, tipo_id: x.receivedRoomTypeId ?? null,
+      tipo: x.receivedRoomTypeName ?? null, checkin: String(x.arrivalDate ?? "").slice(0, 10) || null, checkout: String(x.departureDate ?? "").slice(0, 10) || null,
+      status_id: x.reservationItemStatusId ?? x.guestReservationItemStatusId ?? null, status: x.reservationItemStatusName ?? x.guestReservationItemStatusName ?? null,
+      hospede: null, adultos: 0, criancas: 0, hospedes: 0, vip: false, fora_inventario: !!x.outOfInventory };
+    e.hospedes++;
+    e.adultos = Math.max(e.adultos, Number(x.adultsCount) || 0);
+    e.criancas = Math.max(e.criancas, Number(x.childCount) || 0);
+    if (x.guestIsVip) e.vip = true;
+    if ((x.isMain || !e.hospede) && x.guestName && !x.guestIsIncognito) e.hospede = String(x.guestName).trim();
+    porItem.set(id, e);
+  }
+
+  // Bloqueios de UH: vêm na disponibilidade (janelas de 30 dias), de 60 dias atrás a ~10 meses à frente
+  const bloqueios = new Map();
+  const hoje = new Date(Date.now() - 3 * 3600000);
+  for (let d = -60; d <= 300; d += 30) {
+    const ini = new Date(hoje.getTime() + d * 86400000).toISOString().slice(0, 10);
+    try {
+      const a = await get(`${DISPONIBILIDADE}/Availability/${pid}/roomtypes?InitialDate=${ini}T00:00:00&Period=30&culture=pt-BR`);
+      for (const b of a?.roomsBlocked ?? []) {
+        bloqueios.set(b.id, { bloqueio_id: b.id, uh_id: b.roomId || null, inicio: String(b.blockingStartDate ?? "").slice(0, 10) || null,
+          fim: String(b.blockingEndDate ?? "").slice(0, 10) || null, motivo: motivos.get(Number(b.reasonId)) ?? null,
+          comentario: b.comments ? String(b.comments).slice(0, 200) : null });
+      }
+    } catch { /* uma janela que falhou não impede as outras */ }
+  }
+  const dados = { uhs, estadias: [...porItem.values()], bloqueios: [...bloqueios.values()] };
+  const g = await rpc("pms_robo_gravar_reservas", { p_segredo: SEGREDO, p_hotel: h.id, p_dados: dados });
+  return { uhs: uhs.length, estadias: dados.estadias.length, bloqueios: dados.bloqueios.length, gravado: g };
+}
+
 // ---------- histórico (relatórios Metabase do PMS, mês a mês) ----------
 const EBS = "https://ebs.totvshospitalidade.com/report";
 const RELATORIOS = { kpi: 7408, reservas: 364, recebimentos: 9 }; // metabaseKey de cada relatório no menu do PMS
@@ -383,6 +449,11 @@ async function rodada() {
         const r = await lerHotel(page, h, ctx);
         const token = r._token; delete r._token;
         leitura.hoteis.push(r);
+        try {
+          const rs = await lerReservas(page, h, token);
+          r.reservas = { uhs: rs.uhs, estadias: rs.estadias, bloqueios: rs.bloqueios };
+          log(`${h.id}: reservas · ${rs.uhs} UHs · ${rs.estadias} estadias · ${rs.bloqueios} bloqueios`);
+        } catch (e) { log(`${h.id}: reservas falharam: ${e.message.split("\n")[0]}`); }
         try {
           const hist = await historico(page, ctx, h, token, lidos);
           r.historico = hist;
