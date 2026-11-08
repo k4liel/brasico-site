@@ -74,6 +74,7 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
   const [hora, setHora] = useState<Hora | null>(null);
   const [prev, setPrev] = useState<Prev[]>([]);
   const [prevSemana, setPrevSemana] = useState<Prev[]>([]);
+  const [prevPeriodo, setPrevPeriodo] = useState<Prev[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [primeiroMes, setPrimeiroMes] = useState<string | null>(null);
 
@@ -122,14 +123,20 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
         }
         return out;
       };
-      const [k, ka, rs, rc] = await Promise.all([
-        pegar(ini, fim),
+      const h0 = hoje();
+      const [k, ka, rs, rc, pp] = await Promise.all([
+        pegar(ini, fim < h0 ? fim : h0),
         pegar(anoAntes(ini), anoAntes(fim)),
         supabase.from("pms_reservas").select("reserva,canal,empresa,tarifa,uh,criada_em,checkin,checkout,noites,valor_diarias,status,cancelada_em")
           .eq("hotel_id", hotel).gte("checkin", ini).lte("checkin", fim).limit(5000),
         supabase.from("pms_recebimentos").select("dia,grupo,tipo,valor").eq("hotel_id", hotel).gte("dia", ini).lte("dia", fim).limit(5000),
+        fim >= h0
+          ? supabase.from("pms_previsao_atual").select("dia,uhs,ocupadas,disponiveis,bloqueadas,ocupacao,lido_dia").eq("hotel_id", hotel)
+              .gte("dia", ini > h0 ? ini : h0).lte("dia", fim).order("dia").limit(400)
+          : Promise.resolve({ data: [] as Prev[] }),
       ]);
       setKpi(k); setKpiAnt(ka);
+      setPrevPeriodo(((pp as { data: Prev[] | null }).data) ?? []);
       setReservas((rs.data as Reserva[]) ?? []);
       setReceb((rc.data as Receb[]) ?? []);
     })();
@@ -137,24 +144,33 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
 
   const hojeStr = hoje();
   // Realizado = até ontem (o dia de hoje ainda está acontecendo); o resto do período é "já vendido"
+  // (o relatório de KPIs do PMS só tem o que já aconteceu; o futuro vem da previsão de disponibilidade)
   const realizado = useMemo(() => (kpi ?? []).filter((x) => x.dia < hojeStr), [kpi, hojeStr]);
-  const futuro = useMemo(() => (kpi ?? []).filter((x) => x.dia >= hojeStr), [kpi, hojeStr]);
   const limiteAnt = anoAntes(hojeStr);
   const s: Soma = useMemo(() => somarKpi(realizado), [realizado]);
   const sAnt: Soma = useMemo(() => somarKpi(fim < hojeStr ? kpiAnt : kpiAnt.filter((x) => x.dia < limiteAnt)), [kpiAnt, fim, hojeStr, limiteAnt]);
-  const sFut: Soma = useMemo(() => somarKpi(futuro), [futuro]);
-  const sTudo: Soma = useMemo(() => somarKpi(kpi ?? []), [kpi]);
   const sAntTudo: Soma = useMemo(() => somarKpi(kpiAnt), [kpiAnt]);
+  const vendido = useMemo(() => {
+    const ocup = prevPeriodo.reduce((a, p) => a + n(p.ocupadas), 0);
+    const uhs = prevPeriodo.reduce((a, p) => a + n(p.uhs), 0);
+    return { dias: prevPeriodo.length, ocupadas: ocup, uhs, ocupacao: uhs ? (100 * ocup) / uhs : null,
+      projecao: s.total + uhs ? (100 * (s.ocupadas + ocup)) / (s.total + uhs) : null };
+  }, [prevPeriodo, s]);
 
-  // Por dia (gráfico)
+  // Por dia (gráfico): realizado do relatório de KPIs; de hoje em diante, o que já está vendido
   const porDia = useMemo(() => {
     const m = new Map<string, DiaKpi[]>();
-    for (const x of kpi ?? []) m.set(x.dia, [...(m.get(x.dia) ?? []), x]);
+    for (const x of realizado) m.set(x.dia, [...(m.get(x.dia) ?? []), x]);
     const ma = new Map<string, DiaKpi[]>();
     for (const x of kpiAnt) { const d = `${+x.dia.slice(0, 4) + 1}${x.dia.slice(4)}`; ma.set(d, [...(ma.get(d) ?? []), x]); }
-    const dias = [...new Set([...m.keys()])].sort();
-    return dias.map((d) => ({ dia: d, a: somarKpi(m.get(d) ?? []), b: ma.has(d) ? somarKpi(ma.get(d)!) : null }));
-  }, [kpi, kpiAnt]);
+    const pv = new Map(prevPeriodo.map((p) => [p.dia, p]));
+    const dias = [...new Set([...m.keys(), ...pv.keys()])].sort();
+    return dias.map((d) => {
+      const p = pv.get(d);
+      const a = m.has(d) ? somarKpi(m.get(d)!) : p ? { ...somarKpi([]), ocupadas: n(p.ocupadas), total: n(p.uhs), ocupacao: p.ocupacao == null ? null : Number(p.ocupacao), receita: NaN } : somarKpi([]);
+      return { dia: d, futuro: !m.has(d), a, b: ma.has(d) ? somarKpi(ma.get(d)!) : null };
+    });
+  }, [realizado, kpiAnt, prevPeriodo]);
 
   // Por tipo de UH
   const porTipo = useMemo(() => {
@@ -276,11 +292,11 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
             <Kpi rotulo="Diárias vendidas" valor={inteiro(s.ocupadas)} atual={s.ocupadas} base={sAnt.ocupadas}
               nota={`de ${inteiro(s.total)} UHs-noite`} />
           </section>
-          {futuro.length > 0 && (
+          {vendido.dias > 0 && (
             <p className="tp-nota hg-nota-futuro">
-              Realizado até ontem. Do restante do período, já estão vendidas <b>{inteiro(sFut.ocupadas)} diárias</b> ({perc(sFut.ocupacao)} de ocupação,
-              {" "}{moeda(sFut.receita)} em hospedagem). Com isso, o período fecharia em pelo menos <b>{perc(sTudo.ocupacao)}</b> e <b>{moeda(sTudo.receita)}</b>
-              {sAntTudo.receita ? <> (ano anterior: {perc(sAntTudo.ocupacao)} e {moeda(sAntTudo.receita)})</> : null}.
+              Realizado até ontem. Nos {inteiro(vendido.dias)} dias que faltam do período, já estão vendidas <b>{inteiro(vendido.ocupadas)} diárias</b>
+              {" "}({perc(vendido.ocupacao)} de ocupação). Com isso, a ocupação do período fecha em pelo menos <b>{perc(vendido.projecao)}</b>
+              {sAntTudo.total ? <> (ano anterior, período inteiro: {perc(sAntTudo.ocupacao)})</> : null}.
             </p>
           )}
 
@@ -299,7 +315,7 @@ export default function HotelGerencial({ hotel }: { hotel: string }) {
               <GraficoLinhas rotulos={porDia.map((d) => String(+d.dia.slice(8, 10)))} altura={220}
                 formato={(v) => (Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : inteiro(v))}
                 series={[
-                  { nome: mes.slice(0, 4), cor: "var(--serie-1)", pontos: porDia.map((d) => d.a.receita) },
+                  { nome: mes.slice(0, 4), cor: "var(--serie-1)", pontos: porDia.map((d) => (d.futuro ? null : d.a.receita)) },
                   { nome: String(+mes.slice(0, 4) - 1), cor: "var(--serie-2)", pontos: porDia.map((d) => d.b?.receita ?? null) },
                 ]} />
               <p className="tp-nota">A receita é lançada pelo PMS no dia da diária; estornos e correções aparecem como valor negativo no dia em que foram feitos.</p>
