@@ -174,7 +174,149 @@ async function lerHotel(page, h, ctx) {
     disponibilidade = juntarDisponibilidade(respostas, hoje);
   } catch (e) { erroDisp = e.message.split("\n")[0]; }
   return { hotel: h.id, ok: true, nome_no_pms: o.propertyName ?? null, propriedade: h.propriedade, painel, disponibilidade,
-    ...(erroDisp ? { aviso: erroDisp } : {}) };
+    ...(erroDisp ? { aviso: erroDisp } : {}), _token: token };
+}
+
+// ---------- histórico (relatórios Metabase do PMS, mês a mês) ----------
+const EBS = "https://ebs.totvshospitalidade.com/report";
+const RELATORIOS = { kpi: 7408, reservas: 364, recebimentos: 9 }; // metabaseKey de cada relatório no menu do PMS
+const LIMITE_NAVEGACOES = Number(process.env.LIMITE_HISTORICO || 150); // por hotel e rodada (carga do passado aos poucos)
+const MESES_VAZIOS_PARA_PARAR = 6;
+
+const ymd = (d) => d.toISOString().slice(0, 10);
+const inicioMes = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+const somaMes = (d, n) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1));
+const fimMes = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+
+// "01/10/2026", "30/10/2026 03:00:00" ou ISO -> "2026-10-01"
+function dataDe(v) {
+  if (v == null || v === "") return null;
+  const s = String(v);
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return iso ? iso[1] : null;
+}
+function instanteDe(v) {
+  if (v == null || v === "" || /não cancel/i.test(String(v))) return null;
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s;
+  const d = dataDe(s);
+  return d ? `${d}T${(s.match(/(\d{2}:\d{2}:\d{2})/) || [, "00:00:00"])[1]}-03:00` : null;
+}
+const numero = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+
+// Acha a coluna pelo nome (sem acento, minúsculas)
+function colunas(cols) {
+  const nomes = cols.map((c) => semAcento(c.display_name ?? c.name));
+  return (re) => nomes.findIndex((n) => re.test(n));
+}
+
+function normalizar(relatorio, j) {
+  const cols = j?.data?.cols ?? [], rows = j?.data?.rows ?? [];
+  const c = colunas(cols);
+  if (relatorio === "kpi") {
+    const i = { dia: c(/data refer/), cat: c(/categoria/), disp: c(/disponiveis/), bloq: c(/bloqueadas/), tot: c(/total uhs/), ocup: c(/ocupadas/), rec: c(/receita/) };
+    return rows.map((r) => ({ dia: dataDe(r[i.dia]), categoria: r[i.cat], disponiveis: numero(r[i.disp]), bloqueadas: numero(r[i.bloq]),
+      total: numero(r[i.tot]), ocupadas: numero(r[i.ocup]), receita: numero(r[i.rec]) })).filter((x) => x.dia);
+  }
+  if (relatorio === "reservas") {
+    // A coluna do nome do hóspede ("Hóspede") nunca é lida
+    const i = { canal: c(/channel name/), reserva: c(/^reserva$/), loc: c(/localizador/), criada: c(/data integra/), empresa: c(/^empresa$/),
+      tarifa: c(/rateplan|tarifa/), uh: c(/uh cobrada|^uh$/), ci: c(/checkin/), co: c(/checkout/), valor: c(/total diarias/),
+      status: c(/status/), canc: c(/cancelamento/) };
+    return rows.map((r) => ({ reserva: r[i.reserva] != null ? String(r[i.reserva]) : null, canal: r[i.canal], localizador_canal: r[i.loc] != null ? String(r[i.loc]) : null,
+      criada_em: instanteDe(r[i.criada]), empresa: r[i.empresa], tarifa: r[i.tarifa], uh: r[i.uh], checkin: dataDe(r[i.ci]), checkout: dataDe(r[i.co]),
+      valor_diarias: numero(r[i.valor]), status: r[i.status], cancelada_em: instanteDe(r[i.canc]) })).filter((x) => x.reserva);
+  }
+  if (relatorio === "recebimentos") {
+    const i = { grupo: c(/^grupo$/), tipo: c(/^tipo$/), dia: c(/^data$/), valor: c(/valor liquido/) };
+    return rows.map((r) => ({ dia: dataDe(r[i.dia]), grupo: r[i.grupo], tipo: r[i.tipo], valor: numero(r[i.valor]) })).filter((x) => x.dia);
+  }
+  return [];
+}
+
+async function lerMetabase(pagina, permissao, ini, fim) {
+  await pagina.goto(`${EBS}/MetabaseReport?auth=${permissao}&StartDate=${ini}&EndDate=${fim}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await pagina.waitForURL(/metabase\.totvshospitalidade\.com\/embed\/question\//, { timeout: 90000 });
+  const tok = new URL(pagina.url()).pathname.split("/").pop();
+  return pagina.evaluate(async (t) => {
+    for (let i = 0; i < 4; i++) {
+      const r = await fetch(`/api/embed/card/${t}/query`);
+      const j = await r.json().catch(() => null);
+      if (j?.data?.rows) return j;
+      await new Promise((ok) => setTimeout(ok, 3000));
+    }
+    throw new Error("o relatório não respondeu");
+  }, tok);
+}
+
+// Decide os meses a ler: os recentes e futuros sempre que estiverem velhos; o passado aos poucos até achar o começo do hotel
+function mesesParaLer(h, relatorio, lidos, agora) {
+  const atual = inicioMes(agora);
+  const meus = new Map(lidos.filter((x) => x.hotel === h.id && x.relatorio === relatorio).map((x) => [x.mes, x]));
+  const velho = (mes, horas) => { const x = meus.get(ymd(mes)); return !x || agora - new Date(x.lido_em) > horas * 3600000; };
+  const fila = [];
+  const futuros = relatorio === "recebimentos" ? 0 : 12;
+  for (let n = -1; n <= futuros; n++) {
+    const m = somaMes(atual, n);
+    if (velho(m, n <= 3 ? 1 : 24)) fila.push(ymd(m));
+  }
+  // Passado: meses ainda não lidos (ou lidos antes do fim do mês + 7 dias), do mais novo para o mais velho
+  if (!h.historico_completo?.[relatorio]) {
+    for (let n = -2; n >= -180; n--) {
+      const m = somaMes(atual, n);
+      const x = meus.get(ymd(m));
+      const fechou = new Date(fimMes(m).getTime() + 8 * 86400000);
+      if (!x || new Date(x.lido_em) < fechou) fila.push(ymd(m));
+    }
+  }
+  return fila;
+}
+
+async function historico(page, ctx, h, token, lidos) {
+  const resumo = { kpi: 0, reservas: 0, recebimentos: 0, erros: [] };
+  const menu = await page.evaluate(async (t) => (await fetch("https://ebs.totvshospitalidade.com/report/api/MenuReports?culture=pt-BR",
+    { headers: { Authorization: t, Accept: "application/json" } })).json(), token);
+  const pagina = await ctx.newPage();
+  let navegacoes = 0;
+  try {
+    for (const [relatorio, chave] of Object.entries(RELATORIOS)) {
+      const item = menu.find((m) => m.metabaseKey === chave);
+      if (!item) { resumo.erros.push(`${relatorio}: relatório não está no menu`); continue; }
+      const filtros = await page.evaluate(async ([id, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${id}?culture=pt-BR`,
+        { headers: { Authorization: t, Accept: "application/json" } })).json(), [item.reportParameterUId, token]);
+      const permissao = filtros?.permissionToken;
+      if (!permissao) { resumo.erros.push(`${relatorio}: sem permissão no PMS`); continue; }
+      let vazios = 0;
+      const atual = ymd(inicioMes(new Date()));
+      for (const mes of mesesParaLer(h, relatorio, lidos, new Date())) {
+        if (navegacoes >= LIMITE_NAVEGACOES) break;
+        const passado = mes < atual;
+        if (passado && vazios >= MESES_VAZIOS_PARA_PARAR) break; // chegou antes do começo do hotel
+        try {
+          const d = new Date(`${mes}T00:00:00Z`);
+          const j = await lerMetabase(pagina, permissao, mes, ymd(fimMes(d)));
+          navegacoes++;
+          const linhas = normalizar(relatorio, j);
+          const temMovimento = relatorio === "kpi" ? linhas.some((x) => (x.ocupadas || 0) > 0 || (x.receita || 0) !== 0) : linhas.length > 0;
+          if (passado) vazios = temMovimento ? 0 : vazios + 1;
+          await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: relatorio, p_mes: mes, p_linhas: linhas });
+          resumo[relatorio]++;
+        } catch (e) {
+          navegacoes++;
+          resumo.erros.push(`${relatorio} ${mes}: ${e.message.split("\n")[0]}`);
+          if (resumo.erros.length > 10) break;
+        }
+      }
+      if (vazios >= MESES_VAZIOS_PARA_PARAR) {
+        await rpc("pms_robo_historico_completo", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: relatorio }).catch(() => {});
+      }
+    }
+  } finally {
+    await pagina.close().catch(() => {});
+  }
+  return resumo;
 }
 
 async function guardarFalha(page, nome) {
@@ -205,11 +347,19 @@ async function rodada() {
       await entrar(page, cred.usuario, cred.senha);
       log("login ok");
     } catch (e) { await guardarFalha(page, "login"); throw e; }
+    const lidos = (await rpc("pms_robo_meses_lidos", { p_segredo: SEGREDO }).catch(() => [])) ?? [];
     for (const h of cred.hoteis ?? []) {
       try {
         await escolherHotel(page, formataCnpj(h.cnpj));
         const r = await lerHotel(page, h, ctx);
+        const token = r._token; delete r._token;
         leitura.hoteis.push(r);
+        try {
+          const hist = await historico(page, ctx, h, token, lidos);
+          r.historico = hist;
+          log(`${h.id}: histórico · kpi ${hist.kpi} meses · reservas ${hist.reservas} · recebimentos ${hist.recebimentos}` +
+            (hist.erros.length ? ` · ${hist.erros.length} erro(s): ${hist.erros.slice(0, 3).join(" | ")}` : ""));
+        } catch (e) { log(`${h.id}: histórico falhou: ${e.message.split("\n")[0]}`); }
         log(`${h.id}: ${r.nome_no_pms} · ocupação ${r.painel.ocupacao}% · ocupadas ${r.painel.ocupadas} · livres ${r.painel.livres}` +
           ` · bloqueadas ${r.painel.bloqueadas} · previsão ${r.disponibilidade?.dias.length ?? 0} dias${r.aviso ? ` · aviso: ${r.aviso}` : ""}`);
       } catch (e) {
