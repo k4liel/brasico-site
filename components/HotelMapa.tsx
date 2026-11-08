@@ -211,7 +211,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
               </tr>
             </thead>
             <tbody>
-              {uhs.map((u) => {
+              {uhs.filter((u) => (u.ativa && !u.fora_inventario) || (porUh.get(u.uh_id)?.length ?? 0) > 0).map((u) => {
                 const bs = porUh.get(u.uh_id) ?? [];
                 const faixas = Math.max(1, ...bs.map((b) => b.faixa + 1));
                 const altura = 16 + 40 * faixas;

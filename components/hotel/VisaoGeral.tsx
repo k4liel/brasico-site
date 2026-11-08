@@ -7,7 +7,7 @@ import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, co
 
 // Visão geral do hotel (aba 1 da página /hoteis/<hotel>): indicadores do período com minigráficos e comparação com o
 // ano anterior até a mesma data, dia a dia, tipos de UH, canais, evolução de 24 meses, o que já está vendido e recebimentos.
-// Fonte: PMS (robô da VPS) — pms_kpi_dia (realizado: só o que já aconteceu), pms_previsao (o que já está vendido),
+// Fonte: PMS (robô da VPS) — pms_kpi_dia_ajustado (pms_kpi_dia com o nº real de UHs por tipo; realizado: só o que já aconteceu), pms_previsao (o que já está vendido),
 // pms_reservas (canais), pms_recebimentos. Contas como no PMS: ocupação = ocupadas ÷ total de UHs;
 // diária média = receita ÷ ocupadas; RevPAR = receita ÷ UHs disponíveis.
 
@@ -81,7 +81,7 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
       const pegar = async (a: string, b: string) => {
         const out: DiaKpi[] = [];
         for (let de = 0; ; de += 1000) {
-          const r = await supabase.from("pms_kpi_dia").select("dia,categoria,disponiveis,bloqueadas,total,ocupadas,receita")
+          const r = await supabase.from("pms_kpi_dia_ajustado").select("dia,categoria,disponiveis,bloqueadas,total,ocupadas,receita")
             .eq("hotel_id", hotel).gte("dia", a).lte("dia", b).order("dia").range(de, de + 999);
           if (r.error) { setErro(r.error.message); break; }
           out.push(...((r.data as DiaKpi[]) ?? []));
