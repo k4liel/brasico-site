@@ -327,8 +327,8 @@ function normalizar(relatorio, j) {
 function grupoTransacao(x) {
   const t = semAcento(`${x.item_tipo ?? ""}`), d = semAcento(`${x.descricao ?? ""}`);
   if (/payment|pagamento/.test(t)) return "Pagamento";
-  if (/daily|diaria/.test(t) || /^diaria|hospedagem/.test(d)) return "Diária";
-  if (/tax|taxa|iss/.test(t) || /taxa de servico|iss|turismo/.test(d)) return "Taxa";
+  if (/tax|taxa/.test(t) || /taxa de servico|\biss\b|taxa de turismo|taxa municipal/.test(d)) return "Taxa";
+  if (/daily|diaria/.test(t) || /^diaria|^hospedagem/.test(d)) return "Diária";
   if (/service|servico|product|produto|pos/.test(t)) return /restaurante|bar|a&b|alimento|bebida|frigobar|cafe|almoco|jantar/.test(d) ? "Consumo" : "Serviço";
   return "Outros";
 }
