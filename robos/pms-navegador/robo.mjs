@@ -8,6 +8,7 @@
 //            INTERVALO_MIN (padrão 60), UMA_VEZ=1 (roda uma vez e sai).
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const BASE = "https://gestaopms.totvshospitalidade.com";
 const DISPONIBILIDADE = "https://group05.totvshospitalidade.com/availability/api";
@@ -245,7 +246,7 @@ async function lerReservas(page, h, token) {
 
 // ---------- histórico (relatórios Metabase do PMS, mês a mês) ----------
 const EBS = "https://ebs.totvshospitalidade.com/report";
-const RELATORIOS = { kpi: 7408, reservas: 364, recebimentos: 9 }; // metabaseKey de cada relatório no menu do PMS
+const RELATORIOS = { kpi: 7408, reservas: 364, recebimentos: 9, transacoes: 4 }; // metabaseKey de cada relatório no menu do PMS
 const LIMITE_NAVEGACOES = Number(process.env.LIMITE_HISTORICO || 150); // por hotel e rodada (carga do passado aos poucos)
 const MESES_VAZIOS_PARA_PARAR = 6;
 
@@ -299,7 +300,37 @@ function normalizar(relatorio, j) {
     const i = { grupo: c(/^grupo$/), tipo: c(/^tipo$/), dia: c(/^data$/), valor: c(/valor liquido/) };
     return rows.map((r) => ({ dia: dataDe(r[i.dia]), grupo: r[i.grupo], tipo: r[i.tipo], valor: numero(r[i.valor]) })).filter((x) => x.dia);
   }
+  if (relatorio === "transacoes") {
+    // Só os campos do lançamento e da reserva. Nunca: Hóspede, CPF/CNPJ, cliente, nome da conta, contato, e-mail, telefone.
+    const i = { dia: c(/^datalancto$/), reserva: c(/^numreservapms$/), uh: c(/^uh$/), tipo_uh: c(/^tipouh$/), status: c(/^statusrsv$/),
+      origem: c(/^origemrsv$/), segmento: c(/^segmentorsv$/), tarifa: c(/^rateplan$/), pernoites: c(/^pernoites$/), chegada: c(/^datachegada$/),
+      partida: c(/^datapartida$/), conta: c(/^tipoconta$/), item: c(/^tipoitem$/), cod: c(/^codreduzido$/), desc: c(/^lactodescricao$/),
+      valor: c(/^valor$/), obs: c(/^observacao$/), est: c(/^estornado$/) };
+    const vistos = new Map();
+    return rows.map((r) => {
+      const x = { dia: dataDe(r[i.dia]), reserva: r[i.reserva] ?? null, uh: r[i.uh] ?? null, tipo_uh: r[i.tipo_uh] ?? null, status_reserva: r[i.status] ?? null,
+        origem: r[i.origem] ?? null, segmento: r[i.segmento] ?? null, tarifa: r[i.tarifa] ?? null, pernoites: numero(r[i.pernoites]),
+        chegada: dataDe(r[i.chegada]), partida: dataDe(r[i.partida]), conta_tipo: r[i.conta] ?? null, item_tipo: r[i.item] ?? null,
+        codigo: r[i.cod] ?? null, descricao: r[i.desc] ?? null, valor: numero(r[i.valor]), estornado: /estornad/i.test(String(r[i.est] ?? "")),
+        observacao: r[i.obs] && r[i.obs] !== "-" ? String(r[i.obs]).slice(0, 160) : null };
+      x.grupo = grupoTransacao(x);
+      const base = [x.dia, x.reserva, x.uh, x.conta_tipo, x.item_tipo, x.codigo, x.descricao, x.valor, x.estornado].join("|");
+      const n = (vistos.get(base) ?? 0) + 1; vistos.set(base, n);
+      x.chave = createHash("sha1").update(`${base}|${n}`).digest("hex");
+      return x;
+    }).filter((x) => x.dia && x.valor != null);
+  }
   return [];
+}
+
+// Classificação do Brasico para cada lançamento
+function grupoTransacao(x) {
+  const t = semAcento(`${x.item_tipo ?? ""}`), d = semAcento(`${x.descricao ?? ""}`);
+  if (/payment|pagamento/.test(t)) return "Pagamento";
+  if (/daily|diaria/.test(t) || /^diaria|hospedagem/.test(d)) return "Diária";
+  if (/tax|taxa|iss/.test(t) || /taxa de servico|iss|turismo/.test(d)) return "Taxa";
+  if (/service|servico|product|produto|pos/.test(t)) return /restaurante|bar|a&b|alimento|bebida|frigobar|cafe|almoco|jantar/.test(d) ? "Consumo" : "Serviço";
+  return "Outros";
 }
 
 async function lerMetabase(pagina, permissao, ini, fim) {
@@ -388,7 +419,13 @@ async function historico(page, ctx, h, token, lidos) {
         const linhas = normalizar(e.relatorio, j);
         const temMovimento = e.relatorio === "kpi" ? linhas.some((x) => (x.ocupadas || 0) > 0 || (x.receita || 0) !== 0) : linhas.length > 0;
         if (passado) e.vazios = temMovimento ? 0 : e.vazios + 1;
-        await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: e.relatorio, p_mes: mes, p_linhas: linhas });
+        if (e.relatorio === "transacoes") {
+          // O relatório devolve no máximo 2000 linhas: mês cheio fica marcado para conferir (o resto entra na releitura por quinzena)
+          if ((j?.data?.rows ?? []).length >= 2000) log(`  ${h.id} transacoes ${mes.slice(0, 7)}: 2000 linhas (limite do relatório) — mês pode estar incompleto`);
+          await rpc("pms_robo_gravar_transacoes", { p_segredo: SEGREDO, p_hotel: h.id, p_mes: mes, p_linhas: linhas });
+        } else {
+          await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: e.relatorio, p_mes: mes, p_linhas: linhas });
+        }
         resumo[e.relatorio]++;
         log(`  ${h.id} ${e.relatorio} ${mes.slice(0, 7)}: ${linhas.length} linhas em ${Math.round((Date.now() - t0) / 1000)} s`);
       } catch (err) {
