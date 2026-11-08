@@ -286,63 +286,63 @@ async function historico(page, ctx, h, token, lidos) {
   const resumo = { kpi: 0, reservas: 0, recebimentos: 0, erros: [] };
   const menu = await page.evaluate(async (t) => (await fetch("https://ebs.totvshospitalidade.com/report/api/MenuReports?culture=pt-BR",
     { headers: { Authorization: t, Accept: "application/json" } })).json(), token);
-  let pagina = await ctx.newPage();
-  let navegacoes = 0;
-  try {
-    for (const [relatorio, chave] of Object.entries(RELATORIOS)) {
-      const item = menu.find((m) => m.metabaseKey === chave);
-      if (!item) { resumo.erros.push(`${relatorio}: relatório não está no menu`); continue; }
-      // A permissão de abrir o relatório vale para uma abertura só: pede uma nova a cada mês
-      // e o PMS devolve a mesma por alguns segundos se pedida de novo: espera até vir uma que ainda não foi usada
-      const pedirPermissao = async () => (await page.evaluate(async ([id, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${id}?culture=pt-BR`,
-        { headers: { Authorization: t, Accept: "application/json" } })).json(), [item.reportParameterUId, token]))?.permissionToken;
-      const usadas = new Set();
-      const novaPermissao = async () => {
-        for (let i = 0; i < 40; i++) {
-          const p = await pedirPermissao();
-          if (p && !usadas.has(p)) { usadas.add(p); return p; }
-          await espera(1500);
-        }
-        return null;
-      };
-      const teste = await pedirPermissao();
-      if (!teste) { resumo.erros.push(`${relatorio}: sem permissão no PMS`); continue; }
-      let vazios = 0;
-      const atual = ymd(inicioMes(new Date()));
-      for (const mes of mesesParaLer(h, relatorio, lidos, new Date())) {
-        if (navegacoes >= LIMITE_NAVEGACOES) break;
-        const passado = mes < atual;
-        if (passado && vazios >= MESES_VAZIOS_PARA_PARAR) break; // chegou antes do começo do hotel
-        const t0 = Date.now();
-        try {
-          const d = new Date(`${mes}T00:00:00Z`);
-          const permissao = await novaPermissao();
-          if (!permissao) throw new Error("o PMS não deu permissão para abrir o relatório");
-          // Uma aba nova por mês: a segunda abertura na mesma aba não redireciona
-          await pagina.close().catch(() => {});
-          pagina = await ctx.newPage();
-          const j = await lerMetabase(pagina, permissao, mes, ymd(fimMes(d)));
-          navegacoes++;
-          const linhas = normalizar(relatorio, j);
-          const temMovimento = relatorio === "kpi" ? linhas.some((x) => (x.ocupadas || 0) > 0 || (x.receita || 0) !== 0) : linhas.length > 0;
-          if (passado) vazios = temMovimento ? 0 : vazios + 1;
-          await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: relatorio, p_mes: mes, p_linhas: linhas });
-          resumo[relatorio]++;
-          log(`  ${h.id} ${relatorio} ${mes.slice(0, 7)}: ${linhas.length} linhas em ${Math.round((Date.now() - t0) / 1000)} s`);
-        } catch (e) {
-          navegacoes++;
-          const msg = e.message.split("\n")[0];
-          resumo.erros.push(`${relatorio} ${mes}: ${msg}`);
-          log(`  ${h.id} ${relatorio} ${mes.slice(0, 7)}: falhou em ${Math.round((Date.now() - t0) / 1000)} s: ${msg}`);
-          if (resumo.erros.length > 10) break;
-        }
+  const atual = ymd(inicioMes(new Date()));
+  // Um estado por relatório. A permissão de abrir vale uma abertura só, e o PMS devolve a mesma por ~30 s se pedida de novo:
+  // por isso os três relatórios andam intercalados (enquanto um espera permissão nova, os outros seguem).
+  const estados = [];
+  for (const [relatorio, chave] of Object.entries(RELATORIOS)) {
+    const item = menu.find((m) => m.metabaseKey === chave);
+    if (!item) { resumo.erros.push(`${relatorio}: relatório não está no menu`); continue; }
+    estados.push({ relatorio, id: item.reportParameterUId, usadas: new Set(), fila: mesesParaLer(h, relatorio, lidos, new Date()), vazios: 0, parado: false });
+  }
+  const pedirPermissao = async (id) => (await page.evaluate(async ([i, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${i}?culture=pt-BR`,
+    { headers: { Authorization: t, Accept: "application/json" } })).json(), [id, token]))?.permissionToken;
+  let navegacoes = 0, semPermissaoSeguidas = 0;
+  while (navegacoes < LIMITE_NAVEGACOES && resumo.erros.length <= 15) {
+    const ativos = estados.filter((e) => !e.parado && e.fila.length);
+    if (!ativos.length) break;
+    let andou = false;
+    for (const e of ativos) {
+      if (navegacoes >= LIMITE_NAVEGACOES) break;
+      const mes = e.fila[0];
+      const passado = mes < atual;
+      if (passado && e.vazios >= MESES_VAZIOS_PARA_PARAR) { e.parado = true; continue; } // passou do começo do hotel
+      const permissao = await pedirPermissao(e.id).catch(() => null);
+      if (!permissao || e.usadas.has(permissao)) continue; // ainda a mesma: tenta outro relatório
+      e.usadas.add(permissao);
+      e.fila.shift();
+      andou = true;
+      const t0 = Date.now();
+      // Uma aba nova por abertura
+      const pagina = await ctx.newPage();
+      try {
+        const j = await lerMetabase(pagina, permissao, mes, ymd(fimMes(new Date(`${mes}T00:00:00Z`))));
+        navegacoes++;
+        const linhas = normalizar(e.relatorio, j);
+        const temMovimento = e.relatorio === "kpi" ? linhas.some((x) => (x.ocupadas || 0) > 0 || (x.receita || 0) !== 0) : linhas.length > 0;
+        if (passado) e.vazios = temMovimento ? 0 : e.vazios + 1;
+        await rpc("pms_robo_gravar_mes", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: e.relatorio, p_mes: mes, p_linhas: linhas });
+        resumo[e.relatorio]++;
+        log(`  ${h.id} ${e.relatorio} ${mes.slice(0, 7)}: ${linhas.length} linhas em ${Math.round((Date.now() - t0) / 1000)} s`);
+      } catch (err) {
+        navegacoes++;
+        const msg = err.message.split("\n")[0];
+        resumo.erros.push(`${e.relatorio} ${mes}: ${msg}`);
+        log(`  ${h.id} ${e.relatorio} ${mes.slice(0, 7)}: falhou em ${Math.round((Date.now() - t0) / 1000)} s: ${msg}`);
+      } finally {
+        await pagina.close().catch(() => {});
       }
-      if (vazios >= MESES_VAZIOS_PARA_PARAR) {
-        await rpc("pms_robo_historico_completo", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: relatorio }).catch(() => {});
-      }
+      await espera(800 + Math.random() * 2500); // pausa variável entre aberturas
     }
-  } finally {
-    await pagina.close().catch(() => {});
+    if (!andou) {
+      if (++semPermissaoSeguidas > 60) { resumo.erros.push("o PMS parou de dar permissões novas"); break; }
+      await espera(1500 + Math.random() * 1500);
+    } else semPermissaoSeguidas = 0;
+  }
+  for (const e of estados) {
+    if (e.vazios >= MESES_VAZIOS_PARA_PARAR) {
+      await rpc("pms_robo_historico_completo", { p_segredo: SEGREDO, p_hotel: h.id, p_relatorio: e.relatorio }).catch(() => {});
+    }
   }
   return resumo;
 }
@@ -416,5 +416,8 @@ log(`robô do PMS ligado (a cada ${INTERVALO_MIN} min)`);
 do {
   await rodada();
   if (process.env.UMA_VEZ) break;
-  await espera(INTERVALO_MIN * 60000);
+  // Intervalo variável entre as rodadas (75% a 125% do intervalo; com 60 min, entre 45 e 75 min)
+  const proxima = INTERVALO_MIN * 60000 * (0.75 + Math.random() * 0.5);
+  log(`próxima rodada em ${Math.round(proxima / 60000)} min`);
+  await espera(proxima);
 } while (true);
