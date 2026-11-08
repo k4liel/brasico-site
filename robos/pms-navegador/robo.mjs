@@ -622,6 +622,54 @@ async function historico(page, ctx, h, token, lidos) {
   return resumo;
 }
 
+// ---------- relatórios extras configuráveis (pms_relatorios_config / pms_relatorio_dados) ----------
+// O banco diz o que está vencido (retratos de hoje, mês atual, passado que falta); o robô abre cada relatório com as
+// datas pedidas e guarda o resultado inteiro (colunas e linhas). A permissão do PMS vale uma abertura só: os pedidos do
+// mesmo relatório são intercalados com os de outros enquanto a permissão não muda.
+const LIMITE_RELATORIOS = Number(process.env.LIMITE_RELATORIOS || 30);
+async function relatoriosExtras(page, ctx, h, token) {
+  const fila = (await rpc("pms_robo_relatorios_fila", { p_segredo: SEGREDO, p_hotel: h.id, p_limite: LIMITE_RELATORIOS })) ?? [];
+  const soma = { lidos: 0, erros: 0, restantes: 0 };
+  if (!fila.length) return soma;
+  const menu = await page.evaluate(async (t) => (await fetch("https://ebs.totvshospitalidade.com/report/api/MenuReports?culture=pt-BR",
+    { headers: { Authorization: t, Accept: "application/json" } })).json(), token);
+  const idDe = new Map((Array.isArray(menu) ? menu : []).map((m) => [Number(m.metabaseKey), m.reportParameterUId]));
+  const pedirPermissao = async (id) => (await page.evaluate(async ([i, t]) => (await fetch(`https://ebs.totvshospitalidade.com/report/api/FiltersReport/${i}?culture=pt-BR`,
+    { headers: { Authorization: t, Accept: "application/json" } })).json(), [id, token]))?.permissionToken;
+  const gravar = (item, colunas, linhas, erro) => rpc("pms_robo_gravar_relatorio", { p_segredo: SEGREDO, p_hotel: h.id, p_chave: item.chave,
+    p_ini: item.ini, p_fim: item.fim, p_colunas: colunas, p_linhas: linhas, p_erro: erro });
+  const usadas = new Map();
+  const pendentes = [...fila];
+  let tentativas = 0;
+  while (pendentes.length && tentativas < LIMITE_RELATORIOS * 8) {
+    tentativas++;
+    const item = pendentes.shift();
+    const id = idDe.get(Number(item.chave));
+    if (!id) { soma.erros++; await gravar(item, null, null, "relatório não está no menu deste hotel").catch(() => {}); continue; }
+    const u = usadas.get(id) ?? new Set(); usadas.set(id, u);
+    const perm = await pedirPermissao(id).catch(() => null);
+    if (!perm || u.has(perm)) { pendentes.push(item); await espera(1200 + Math.random() * 800); continue; }
+    u.add(perm);
+    const pg = await ctx.newPage();
+    const t0 = Date.now();
+    try {
+      const j = await lerMetabase(pg, perm, item.ini, item.fim);
+      const colunas = (j?.data?.cols ?? []).map((c) => ({ nome: c.display_name ?? c.name ?? null, tipo: c.base_type ?? null }));
+      await gravar(item, colunas, j?.data?.rows ?? [], null);
+      soma.lidos++;
+      log(`  ${h.id} relatório ${item.chave} ${item.ini}..${item.fim}: ${(j?.data?.rows ?? []).length} linhas em ${Math.round((Date.now() - t0) / 1000)} s`);
+    } catch (e) {
+      soma.erros++;
+      const msg = String(e?.message ?? e).split("\n")[0];
+      await gravar(item, null, null, msg).catch(() => {});
+      log(`  ${h.id} relatório ${item.chave} ${item.ini}..${item.fim}: falhou: ${msg}`);
+    } finally { await pg.close().catch(() => {}); }
+    await espera(800 + Math.random() * 2000);
+  }
+  soma.restantes = pendentes.length;
+  return soma;
+}
+
 async function guardarFalha(page, nome) {
   try {
     mkdirSync(FALHAS, { recursive: true });
@@ -673,6 +721,10 @@ async function rodada() {
           log(`${h.id}: histórico · kpi ${hist.kpi} meses · reservas ${hist.reservas} · recebimentos ${hist.recebimentos}` +
             (hist.erros.length ? ` · ${hist.erros.length} erro(s): ${hist.erros.slice(0, 3).join(" | ")}` : ""));
         } catch (e) { log(`${h.id}: histórico falhou: ${e.message.split("\n")[0]}`); }
+        try {
+          const rx = await relatoriosExtras(page, ctx, h, token);
+          log(`${h.id}: relatórios extras · ${rx.lidos} lidos · ${rx.erros} erro(s)${rx.restantes ? ` · ${rx.restantes} ficaram para a próxima rodada` : ""}`);
+        } catch (e) { log(`${h.id}: relatórios extras falharam: ${e.message.split("\n")[0]}`); }
         log(`${h.id}: ${r.nome_no_pms} · ocupação ${r.painel.ocupacao}% · ocupadas ${r.painel.ocupadas} · livres ${r.painel.livres}` +
           ` · bloqueadas ${r.painel.bloqueadas} · previsão ${r.disponibilidade?.dias.length ?? 0} dias${r.aviso ? ` · aviso: ${r.aviso}` : ""}`);
       } catch (e) {
