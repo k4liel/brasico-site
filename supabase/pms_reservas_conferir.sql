@@ -3,7 +3,7 @@
 -- A busca de reservas do PMS (booking/searchv2) devolve no máximo 1500 linhas por status, sem ordem de data, e
 -- não filtra por data: os check-outs recentes não vinham. Ela aceita freeCodeSearch=<código da reserva> e
 -- checkOutToday=true. A cada rodada o robô lê os check-outs do dia e pede aqui os códigos que precisa conferir:
---  1) reservas que ficaram como Confirmada/Check-in/Pendente com a saída já passada (status velho);
+--  1) reservas que ficaram como Confirmada/Check-in/Pendente com a saída hoje ou já passada (status velho);
 --  2) reservas que aparecem nas transações e não estão em pms_estadias (check-outs que a busca não trouxe),
 -- das mais recentes para as mais antigas, até p_limite por rodada (o histórico se completa aos poucos).
 -- =====================================================================
@@ -17,7 +17,7 @@ begin
     select codigo from (
       select e.codigo, e.checkout as data, 1 as prioridade
       from public.pms_estadias e
-      where e.hotel_id = p_hotel and e.codigo is not null and e.status_id in (1, 2, 4) and e.checkout < v_hoje
+      where e.hotel_id = p_hotel and e.codigo is not null and e.status_id in (1, 2, 4) and e.checkout <= v_hoje
       union
       select t.reserva, max(t.partida), 2
       from public.pms_transacoes t
