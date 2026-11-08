@@ -94,7 +94,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
     for (const e of estadias) {
       if (!valida(e)) continue;
       if (!e.uh_id || !ids.has(e.uh_id)) { if (e.status_id === 1 || e.status_id === 4 || e.status_id === 2) semUh.push(e); continue; }
-      const b = montar(`e${e.item_id}`, e.checkin!, e.checkout!, faseDe(e), { estadia: e, rotulo: e.hospede || "Hóspede não informado", sub: e.codigo ?? "" });
+      const b = montar(`e${e.item_id}`, e.checkin!, e.checkout!, faseDe(e), { estadia: e, rotulo: e.hospede || (e.item_id < 0 ? `Reserva ${e.codigo ?? ""}` : "Hóspede não informado"), sub: e.item_id < 0 ? "check-out · pelas transações" : e.codigo ?? "" });
       if (b) m.set(e.uh_id, [...(m.get(e.uh_id) ?? []), b]);
     }
     for (const bl of bloqueios) {
@@ -270,7 +270,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
       )}
 
       <p className="mr-ctx mr-nota">
-        Cada barra vai do meio do dia de chegada ao meio do dia de saída. A cor segue o status no PMS. Reservas canceladas e no-show não aparecem.
+        Cada barra vai do meio do dia de chegada ao meio do dia de saída. A cor segue o status no PMS. Reservas canceladas e no-show não aparecem. Check-outs antigos que a busca do PMS não traz vêm das transações (sem o nome do hóspede).
         O mapa é só para consulta: as reservas são feitas e alteradas no PMS.
       </p>
 
@@ -282,7 +282,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
             const e = previa.b.estadia!;
             return (
               <>
-                <div className="mr-previa-topo"><span className="mr-mono">{e.codigo ?? "—"}</span><b>{e.vip ? "★ " : ""}{e.hospede || "Hóspede não informado"}</b></div>
+                <div className="mr-previa-topo"><span className="mr-mono">{e.codigo ?? "—"}</span><b>{e.vip ? "★ " : ""}{e.hospede || (e.item_id < 0 ? "Check-out (dados das transações, sem nome)" : "Hóspede não informado")}</b></div>
                 <div className="mr-previa-3">
                   <div><span className="mr-rotulo">Hóspedes</span><b>{e.adultos ?? 0} adulto{(e.adultos ?? 0) === 1 ? "" : "s"}{e.criancas ? ` · ${e.criancas} criança${e.criancas === 1 ? "" : "s"}` : ""}</b></div>
                   <div><span className="mr-rotulo">Status</span><b>{nomeStatus(e)}</b></div>
