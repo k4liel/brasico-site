@@ -307,6 +307,9 @@ async function historico(page, ctx, h, token, lidos) {
           const d = new Date(`${mes}T00:00:00Z`);
           const permissao = await novaPermissao();
           if (!permissao) throw new Error("o PMS não deu permissão para abrir o relatório");
+          // Uma aba nova por mês: a segunda abertura na mesma aba não redireciona
+          await pagina.close().catch(() => {});
+          pagina = await ctx.newPage();
           const j = await lerMetabase(pagina, permissao, mes, ymd(fimMes(d)));
           navegacoes++;
           const linhas = normalizar(relatorio, j);
@@ -320,9 +323,6 @@ async function historico(page, ctx, h, token, lidos) {
           const msg = e.message.split("\n")[0];
           resumo.erros.push(`${relatorio} ${mes}: ${msg}`);
           log(`  ${h.id} ${relatorio} ${mes.slice(0, 7)}: falhou em ${Math.round((Date.now() - t0) / 1000)} s: ${msg}`);
-          // Página nova depois de uma falha (a anterior pode ter ficado presa)
-          await pagina.close().catch(() => {});
-          pagina = await ctx.newPage();
           if (resumo.erros.length > 10) break;
         }
       }
