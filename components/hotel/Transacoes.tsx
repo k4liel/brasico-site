@@ -94,7 +94,7 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
       lancamentos: l.length, reservas: new Set(l.map((t) => t.reserva).filter(Boolean)).size };
   }, [txs]);
 
-  const porGrupo = useMemo(() => GRUPOS.map((g) => ({ nome: g, valor: (txs ?? []).filter((t) => t.grupo === g).reduce((a, t) => a + valorHotel(t), 0), cor: COR_GRUPO[g] })).filter((x) => x.valor > 0), [txs]);
+  const porGrupo = useMemo(() => GRUPOS.filter((g) => g !== "Pagamento").map((g) => ({ nome: g, valor: (txs ?? []).filter((t) => t.grupo === g).reduce((a, t) => a + valorHotel(t), 0), cor: COR_GRUPO[g] })).filter((x) => x.valor > 0), [txs]);
   const porDia = useMemo(() => {
     const m = new Map<string, Record<string, number>>();
     for (const t of txs ?? []) {
@@ -155,7 +155,7 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
 
           <div className="hx-tres">
             <Painel sub="Composição" titulo="Por tipo de lançamento">
-              <Rosca dados={porGrupo} fmt={(v) => moeda(v, true)} altura={200} />
+              <Rosca dados={porGrupo} fmt={(v) => moeda(v, true)} altura={200} sub="lançado na conta" />
             </Painel>
             <Painel sub="Fora as diárias" titulo="O que mais se vende">
               {topDescricoes.length ? <BarrasH dados={topDescricoes} fmt={(v) => moeda(v, true)} cor={COR.ambar} /> : <Vazio>Sem consumo ou serviços.</Vazio>}
