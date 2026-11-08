@@ -294,10 +294,14 @@ const txt = (v) => (v == null || String(v).trim() === "" ? null : String(v).trim
 const fone = (o) => (o && (o.number || o.Number) ? `${o.countryCode ? `+${String(o.countryCode).replace(/^\+/, "")} ` : ""}${o.number ?? o.Number}` : null);
 
 async function lerDetalhes(page, h, token) {
+  // Cada consulta espera no máximo 8 s (o cadastro de hóspede sem ficha às vezes demora e volta 504)
   const get = (url) => page.evaluate(async ([u, t]) => {
-    const r = await fetch(u, { headers: { Authorization: t, Accept: "application/json" } });
-    if (!r.ok) throw new Error(`HTTP ${r.status} em ${new URL(u).pathname}`);
-    return r.json();
+    const c = new AbortController(); const tm = setTimeout(() => c.abort(), 8000);
+    try {
+      const r = await fetch(u, { headers: { Authorization: t, Accept: "application/json" }, signal: c.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status} em ${new URL(u).pathname}`);
+      return r.json();
+    } finally { clearTimeout(tm); }
   }, [url, token]);
   const fila = (await rpc("pms_robo_detalhes_fila", { p_segredo: SEGREDO, p_hotel: h.id, p_limite: LIMITE_DETALHES })) ?? [];
   const B = "https://group03.totvshospitalidade.com/booking/api";
@@ -331,10 +335,21 @@ async function lerDetalhes(page, h, token) {
         } catch { /* hóspede sem cadastro: fica só o nome */ }
         lote.reserva_hospedes.push({ guest_item_id: g.guestReservationItemId, item_id: item, guest_id: guestDe.get(g.guestReservationItemId) ?? null,
           nome: txt(g.fullName), principal: !!g.isMain, crianca: !!g.isChild, idade_crianca: g.childAge ?? null, vip: !!g.isVip, status: txt(g.status) });
-        await espera(80 + Math.random() * 150);
+        await espera(40 + Math.random() * 80);
       }
       let d = null;
       if (principal) { try { d = await get(`${B}/booking/searchDetails/${principal.guestReservationItemId}?culture=pt-BR`); } catch { /* sem detalhes */ } }
+      // Hóspede principal sem cadastro lido: fica com o contato que vem nos detalhes da reserva
+      if (d?.guestId && principal && !guestDe.has(principal.guestReservationItemId)) {
+        guestDe.set(principal.guestReservationItemId, d.guestId);
+        lote.hospedes.push({ guest_id: d.guestId, nome: txt(d.guestName ?? principal.fullName), email: txt(d.guestEmail),
+          telefone: fone(d.mainGuestPhone) ?? txt(d.guestPhoneNumber),
+          celular: d.mainGuestMobilePhoneNumber ? `${d.mainGuestMobilePhoneCountrycode ? `+${d.mainGuestMobilePhoneCountrycode} ` : ""}${d.mainGuestMobilePhoneNumber}` : null,
+          tipo_hospede: txt(d.guestTypeName) });
+        const rh = lote.reserva_hospedes.find((x) => x.guest_item_id === principal.guestReservationItemId);
+        if (rh) rh.guest_id = d.guestId;
+        soma.hospedes++;
+      }
       let comHistorico = false;
       try {
         const hi = await get(`https://pms.totvshospitalidade.com/dataextractor/api/reservation/${item}?culture=pt-BR`);
