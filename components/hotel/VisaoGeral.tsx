@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { MESES, somarMeses } from "@/lib/totvs-painel";
-import { COR, GraficoCombinado, Kpi, Painel, Rosca, BarrasH, Segmentos, Vazio, moeda, num, pct } from "./ui";
+import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, compacto, moeda, num, pct } from "./ui";
 
 // Visão geral do hotel (aba 1 da página /hoteis/<hotel>): indicadores do período com minigráficos e comparação com o
 // ano anterior até a mesma data, dia a dia, tipos de UH, canais, evolução de 24 meses, o que já está vendido e recebimentos.
@@ -50,6 +50,7 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
   const [txDia, setTxDia] = useState<TxDia[]>([]);
   const [txDiaAnt, setTxDiaAnt] = useState<TxDia[]>([]);
   const [erro, setErro] = useState<string | null>(null);
+  const [verTabela, setVerTabela] = useState(false);
 
   const [ini, fim] = useMemo(() => {
     if (periodo === "mes") return [`${mes}-01`, fimDoMes(mes)];
@@ -206,11 +207,12 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
   const anoA = mes.slice(0, 4), anoB = String(+mes.slice(0, 4) - 1);
 
   if (erro) return <Vazio>Não foi possível abrir: {erro}</Vazio>;
+  const vs = cobertura.antOk ? anoB : undefined;
 
   return (
     <div className="hx-pilha">
       <div className="hx-barra-periodo">
-        <div><span className="hx-sobre">Relatório gerencial</span><h2>{titulo}</h2></div>
+        <h2>{titulo}</h2>
         <div className="hx-controles">
           <Segmentos valor={periodo} mudar={setPeriodo} rotulo="Período" opcoes={[["mes", "Mês"], ["ano", "Ano até o mês"], ["12m", "12 meses"]]} />
           <div className="hx-navmes">
@@ -225,110 +227,120 @@ export default function VisaoGeral({ hotel }: { hotel: string }) {
       {kpi === null ? <div className="hx-carregando"><i /><i /><i /></div> : (
         <>
           {cobertura.faltam > 0 && (
-            <div className="hx-aviso">Faltam {num(cobertura.faltam)} dias deste período no banco — o histórico ainda está chegando do PMS (ou o hotel não operava). Os números cobrem só os dias que já chegaram.</div>
+            <div className="hx-aviso">Faltam {num(cobertura.faltam)} dias deste período no banco (o histórico ainda está chegando do PMS). Os números cobrem só os dias que já chegaram.</div>
           )}
+
           <div className="hx-kpis">
-            <Kpi rotulo="Taxa de ocupação" valor={pct(s.ocupacao)} delta={compPp(s.ocupacao, sAnt.ocupacao)} pontos cor={COR.azul}
-              serie={serie.filter((x) => x.ocupacao != null).map((x) => x.ocupacao)} nota={`${num(s.ocupadas)} de ${num(s.total)} UHs-noite`} ajuda="Diárias vendidas ÷ total de UHs no período" />
-            <Kpi rotulo="Diária média (ADR)" valor={moeda(s.diaria)} delta={comp(s.diaria, sAnt.diaria)} cor={COR.violeta} serie={serie.filter((x) => x.diaria != null).map((x) => x.diaria)} ajuda="Receita de hospedagem ÷ diárias vendidas" />
-            <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} delta={comp(s.revpar, sAnt.revpar)} cor={COR.ciano} serie={serie.filter((x) => x.revpar != null).map((x) => x.revpar)} ajuda="Receita de hospedagem ÷ UHs disponíveis" />
-            <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} delta={comp(s.receita, sAnt.receita)} cor={COR.verde} serie={serie.filter((x) => x.receita != null).map((x) => x.receita)} />
-            {areas.temDados && <Kpi rotulo="Receita total do hotel" valor={moeda(areas.total)} delta={comp(areas.total, areas.totalAnt)} cor={COR.rosa}
-              nota={s.ocupadas ? `${moeda(areas.total / s.ocupadas)} por diária vendida` : undefined} ajuda="Hospedagem + consumo + spa + serviços (sem taxas), pelas transações do PMS" />}
-            <Kpi rotulo="Diárias vendidas" valor={num(s.ocupadas)} delta={comp(s.ocupadas, sAnt.ocupadas)} cor={COR.ambar} serie={serie.filter((x) => x.diarias != null).map((x) => x.diarias)}
-              nota={cobertura.antOk ? `vs. ${anoB} até a mesma data` : "sem ano anterior completo"} />
+            <Kpi rotulo="Ocupação" valor={pct(s.ocupacao)} delta={compPp(s.ocupacao, sAnt.ocupacao)} pontos vs={vs}
+              nota={`${num(s.ocupadas)} de ${num(s.total)} diárias`} ajuda="Diárias vendidas ÷ total de UHs no período" />
+            <Kpi rotulo="Diária média" valor={moeda(s.diaria)} delta={comp(s.diaria, sAnt.diaria)} vs={vs} ajuda="Receita de hospedagem ÷ diárias vendidas" />
+            <Kpi rotulo="RevPAR" valor={moeda(s.revpar)} delta={comp(s.revpar, sAnt.revpar)} vs={vs} ajuda="Receita de hospedagem ÷ UHs disponíveis" />
+            {areas.temDados
+              ? <Kpi rotulo="Receita total" valor={moeda(areas.total)} delta={comp(areas.total, areas.totalAnt)} vs={vs} nota={`hospedagem ${moeda(s.receita)}`}
+                  ajuda="Hospedagem + consumo + spa + serviços (sem taxas), pelas transações do PMS" />
+              : <Kpi rotulo="Receita de hospedagem" valor={moeda(s.receita)} delta={comp(s.receita, sAnt.receita)} vs={vs} />}
           </div>
 
-          {vendido.dias > 0 && (
-            <div className="hx-destaque">
-              <div><span className="hx-sobre">Já vendido para o resto do período</span><b>{num(vendido.ocupadas)} diárias</b><span>{pct(vendido.ocupacao)} de ocupação nos {num(vendido.dias)} dias que faltam</span></div>
-              <div><span className="hx-sobre">O período fecha em pelo menos</span><b>{pct(vendido.projecao)}</b><span>{cobertura.antTudoOk ? `${anoB} fechou em ${pct(sAntTudo.ocupacao)}` : "de ocupação"}</span></div>
-            </div>
-          )}
+          <Resumo itens={[
+            { rotulo: "Diárias vendidas", valor: num(s.ocupadas), nota: cobertura.antOk ? `${num(sAnt.ocupadas)} em ${anoB}` : undefined },
+            { rotulo: "Receita de hospedagem", valor: moeda(s.receita) },
+            ...(vendido.dias > 0 ? [
+              { rotulo: "Já vendido no resto do período", valor: `${num(vendido.ocupadas)} diárias`, nota: `${pct(vendido.ocupacao)} nos ${num(vendido.dias)} dias que faltam` },
+              { rotulo: "Fecha em pelo menos", valor: pct(vendido.projecao), nota: cobertura.antTudoOk ? `${anoB} fechou em ${pct(sAntTudo.ocupacao)}` : "de ocupação" },
+            ] : []),
+          ]} />
 
-          <Painel sub={porMes ? "Mês a mês" : "Dia a dia"} titulo="Receita e ocupação"
-            acoes={<span className="hx-legenda-mini">Barras: receita · Linhas: ocupação {!porMes && "· pontilhado claro: já vendido"}</span>}>
-            <GraficoCombinado dados={serie} x="k" altura={320} rotuloX={rx} rotuloDica={rd}
-              fmtEsq={(v) => moeda(v, true)} fmtDir={(v) => `${Math.round(v)}%`}
-              fmt={{ receita: (v) => moeda(v), receitaAnt: (v) => moeda(v), ocupacao: (v) => pct(v), ocupacaoAnt: (v) => pct(v), vendido: (v) => pct(v) }}
+          <Painel titulo="Receita e ocupação" sub={porMes ? "mês a mês" : "dia a dia"}>
+            <GraficoCombinado dados={serie} x="k" altura={300} rotuloX={rx} rotuloDica={rd}
+              fmtEsq={(v) => compacto(v)} fmtDir={(v) => `${Math.round(v)}%`}
+              fmt={{ receita: (v) => moeda(v), ocupacao: (v) => pct(v), ocupacaoAnt: (v) => pct(v), vendido: (v) => pct(v) }}
               series={[
-                { chave: "receita", nome: `Receita ${anoA}`, cor: COR.azul, tipo: "barra" },
-                { chave: "receitaAnt", nome: `Receita ${anoB}`, cor: COR.cinza, tipo: "barra" },
-                { chave: "ocupacao", nome: `Ocupação ${anoA}`, cor: COR.verde, tipo: "linha", eixo: "dir" },
-                { chave: "ocupacaoAnt", nome: `Ocupação ${anoB}`, cor: COR.ambar, tipo: "linha", eixo: "dir", tracejada: true },
-                ...(porMes ? [] : [{ chave: "vendido", nome: "Já vendido", cor: COR.ciano, tipo: "linha" as const, eixo: "dir" as const, tracejada: true }]),
+                { chave: "receita", nome: "Receita de hospedagem (R$)", cor: COR.azul, tipo: "barra" },
+                { chave: "ocupacao", nome: "Ocupação", cor: COR.verde, tipo: "linha", eixo: "dir" },
+                ...(cobertura.antTudoOk || cobertura.antOk ? [{ chave: "ocupacaoAnt", nome: `Ocupação ${anoB}`, cor: COR.cinza, tipo: "linha" as const, eixo: "dir" as const, tracejada: true }] : []),
+                ...(!porMes && vendido.dias > 0 ? [{ chave: "vendido", nome: "Já vendido", cor: COR.ambar, tipo: "linha" as const, eixo: "dir" as const, tracejada: true }] : []),
               ]} />
-            <p className="hx-nota">Estornos e correções aparecem como receita negativa no dia em que o PMS os lançou.</p>
           </Painel>
 
           <div className="hx-duas">
-            <Painel sub="Realizado" titulo="Receita por tipo de UH">
-              {porTipo.length ? <BarrasH dados={porTipo.map((t, i) => ({ nome: t.cat, valor: t.receita, cor: [COR.azul, COR.violeta, COR.ciano, COR.verde, COR.ambar][i % 5] }))} fmt={(v) => moeda(v, true)} /> : <Vazio>Sem dados.</Vazio>}
-              <table className="hx-tabela compacta">
-                <thead><tr><th>Tipo</th><th>UHs</th><th>Ocupação</th><th>Diária</th><th>RevPAR</th></tr></thead>
-                <tbody>{porTipo.map((t) => <tr key={t.cat}><td>{t.cat}</td><td>{num(t.uhs)}</td><td>{pct(t.ocupacao)}</td><td>{moeda(t.diaria)}</td><td>{moeda(t.revpar)}</td></tr>)}</tbody>
-              </table>
+            <Painel titulo="Receita por área" sub="pelas transações do PMS">
+              {areas.temDados ? <Lista dados={areas.lista} fmt={(v) => moeda(v)} total={areas.lista.filter((a) => a.nome !== "Taxas (serviço e ISS)").reduce((x, a) => x + a.valor, 0)} />
+                : <Vazio>As transações deste período ainda estão chegando do PMS.</Vazio>}
             </Painel>
-            <Painel sub="Check-in no período" titulo="Canais de venda">
-              {canais.lista.length ? (
-                canais.lista.some((c) => c.valor > 0)
-                  ? <Rosca dados={canais.lista.map((c) => ({ nome: c.nome, valor: c.valor }))} fmt={(v) => moeda(v, true)} sub="em diárias pelos canais" />
-                  : <Rosca dados={canais.lista.map((c) => ({ nome: c.nome, valor: c.noites }))} fmt={(v) => `${num(v)} noites`} sub="noites" />
-              ) : <Vazio>Sem reservas de canais neste período.</Vazio>}
-              <div className="hx-trio">
-                <div><span>Estadia média</span><b>{canais.estadia == null ? "—" : `${num(canais.estadia, 1)} noites`}</b></div>
-                <div><span>Antecedência</span><b>{canais.antecedencia == null ? "—" : `${Math.round(canais.antecedencia)} dias`}</b></div>
-                <div><span>Cancelamento</span><b>{canais.total ? pct((100 * canais.canceladas) / canais.total) : "—"}</b></div>
-              </div>
+            <Painel titulo="Canais de venda" sub="check-in no período, sem canceladas">
+              {canais.lista.length
+                ? <Lista dados={canais.lista.map((c) => ({ nome: c.nome, valor: canais.lista.some((x) => x.valor > 0) ? c.valor : c.noites }))}
+                    fmt={canais.lista.some((x) => x.valor > 0) ? (v) => moeda(v) : (v) => `${num(v)} noites`} />
+                : <Vazio>Sem reservas de canais neste período.</Vazio>}
+              <Resumo itens={[
+                { rotulo: "Estadia média", valor: canais.estadia == null ? "—" : `${num(canais.estadia, 1)} noites` },
+                { rotulo: "Antecedência", valor: canais.antecedencia == null ? "—" : `${Math.round(canais.antecedencia)} dias` },
+                { rotulo: "Cancelamento", valor: canais.total ? pct((100 * canais.canceladas) / canais.total) : "—" },
+              ]} />
             </Painel>
           </div>
 
-          {ultimos.length > 1 && (
-            <Painel sub={`Últimos ${ultimos.length} meses`} titulo="Evolução">
-              <GraficoCombinado altura={280} x="mes" rotuloX={(v) => mesCurto(v.slice(0, 7))} rotuloDica={(v) => mesNome(v.slice(0, 7))}
-                dados={ultimos.map((m) => ({ mes: m.mes, receita: n(m.receita), ocupacao: m.ocupacao == null ? null : Number(m.ocupacao), diaria: m.diaria_media == null ? null : Number(m.diaria_media) }))}
-                fmtEsq={(v) => moeda(v, true)} fmtDir={(v) => `${Math.round(v)}%`}
-                fmt={{ receita: (v) => moeda(v), ocupacao: (v) => pct(v), diaria: (v) => moeda(v) }}
-                series={[
-                  { chave: "receita", nome: "Receita", cor: COR.azul, tipo: "area" },
-                  { chave: "ocupacao", nome: "Ocupação", cor: COR.verde, tipo: "linha", eixo: "dir" },
-                ]} />
-              <div className="hx-rolagem">
-                <table className="hx-tabela clicavel">
-                  <thead><tr><th>Mês</th><th>Ocupação</th><th>Diária média</th><th>RevPAR</th><th>Diárias</th><th>Receita</th></tr></thead>
-                  <tbody>
-                    {[...ultimos].reverse().map((m) => (
-                      <tr key={m.mes} className={m.mes.slice(0, 7) === mes && periodo === "mes" ? "on" : ""} onClick={() => { setPeriodo("mes"); setMes(m.mes.slice(0, 7)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-                        <td>{mesNome(m.mes.slice(0, 7))}</td><td>{pct(m.ocupacao == null ? null : Number(m.ocupacao))}</td>
-                        <td>{moeda(m.diaria_media == null ? null : Number(m.diaria_media))}</td><td>{moeda(m.revpar == null ? null : Number(m.revpar))}</td>
-                        <td>{num(n(m.diarias_vendidas))}</td><td>{moeda(n(m.receita))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="hx-duas">
+            <Painel titulo="Tipos de UH" sub="realizado no período">
+              {porTipo.length ? (
+                <div className="hx-rolagem">
+                  <table className="hx-tabela">
+                    <thead><tr><th>Tipo</th><th className="num">Ocupação</th><th className="num">Diária</th><th className="num">Receita</th></tr></thead>
+                    <tbody>{porTipo.map((t) => (
+                      <tr key={t.cat}><td>{t.cat}<small className="muted">{num(t.uhs)} UH{t.uhs === 1 ? "" : "s"}</small></td>
+                        <td className="num">{pct(t.ocupacao)}</td><td className="num">{moeda(t.diaria)}</td><td className="num hx-forte">{moeda(t.receita)}</td></tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : <Vazio>Sem dados.</Vazio>}
+            </Painel>
+            <Painel titulo="Recebimentos" sub="formas de pagamento no período">
+              <Lista dados={formas} fmt={(v) => moeda(v)} cor={COR.verde} />
+            </Painel>
+          </div>
+
+          {prev.length > 0 && (
+            <Painel titulo="Próximos 60 dias" sub="ocupação já vendida"
+              acoes={<span className="hx-legenda-mini">Próximos 30 dias: <b>{pct(pickup.ocupacao)}</b>{pickup.delta != null && <> · <b className={pickup.delta >= 0 ? "bom" : "ruim"}>{pickup.delta >= 0 ? "+" : ""}{num(pickup.delta)} diárias</b> na última semana</>}</span>}>
+              <GraficoCombinado altura={200} x="dia" legenda={false} rotuloX={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}`} rotuloDica={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}`}
+                dados={prev.slice(0, 60).map((p) => ({ dia: p.dia, ocupacao: p.ocupacao == null ? null : Number(p.ocupacao) }))}
+                fmtDir={(v) => `${Math.round(v)}%`} fmt={{ ocupacao: (v) => pct(v) }}
+                series={[{ chave: "ocupacao", nome: "Ocupação vendida", cor: COR.azul, tipo: "area", eixo: "dir" }]} />
             </Painel>
           )}
 
-          <div className="hx-tres">
-            {prev.length > 0 && (
-              <Painel sub="O que já está vendido" titulo="Próximos 60 dias"
-                acoes={<span className="hx-legenda-mini">30 dias: {pct(pickup.ocupacao)} · {num(pickup.agora)} diárias{pickup.delta != null && <> · <b className={pickup.delta >= 0 ? "bom" : "ruim"}>{pickup.delta >= 0 ? "+" : ""}{num(pickup.delta)} na semana</b></>}</span>}>
-                <GraficoCombinado altura={240} x="dia" legenda={false} rotuloX={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}`} rotuloDica={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}`}
-                  dados={prev.slice(0, 60).map((p) => ({ dia: p.dia, ocupacao: p.ocupacao == null ? null : Number(p.ocupacao) }))}
-                  fmtEsq={(v) => `${Math.round(v)}%`} fmt={{ ocupacao: (v) => pct(v) }}
-                  series={[{ chave: "ocupacao", nome: "Ocupação vendida", cor: COR.ciano, tipo: "area" }]} />
-              </Painel>
-            )}
-            <Painel sub="Pelas transações do PMS" titulo="Receita por área">
-              {areas.temDados ? <Rosca dados={areas.lista} fmt={(v) => moeda(v, true)} centro={moeda(areas.total, true)} sub="sem taxas" /> : <Vazio>As transações deste período ainda estão chegando do PMS.</Vazio>}
+          {ultimos.length > 1 && (
+            <Painel titulo="Evolução" sub={`últimos ${ultimos.length} meses`}
+              acoes={<button type="button" className="hx-botao" onClick={() => setVerTabela(!verTabela)}>{verTabela ? "Ver gráfico" : "Ver tabela"}</button>}>
+              {!verTabela ? (
+                <GraficoCombinado altura={260} x="mes" rotuloX={(v) => mesCurto(v.slice(0, 7))} rotuloDica={(v) => mesNome(v.slice(0, 7))}
+                  dados={ultimos.map((m) => ({ mes: m.mes, receita: n(m.receita), ocupacao: m.ocupacao == null ? null : Number(m.ocupacao) }))}
+                  fmtEsq={(v) => compacto(v)} fmtDir={(v) => `${Math.round(v)}%`}
+                  fmt={{ receita: (v) => moeda(v), ocupacao: (v) => pct(v) }}
+                  series={[
+                    { chave: "receita", nome: "Receita de hospedagem (R$)", cor: COR.azul, tipo: "barra" },
+                    { chave: "ocupacao", nome: "Ocupação", cor: COR.verde, tipo: "linha", eixo: "dir" },
+                  ]} />
+              ) : (
+                <div className="hx-rolagem">
+                  <table className="hx-tabela clicavel">
+                    <thead><tr><th>Mês</th><th className="num">Ocupação</th><th className="num">Diária média</th><th className="num">RevPAR</th><th className="num">Diárias</th><th className="num">Receita</th></tr></thead>
+                    <tbody>
+                      {[...ultimos].reverse().map((m) => (
+                        <tr key={m.mes} className={m.mes.slice(0, 7) === mes && periodo === "mes" ? "on" : ""} onClick={() => { setPeriodo("mes"); setMes(m.mes.slice(0, 7)); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+                          <td>{mesNome(m.mes.slice(0, 7))}</td><td className="num">{pct(m.ocupacao == null ? null : Number(m.ocupacao))}</td>
+                          <td className="num">{moeda(m.diaria_media == null ? null : Number(m.diaria_media))}</td><td className="num">{moeda(m.revpar == null ? null : Number(m.revpar))}</td>
+                          <td className="num">{num(n(m.diarias_vendidas))}</td><td className="num hx-forte">{moeda(n(m.receita))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </Painel>
-            <Painel sub="Caixa do período" titulo="Recebimentos">
-              {formas.length ? <Rosca dados={formas} fmt={(v) => moeda(v, true)} sub="recebido" /> : <Vazio>Sem recebimentos lançados neste período.</Vazio>}
-            </Painel>
-          </div>
+          )}
 
-          <p className="hx-fonte">Fonte: PMS TOTVS Hospitalidade, lido pelo robô do Brasico. Ocupação = diárias vendidas ÷ total de UHs (como no PMS) · diária média = receita ÷ diárias · RevPAR = receita ÷ UHs disponíveis.{primeiroMes && <> Histórico desde {mesNome(primeiroMes.slice(0, 7))}.</>}</p>
+          <p className="hx-fonte">Fonte: PMS TOTVS Hospitalidade, lido pelo robô do Brasico. Ocupação = diárias vendidas ÷ total de UHs (como no PMS) · diária média = receita ÷ diárias · RevPAR = receita ÷ UHs disponíveis. Estornos aparecem como receita negativa no dia em que o PMS os lançou.{primeiroMes && <> Histórico desde {mesNome(primeiroMes.slice(0, 7))}.</>}</p>
         </>
       )}
     </div>

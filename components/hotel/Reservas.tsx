@@ -6,7 +6,7 @@ import {
   type Estadia, STATUS, antecedencia, canalNome, dataBr, faseDe, hojeFortaleza, nomeStatus, somaDias, todas,
 } from "@/lib/hotel-reservas";
 import { valorHotel, grupoDe } from "./Transacoes";
-import { COR, GraficoCombinado, Kpi, Painel, Rosca, Segmentos, Vazio, moeda, num, pct } from "./ui";
+import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, moeda, num, pct } from "./ui";
 
 // Reservas do hotel para análise (aba Reservas da página /hoteis/<hotel>): todas as estadias do PMS (pms_estadias,
 // com canal e valor de pms_reservas), filtros, indicadores, gráficos e a lista. Clicar numa reserva abre o painel
@@ -45,7 +45,7 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
   const [base, setBase] = useState<Base>("chegada");
   const [lista, setLista] = useState<Estadia[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [status, setStatus] = useState<Set<number>>(new Set());
+  const [status, setStatus] = useState("");
   const [canal, setCanal] = useState("");
   const [tipo, setTipo] = useState("");
   const [busca, setBusca] = useState("");
@@ -86,7 +86,7 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
   const opTipo = useMemo(() => [...new Set((lista ?? []).map((e) => e.tipo ?? "—"))].sort(), [lista]);
   const filtradas = useMemo(() => {
     const b = busca.trim().toLowerCase();
-    return (lista ?? []).filter((e) => (!status.size || status.has(e.status_id ?? -1)) && (!canal || canalNome(e) === canal) && (!tipo || (e.tipo ?? "—") === tipo) &&
+    return (lista ?? []).filter((e) => (!status || (status === "validas" ? e.status_id !== 5 && e.status_id !== 6 : e.status_id === +status)) && (!canal || canalNome(e) === canal) && (!tipo || (e.tipo ?? "—") === tipo) &&
       (!b || [e.hospede, e.codigo, e.uh_numero, e.grupo_nome, e.empresa].some((v) => (v ?? "").toLowerCase().includes(b))));
   }, [lista, status, canal, tipo, busca]);
 
@@ -121,7 +121,6 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
     for (const e of filtradas) { if (e.status_id === 5 || e.status_id === 6) continue; const k = canalNome(e); m.set(k, (m.get(k) ?? 0) + 1); }
     return [...m.entries()].map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor);
   }, [filtradas]);
-  const porStatus = useMemo(() => Object.entries(STATUS).map(([id, s]) => ({ nome: s.nome, valor: filtradas.filter((e) => e.status_id === +id).length, cor: COR_FASE[s.fase] })).filter((x) => x.valor), [filtradas]);
 
   const POR = 50, paginas = Math.max(1, Math.ceil(filtradas.length / POR));
   const vis = filtradas.slice(pagina * POR, (pagina + 1) * POR);
@@ -131,55 +130,53 @@ export default function Reservas({ hotel, nome }: { hotel: string; nome: string 
   return (
     <div className="hx-pilha">
       <div className="hx-barra-periodo">
-        <div><span className="hx-sobre">Análise de reservas</span><h2>Reservas</h2></div>
+        <h2>Reservas</h2>
         <div className="hx-controles">
-          <Segmentos valor={base} mudar={setBase} rotulo="Contar por" opcoes={[["chegada", "Chegadas"], ["estadia", "Hospedados"], ["saida", "Saídas"], ["criacao", "Feitas no período"]]} />
+          <Segmentos valor={atalho} rotulo="Período" mudar={(a) => { setAtalho(a); if (a !== "livre") setIntervalo(intervaloDe(a, h)); }}
+            opcoes={[["7d", "7 dias"], ["30d", "30 dias"], ["mes", "Este mês"], ["prox30", "Próximos 30"], ["ano", "Este ano"]]} />
+          <label className="hx-campo"><input type="date" aria-label="De" value={ini} onChange={(e) => { setAtalho("livre"); setIntervalo([e.target.value, fim < e.target.value ? e.target.value : fim]); }} /></label>
+          <span className="muted">até</span>
+          <label className="hx-campo"><input type="date" aria-label="Até" value={fim} onChange={(e) => { setAtalho("livre"); setIntervalo([ini > e.target.value ? e.target.value : ini, e.target.value]); }} /></label>
         </div>
       </div>
       <div className="hx-filtros hx-filtros-topo">
-        <Segmentos valor={atalho} rotulo="Período" mudar={(a) => { setAtalho(a); if (a !== "livre") setIntervalo(intervaloDe(a, h)); }}
-          opcoes={[["7d", "7 dias"], ["30d", "30 dias"], ["mes", "Este mês"], ["prox30", "Próximos 30"], ["ano", "Este ano"]]} />
-        <label className="hx-campo"><span>De</span><input type="date" value={ini} onChange={(e) => { setAtalho("livre"); setIntervalo([e.target.value, fim < e.target.value ? e.target.value : fim]); }} /></label>
-        <label className="hx-campo"><span>Até</span><input type="date" value={fim} onChange={(e) => { setAtalho("livre"); setIntervalo([ini > e.target.value ? e.target.value : ini, e.target.value]); }} /></label>
-        <select className="hx-select" value={canal} onChange={(e) => setCanal(e.target.value)} aria-label="Canal"><option value="">Todos os canais</option>{opCanal.map((c) => <option key={c}>{c}</option>)}</select>
-        <select className="hx-select" value={tipo} onChange={(e) => setTipo(e.target.value)} aria-label="Tipo de UH"><option value="">Todos os tipos</option>{opTipo.map((c) => <option key={c}>{c}</option>)}</select>
-        <input type="search" className="hx-busca" placeholder="Hóspede, código, UH, grupo…" value={busca} onChange={(e) => { setBusca(e.target.value); setPagina(0); }} />
-      </div>
-      <div className="hx-chips" role="group" aria-label="Status">
-        {Object.entries(STATUS).map(([id, s]) => (
-          <button key={id} type="button" className={status.has(+id) ? "on" : ""} aria-pressed={status.has(+id)}
-            onClick={() => setStatus((x) => { const n2 = new Set(x); if (n2.has(+id)) n2.delete(+id); else n2.add(+id); return n2; })}>
-            <i style={{ background: COR_FASE[s.fase] }} />{s.nome}
-          </button>
-        ))}
-        {status.size > 0 && <button type="button" className="hx-limpar" onClick={() => setStatus(new Set())}>Limpar</button>}
+        <select className="hx-select" value={base} onChange={(e) => setBase(e.target.value as Base)} aria-label="Contar por">
+          <option value="chegada">Por chegada</option><option value="estadia">Hospedados no período</option><option value="saida">Por saída</option><option value="criacao">Feitas no período</option>
+        </select>
+        <select className="hx-select" value={status} onChange={(e) => { setStatus(e.target.value); setPagina(0); }} aria-label="Status">
+          <option value="">Todos os status</option><option value="validas">Sem canceladas e no-show</option>
+          {Object.entries(STATUS).map(([id, s]) => <option key={id} value={id}>{s.nome}</option>)}
+        </select>
+        <select className="hx-select" value={canal} onChange={(e) => { setCanal(e.target.value); setPagina(0); }} aria-label="Canal"><option value="">Todos os canais</option>{opCanal.map((c) => <option key={c}>{c}</option>)}</select>
+        <select className="hx-select" value={tipo} onChange={(e) => { setTipo(e.target.value); setPagina(0); }} aria-label="Tipo de UH"><option value="">Todos os tipos de UH</option>{opTipo.map((c) => <option key={c}>{c}</option>)}</select>
+        <input type="search" className="hx-busca" placeholder="Buscar hóspede, código, UH…" value={busca} onChange={(e) => { setBusca(e.target.value); setPagina(0); }} />
       </div>
 
       {erro && <Vazio>Não foi possível abrir as reservas: {erro}</Vazio>}
       {lista === null ? <div className="hx-carregando"><i /><i /><i /></div> : (
         <>
           <div className="hx-kpis">
-            <Kpi rotulo="Reservas" valor={num(ind.validas)} cor={COR.azul} nota={`${num(ind.canceladas)} canceladas · ${num(ind.noshow)} no-show`} serie={porDia.map((d) => Object.values(d).reduce((a: number, v) => a + (typeof v === "number" ? v : 0), 0))} />
-            <Kpi rotulo="Noites" valor={num(ind.noites)} cor={COR.violeta} nota={`estadia média ${ind.estadia == null ? "—" : num(ind.estadia, 1)}`} />
-            <Kpi rotulo="Hóspedes" valor={num(ind.hospedes)} cor={COR.ciano} nota="adultos e crianças" />
-            <Kpi rotulo="Valor das diárias" valor={moeda(ind.valor)} cor={COR.verde} nota={`${num(ind.comValor)} de ${num(ind.validas)} com valor do canal`} />
-            <Kpi rotulo="Diária média" valor={moeda(ind.diaria)} cor={COR.ambar} nota={`antecedência ${ind.antecedencia == null ? "—" : `${Math.round(ind.antecedencia)} dias`} · cancel. ${ind.total ? pct((100 * ind.canceladas) / ind.total) : "—"}`} />
+            <Kpi rotulo="Reservas" valor={num(ind.validas)} nota={`${num(ind.hospedes)} hóspedes`} />
+            <Kpi rotulo="Noites" valor={num(ind.noites)} nota={`estadia média ${ind.estadia == null ? "—" : `${num(ind.estadia, 1)} noites`}`} />
+            <Kpi rotulo="Diária média" valor={moeda(ind.diaria)} nota={`total ${moeda(ind.valor)} (${num(ind.comValor)} com valor)`} ajuda="Só reservas que vieram de canal integrado têm valor" />
+            <Kpi rotulo="Cancelamento" valor={ind.total ? pct((100 * ind.canceladas) / ind.total) : "—"} nota={`${num(ind.canceladas)} canceladas · ${num(ind.noshow)} no-show`} />
           </div>
 
-          <Painel sub={base === "saida" ? "Saídas por dia" : base === "criacao" ? "Reservas feitas por dia" : base === "estadia" ? "Chegadas por dia" : "Chegadas por dia"} titulo="Volume e situação">
+          <Painel titulo="Reservas por dia" sub={base === "saida" ? "pela data de saída" : base === "criacao" ? "pela data em que foram feitas" : "pela data de chegada"}>
             {porDia.length ? (
-              <GraficoCombinado dados={porDia} x="dia" altura={280} rotuloX={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}`} rotuloDica={(v) => dataBr(v)} fmtEsq={(v) => num(v)}
+              <GraficoCombinado dados={porDia} x="dia" altura={240} rotuloX={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}`} rotuloDica={(v) => dataBr(v)} fmtEsq={(v) => num(v)}
                 fmt={Object.fromEntries(serieFases.map((f) => [f, (v: number) => `${num(v)} reserva${v === 1 ? "" : "s"}`]))}
                 series={serieFases.map((f) => ({ chave: f, nome: nomeFase[f], cor: COR_FASE[f], tipo: "barra" as const, pilha: "s" }))} />
             ) : <Vazio>Sem reservas com esses filtros.</Vazio>}
           </Painel>
 
-          <div className="hx-tres">
-            <Painel sub="Origem" titulo="Canais"><Rosca dados={porCanal} fmt={(v) => `${num(v)}`} altura={190} sub="reservas" /></Painel>
-            <Painel sub="Situação" titulo="Status"><Rosca dados={porStatus} fmt={(v) => `${num(v)}`} altura={190} sub="reservas" /></Painel>
-            <Painel sub="Com quanto tempo reservam" titulo="Antecedência">
-              <GraficoCombinado dados={faixasAnt} x="faixa" altura={230} legenda={false} fmtEsq={(v) => num(v)} fmt={{ reservas: (v) => `${num(v)} reservas` }}
-                series={[{ chave: "reservas", nome: "Reservas", cor: COR.violeta, tipo: "barra" }]} />
+          <div className="hx-duas">
+            <Painel titulo="Canais" sub="reservas válidas">
+              <Lista dados={porCanal} fmt={(v) => `${num(v)} reserva${v === 1 ? "" : "s"}`} limite={6} />
+            </Painel>
+            <Painel titulo="Antecedência" sub="com quanto tempo reservam">
+              <Lista dados={faixasAnt.map((f) => ({ nome: f.faixa, valor: f.reservas }))} fmt={(v) => `${num(v)} reserva${v === 1 ? "" : "s"}`} cor={COR.violeta} />
+              <Resumo itens={[{ rotulo: "Antecedência média", valor: ind.antecedencia == null ? "—" : `${Math.round(ind.antecedencia)} dias` }]} />
             </Painel>
           </div>
 

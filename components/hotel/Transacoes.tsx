@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { COR, GraficoCombinado, Kpi, Painel, Rosca, BarrasH, Segmentos, Vazio, moeda, num } from "./ui";
+import { COR, GraficoCombinado, Kpi, Lista, Painel, Segmentos, Vazio, compacto, moeda, num, pct } from "./ui";
 
 // Transações do hotel (aba Transações da página /hoteis/<hotel>): todos os lançamentos do PMS — diárias, serviços,
 // consumo, taxas, pagamentos e estornos — de pms_transacoes (relatório "Lançamentos por Período (Analítico)").
@@ -108,7 +108,7 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
   const topDescricoes = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of txs ?? []) { if (t.grupo === "Pagamento" || t.grupo === "Diária" || t.grupo === "Taxa") continue; const k = t.descricao ?? "—"; m.set(k, (m.get(k) ?? 0) + valorHotel(t)); }
-    return [...m.entries()].map(([nome, valor]) => ({ nome, valor })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor).slice(0, 8);
+    return [...m.entries()].map(([nome, valor]) => ({ nome, valor })).filter((x) => x.valor > 0).sort((a, b) => b.valor - a.valor).slice(0, 30);
   }, [txs]);
   const formasPag = useMemo(() => {
     const m = new Map<string, number>();
@@ -137,33 +137,34 @@ export default function Transacoes({ hotel, nome }: { hotel: string; nome: strin
       ) : (
         <>
           <div className="hx-kpis">
-            <Kpi rotulo="Lançado na conta" valor={moeda(ind.receitas)} cor={COR.azul} serie={porDia.map((d) => (d as unknown as Record<string, number>)["Diária"] ?? 0)} nota="diárias, consumo, serviços e taxas" />
-            <Kpi rotulo="Pagamentos recebidos" valor={moeda(ind.pagamentos)} cor={COR.verde} serie={porDia.map((d) => (d as unknown as Record<string, number>)["Pagamento"] ?? 0)} nota="todas as formas" />
-            <Kpi rotulo="Estornos" valor={moeda(ind.estornos)} cor={COR.rosa} nota={`${num(ind.qtdEstornos)} lançamentos estornados`} />
-            <Kpi rotulo="Lançamentos" valor={num(ind.lancamentos)} cor={COR.violeta} nota={`${num(ind.reservas)} reservas`} />
+            <Kpi rotulo="Lançado na conta" valor={moeda(ind.receitas)} nota="diárias, consumo, serviços e taxas" />
+            <Kpi rotulo="Recebido" valor={moeda(ind.pagamentos)} nota={ind.receitas ? `${pct((100 * ind.pagamentos) / ind.receitas, 0)} do lançado` : "todas as formas"} />
+            <Kpi rotulo="Estornos" valor={moeda(ind.estornos)} nota={`${num(ind.qtdEstornos)} lançamento${ind.qtdEstornos === 1 ? "" : "s"}`} />
+            <Kpi rotulo="Lançamentos" valor={num(ind.lancamentos)} nota={`${num(ind.reservas)} reservas`} />
           </div>
 
-          <Painel sub="Dia a dia" titulo="Lançamentos e pagamentos">
-            <GraficoCombinado dados={porDia} x="dia" altura={300} rotuloX={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}`} rotuloDica={dataBr}
-              fmtEsq={(v) => moeda(v, true)} fmt={{ "Diária": (v) => moeda(v), Extras: (v) => moeda(v), Pagamento: (v) => moeda(v) }}
+          <Painel titulo="Lançado e recebido" sub="dia a dia">
+            <GraficoCombinado dados={porDia} x="dia" altura={280} rotuloX={(v) => `${v.slice(8, 10)}/${v.slice(5, 7)}`} rotuloDica={dataBr}
+              fmtEsq={(v) => compacto(v)} fmt={{ "Diária": (v) => moeda(v), Extras: (v) => moeda(v), Pagamento: (v) => moeda(v) }}
               series={[
                 { chave: "Diária", nome: "Diárias", cor: COR.azul, tipo: "barra", pilha: "c" },
-                { chave: "Extras", nome: "Consumo, serviços e taxas", cor: COR.ambar, tipo: "barra", pilha: "c" },
-                { chave: "Pagamento", nome: "Pagamentos", cor: COR.verde, tipo: "linha" },
+                { chave: "Extras", nome: "Consumo, spa, serviços e taxas", cor: COR.ambar, tipo: "barra", pilha: "c" },
+                { chave: "Pagamento", nome: "Recebido", cor: COR.verde, tipo: "linha" },
               ]} />
           </Painel>
 
-          <div className="hx-tres">
-            <Painel sub="Composição" titulo="Por tipo de lançamento">
-              <Rosca dados={porGrupo} fmt={(v) => moeda(v, true)} altura={200} sub="lançado na conta" />
+          <div className="hx-duas">
+            <Painel titulo="Por tipo" sub="o que foi lançado na conta">
+              <Lista dados={porGrupo} fmt={(v) => moeda(v)} />
             </Painel>
-            <Painel sub="Fora as diárias" titulo="O que mais se vende">
-              {topDescricoes.length ? <BarrasH dados={topDescricoes} fmt={(v) => moeda(v, true)} cor={COR.ambar} /> : <Vazio>Sem consumo ou serviços.</Vazio>}
-            </Painel>
-            <Painel sub="Recebido" titulo="Formas de pagamento">
-              {formasPag.length ? <BarrasH dados={formasPag} fmt={(v) => moeda(v, true)} cor={COR.verde} /> : <Vazio>Sem pagamentos.</Vazio>}
+            <Painel titulo="Formas de pagamento" sub="o que foi recebido">
+              <Lista dados={formasPag} fmt={(v) => moeda(v)} cor={COR.verde} limite={6} />
             </Painel>
           </div>
+
+          <Painel titulo="O que mais se vende" sub="consumo, spa e serviços (fora diárias e taxas)">
+            <Lista dados={topDescricoes} fmt={(v) => moeda(v)} cor={COR.ambar} limite={8} />
+          </Painel>
 
           <Painel sub={`${num(filtradas.length)} lançamentos`} titulo="Todas as transações"
             acoes={<button type="button" className="hx-botao" onClick={() => planilha(filtradas, `transacoes-${nome.toLowerCase().replace(/\s+/g, "-")}-${ini}-a-${fim}`)}>Baixar planilha</button>}>
