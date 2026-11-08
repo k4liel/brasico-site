@@ -533,6 +533,8 @@ async function historico(page, ctx, h, token, lidos) {
   const resumo = { kpi: 0, reservas: 0, recebimentos: 0, erros: [] };
   const menu = await page.evaluate(async (t) => (await fetch("https://ebs.totvshospitalidade.com/report/api/MenuReports?culture=pt-BR",
     { headers: { Authorization: t, Accept: "application/json" } })).json(), token);
+  // Catálogo de relatórios do PMS no banco (para escolher o que mais trazer)
+  if (Array.isArray(menu)) await rpc("pms_robo_gravar_menu", { p_segredo: SEGREDO, p_hotel: h.id, p_itens: menu }).catch((e) => log(`  ${h.id}: catálogo de relatórios não gravou: ${e.message}`));
   const atual = ymd(inicioMes(new Date()));
   // Um estado por relatório. A permissão de abrir vale uma abertura só, e o PMS devolve a mesma por ~30 s se pedida de novo:
   // por isso os três relatórios andam intercalados (enquanto um espera permissão nova, os outros seguem).
