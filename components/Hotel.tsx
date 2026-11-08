@@ -6,9 +6,11 @@ import { cssDoProjeto } from "@/lib/livre";
 import DocView from "./DocView";
 import Topo from "./Topo";
 import VisorPdf from "./VisorPdf";
-import HotelGerencial from "./HotelGerencial";
-import HotelReservas from "./HotelReservas";
 import HotelMapa from "./HotelMapa";
+import Cabecalho, { type Vista } from "./hotel/Cabecalho";
+import VisaoGeral from "./hotel/VisaoGeral";
+import Reservas from "./hotel/Reservas";
+import Transacoes from "./hotel/Transacoes";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
@@ -32,8 +34,7 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
   const [idioma, setIdioma] = useState<Idioma>("pt");
   const [aba, setAba] = useState<string | null>(null);
-  // Gerencial = números do PMS; Reservas = análise das reservas; Mapa = mapa de reservas; Documento = os capítulos
-  type Vista = "gerencial" | "reservas" | "mapa" | "documento";
+  // Visão geral, Reservas, Mapa de reservas, Transações (dados do PMS) e Documento (os capítulos)
   const [vista, setVista] = useState<Vista>("gerencial");
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
     if (h.startsWith("#cap-") || h === "#documento") setVista("documento");
     else if (h === "#reservas") setVista("reservas");
     else if (h === "#mapa") setVista("mapa");
+    else if (h === "#transacoes") setVista("transacoes");
   }, []);
   function trocarVista(v: Vista) {
     setVista(v);
@@ -118,47 +120,40 @@ export default function Hotel({ hotel, nome, userEmail }: { hotel: string; nome:
     <div className={modo === "pagina" ? "pagina pagina-doc modo-pagina" : "pagina pagina-doc"}>
       <Topo email={userEmail} ativo={`hotel:${hotel}`} />
 
-      <div className="proj-barra">
-        <h1 className="proj-nome">{estilo?.nome ?? nome}</h1>
-        <div className="spacer" />
-        <div className="proj-acoes">
-          <div className="alternar" role="group" aria-label="Conteúdo da página">
-            <button className={vista === "gerencial" ? "on" : ""} onClick={() => trocarVista("gerencial")}>Gerencial</button>
-            <button className={vista === "reservas" ? "on" : ""} onClick={() => trocarVista("reservas")}>Reservas</button>
-            <button className={vista === "mapa" ? "on" : ""} onClick={() => trocarVista("mapa")}>Mapa</button>
-            <button className={vista === "documento" ? "on" : ""} onClick={() => trocarVista("documento")}>Documento</button>
-          </div>
-          {vista === "documento" && capitulos.length > 0 && (
-            <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
-              {IDIOMAS.map((l) => (
-                <button key={l.id} className={idioma === l.id ? "on" : ""} onClick={() => trocarIdioma(l.id)}
-                  title={l.nome} aria-label={l.nome} aria-pressed={idioma === l.id} lang={l.lang}>
-                  <Bandeira idioma={l.id} />
-                </button>
-              ))}
-            </div>
-          )}
-          {vista === "documento" && (
+      <Cabecalho hotel={hotel} nome={estilo?.nome ?? nome} vista={vista} mudar={trocarVista}
+        acoes={vista === "documento" ? (
+          <div className="proj-acoes">
+            {capitulos.length > 0 && (
+              <div className="alternar alternar-idioma" role="group" aria-label="Idioma do documento">
+                {IDIOMAS.map((l) => (
+                  <button key={l.id} className={idioma === l.id ? "on" : ""} onClick={() => trocarIdioma(l.id)}
+                    title={l.nome} aria-label={l.nome} aria-pressed={idioma === l.id} lang={l.lang}>
+                    <Bandeira idioma={l.id} />
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="alternar" role="group" aria-label="Visualização">
               <button className={modo === "pagina" ? "on" : ""} onClick={() => setModo("pagina")}>Página</button>
               <button className={modo === "pdf" ? "on" : ""} onClick={() => setModo("pdf")}>PDF</button>
             </div>
-          )}
-          {vista === "documento" && capitulos.length > 0 && (
-            <button className="acao" onClick={baixarPdf} title="Gerar o arquivo PDF para enviar">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
-              Baixar PDF
-            </button>
-          )}
-        </div>
-      </div>
+            {capitulos.length > 0 && (
+              <button className="acao" onClick={baixarPdf} title="Gerar o arquivo PDF para enviar">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" /></svg>
+                Baixar PDF
+              </button>
+            )}
+          </div>
+        ) : null} />
 
       {vista === "gerencial" ? (
-        <main className="hg-pagina"><HotelGerencial hotel={hotel} /></main>
+        <main className="hx-pagina"><VisaoGeral hotel={hotel} /></main>
       ) : vista === "reservas" ? (
-        <main className="hg-pagina"><HotelReservas hotel={hotel} nome={estilo?.nome ?? nome} /></main>
+        <main className="hx-pagina"><Reservas hotel={hotel} nome={estilo?.nome ?? nome} /></main>
       ) : vista === "mapa" ? (
-        <main className="hg-pagina mr-pagina"><HotelMapa hotel={hotel} /></main>
+        <main className="hx-pagina hx-largo"><HotelMapa hotel={hotel} /></main>
+      ) : vista === "transacoes" ? (
+        <main className="hx-pagina"><Transacoes hotel={hotel} nome={estilo?.nome ?? nome} /></main>
       ) : (
       <>
       {estilo?.css && <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(estilo.css, ".doc-escopo") }} />}
