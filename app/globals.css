@@ -3901,6 +3901,18 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .hx-gaveta-tx li.estornado { opacity: .55; }
 .hx-gaveta-somas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .hx-gaveta-larga { width: min(620px, 100vw); }
+.hx-relatorios { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
+.hx-rel-lista { display: grid; gap: 14px; position: sticky; top: 76px; max-height: calc(100dvh - 96px); overflow-y: auto; padding-right: 4px; }
+.hx-rel-lista > div { display: grid; gap: 4px; }
+.hx-rel-lista .hx-sobre { margin: 2px 0 2px 10px; }
+.hx-rel-lista button { display: grid; gap: 1px; text-align: left; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text); }
+.hx-rel-lista button:hover { background: var(--hover-bg); filter: none; }
+.hx-rel-lista button.on { background: var(--panel); border-color: var(--border); }
+.hx-rel-lista button b { font-size: 13.5px; font-weight: 600; color: var(--strong); }
+.hx-rel-lista button small { font-size: 11.5px; color: var(--muted); }
+.hx-rel-conteudo { min-width: 0; }
+.hx-tabela tfoot td { border-top: 2px solid var(--border); border-bottom: 0; white-space: nowrap; }
+@media (max-width: 900px) { .hx-relatorios { grid-template-columns: minmax(0, 1fr); } .hx-rel-lista { position: static; max-height: none; } }
 .hx-gaveta-grade b small { display: block; font-size: 11.5px; font-weight: 450; color: var(--muted); margin-top: 1px; }
 .hx-gaveta-grade .largo { grid-column: 1 / -1; }
 .hx-detalhe { display: grid; gap: 12px; }
