@@ -189,7 +189,13 @@ async function guardarFalha(page, nome) {
 async function rodada() {
   const leitura = { inicio: new Date().toISOString(), hoteis: [] };
   // CANAL=chrome usa o Chrome instalado (teste no Windows); na VPS vale o Chromium da imagem
-  const browser = await chromium.launch({ headless: process.env.JANELA !== "1", channel: process.env.CANAL || undefined });
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: process.env.JANELA !== "1", channel: process.env.CANAL || undefined });
+  } catch (e) {
+    log(`o navegador não abriu: ${e.message.split("\n")[0]}`);
+    return;
+  }
   try {
     const cred = (await rpc("pms_robo_credenciais", { p_segredo: SEGREDO }))?.[0];
     if (!cred?.usuario || !cred?.senha) throw new Error("faltam pms_usuario e pms_senha no Vault");
