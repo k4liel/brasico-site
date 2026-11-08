@@ -10,7 +10,7 @@ services:
       - sh
       - -c
       - >-
-        node -e "fetch('https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/pms-navegador/robo.mjs').then(r=>{if(!r.ok)throw new Error(r.status);return r.text()}).then(t=>require('fs').writeFileSync('robo.mjs',t))"
+        node -e "fetch('https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/pms-navegador/robo.mjs?t='+Date.now()).then(r=>{if(!r.ok)throw new Error(r.status);return r.text()}).then(t=>require('fs').writeFileSync('robo.mjs',t))"
         && echo '{"type":"module"}' > package.json
         && npm install playwright@1.49.1 --no-audit --no-fund --loglevel=error
         && exec node robo.mjs
