@@ -134,7 +134,8 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
     const ativas = (uhs ?? []).filter((u) => u.ativa && !u.fora_inventario);
     const idsAtivas = new Set(ativas.map((u) => u.uh_id));
     const validas = deHoje.filter(valida);
-    const emCasa = validas.filter((e) => e.checkin! <= hoje && e.checkout! > hoje);
+    // Ocupadas agora = hóspede com check-in feito (como no painel do PMS), inclusive quem ainda sai hoje
+    const emCasa = validas.filter((e) => e.status_id === 2 && e.checkin! <= hoje && e.checkout! >= hoje);
     const ocupadas = new Set(emCasa.filter((e) => e.uh_id && idsAtivas.has(e.uh_id)).map((e) => e.uh_id));
     const bloqueadas = new Set(bloqueios.filter((b) => b.uh_id && idsAtivas.has(b.uh_id) && b.inicio! <= hoje && b.fim! >= hoje).map((b) => b.uh_id));
     const hospedes = emCasa.filter((e) => e.uh_id && idsAtivas.has(e.uh_id)).reduce((a, e) => a + (e.adultos ?? 0) + (e.criancas ?? 0), 0);
@@ -188,10 +189,10 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
 
       {/* Indicadores de hoje */}
       <div className="mr-kpis">
-        <div><span className="mr-rotulo">Ocupação hoje</span><b className="mr-num">{kpis.ocupacao == null ? "—" : `${kpis.ocupacao}%`}</b><span className="mr-ctx">{kpis.ocupadas} de {kpis.ativas} UHs ativas</span></div>
+        <div><span className="mr-rotulo">Ocupação agora</span><b className="mr-num">{kpis.ocupacao == null ? "—" : `${kpis.ocupacao}%`}</b><span className="mr-ctx">{kpis.ocupadas} de {kpis.ativas} UHs ativas</span></div>
         <div><span className="mr-rotulo">Entradas hoje</span><b className="mr-num">{inteiro(kpis.entradas)}</b><span className="mr-ctx">chegadas previstas</span></div>
         <div><span className="mr-rotulo">Saídas hoje</span><b className="mr-num">{inteiro(kpis.saidas)}</b><span className="mr-ctx">partidas previstas</span></div>
-        <div><span className="mr-rotulo">Hóspedes em estadia</span><b className="mr-num">{inteiro(kpis.hospedes)}</b><span className="mr-ctx">{kpis.livres} UHs livres · {kpis.bloqueadas} bloqueadas</span></div>
+        <div><span className="mr-rotulo">Hóspedes no hotel</span><b className="mr-num">{inteiro(kpis.hospedes)}</b><span className="mr-ctx">{kpis.livres} UHs livres · {kpis.bloqueadas} bloqueadas</span></div>
       </div>
 
       <div className="mr-sinc" role="status">
