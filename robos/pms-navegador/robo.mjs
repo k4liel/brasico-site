@@ -264,8 +264,9 @@ function mesesParaLer(h, relatorio, lidos, agora) {
   const meus = new Map(lidos.filter((x) => x.hotel === h.id && x.relatorio === relatorio).map((x) => [x.mes, x]));
   const velho = (mes, horas) => { const x = meus.get(ymd(mes)); return !x || agora - new Date(x.lido_em) > horas * 3600000; };
   const fila = [];
-  // KPIs e recebimentos só existem para o que já aconteceu (o futuro vem zerado); reservas vão 12 meses à frente
-  const futuros = relatorio === "reservas" ? 12 : 0;
+  // Só o passado e o mês atual: KPIs e recebimentos do futuro vêm zerados, e as reservas são filtradas pela data
+  // em que foram feitas (as com chegada no futuro entram pelo mês em que foram criadas)
+  const futuros = 0;
   for (let n = -1; n <= futuros; n++) {
     const m = somaMes(atual, n);
     if (velho(m, n <= 3 ? 1 : 24)) fila.push(ymd(m));
