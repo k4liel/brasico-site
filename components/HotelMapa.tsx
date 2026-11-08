@@ -57,7 +57,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
         todas<Uh>((de, ate) => supabase.from("pms_uhs").select("uh_id,numero,tipo,andar,ativa,fora_inventario,visto_em").eq("hotel_id", hotel).range(de, ate)),
         todas<Estadia>((de, ate) => supabase.from("pms_estadias_canal").select("*").eq("hotel_id", hotel)
           .lt("checkin", fimExcl).gte("checkout", somaDias(inicio, -1)).neq("status_id", 6).range(de, ate)),
-        todas<Bloqueio>((de, ate) => supabase.from("pms_bloqueios").select("bloqueio_id,uh_id,inicio,fim,motivo,comentario").eq("hotel_id", hotel)
+        todas<Bloqueio>((de, ate) => supabase.from("pms_bloqueios_atuais").select("bloqueio_id,uh_id,inicio,fim,motivo,comentario").eq("hotel_id", hotel)
           .lt("inicio", fimExcl).gte("fim", inicio).range(de, ate)),
         todas<Estadia>((de, ate) => supabase.from("pms_estadias_canal").select("*").eq("hotel_id", hotel)
           .lte("checkin", hoje).gte("checkout", hoje).not("status_id", "in", "(5,6)").range(de, ate)),
