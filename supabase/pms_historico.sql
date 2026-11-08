@@ -194,3 +194,16 @@ begin
 end $$;
 revoke execute on function public.pms_robo_credenciais(text) from public, authenticated;
 grant execute on function public.pms_robo_credenciais(text) to anon;
+
+-- As visões contam só os dias que já passaram (o relatório do PMS traz o futuro zerado; sem isso o mês atual
+-- aparecia com a ocupação dividida pelos 30 dias)
+create or replace view public.pms_dia_hotel with (security_invoker = true) as
+select hotel_id, dia,
+       sum(disponiveis) disponiveis, sum(bloqueadas) bloqueadas, sum(total) total, sum(ocupadas) ocupadas, sum(receita) receita,
+       round(100.0 * sum(ocupadas) / nullif(sum(total), 0), 2) ocupacao,
+       round(100.0 * sum(ocupadas) / nullif(sum(disponiveis), 0), 2) ocupacao_disponiveis,
+       round(sum(receita) / nullif(sum(ocupadas), 0), 2) diaria_media,
+       round(sum(receita) / nullif(sum(disponiveis), 0), 2) revpar
+from public.pms_kpi_dia
+where dia < (now() at time zone 'America/Fortaleza')::date
+group by hotel_id, dia;
