@@ -1,0 +1,13 @@
+{
+  "name": "brasico-pms-navegador",
+  "private": true,
+  "type": "module",
+  "description": "Piloto: lê o painel do PMS da TOTVS Hospitalidade num Chrome real, com perfil próprio e login manual",
+  "scripts": {
+    "ler": "node piloto.mjs",
+    "ler:agenda": "node piloto.mjs --sem-espera"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}

@@ -1,0 +1,20 @@
+# Robô do PMS dos hotéis na VPS. O código vem direto do GitHub (repositório público, sem segredos).
+# Preencha PMS_ROBO_SEGREDO com o valor de pms_robo_segredo do Vault do Supabase (nunca no GitHub).
+services:
+  pms-robo:
+    build: https://github.com/k4liel/brasico-site.git#main:robos/pms-navegador
+    container_name: brasico-pms-robo
+    restart: unless-stopped
+    shm_size: "1gb"
+    environment:
+      SUPABASE_URL: https://doajznzouxxqbqkvsclv.supabase.co
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      PMS_ROBO_SEGREDO: ${PMS_ROBO_SEGREDO}
+      INTERVALO_MIN: "60"
+    volumes:
+      - pms-dados:/dados
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
+volumes:
+  pms-dados:
