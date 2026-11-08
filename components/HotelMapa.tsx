@@ -14,6 +14,10 @@ import {
 // A fase vem do status real do PMS (Confirmada, Pendente, Check-in, Check-out); bloqueios vêm da disponibilidade do PMS.
 // Só consulta: a operação das reservas continua no PMS. Dados lidos pelo robô de 45 em 45 a 75 em 75 minutos.
 
+type Fin = { reserva: string; diarias: number; taxas: number; consumo: number; spa: number; servicos: number; lancado: number; pago: number; saldo: number; lancamentos: number };
+type Acomp = { item_id: number; nome: string | null; principal: boolean; crianca: boolean; idade_crianca: number | null };
+const pedacos = <T,>(l: T[], n = 150) => Array.from({ length: Math.ceil(l.length / n) }, (_, i) => l.slice(i * n, (i + 1) * n));
+
 type Barra = {
   chave: string; fase: Fase; ini: number; fim: number; cortadoIni: boolean; cortadoFim: boolean; faixa: number;
   estadia?: Estadia; bloqueio?: Bloqueio; rotulo: string; sub: string;
@@ -48,6 +52,10 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
   const [erro, setErro] = useState<string | null>(null);
   const [previa, setPrevia] = useState<{ b: Barra; x: number; y: number; fixa: boolean } | null>(null);
   const [aberta, setAberta] = useState<Estadia | null>(null);
+  // Prévia completa: financeiro (transações), hóspedes da reserva e total da reserva (detalhes do PMS)
+  const [fin, setFin] = useState<Map<string, Fin>>(new Map());
+  const [acomp, setAcomp] = useState<Map<number, Acomp[]>>(new Map());
+  const [totalRes, setTotalRes] = useState<Map<number, number>>(new Map());
   const grade = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async (silencioso = false) => {
@@ -64,6 +72,20 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
       ]);
       setUhs(u.sort((a, z) => ordemNatural(a.numero, z.numero) || a.uh_id - z.uh_id));
       setEstadias(e); setBloqueios(b); setDeHoje(h);
+      const codigos = [...new Set(e.map((x) => x.codigo).filter(Boolean) as string[])];
+      const itens = [...new Set(e.map((x) => x.item_id).filter((x) => x > 0))];
+      Promise.all([
+        Promise.all(pedacos(codigos).map((c) => supabase.from("pms_reserva_financeiro").select("reserva,diarias,taxas,consumo,spa,servicos,lancado,pago,saldo,lancamentos").eq("hotel_id", hotel).in("reserva", c))),
+        Promise.all(pedacos(itens).map((c) => supabase.from("pms_reserva_hospedes").select("item_id,nome,principal,crianca,idade_crianca").eq("hotel_id", hotel).in("item_id", c))),
+        Promise.all(pedacos(itens).map((c) => supabase.from("pms_reserva_detalhes").select("item_id,total").eq("hotel_id", hotel).in("item_id", c))),
+      ]).then(([f, a, d]) => {
+        setFin(new Map(f.flatMap((r) => (r.data as Fin[]) ?? []).map((x) => [x.reserva, x])));
+        const m = new Map<number, Acomp[]>();
+        for (const x of a.flatMap((r) => (r.data as Acomp[]) ?? [])) m.set(x.item_id, [...(m.get(x.item_id) ?? []), x]);
+        for (const l of m.values()) l.sort((x, y) => Number(y.principal) - Number(x.principal) || Number(x.crianca) - Number(y.crianca));
+        setAcomp(m);
+        setTotalRes(new Map(d.flatMap((r) => (r.data as { item_id: number; total: number | null }[]) ?? []).filter((x) => x.total != null).map((x) => [x.item_id, Number(x.total)])));
+      }).catch(() => {});
       setEstado("ok"); setErro(null);
     } catch (err) {
       setErro(err instanceof Error ? err.message : "erro");
@@ -165,8 +187,8 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
 
   function abrirPrevia(b: Barra, alvo: HTMLElement, fixa: boolean) {
     const r = alvo.getBoundingClientRect();
-    const abaixo = r.bottom + 260 < window.innerHeight;
-    setPrevia({ b, x: Math.min(Math.max(8, r.left), window.innerWidth - 336), y: abaixo ? r.bottom + 6 : Math.max(8, r.top - 6 - 250), fixa });
+    const abaixo = r.bottom + 440 < window.innerHeight;
+    setPrevia({ b, x: Math.min(Math.max(8, r.left), window.innerWidth - 356), y: abaixo ? r.bottom + 6 : Math.max(8, r.top - 6 - 430), fixa });
   }
 
   const intervalo = `${dataBr(inicio)} a ${dataBr(somaDias(inicio, janela - 1))}`;
@@ -312,7 +334,31 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
                   {e.grupo_nome && <><span>Grupo</span><b>{e.grupo_nome}</b></>}
                   {e.empresa && <><span>Empresa</span><b>{e.empresa}</b></>}
                 </div>
-                <div className="mr-previa-total"><span>Diárias informadas pelo canal</span><b>{e.valor_diarias == null ? "A conferir" : reais(e.valor_diarias)}</b></div>
+                {(() => {
+                  const hs = acomp.get(e.item_id) ?? [];
+                  const f = e.codigo ? fin.get(e.codigo) : undefined;
+                  const total = totalRes.get(e.item_id) ?? (e.valor_diarias != null ? Number(e.valor_diarias) : null);
+                  const linhas: [string, number][] = f ? ([["Diárias", f.diarias], ["Taxas (serviço, ISS)", f.taxas], ["Consumo (restaurante, bar, frigobar)", f.consumo], ["Spa", f.spa], ["Serviços e outros", f.servicos]] as [string, number][]).filter(([, v]) => Math.abs(Number(v)) >= 0.01) : [];
+                  return (<>
+                    {hs.length > 0 && (
+                      <div className="mr-previa-hosp">
+                        <span className="mr-rotulo">Hóspedes da reserva</span>
+                        {hs.map((h, i) => <b key={i}>{h.nome ?? "—"}<small>{h.principal ? "principal" : h.crianca ? `criança${h.idade_crianca != null ? ` · ${h.idade_crianca} anos` : ""}` : "acompanhante"}</small></b>)}
+                      </div>
+                    )}
+                    {f ? (
+                      <div className="mr-previa-fin">
+                        {linhas.map(([n, v]) => <div key={n}><span>{n}</span><b>{reais(Number(v))}</b></div>)}
+                        <div className="forte"><span>Total lançado</span><b>{reais(Number(f.lancado))}</b></div>
+                        <div><span>Pago</span><b>{reais(Number(f.pago))}</b></div>
+                        <div className={Number(f.saldo) > 0.009 ? "forte alerta" : "forte"}><span>{Number(f.saldo) > 0.009 ? "Falta pagar" : Number(f.saldo) < -0.009 ? "Pago a mais" : "Saldo"}</span><b>{reais(Math.abs(Number(f.saldo)))}</b></div>
+                      </div>
+                    ) : null}
+                    {total != null && <div className="mr-previa-total"><span>Valor da reserva</span><b>{reais(total)}</b></div>}
+                    {!f && total == null && <div className="mr-previa-total"><span>Financeiro</span><b>sem lançamentos ainda</b></div>}
+                    <span className="mr-ctx">Clique na reserva para abrir tudo (detalhes, observações, histórico e cada lançamento).</span>
+                  </>);
+                })()}
               </>
             );
           })() : (
