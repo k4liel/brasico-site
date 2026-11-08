@@ -327,10 +327,11 @@ function normalizar(relatorio, j) {
 function grupoTransacao(x) {
   const t = semAcento(`${x.item_tipo ?? ""}`), d = semAcento(`${x.descricao ?? ""}`);
   if (/payment|pagamento/.test(t)) return "Pagamento";
-  if (/tax|taxa/.test(t) || /taxa de servico|\biss\b|taxa de turismo|taxa municipal/.test(d)) return "Taxa";
-  if (/daily|diaria/.test(t) || /^diaria|^hospedagem/.test(d)) return "Diária";
-  if (/service|servico|product|produto|pos/.test(t)) return /restaurante|bar|a&b|alimento|bebida|frigobar|cafe|almoco|jantar/.test(d) ? "Consumo" : "Serviço";
-  return "Outros";
+  if (/tax|taxa/.test(t) || /taxa de servico|(^|[^a-z])iss([^a-z]|$)|taxa de turismo|taxa municipal/.test(d)) return "Taxa";
+  if (/daily|diaria/.test(t) || /^diaria|^hospedagem|diferenca de diaria/.test(d)) return "Diária";
+  if (/point of sale/.test(t) || /restaurante|(^|[^a-z])bar([^a-z]|$)|a&b|aliment|bebida|frigobar|(^|[^a-z])menu([^a-z]|$)|room service/.test(d)) return "Consumo";
+  if (/massagem|tratamento|(^|[^a-z])spa([^a-z]|$)|facial|ayurveda|detox|shiatsu|facelift|reflexolog|drenagem/.test(d)) return "Spa";
+  return "Serviço";
 }
 
 async function lerMetabase(pagina, permissao, ini, fim) {

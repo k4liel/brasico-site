@@ -24,19 +24,21 @@ function intervalo(a: Atalho, h: string): [string, string] {
   if (a === "mesant") { const d = new Date(Date.UTC(+h.slice(0, 4), +h.slice(5, 7) - 2, 1)).toISOString().slice(0, 7); return [`${d}-01`, fimMes(d)]; }
   return [`${h.slice(0, 4)}-01-01`, h];
 }
-const GRUPOS = ["Diária", "Consumo", "Serviço", "Taxa", "Pagamento", "Outros"] as const;
+const GRUPOS = ["Diária", "Consumo", "Spa", "Serviço", "Taxa", "Pagamento", "Outros"] as const;
 // No PMS a cobrança entra negativa na conta do hóspede e o pagamento positivo; aqui os dois aparecem positivos
 // (um estorno aparece negativo). Classificação refeita na tela para corrigir lançamentos antigos.
 export const valorHotel = (t: { grupo: string | null; valor: number }) => (t.grupo === "Pagamento" ? Number(t.valor) : -Number(t.valor));
 export function grupoDe(t: { grupo: string | null; item_tipo?: string | null; descricao: string | null }) {
   const d = (t.descricao ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const it = (t.item_tipo ?? "").toLowerCase();
   if (t.grupo === "Pagamento") return "Pagamento";
-  if (/taxa de servico|\biss\b|taxa de turismo|taxa municipal/.test(d)) return "Taxa";
-  if (/^diaria|^hospedagem/.test(d)) return "Diária";
-  if (/restaurante|bar\b|a&b|aliment|bebida|frigobar|cafe|almoco|jantar|room service|pos\b/.test(d)) return "Consumo";
-  return t.grupo === "Diária" ? "Diária" : t.grupo === "Outros" ? "Outros" : "Serviço";
+  if (/taxa de servico|(^|[^a-z])iss([^a-z]|$)|taxa de turismo|taxa municipal/.test(d)) return "Taxa";
+  if (/^diaria|^hospedagem|diferenca de diaria/.test(d)) return "Diária";
+  if (/point of sale/.test(it) || /restaurante|(^|[^a-z])bar([^a-z]|$)|a&b|aliment|bebida|frigobar|(^|[^a-z])menu([^a-z]|$)|room service/.test(d)) return "Consumo";
+  if (/massagem|tratamento|(^|[^a-z])spa([^a-z]|$)|facial|ayurveda|detox|shiatsu|facelift|reflexolog|drenagem/.test(d)) return "Spa";
+  return t.grupo === "Diária" ? "Diária" : t.grupo === "Consumo" ? "Consumo" : t.grupo === "Spa" ? "Spa" : "Serviço";
 }
-const COR_GRUPO: Record<string, string> = { "Diária": COR.azul, Consumo: COR.ambar, "Serviço": COR.violeta, Taxa: COR.ciano, Pagamento: COR.verde, Outros: COR.cinza };
+const COR_GRUPO: Record<string, string> = { "Diária": COR.azul, Consumo: COR.ambar, Spa: COR.rosa, "Serviço": COR.violeta, Taxa: COR.ciano, Pagamento: COR.verde, Outros: COR.cinza };
 
 function planilha(l: Tx[], nome: string) {
   const cab = ["Data", "Grupo", "Tipo", "Código", "Descrição", "Valor", "Estornado", "Reserva", "UH", "Tipo de UH", "Status da reserva", "Origem", "Segmento", "Conta", "Observação"];
