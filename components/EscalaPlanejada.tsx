@@ -6,7 +6,7 @@
 // pessoas. Cada mudança grava na hora (escala_gravar), pode ser desfeita, e é conferida com a lei
 // (lib/escala/regras.ts): o que sai do padrão aparece na hora num aviso, no dia, no nome e no painel de avisos.
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); a escala se monta só pela janelinha (o "Copiar do RHiD" saiu, pedido do dono).
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
@@ -14,7 +14,6 @@ import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
 import EscalaCompensas, { prazo, type CompDados, type PessoaComp } from "./EscalaCompensas";
 import { ChipsLideres, EditorLideres, useLideranca } from "./EscalaLideres";
-import { createPortal } from "react-dom";
 
 type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; postos?: string[]; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
 type PessoaDado = {
@@ -443,21 +442,35 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const tituloEnvio = grupo || casaPorId(casa ?? "")?.nome || "";
   const cabecaEnvio = tituloEnvio ? `Escala · ${tituloEnvio}` : "Escala";
   const faixa = periodo.length ? `${br(periodo[0])} a ${br(periodo[periodo.length - 1])}` : "";
-  const [imprimindo, setImprimindo] = useState(false);
-  function baixarPdf() {
+  // PDF de verdade (lib/escala/pdf.ts, pdf-lib): cada casa numa folha, com cores e título (09/11/2026)
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  async function baixarPdf() {
     if (!planejadosTela) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
-    setImprimindo(true);
+    setGerandoPdf(true);
+    try {
+      const { gerarPdfEscala } = await import("@/lib/escala/pdf");
+      const nomesFeriado = new Map([...feriados].map((d) => [d, comp?.feriados.find((f) => f.dia === d)?.nome ?? "Feriado"]));
+      const bytes = await gerarPdfEscala({
+        titulo: tituloEnvio || undefined, periodo, feriados: nomesFeriado,
+        linhas: ordemDaGrade(pessoas, ordemSetores).map((p) => ({
+          nome: p.nome, cargo: p.cargo, local: p.local, setor: p.setor,
+          dias: Object.fromEntries(periodo.map((d) => [d, plano.get(p.chave)?.get(d)])), minutos: horasPlanejadas(p.chave),
+        })),
+      });
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${cabecaEnvio} ${faixa}.pdf`.replace(/\//g, "-").replace(/·/g, "-");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      avisar({ nivel: "erro", texto: `Não deu para gerar o PDF: ${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      setGerandoPdf(false);
+    }
   }
-  useEffect(() => {
-    if (!imprimindo) return;
-    const antes = document.title;
-    const fim = () => { document.title = antes; document.body.classList.remove("ep-imprimindo"); setImprimindo(false); };
-    window.addEventListener("afterprint", fim, { once: true });
-    document.body.classList.add("ep-imprimindo");
-    document.title = `${cabecaEnvio} ${faixa}`.replace(/\//g, "-");
-    const t = setTimeout(() => window.print(), 300);
-    return () => clearTimeout(t);
-  }, [imprimindo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (erro && !dados) return <section className="es-bloco"><p className="tv-alerta">{erro}</p></section>;
   const podeEditar = modo !== "real";
@@ -486,7 +499,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
             {/* Imprimir só na visão Semana (o texto para o WhatsApp saiu, pedido do dono); o Mês é só para ver (pedido do dono) */}
             {periodo.length === 7 ? (
               <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
-                <button className="ghost small" onClick={baixarPdf} title="Gera o PDF da semana para mandar no grupo">Baixar PDF</button>
+                <button className="ghost small" onClick={baixarPdf} disabled={gerandoPdf} title="Gera o PDF da semana para mandar no grupo">{gerandoPdf ? "Gerando…" : "Baixar PDF"}</button>
               </span>
             ) : <span className="muted small">Para imprimir, use a visão Semana.</span>}
             {comp && (
@@ -545,37 +558,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         ))}
       </div>
 
-      {imprimindo && createPortal(
-        <div className="ep-impressao">
-          <style>{"@page { size: A4 landscape; margin: 9mm; }"}</style>
-          <header><b>{cabecaEnvio}</b><span>{faixa}</span></header>
-          <table>
-            <thead>
-              <tr><th>Nome</th>{periodo.map((d) => <th key={d} className={feriados.has(d) ? "fer" : ""}>{SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]}<br />{br(d)}</th>)}</tr>
-            </thead>
-            <tbody>
-              {ordemDaGrade(pessoas, ordemSetores).map((p, i, lista) => (
-                <Fragment key={p.chave}>
-                  {(i === 0 || lista[i - 1].setor !== p.setor || lista[i - 1].local !== p.local) && <tr key={`s${p.chave}`} className="setor"><td colSpan={periodo.length + 1}>{grupo ? p.setor || p.local : [p.local, p.setor].filter(Boolean).join(" · ")}</td></tr>}
-                  <tr key={p.chave}>
-                    <td className="nome">{p.nome}</td>
-                    {periodo.map((d) => {
-                      const x = plano.get(p.chave)?.get(d);
-                      return (
-                        <td key={d} className={x?.codigo && x.codigo !== "T" ? `c-${x.codigo}` : ""}>
-                          {x?.codigo ? rotuloDia(x, true) : ""}
-                          {x && descanso(x) && <small className="desc">desc. {descanso(x)}</small>}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-          <footer>desc. = horário de descanso (intervalo) · F folga · DOM domingo do mês · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
-        </div>, document.body)}
-
       {lidEditor && lid.dados && (
         <EditorLideres supabase={supabase} dados={lid.dados} local={lidEditor.local} setor={lidEditor.setor} x={lidEditor.x} y={lidEditor.y}
           onFechar={() => setLidEditor(null)} onMudou={lid.ler} />
@@ -607,17 +589,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 }
 
 const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-// O dia em texto: horário (07:00–15:20) ou o nome do código (Folga, Férias…); curto = a sigla, para a tabela
-// O descanso (intervalo) do dia: "12:00–13:00"
-const descanso = (x: DiaPlano) => (x.codigo === "T" && x.intervalo ? x.intervalo.replace("-", "–") : "");
-function rotuloDia(x: DiaPlano, curto: boolean) {
-  if (x.codigo === "T") return (x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho")
-    + (!curto && descanso(x) ? ` (descanso ${descanso(x)})` : "")
-    + (x.posto ? (curto ? ` ${x.posto[0]}` : ` · ${x.posto}`) : "");
-  const c = CODIGOS.find((k) => k.codigo === x.codigo);
-  return curto ? c?.curto ?? x.codigo : c?.nome.replace(" (feriado)", "") ?? x.codigo;
-}
-
 // A janelinha do bloquinho: o que o dia (ou os dias escolhidos) vira
 // Caixinha do apelido (clicar no nome na escala)
 function CaixaApelido({ nome, apelido, x, y, onSalvar, onFechar }: { nome: string; apelido: string; x: number; y: number; onSalvar: (a: string) => void; onFechar: () => void }) {

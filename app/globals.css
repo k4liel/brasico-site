@@ -2422,7 +2422,6 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-paleta .ep-acoes .ep-avisos-botao { margin-left: auto; }
 .ep-enviar { display: inline-flex; gap: 4px; padding-left: 8px; border-left: 1px solid var(--border); }
 .ep-casa .ep-modos { margin-top: 4px; }
-.ep-impressao { display: none; }
 /* Contratados sem ponto (09/11/2026): lista para pôr na escala e o aviso "fora do ponto" ao lado do nome */
 .pe-obs { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .02em;
   background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
@@ -2598,7 +2597,6 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-horario-faixa { display: inline-flex; align-items: center; gap: 6px; }
 .ep-horario-faixa > span { font-size: 12px; }
 .ep-horario > button { margin-left: auto; }
-@media print { .ep-impressao td small.desc { display: block; font-size: 7px; color: #555; } }
 .pe-grade td.esc-c { position: relative; }
 .pe-posto { position: absolute; bottom: 2px; right: 3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 4px; font-style: normal; font-size: 9px; font-weight: 800; line-height: 13px; text-align: center;
   background: var(--strong); color: var(--bg); opacity: .8; pointer-events: none; }
@@ -2637,25 +2635,6 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 /* Área "Afastados" no fim de cada local (09/11/2026) */
 .pe-grade tr.pe-grupo.pe-afastados th.pe-nome { color: var(--muted); padding-top: 18px; }
 .pe-grade tr.pe-grupo.pe-afastados > * { border-top: 1px dashed var(--border); }
-@media print {
-  body.ep-imprimindo > *:not(.ep-impressao) { display: none !important; }
-  body.ep-imprimindo { background: #fff !important; }
-  body.ep-imprimindo .ep-impressao { display: block; color: #111; font: 9px/1.25 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .ep-impressao header { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 6px; padding-bottom: 4px; border-bottom: 2px solid #111; }
-  .ep-impressao header b { font-size: 15px; }
-  .ep-impressao header span { font-size: 11px; color: #444; }
-  .ep-impressao table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  .ep-impressao th, .ep-impressao td { border: 1px solid #bbb; padding: 3px 2px; text-align: center; vertical-align: middle; overflow: hidden; word-break: break-word; }
-  .ep-impressao th { background: #f1f1f1; font-weight: 700; font-size: 8.5px; }
-  .ep-impressao th:first-child, .ep-impressao td.nome { width: 17%; text-align: left; padding-left: 5px; font-weight: 600; }
-  .ep-impressao th.fer { background: #ffe9c7; }
-  .ep-impressao tr.setor td { background: #e6e6e6; text-align: left; padding-left: 5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 8px; }
-  .ep-impressao td.c-F, .ep-impressao td.c-FC, .ep-impressao td.c-BH { background: #eef6ee; font-weight: 700; }
-  .ep-impressao td.c-DM { background: #ece6fa; font-weight: 700; }
-  .ep-impressao td.c-FE, .ep-impressao td.c-AT, .ep-impressao td.c-LIC { background: #eef0fb; font-weight: 700; }
-  .ep-impressao tr { break-inside: avoid; }
-  .ep-impressao footer { margin-top: 6px; font-size: 8px; color: #555; }
-}
 
 /* Paleta de pincéis */
 .ep-paleta { position: sticky; top: 116px; z-index: 5; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; align-items: center; margin: 0 0 14px; padding: 12px 14px;
