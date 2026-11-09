@@ -10,7 +10,8 @@
 // Tudo é calculado na tela, na hora em que a escala é montada; nada é gravado.
 
 export type Codigo = "" | "T" | "F" | "FC" | "FE" | "AT" | "BH" | "LIC";
-export type DiaPlano = { codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; obs?: string };
+// posto: onde a pessoa fica no dia, nos grupos que revezam (ex.: Cozinha ou Produção na Cozinha do Sempre Vivo)
+export type DiaPlano = { codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; obs?: string; posto?: string | null };
 export type Nivel = "erro" | "aviso" | "info";
 export type Aviso = { chave: string; nome: string; nivel: Nivel; titulo: string; texto: string; lei: string; dias: string[]; regra: string };
 

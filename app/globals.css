@@ -2463,6 +2463,11 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-editor-grupo > span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .ep-editor-opcoes { display: flex; flex-wrap: wrap; gap: 6px; }
 .ep-editor .ep-outro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ep-editor-postos { margin: 0; }
+.pe-grade td.esc-c { position: relative; }
+.pe-posto { position: absolute; bottom: 2px; right: 3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 4px; font-style: normal; font-size: 9px; font-weight: 800; line-height: 13px; text-align: center;
+  background: var(--strong); color: var(--bg); opacity: .8; pointer-events: none; }
+.pe-posto.pe-posto-legenda { position: static; display: inline-block; margin-right: 4px; vertical-align: middle; }
 .ep-editor-rodape { display: flex; justify-content: flex-end; padding-top: 8px; border-top: 1px dashed var(--border); }
 /* Quem monta a escala e a barra do topo da página Escala */
 .ep-lid-casas { display: grid; gap: 4px; }

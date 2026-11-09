@@ -33,7 +33,7 @@ export type ModoEscala = "real" | "planejada" | "comparar";
 export type Celula = { chave: string; dia: string };
 export type ColunaExtra = { titulo: string; dica: string; valor: (p: PessoaEscala) => ReactNode };
 
-type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean; codigo?: string; vazio?: boolean };
+type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean; codigo?: string; vazio?: boolean; posto?: string };
 type Dica = {
   x: number; y: number; acima: boolean; quem: string; dia: string; previsto: string; intervalo: string; turno: string; rotulo: string;
   batidas: BatidaEscala[]; situacao: string; classe: string; alerta: string; futuro: boolean; avisos: Aviso[]; obs: string;
@@ -84,7 +84,8 @@ function lerPlano(pd: DiaPlano | undefined): Turno {
     const a = minutos(pd.entrada) ?? 0, b = minutos(pd.saida) ?? 0;
     return {
       tipo: tipoPorEntrada(Math.floor(a / 60), Math.floor(b / 60)), trabalha: true, codigo: "T",
-      intervalo: pd.intervalo?.replace("-", "–") ?? "", linhas: [pd.entrada ?? "", pd.saida ?? ""], horario: `${pd.entrada}–${pd.saida}`,
+      intervalo: pd.intervalo?.replace("-", "–") ?? "", linhas: [pd.entrada ?? "", pd.saida ?? ""],
+      horario: `${pd.entrada}–${pd.saida}${pd.posto ? ` · ${pd.posto}` : ""}`, posto: pd.posto || undefined,
     };
   }
   if (pd.codigo === "F") return { tipo: "folga", linhas: ["F"], ...vazio, horario: "Folga", codigo: "F" };
@@ -581,6 +582,9 @@ export default function PontoEscala({
           <span><i className="pe-marca m-falta" /><b>Não veio</b></span>
           <span><i className="pe-marca m-extra" /><b>Trabalhou fora da escala</b></span>
         </>}
+        {[...new Set([...turnosDe.values()].flat().map((t) => t.posto).filter((x): x is string => !!x))].sort().map((x) => (
+          <span key={x}><i className="pe-posto pe-posto-legenda">{x[0]}</i><b>{x}</b></span>
+        ))}
         {plan && <>
           <span><i className="pe-alerta erro" /><b>Fora da lei</b></span>
           <span><i className="pe-alerta aviso" /><b>Atenção</b></span>
@@ -694,6 +698,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
                   onPointerDown={pintando ? (e) => comecarPintura(e, p.chave, i) : undefined}
                   aria-label={`${dataBR(d)}: ${t.horario}${t.intervalo ? `, intervalo ${t.intervalo}` : ""}${m.texto ? `, ${m.texto}` : ""}${av ? `, ${av.lista.map((a) => a.titulo).join(", ")}` : ""}`}>
                   {linhas.map((x, k) => <span key={k} className={k ? "pe-sub" : ""}>{x}</span>)}
+                  {t.posto && <i className="pe-posto" aria-hidden="true">{t.posto[0]}</i>}
                   {m.classe && <i className={`pe-marca ${m.classe}`} aria-hidden="true" />}
                   {avNivel && <i className={`pe-alerta ${avNivel}`} aria-hidden="true" />}
                 </td>

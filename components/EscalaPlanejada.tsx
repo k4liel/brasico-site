@@ -14,7 +14,7 @@ import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
 import { createPortal } from "react-dom";
 
-type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
+type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; postos?: string[]; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
 type PessoaDado = {
   cliente_id: number; id: number; nome: string; grupo_id: string; cargo: string; posicao: number | null; saldo_banco: number | null;
   comp_creditos: number; comp_debitos: number; comp_ajuste: number;
@@ -27,7 +27,7 @@ type RealDia = DiaEscala & { cliente_id: number; pessoa_id: number };
 type PlanoDia = DiaPlano & { cliente_id: number; pessoa_id: number; dia: string };
 type Dados = { socio: boolean; grupos: Grupo[]; pessoas: PessoaDado[]; real: RealDia[]; planejada: PlanoDia[]; feriados: string[] };
 // O pincel escolhido na paleta
-type Pincel = { codigo: Codigo; entrada?: string; saida?: string; intervalo?: string; rotulo: string };
+type Pincel = { codigo: Codigo; entrada?: string; saida?: string; intervalo?: string; rotulo: string; posto?: string };
 type Toast = { id: number; nivel: "ok" | "aviso" | "erro"; texto: string; detalhes?: string[]; desfazer?: () => void };
 
 const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
@@ -193,7 +193,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     for (const d of dados?.planejada ?? []) {
       const k = chaveDe(d.cliente_id, d.pessoa_id);
       if (!m.has(k)) m.set(k, new Map());
-      m.get(k)!.set(d.dia, { codigo: d.codigo, entrada: d.entrada, saida: d.saida, intervalo: d.intervalo, obs: d.obs });
+      m.get(k)!.set(d.dia, { codigo: d.codigo, entrada: d.entrada, saida: d.saida, intervalo: d.intervalo, obs: d.obs, posto: d.posto });
     }
     return m;
   }, [dados?.planejada]);
@@ -257,7 +257,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   }
 
   // ---------- Gravar ----------
-  async function gravar(itens: { cliente_id: number; pessoa_id: number; dia: string; codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null }[]) {
+  async function gravar(itens: { cliente_id: number; pessoa_id: number; dia: string; codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; posto?: string | null }[]) {
     // Na tela na hora; no banco em seguida
     setDados((v) => v && {
       ...v,
@@ -276,6 +276,13 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     return true;
   }
 
+  // Onde a pessoa fica no dia, nos grupos que revezam (escala_grupos.postos): só quando todos os escolhidos têm postos
+  function postosDe(celulas: Celula[]) {
+    const listas = [...new Set(celulas.map((c) => c.chave))].map((k) => grupoDe.get(pessoaDe.get(k)?.grupo_id ?? "")?.postos ?? []);
+    if (!listas.length || listas.some((l) => !l.length)) return [];
+    return [...new Set(listas.flat())];
+  }
+
   function pintar(celulas: Celula[]) {
     if (!celulas.length) return;
     const { x, y } = ponteiro.current;
@@ -292,16 +299,17 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         cliente_id: p.cliente_id, pessoa_id: p.id, dia: c.dia, codigo: pincel.codigo,
         entrada: pincel.codigo === "T" ? pincel.entrada : null, saida: pincel.codigo === "T" ? pincel.saida : null,
         intervalo: pincel.codigo === "T" ? pincel.intervalo ?? null : null,
+        posto: pincel.codigo === "T" ? pincel.posto ?? "" : "",
       };
     }).filter((i) => {
       // Não grava o que já está igual
       const d = plano.get(chaveDe(i.cliente_id, i.pessoa_id))?.get(i.dia);
-      return (d?.codigo ?? "") !== i.codigo || (i.codigo === "T" && (d?.entrada !== i.entrada || d?.saida !== i.saida || (d?.intervalo ?? null) !== i.intervalo));
+      return (d?.codigo ?? "") !== i.codigo || (i.codigo === "T" && (d?.entrada !== i.entrada || d?.saida !== i.saida || (d?.intervalo ?? null) !== i.intervalo || (d?.posto ?? "") !== i.posto));
     });
     if (!itens.length) return;
     const desfazer = itens.map((i) => {
       const d = plano.get(chaveDe(i.cliente_id, i.pessoa_id))?.get(i.dia);
-      return { cliente_id: i.cliente_id, pessoa_id: i.pessoa_id, dia: i.dia, codigo: (d?.codigo ?? "") as Codigo, entrada: d?.entrada ?? null, saida: d?.saida ?? null, intervalo: d?.intervalo ?? null };
+      return { cliente_id: i.cliente_id, pessoa_id: i.pessoa_id, dia: i.dia, codigo: (d?.codigo ?? "") as Codigo, entrada: d?.entrada ?? null, saida: d?.saida ?? null, intervalo: d?.intervalo ?? null, posto: d?.posto ?? "" };
     });
     const ok = await gravar(itens);
     if (!ok) return;
@@ -366,7 +374,8 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   }, []);
 
   // ---------- Colunas a mais ----------
-  const colunas: ColunaExtra[] = modo === "real" ? [] : [
+  // Comp. e Banco vêm do RHiD: só para sócios (o líder não vê nada do RHiD)
+  const colunas: ColunaExtra[] = modo === "real" || !dados?.socio ? [] : [
     {
       titulo: "Comp.", dica: "Folgas a compensar: feriados trabalhados desde 01/11/2026 + acertos − folgas compensadas (FC) já marcadas",
       valor: (p) => {
@@ -458,7 +467,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         <div className="ep-paleta ep-barra-acoes">
           <span className="ep-paleta-rotulo">Clique num dia para escolher o que ele vira; arraste sobre vários dias para mudar todos de uma vez.</span>
           <div className="ep-acoes">
-            <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>
+            {dados?.socio && <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>}
             <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
               <button className="ghost small" onClick={baixarPdf} title="Gera o PDF do período da tela para mandar no grupo">Baixar PDF</button>
               <button className="ghost small" onClick={copiarWhatsApp} title="Copia a escala em texto, dia a dia, para colar no WhatsApp">Copiar p/ WhatsApp</button>
@@ -472,8 +481,10 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
       {semEscala && (
         <div className="ep-vazio">
-          <div><b>Este período ainda não tem escala planejada.</b><span className="muted"> Comece com a escala que já está no RHiD e ajuste em cima.</span></div>
-          <button className="small" onClick={copiarRhid} disabled={ocupado}>Começar copiando do RHiD</button>
+          {dados?.socio ? <>
+            <div><b>Este período ainda não tem escala planejada.</b><span className="muted"> Comece com a escala que já está no RHiD e ajuste em cima.</span></div>
+            <button className="small" onClick={copiarRhid} disabled={ocupado}>Começar copiando do RHiD</button>
+          </> : <div><b>Este período ainda não tem escala.</b><span className="muted"> Clique num dia para escolher o horário ou a folga; arraste para mudar vários de uma vez.</span></div>}
         </div>
       )}
 
@@ -538,6 +549,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
       {editor && (
         <EditorDia celulas={editor.celulas} x={editor.x} y={editor.y} horarios={pinceisHorario} outro={outro} setOutro={setOutro}
+          postos={postosDe(editor.celulas)}
           atual={editor.celulas.length === 1 ? plano.get(editor.celulas[0].chave)?.get(editor.celulas[0].dia) : undefined}
           nome={editor.celulas.length === 1 ? pessoas.find((p) => p.chave === editor.celulas[0].chave)?.nome ?? "" : ""}
           onEscolher={(p) => aplicar(editor.celulas, p)} onFechar={() => setEditor(null)} />
@@ -551,19 +563,21 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 // O dia em texto: horário (07:00–15:20) ou o nome do código (Folga, Férias…); curto = a sigla, para a tabela
 function rotuloDia(x: DiaPlano, curto: boolean) {
-  if (x.codigo === "T") return x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho";
+  if (x.codigo === "T") return (x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho") + (x.posto ? (curto ? ` ${x.posto[0]}` : ` · ${x.posto}`) : "");
   const c = CODIGOS.find((k) => k.codigo === x.codigo);
   return curto ? c?.curto ?? x.codigo : c?.nome.replace(" (feriado)", "") ?? x.codigo;
 }
 
 // A janelinha do bloquinho: o que o dia (ou os dias escolhidos) vira
-function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar }: {
-  celulas: Celula[]; x: number; y: number; horarios: Pincel[];
+function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [] }: {
+  celulas: Celula[]; x: number; y: number; horarios: Pincel[]; postos?: string[];
   outro: { entrada: string; saida: string; intervalo: string }; setOutro: (o: { entrada: string; saida: string; intervalo: string }) => void;
   atual?: DiaPlano; nome: string; onEscolher: (p: Pincel) => void; onFechar: () => void;
 }) {
   const caixa = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  // Grupos que revezam: onde a pessoa fica (vai junto com o horário escolhido)
+  const [posto, setPosto] = useState(atual?.posto && postos.includes(atual.posto) ? atual.posto : postos[0] ?? "");
   // Fica dentro da tela
   useEffect(() => {
     const r = caixa.current?.getBoundingClientRect();
@@ -582,17 +596,25 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   const titulo = celulas.length === 1
     ? `${nome.split(" ")[0]} · ${SEMANA[new Date(`${dias[0]}T12:00:00Z`).getUTCDay()]} ${br(dias[0])}`
     : `${celulas.length} dias · ${pessoasN} ${pessoasN === 1 ? "pessoa" : "pessoas"} · ${br(dias[0])}${dias.length > 1 ? ` a ${br(dias[dias.length - 1])}` : ""}`;
-  const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo;
+  const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo && (atual.posto ?? "") === posto;
   const intervaloOk = /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(outro.intervalo);
   return (
     <div ref={caixa} className="ep-editor" role="dialog" aria-label="Escolher o que o dia vira" style={{ left: pos.left, top: pos.top }}>
       <div className="ep-editor-cabeca"><b>{titulo}</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
+      {postos.length > 0 && (
+        <div className="ep-editor-grupo">
+          <span>Onde trabalha</span>
+          <div className="ep-casas ep-editor-postos" role="radiogroup" aria-label="Onde trabalha">
+            {postos.map((p) => <button key={p} role="radio" aria-checked={posto === p} className={posto === p ? "on" : ""} onClick={() => setPosto(p)}>{p}</button>)}
+          </div>
+        </div>
+      )}
       {horarios.length > 0 && (
         <div className="ep-editor-grupo">
           <span>Trabalha</span>
           <div className="ep-editor-opcoes">
             {horarios.map((h) => (
-              <button key={`${h.entrada}${h.saida}${h.intervalo}`} className={`ep-pincel t${igual(h) ? " on" : ""}`} onClick={() => onEscolher(h)}
+              <button key={`${h.entrada}${h.saida}${h.intervalo}`} className={`ep-pincel t${igual(h) ? " on" : ""}`} onClick={() => onEscolher({ ...h, posto: posto || undefined })}
                 title={h.intervalo ? `Intervalo ${h.intervalo.replace("-", "–")}` : "Sem intervalo"}>{h.rotulo}</button>
             ))}
           </div>
@@ -605,7 +627,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
           <span>–</span>
           <input type="time" value={outro.saida} onChange={(e) => setOutro({ ...outro, saida: e.target.value })} aria-label="Saída" />
           <input className="ep-intervalo" value={outro.intervalo} onChange={(e) => setOutro({ ...outro, intervalo: e.target.value })} placeholder="12:00-13:00" aria-label="Intervalo" title="Intervalo (início-fim)" />
-          <button className="small" onClick={() => onEscolher({ codigo: "T", entrada: outro.entrada, saida: outro.saida, intervalo: intervaloOk ? outro.intervalo : undefined, rotulo: `${outro.entrada}–${outro.saida}` })}>Usar</button>
+          <button className="small" onClick={() => onEscolher({ codigo: "T", entrada: outro.entrada, saida: outro.saida, intervalo: intervaloOk ? outro.intervalo : undefined, rotulo: `${outro.entrada}–${outro.saida}`, posto: posto || undefined })}>Usar</button>
         </div>
       </div>
       <div className="ep-editor-grupo">

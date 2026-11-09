@@ -141,11 +141,14 @@ const AREAS_OPERACAO = [
 export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
   const [senha, setSenha] = useState(false);
   const [completa, setCompleta] = useState<{ href: string; nome: string }[] | null>(null);
+  // Quem monta a escala de alguma casa vê também a Escala no menu
+  const [ehLider, setEhLider] = useState(false);
   useEffect(() => {
     (async () => {
       const sb = createClient();
       const { data: { user } } = await sb.auth.getUser();
       if (!user) return;
+      sb.rpc("escala_eh_lider", { p_user: user.id }).then(({ data }) => setEhLider(!!data));
       const { data: ok } = await sb.rpc("operacao_completa", { p_user: user.id });
       if (!ok) return;
       const { data: ws } = await sb.from("workspaces").select("id,name").is("removido_em", null).order("name");
@@ -156,9 +159,12 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
     await createClient().auth.signOut();
     window.location.href = "/colaboradores";
   }
-  const paginas = completa
+  const base = completa
     ? (completa.some((p) => p.nome === area) ? completa : [{ href: "", nome: area }, ...completa])
     : outra ? [{ href: "", nome: area }, outra].sort((x, y) => ORDEM_AREAS.indexOf(x.nome) - ORDEM_AREAS.indexOf(y.nome)) : null;
+  const paginas = ehLider && !(base ?? [{ nome: area }]).some((p) => p.nome === "Escala")
+    ? [...(base ?? [{ href: "", nome: area }]), { href: "/escala", nome: "Escala" }]
+    : base;
   return (
     <>
       <header className="topo cp-topo">

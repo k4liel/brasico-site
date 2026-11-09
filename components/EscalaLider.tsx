@@ -168,12 +168,7 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
   );
 }
 
+// O líder não vê nada do RHiD (pedido do dono): só a escala editável, sem o ponto oficial
 function EscalaDoLider({ supabase }: { supabase: SupabaseClient }) {
-  const [verPonto, setVerPonto] = useVerPonto();
-  return (
-    <>
-      <div className="ep-topo-acoes"><ChaveVerPonto ver={verPonto} onMudar={setVerPonto} /></div>
-      <EscalaPlanejada supabase={supabase} modo={verPonto ? "real" : "planejada"} />
-    </>
-  );
+  return <EscalaPlanejada supabase={supabase} modo="planejada" />;
 }
