@@ -57,7 +57,7 @@ export default function EscalaLider({ userEmail }: { userEmail: string }) {
           <div>
             <span className="es-sobre">{socio ? "Recursos humanos" : "Escala da equipe"}</span>
             <h1>Escala</h1>
-            <p className="muted">Quem trabalha em cada dia, por local e setor: o que foi batido no relógio (RHiD), a escala planejada e a comparação das duas.</p>
+            <p className="muted">Quem trabalha em cada dia, por local e setor: o que foi batido no relógio (RHiD) e a escala planejada.</p>
           </div>
         </div>
         {!eu ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
