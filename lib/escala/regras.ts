@@ -9,7 +9,7 @@
 //   feriado ou folga · 12x36 só com acordo escrito.
 // Tudo é calculado na tela, na hora em que a escala é montada; nada é gravado.
 
-export type Codigo = "" | "T" | "F" | "FC" | "FE" | "AT" | "BH" | "LIC";
+export type Codigo = "" | "T" | "F" | "DM" | "FC" | "FE" | "AT" | "BH" | "LIC";
 // posto: onde a pessoa fica no dia, nos grupos que revezam (ex.: Cozinha ou Produção na Cozinha do Sempre Vivo)
 export type DiaPlano = { codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; obs?: string; posto?: string | null };
 export type Nivel = "erro" | "aviso" | "info";
@@ -17,6 +17,8 @@ export type Aviso = { chave: string; nome: string; nivel: Nivel; titulo: string;
 
 export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: string; descanso: boolean }[] = [
   { codigo: "F", nome: "Folga", curto: "F", descanso: true },
+  // O domingo de folga do mês (diferente da folga normal; só em domingo)
+  { codigo: "DM", nome: "Domingo do mês", curto: "DOM", descanso: true },
   { codigo: "FC", nome: "Folga compensada (feriado)", curto: "FC", descanso: true },
   { codigo: "BH", nome: "Folga do banco de horas", curto: "BH", descanso: true },
   { codigo: "FE", nome: "Férias", curto: "FÉR", descanso: false },
@@ -76,7 +78,7 @@ export function avaliar(chave: string, nome: string, plano: Map<string, DiaPlano
     const j = jornada(plano.get(d));
     if (!j) continue;
     // Jornada do dia (12x36: plantão de até 12 h com o dia antes e o depois livres)
-    const livre = (x: string) => ["F", "FC", "BH"].includes(plano.get(x)?.codigo ?? "");
+    const livre = (x: string) => ["F", "DM", "FC", "BH"].includes(plano.get(x)?.codigo ?? "");
     const plantao = j.liquido > 600 && j.liquido <= 720 && livre(somar(d, -1)) && livre(somar(d, 1));
     if (plantao) add("info", "12x36", "Plantão 12x36", `${br(d)}: ${horasTxt(j.liquido)} de trabalho com folga antes e depois. Só vale com acordo escrito com a pessoa.`, "CLT, art. 59-A; CCT 34ª", [d]);
     else if (j.liquido > 600) add("erro", "jornada", "Mais de 10 h no dia", `${br(d)}: ${horasTxt(j.liquido)} de trabalho. O máximo é 8 h mais 2 extras.`, "CLT, art. 59; CCT 28ª", [d]);
@@ -145,7 +147,7 @@ export function avaliar(chave: string, nome: string, plano: Map<string, DiaPlano
     while (plano.get(somar(bloco[bloco.length - 1], 1))?.codigo === "FE") bloco.push(somar(bloco[bloco.length - 1], 1));
     const fim = somar(bloco[bloco.length - 1], 1);
     if (bloco.length < 5 && plano.get(fim) !== undefined) add("aviso", "ferias", "Férias curtas", `Férias de ${bloco.length} dia${bloco.length === 1 ? "" : "s"} (${br(d)}). Nenhum período pode ter menos de 5 dias.`, "CLT, art. 134, § 1º", bloco);
-    const perto = [somar(d, 1), somar(d, 2)].find((x) => feriados.has(x) || ["F", "FC", "BH"].includes(plano.get(x)?.codigo ?? ""));
+    const perto = [somar(d, 1), somar(d, 2)].find((x) => feriados.has(x) || ["F", "DM", "FC", "BH"].includes(plano.get(x)?.codigo ?? ""));
     if (perto) add("erro", "ferias-inicio", "Início das férias", `Férias começam em ${br(d)}, nos 2 dias antes de ${feriados.has(perto) ? "um feriado" : "uma folga"} (${br(perto)}).`, "CLT, art. 134, § 3º", [d]);
   }
   return avisos;

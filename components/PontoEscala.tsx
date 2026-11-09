@@ -690,7 +690,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
       {!fechado && pessoas.map((p) => {
         const ts = turnosDe.get(p.chave)!;
         const trab = ts.filter((t) => t.trabalha).length;
-        const folgas = ts.filter((t) => t.tipo === "folga" || t.codigo === "FC" || t.codigo === "BH").length;
+        const folgas = ts.filter((t) => t.tipo === "folga" || t.codigo === "DM" || t.codigo === "FC" || t.codigo === "BH").length;
         const meusTodos = (avisos?.get(p.chave) ?? []).filter((a) => a.nivel !== "info" && a.dias.some((d) => dias.includes(d)));
         // Um número por tipo de aviso (o mesmo aviso em vários dias conta uma vez)
         const meus = [...new Map(meusTodos.map((a) => [`${a.regra}|${a.titulo}`, a])).values()];

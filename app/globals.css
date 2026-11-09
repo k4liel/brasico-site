@@ -2372,12 +2372,12 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
    RH · Escala planejada (06/11/2026): troca de modos, paleta de pincéis, pintar arrastando, avisos de lei
    ===================================================================== */
 .ep, .pt-escala {
-  --c-fc: #d6efe6; --c-fc-ink: #17604a;  --c-bh: #f6e7c4; --c-bh-ink: #7a5714;
+  --c-fc: #d6efe6; --c-fc-ink: #17604a;  --c-bh: #f6e7c4; --c-bh-ink: #7a5714;  --c-dm: #e4dcf7; --c-dm-ink: #4b2f8f;
   --c-fe: #dfe4fb; --c-fe-ink: #2f3f8f;  --c-at: #fbdde0; --c-at-ink: #9b2335;  --c-lic: #ececf0; --c-lic-ink: #4a4d5a;
   --m-extra: #8a5cd6;
 }
 :root[data-theme="dark"] .ep, :root[data-theme="dark"] .pt-escala {
-  --c-fc: #173a31; --c-fc-ink: #8fe0c2;  --c-bh: #3a2f17; --c-bh-ink: #ecd08c;
+  --c-fc: #173a31; --c-fc-ink: #8fe0c2;  --c-bh: #3a2f17; --c-bh-ink: #ecd08c;  --c-dm: #2e2547; --c-dm-ink: #c7b6f5;
   --c-fe: #222a4d; --c-fe-ink: #b3c0f5;  --c-at: #42202a; --c-at-ink: #f4a3b0;  --c-lic: #2a2c33; --c-lic-ink: #b9bccb;
   --m-extra: #b79af0;
 }
@@ -2651,6 +2651,7 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
   .ep-impressao th.fer { background: #ffe9c7; }
   .ep-impressao tr.setor td { background: #e6e6e6; text-align: left; padding-left: 5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 8px; }
   .ep-impressao td.c-F, .ep-impressao td.c-FC, .ep-impressao td.c-BH { background: #eef6ee; font-weight: 700; }
+  .ep-impressao td.c-DM { background: #ece6fa; font-weight: 700; }
   .ep-impressao td.c-FE, .ep-impressao td.c-AT, .ep-impressao td.c-LIC { background: #eef0fb; font-weight: 700; }
   .ep-impressao tr { break-inside: avoid; }
   .ep-impressao footer { margin-top: 6px; font-size: 8px; color: #555; }
@@ -2674,6 +2675,7 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-pincel span { font-weight: 500; }
 .ep-pincel.c-F { background: var(--esc-folga); color: var(--esc-folga-ink); }
 .ep-pincel.c-FC { background: var(--c-fc); color: var(--c-fc-ink); }
+.ep-pincel.c-DM { background: var(--c-dm); color: var(--c-dm-ink); }
 .ep-pincel.c-BH { background: var(--c-bh); color: var(--c-bh-ink); }
 .ep-pincel.c-FE { background: var(--c-fe); color: var(--c-fe-ink); }
 .ep-pincel.c-AT { background: var(--c-at); color: var(--c-at-ink); }
@@ -2713,11 +2715,12 @@ tr.ep-piscar > * { animation: ep-piscar 1.6s ease; }
 
 /* Grade no modo planejada: códigos, dias sem escala, feriado, aviso no dia e no nome, seleção */
 .pe-grade td.c-FC { background-color: var(--c-fc); color: var(--c-fc-ink); font-weight: 800; }
+.pe-grade td.c-DM { background-color: var(--c-dm); color: var(--c-dm-ink); font-weight: 800; }
 .pe-grade td.c-BH { background-color: var(--c-bh); color: var(--c-bh-ink); font-weight: 800; }
 .pe-grade td.c-FE { background-color: var(--c-fe); color: var(--c-fe-ink); font-weight: 800; }
 .pe-grade td.c-AT { background-color: var(--c-at); color: var(--c-at-ink); font-weight: 800; }
 .pe-grade td.c-LIC { background-color: var(--c-lic); color: var(--c-lic-ink); font-weight: 800; }
-.pe-chip.c-FC { background: var(--c-fc); } .pe-chip.c-BH { background: var(--c-bh); } .pe-chip.c-FE { background: var(--c-fe); }
+.pe-chip.c-DM { background: var(--c-dm); } .pe-chip.c-FC { background: var(--c-fc); } .pe-chip.c-BH { background: var(--c-bh); } .pe-chip.c-FE { background: var(--c-fe); }
 .pe-chip.c-AT { background: var(--c-at); } .pe-chip.c-LIC { background: var(--c-lic); }
 .pe-grade td.esc-c.vazio { background-color: transparent; color: color-mix(in srgb, var(--muted) 55%, transparent); box-shadow: inset 0 0 0 1px var(--border); border-style: solid; }
 .pt-escala:not(.pintando) .pe-grade td.esc-c.vazio span { visibility: hidden; }

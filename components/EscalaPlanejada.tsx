@@ -30,6 +30,10 @@ type PessoaDado = {
 type RealDia = DiaEscala & { cliente_id: number; pessoa_id: number };
 type PlanoDia = DiaPlano & { cliente_id: number; pessoa_id: number; dia: string };
 type Dados = { socio: boolean; grupos: Grupo[]; pessoas: PessoaDado[]; real: RealDia[]; planejada: PlanoDia[]; feriados: string[] };
+// Horários que sempre aparecem na janelinha do bloquinho (09/11/2026, pedido do dono)
+const HORARIOS_FIXOS: { codigo: "T"; entrada: string; saida: string; intervalo: string; rotulo: string }[] = [
+  { codigo: "T", entrada: "14:00", saida: "22:20", intervalo: "17:00-18:00", rotulo: "14:00–22:20" },
+];
 // O pincel escolhido na paleta
 type Pincel = { codigo: Codigo; entrada?: string; saida?: string; intervalo?: string; rotulo: string; posto?: string };
 type Toast = { id: number; nivel: "ok" | "aviso" | "erro"; texto: string; detalhes?: string[]; desfazer?: () => void };
@@ -266,7 +270,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         if (f) somar(f[1].padStart(5, "0"), (f[4] ?? f[2]).padStart(5, "0"), f[3] ? `${f[2].padStart(5, "0")}-${f[3].padStart(5, "0")}` : null);
       }
     }
-    return [...conta.values()].sort((a, b) => b.n - a.n).slice(0, 8).map((x) => x.p).sort((a, b) => (a.entrada ?? "").localeCompare(b.entrada ?? ""));
+    // Horários fixos que sempre aparecem (pedido do dono), além dos mais usados
+    const fixos = HORARIOS_FIXOS.filter((f) => ![...conta.values()].some((x) => x.p.entrada === f.entrada && x.p.saida === f.saida && x.p.intervalo === f.intervalo));
+    return [...[...conta.values()].sort((a, b) => b.n - a.n).slice(0, 8).map((x) => x.p), ...fixos].sort((a, b) => (a.entrada ?? "").localeCompare(b.entrada ?? ""));
   }, [pessoas, plano]);
 
   // ---------- Avisos na tela ----------
@@ -567,7 +573,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
               ))}
             </tbody>
           </table>
-          <footer>desc. = horário de descanso (intervalo) · F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
+          <footer>desc. = horário de descanso (intervalo) · F folga · DOM domingo do mês · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
         </div>, document.body)}
 
       {lidEditor && lid.dados && (
@@ -662,6 +668,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
     return () => { clearTimeout(t); window.removeEventListener("pointerdown", fora, true); };
   }, [onFechar]);
   const dias = [...new Set(celulas.map((c) => c.dia))].sort();
+  const soDomingos = dias.every((d) => new Date(`${d}T12:00:00Z`).getUTCDay() === 0);
   const pessoasN = new Set(celulas.map((c) => c.chave)).size;
   const titulo = celulas.length === 1
     ? `${nome.split(" ")[0]} · ${SEMANA[new Date(`${dias[0]}T12:00:00Z`).getUTCDay()]} ${br(dias[0])}`
@@ -740,8 +747,9 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
         <div className="ep-editor-opcoes">
           {CODIGOS.map((c) => (
             <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })}
-              disabled={c.codigo === "FC" && fcSemSaldo.length > 0}
-              title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.` : c.nome}>
+              disabled={(c.codigo === "FC" && fcSemSaldo.length > 0) || (c.codigo === "DM" && !soDomingos)}
+              title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.`
+                : c.codigo === "DM" && !soDomingos ? "Domingo do mês só num domingo" : c.nome}>
               <b>{c.curto}</b><span>{c.nome.replace(" (feriado)", "")}</span>
             </button>
           ))}
