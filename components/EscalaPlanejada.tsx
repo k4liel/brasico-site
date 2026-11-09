@@ -5,7 +5,7 @@
 // Folga, Folga compensada, Banco de horas, Férias, Atestado, Licença ou Limpar — e arrasta sobre os dias e as
 // pessoas. Cada mudança grava na hora (escala_gravar), pode ser desfeita, e é conferida com a lei
 // (lib/escala/regras.ts): o que sai do padrão aparece na hora num aviso, no dia, no nome e no painel de avisos.
-// Os dados vêm de escala_dados (só os grupos de quem está vendo); o mês começa copiado do RHiD.
+// Os dados vêm de escala_dados (só os grupos de quem está vendo); a escala se monta só pela janelinha (o "Copiar do RHiD" saiu, pedido do dono).
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
@@ -107,7 +107,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const [lidEditor, setLidEditor] = useState<{ local: string; setor: string | null; x: number; y: number } | null>(null);
   // Apelido: clicar no nome abre a caixinha para escrever
   const [apelidoDe, setApelidoDe] = useState<{ chave: string; nome: string; apelido: string; x: number; y: number } | null>(null);
-  const [ocupado, setOcupado] = useState(false);
   const lidos = useRef<{ de: string; ate: string } | null>(null);
   const sincronizado = useRef(false);
   const agora = hoje();
@@ -394,17 +393,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     });
   }
 
-  async function copiarRhid() {
-    if (!periodo.length || !dados) return;
-    const ids = grupos.filter((g) => !grupo || g.local === grupo).map((g) => g.id);
-    if (!window.confirm(`Preencher os dias ainda vazios de ${dataBR(periodo[0])} a ${dataBR(periodo[periodo.length - 1])} com a escala do RHiD? O que já foi montado não muda.`)) return;
-    setOcupado(true);
-    const { data, error } = await supabase.rpc("escala_copiar_rhid", { p_grupos: ids, p_de: periodo[0], p_ate: periodo[periodo.length - 1], p_sobrescrever: false });
-    setOcupado(false);
-    if (error) return avisar({ nivel: "erro", texto: error.message });
-    await ler(somarDias(periodo[0], -14), somarDias(periodo[periodo.length - 1], 7) < somarDias(periodo[0], 61) ? somarDias(periodo[periodo.length - 1], 7) : somarDias(periodo[0], 61));
-    avisar({ nivel: "ok", texto: data ? `${data} dias copiados do RHiD` : "Nada a copiar: os dias já estavam montados (ou o RHiD ainda não leu esse período)" });
-  }
+
 
 
 
@@ -488,7 +477,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         <div className="ep-paleta ep-barra-acoes">
           <span className="ep-paleta-rotulo">Clique num dia para escolher o que ele vira; arraste sobre vários dias para mudar todos de uma vez.</span>
           <div className="ep-acoes">
-            {dados?.socio && <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>}
             {/* Imprimir só na visão Semana (o texto para o WhatsApp saiu, pedido do dono); o Mês é só para ver (pedido do dono) */}
             {periodo.length === 7 ? (
               <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
