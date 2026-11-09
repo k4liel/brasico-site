@@ -1,15 +1,16 @@
 // PDF da escala da semana (09/11/2026, pedido do dono: "profissional, com cores bem marcantes e título").
 // Montado no navegador com pdf-lib (a mesma biblioteca da DANFE), sem a impressão do navegador: sai um arquivo
-// .pdf pronto para mandar no grupo. A4 deitado; cada casa (local) começa numa folha nova, com a faixa do título
-// na cor da casa; cabeçalho dos dias em todas as folhas; setores em faixas; cada dia é um bloquinho colorido —
+// .pdf pronto para mandar no grupo. A4 deitado; cada casa (local) começa numa folha nova, com a logo e o título
+// nas cores da marca; cabeçalho dos dias em todas as folhas; setores em faixas; cada dia é um bloquinho colorido —
 // turno (manhã, tarde, noite) em tom claro com o horário e o descanso, folgas e ausências em cor forte;
 // coluna de horas e folgas da semana; legenda e "página x de y" no rodapé.
 // Usa só a Helvetica padrão do PDF, então o texto é limpo para o alfabeto WinAnsi.
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage, type RGB } from "pdf-lib";
 import type { DiaPlano } from "./regras";
 
 export type LinhaPdf = { nome: string; cargo?: string; local: string; setor: string; dias: Record<string, DiaPlano | undefined>; minutos: number };
-export type EntradaPdf = { titulo?: string; periodo: string[]; linhas: LinhaPdf[]; feriados: Map<string, string> };
+// logo(arquivo) devolve o PNG da logo da casa (public/escala/logos/<arquivo>.png); sem logo, só o nome
+export type EntradaPdf = { titulo?: string; periodo: string[]; linhas: LinhaPdf[]; feriados: Map<string, string>; logo?: (arquivo: string) => Promise<Uint8Array | null> };
 
 const W = 841.89, H = 595.28, M = 24;
 const LARG = W - 2 * M;
@@ -20,18 +21,22 @@ const TINTA = hex("#1d2230");
 const CINZA = hex("#6b7184");
 const LINHA = hex("#e3e6ee");
 const ZEBRA = hex("#f6f7fa");
-const CABECA = hex("#1d2230");
 
-// Cor de cada casa (faixa do título, setores)
-const CORES_CASA: [RegExp, string][] = [
-  [/filha da lua/i, "#2c3a75"],
-  [/sempre vivo/i, "#1e6b47"],
-  [/filho do vento/i, "#0f6a78"],
-  [/cicchetti/i, "#8e1f30"],
-  [/hello/i, "#b4521a"],
-  [/fazenda/i, "#6b4c22"],
+// Marca de cada casa (09/11/2026, logos enviadas pelo dono): a logo no topo e as cores tiradas dela —
+// "tinta" = a cor escura da marca (título, cabeçalho dos dias, setores), "destaque" = a segunda cor (linhas e detalhes).
+// Logos em public/escala/logos/ (recortadas das originais). A "Fundação Hello Pipa" ainda não tem local na escala.
+export type Marca = { arquivo: string; tinta: string; destaque: string };
+const MARCAS: [RegExp, Marca][] = [
+  [/filha da lua/i, { arquivo: "filha-da-lua", tinta: "#4b7445", destaque: "#7fa275" }],
+  [/sempre vivo/i, { arquivo: "sempre-vivo", tinta: "#7d5d26", destaque: "#b08a45" }],
+  [/filho do vento/i, { arquivo: "filho-do-vento", tinta: "#1f4a9c", destaque: "#5f86d4" }],
+  [/cicchetti/i, { arquivo: "cicchetti", tinta: "#283848", destaque: "#b89b5e" }],
+  [/hello barra|vila da barra/i, { arquivo: "hello-barra", tinta: "#154848", destaque: "#7bc03c" }],
+  [/fundac|fundaç/i, { arquivo: "fundacao-hello-pipa", tinta: "#13254a", destaque: "#1a7fc4" }],
+  [/hello pipa/i, { arquivo: "hello-pipa", tinta: "#0a2c52", destaque: "#0a8ad0" }],
+  [/fazenda|pachamama/i, { arquivo: "fazenda-pachamama", tinta: "#1c1c1c", destaque: "#7a7a7a" }],
 ];
-const corDaCasa = (local: string) => hex(CORES_CASA.find(([r]) => r.test(local))?.[1] ?? "#2a3550");
+export const marcaDoLocal = (local: string): Marca | null => MARCAS.find(([r]) => r.test(local))?.[1] ?? null;
 const misturar = (c: RGB, f: number) => rgb(c.red + (1 - c.red) * f, c.green + (1 - c.green) * f, c.blue + (1 - c.blue) * f);
 
 // Folgas e ausências: cor forte com o nome em branco
@@ -116,7 +121,13 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
   if (!locais.length) locais.push(...new Set(e.linhas.map((l) => l.local)));
 
   for (const local of locais) {
-    const cor = corDaCasa(local);
+    const marca = marcaDoLocal(local);
+    const cor = hex(marca?.tinta ?? "#2a3550");
+    const destaque = hex(marca?.destaque ?? "#8a93ad");
+    let logo: PDFImage | null = null;
+    if (marca && e.logo) {
+      try { const b = await e.logo(marca.arquivo); if (b) logo = await doc.embedPng(b); } catch { logo = null; }
+    }
     const doLocal = e.linhas.filter((l) => l.local === local);
     // Setor sem nada planejado na semana fica de fora
     const setores = [...new Set(doLocal.map((l) => l.setor))].filter((s) => doLocal.some((l) => l.setor === s && dias.some((d) => l.dias[d]?.codigo)));
@@ -127,33 +138,44 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
 
     const novaFolha = () => {
       p = doc.addPage([W, H]);
-      // Faixa do título
-      const altFaixa = cont ? 40 : 74;
-      p.drawRectangle({ x: 0, y: H - altFaixa, width: W, height: altFaixa, color: cor });
-      p.drawRectangle({ x: 0, y: H - altFaixa - 4, width: W, height: 4, color: misturar(cor, 0.55) });
-      if (!cont) {
-        texto(p, "ESCALA DE TRABALHO", M, H - 24, 8.5, f.negrito, misturar(cor, 0.6), { espaco: 1.6 });
-        texto(p, local || e.titulo || "Escala", M, H - 54, 26, f.negrito, BRANCO, { larg: LARG * 0.6 });
-        texto(p, `Semana de ${faixa}`, W - M, H - 32, 13, f.negrito, BRANCO, { alinhar: "dir" });
-        const n = linhas.length;
-        texto(p, `${n} ${n === 1 ? "pessoa" : "pessoas"} · ${setores.length} ${setores.length === 1 ? "setor" : "setores"}`, W - M, H - 50, 9, f.normal, misturar(cor, 0.7), { alinhar: "dir" });
-      } else {
-        texto(p, `${local}  ·  continuação`, M, H - 26, 14, f.negrito, BRANCO);
-        texto(p, `Semana de ${faixa}`, W - M, H - 25, 10, f.negrito, BRANCO, { alinhar: "dir" });
+      // Topo: faixa fina na cor da marca, a logo, o título na cor da marca e a semana à direita
+      p.drawRectangle({ x: 0, y: H - 6, width: W, height: 6, color: cor });
+      p.drawRectangle({ x: 0, y: H - 8, width: W, height: 2, color: destaque });
+      const altLogo = cont ? 26 : 58;
+      const topo = H - 8 - (cont ? 10 : 14);
+      let xt = M;
+      if (logo) {
+        const esc = Math.min(altLogo / logo.height, (cont ? 110 : 190) / logo.width);
+        const lw = logo.width * esc, lh = logo.height * esc;
+        p.drawImage(logo, { x: M, y: topo - altLogo + (altLogo - lh) / 2, width: lw, height: lh });
+        xt = M + lw + 16;
+        p.drawLine({ start: { x: xt - 8, y: topo - altLogo + 4 }, end: { x: xt - 8, y: topo - 4 }, thickness: 1, color: misturar(destaque, 0.35) });
       }
-      y = H - altFaixa - 4 - 12;
+      if (!cont) {
+        texto(p, "ESCALA DE TRABALHO", xt + 4, topo - 16, 8.5, f.negrito, destaque, { espaco: 1.6 });
+        texto(p, local || e.titulo || "Escala", xt + 4, topo - 44, 26, f.negrito, cor, { larg: LARG * 0.55 - (xt - M) });
+        texto(p, `Semana de ${faixa}`, W - M, topo - 24, 13, f.negrito, cor, { alinhar: "dir" });
+        const n = linhas.length;
+        texto(p, `${n} ${n === 1 ? "pessoa" : "pessoas"} · ${setores.length} ${setores.length === 1 ? "setor" : "setores"}`, W - M, topo - 40, 9, f.normal, CINZA, { alinhar: "dir" });
+      } else {
+        texto(p, `${local}  ·  continuação`, xt + 4, topo - 18, 13, f.negrito, cor);
+        texto(p, `Semana de ${faixa}`, W - M, topo - 18, 10, f.negrito, cor, { alinhar: "dir" });
+      }
+      y = topo - altLogo - 8;
+      p.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1.2, color: destaque });
+      y -= 10;
       // Cabeçalho dos dias
       const yc = y - ALT_CAB;
-      caixa(p, M, yc, LARG, ALT_CAB, 5, CABECA);
-      texto(p, "COLABORADOR", M + 10, yc + 13, 8, f.negrito, misturar(CABECA, 0.65), { espaco: 0.8 });
+      caixa(p, M, yc, LARG, ALT_CAB, 5, cor);
+      texto(p, "COLABORADOR", M + 10, yc + 13, 8, f.negrito, misturar(cor, 0.62), { espaco: 0.8 });
       dias.forEach((d, i) => {
         const fer = e.feriados.get(d);
         const x = xDia(i);
-        if (fer || dow(d) === 0) caixa(p, x + 2, yc + 3, colDia - 4, ALT_CAB - 6, 4, fer ? hex("#d32f2f") : misturar(CABECA, 0.18));
+        if (fer || dow(d) === 0) caixa(p, x + 2, yc + 3, colDia - 4, ALT_CAB - 6, 4, fer ? hex("#d32f2f") : misturar(cor, 0.16));
         texto(p, SEMANA[dow(d)], x, yc + (fer ? 19 : 17), 8.5, f.negrito, BRANCO, { larg: colDia, alinhar: "centro", espaco: 0.4 });
-        texto(p, fer ? `${br(d)} · FERIADO` : br(d), x, yc + (fer ? 8 : 7), fer ? 6.8 : 8, fer ? f.negrito : f.normal, fer ? BRANCO : misturar(CABECA, 0.7), { larg: colDia, alinhar: "centro" });
+        texto(p, fer ? `${br(d)} · FERIADO` : br(d), x, yc + (fer ? 8 : 7), fer ? 6.8 : 8, fer ? f.negrito : f.normal, fer ? BRANCO : misturar(cor, 0.7), { larg: colDia, alinhar: "centro" });
       });
-      texto(p, "SEMANA", M + LARG - COL_HORAS, yc + 13, 7.5, f.negrito, misturar(CABECA, 0.65), { larg: COL_HORAS, alinhar: "centro", espaco: 0.5 });
+      texto(p, "SEMANA", M + LARG - COL_HORAS, yc + 13, 7.5, f.negrito, misturar(cor, 0.62), { larg: COL_HORAS, alinhar: "centro", espaco: 0.5 });
       y = yc - 6;
       cont = true;
     };

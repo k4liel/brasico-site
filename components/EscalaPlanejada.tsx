@@ -452,6 +452,10 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       const nomesFeriado = new Map([...feriados].map((d) => [d, comp?.feriados.find((f) => f.dia === d)?.nome ?? "Feriado"]));
       const bytes = await gerarPdfEscala({
         titulo: tituloEnvio || undefined, periodo, feriados: nomesFeriado,
+        logo: async (arquivo) => {
+          const r = await fetch(`/escala/logos/${arquivo}.png`);
+          return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+        },
         linhas: ordemDaGrade(pessoas, ordemSetores).map((p) => ({
           nome: p.nome, cargo: p.cargo, local: p.local, setor: p.setor,
           dias: Object.fromEntries(periodo.map((d) => [d, plano.get(p.chave)?.get(d)])), minutos: horasPlanejadas(p.chave),
