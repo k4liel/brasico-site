@@ -237,7 +237,7 @@ export default function PontoEscala({
   useEffect(() => {
     const v = lerLocal(plan ? "brasico-escala-visao-plano" : "brasico-escala-visao");
     if (v === "semana" || v === "quinzena" || v === "mes") setVisao(v);
-    else if (plan) setVisao("mes");
+    else if (plan) setVisao("semana");
   }, [plan]);
   function escolherVisao(v: Visao) {
     setVisao(v);
