@@ -353,6 +353,21 @@ function AvisoListaNova({ pessoa, listas }: { pessoa: string; listas: Lista[] })
   );
 }
 
+// Nomes dos fornecedores do cadastro (compras_fornecedores_nomes), lidos uma vez só para todas as listas da tela.
+// Serve para sugerir na troca de fornecedor e para mostrar o nome do cadastro no lugar da razão social da nota.
+type NomeForn = { nome: string; razao_social: string | null };
+let nomesFornCache: Promise<NomeForn[]> | null = null;
+function useNomesForn() {
+  const [nomes, setNomes] = useState<NomeForn[]>([]);
+  useEffect(() => {
+    if (!nomesFornCache) nomesFornCache = Promise.resolve(createClient().rpc("compras_fornecedores_nomes")).then(({ data }) => (data ?? []) as NomeForn[]);
+    let vivo = true;
+    nomesFornCache.then((n) => vivo && setNomes(n));
+    return () => { vivo = false; };
+  }, []);
+  return nomes;
+}
+
 // Cada lista abre e fecha: com várias listas, começam fechadas (só o título, os itens, o valor e a situação)
 function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial = true, sit, semanaAberta, semanaInicio }: { lista: Lista; itens: Item[]; podeEditar: boolean; onMudou: () => void; gestor: boolean; abertaInicial?: boolean; sit?: SitLista; semanaAberta: boolean; semanaInicio: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -361,6 +376,14 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
   const [novo, setNovo] = useState({ nome: "", fornecedor: "", unidade: "", qtd: "", preco: "" });
   const vivos = itens.filter((i) => !i.removido);
   const total = vivos.reduce((s, i) => s + (i.qtd ?? 0) * (i.preco ?? 0), 0);
+  const nomesForn = useNomesForn();
+  // fornecedor como a equipe conhece (nome do cadastro), se o item tiver a razão social da nota
+  const nomeForn = (f: string | null) => {
+    if (!f) return "";
+    const k = f.trim().toUpperCase();
+    return nomesForn.find((n) => n.nome.trim().toUpperCase() === k || (n.razao_social ?? "").trim().toUpperCase() === k)?.nome ?? f;
+  };
+  const listaForn = `cp-forn-${lista.id}`;
 
   async function salvar(i: Item, mudanca: Partial<Item>) {
     setErro("");
@@ -433,8 +456,9 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
       )}
       {podeEditar && (
         <p className="cp-legenda"><span className="cp-campo-exemplo" aria-hidden="true">12</span>
-          Os campos em destaque (<b>Pedir</b>, <b>Unid.</b> e <b>Preço</b>) você pode mudar: clique, escreva e saia do campo para salvar.</p>
+          Os campos em destaque (<b>Fornecedor</b>, <b>Pedir</b>, <b>Unid.</b> e <b>Preço</b>) você pode mudar: clique, escreva e saia do campo para salvar.</p>
       )}
+      {podeEditar && <datalist id={listaForn}>{nomesForn.map((n) => <option key={n.nome} value={n.nome} />)}</datalist>}
       <div className="nf-tabela-wrap">
         <table className="nf-tabela cp-tabela cp-tabela-lista">
           <thead><tr>
@@ -458,8 +482,16 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
                       <span className="cp-sub">
                         {i.confianca && <span className={`cp-conf ${i.confianca}`} title={CONFIANCA[i.confianca]}>{i.confianca === "alta" ? "✓" : i.confianca === "media" ? "≈" : "?"}</span>}
                         {i.produto_nota ? i.produto_nota : CONFIANCA[i.confianca ?? ""] ?? ""}
-                        {i.fornecedor && <> · <span className="cp-forn-nome">{i.fornecedor}</span></>}
+                        {!edita && i.fornecedor && <> · <span className="cp-forn-nome">{nomeForn(i.fornecedor)}</span></>}
                       </span>
+                      {edita && (
+                        <label className="cp-forn-edita">
+                          <span>Fornecedor</span>
+                          <input className="cp-edita" key={`${i.id}-${i.fornecedor ?? ""}-${nomesForn.length}`} defaultValue={nomeForn(i.fornecedor)} list={listaForn}
+                            placeholder="escolha ou escreva" aria-label={`Fornecedor de ${i.nome}`}
+                            onBlur={(v) => { const novoF = v.target.value.trim(); if (novoF !== nomeForn(i.fornecedor).trim()) salvar(i, { fornecedor: novoF || null }); }} />
+                        </label>
+                      )}
                       {i.incluido_na_revisao && <span className="cp-sub">incluído na revisão</span>}
                     </td>
                     <td className="n cp-pediu">{num(i.qtd_pedida) || "—"}</td>
@@ -482,7 +514,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
       {podeEditar && (
         <form className="cp-incluir" onSubmit={incluir}>
           <input value={novo.nome} onChange={(v) => setNovo({ ...novo, nome: v.target.value })} placeholder="Item que faltou" aria-label="Novo item" />
-          <input value={novo.fornecedor} onChange={(v) => setNovo({ ...novo, fornecedor: v.target.value })} placeholder="Fornecedor" aria-label="Fornecedor do novo item" />
+          <input value={novo.fornecedor} onChange={(v) => setNovo({ ...novo, fornecedor: v.target.value })} placeholder="Fornecedor" aria-label="Fornecedor do novo item" list={listaForn} />
           <input value={novo.qtd} onChange={(v) => setNovo({ ...novo, qtd: v.target.value })} inputMode="decimal" placeholder="Qtd." aria-label="Quantidade do novo item" />
           <input value={novo.unidade} onChange={(v) => setNovo({ ...novo, unidade: v.target.value })} placeholder="Unid." aria-label="Unidade do novo item" />
           <input value={novo.preco} onChange={(v) => setNovo({ ...novo, preco: v.target.value })} inputMode="decimal" placeholder="Preço" aria-label="Preço do novo item" />

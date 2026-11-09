@@ -113,6 +113,9 @@ input.cp-edita { width: 84px; padding: 7px 9px; border-radius: 9px; font-weight:
 input.cp-edita:hover { border-color: var(--gold); }
 input.cp-edita:focus { outline: 2px solid var(--gold); outline-offset: 1px; background: var(--panel); }
 input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
+/* trocar o fornecedor do item antes de aprovar */
+.cp-forn-edita { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+.cp-forn-edita input.cp-edita { width: 100%; max-width: 280px; font-weight: 600; font-size: 13px; padding: 5px 9px; }
 .cp-tot { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cp-com-obs td { border-bottom: 0 !important; }
 .cp-obs td { padding-top: 0 !important; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
