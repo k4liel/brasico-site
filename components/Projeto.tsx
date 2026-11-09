@@ -9,6 +9,7 @@ import { ehTraducao, semDuplicatas } from "@/lib/historico";
 import DocView from "./DocView";
 import { chaveCelula } from "@/lib/markdown";
 import Topo from "./Topo";
+import { TopoSimples } from "./Compras";
 import VisorPdf from "./VisorPdf";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
@@ -40,6 +41,11 @@ const COISA: Record<string, string> = {
 
 export default function Projeto({ projectId, userId, userEmail }: { projectId: string; userId: string; userEmail: string }) {
   const supabase = createClient();
+  // quem é da equipe da Operação (não sócio) vê o projeto com o topo simples, sem o menu do Brasico
+  const [equipe, setEquipe] = useState(false);
+  useEffect(() => {
+    createClient().rpc("operacao_papel", { p_user: userId }).then(({ data }) => setEquipe(!!data && data !== "socio"));
+  }, [userId]);
   const [info, setInfo] = useState<Info | null | undefined>(undefined);
   const [perfis, setPerfis] = useState<Record<string, Perfil>>({});
   const [modo, setModo] = useState<"pagina" | "pdf">("pagina");
@@ -309,10 +315,10 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
 
   return (
     <div className={modo === "pagina" ? "pagina pagina-doc modo-pagina" : "pagina pagina-doc"}>
-      <Topo email={userEmail} ativo="projetos" />
+      {equipe ? <TopoSimples email={userEmail} nome="" area={info.name} /> : <Topo email={userEmail} ativo="projetos" />}
 
       <div className="proj-barra">
-        <a href="/" className="voltar">← Projetos</a>
+        {!equipe && <a href="/" className="voltar">← Projetos</a>}
         {editandoNome ? (
           <form
             className="renomear"

@@ -131,22 +131,42 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 }
 
 // Para quem só tem a área de Compras: sem o menu do Brasico
-const ORDEM_AREAS = ["Compras", "Notas fiscais", "Câmara fria", "Produção", "Escala"];
+const ORDEM_AREAS = ["Compras", "Notas fiscais", "Fichas técnicas", "Câmara fria", "Produção", "Escala"];
+// Quem tem a Operação completa (operacao_pessoas.operacao_completa) vê todas as áreas e os projetos de que é membro
+const AREAS_OPERACAO = [
+  { href: "/compras", nome: "Compras" }, { href: "/notas", nome: "Notas fiscais" }, { href: "/fichas", nome: "Fichas técnicas" },
+  { href: "/estoque", nome: "Câmara fria" }, { href: "/producao", nome: "Produção" },
+];
 // Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
 export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
   const [senha, setSenha] = useState(false);
+  const [completa, setCompleta] = useState<{ href: string; nome: string }[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      const sb = createClient();
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return;
+      const { data: ok } = await sb.rpc("operacao_completa", { p_user: user.id });
+      if (!ok) return;
+      const { data: ws } = await sb.from("workspaces").select("id,name").is("removido_em", null).order("name");
+      setCompleta([...AREAS_OPERACAO, ...((ws ?? []) as { id: string; name: string }[]).map((w) => ({ href: `/projeto/${w.id}`, nome: w.name }))]);
+    })();
+  }, []);
   async function sair() {
     await createClient().auth.signOut();
     window.location.href = "/colaboradores";
   }
+  const paginas = completa
+    ? (completa.some((p) => p.nome === area) ? completa : [{ href: "", nome: area }, ...completa])
+    : outra ? [{ href: "", nome: area }, outra].sort((x, y) => ORDEM_AREAS.indexOf(x.nome) - ORDEM_AREAS.indexOf(y.nome)) : null;
   return (
     <>
       <header className="topo cp-topo">
-        {outra ? (
-          // quem abre duas áreas (ex.: a Fernanda, Compras e Notas fiscais) tem um menu com as duas
+        {paginas ? (
+          // quem abre duas áreas ou mais (ex.: a Fernanda, Compras e Notas fiscais) tem um menu com elas
           <nav className="cp-menu" aria-label="Páginas">
             <span className="marca">Brasico</span>
-            {[{ href: "", nome: area }, outra].sort((x, y) => ORDEM_AREAS.indexOf(x.nome) - ORDEM_AREAS.indexOf(y.nome)).map((p) =>
+            {paginas.map((p) =>
               p.nome === area ? <span key={p.nome} className="cp-menu-item on" aria-current="page">{p.nome}</span>
                 : <a key={p.nome} className="cp-menu-item" href={p.href}>{p.nome}</a>)}
           </nav>

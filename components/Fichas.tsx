@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
+import { TopoSimples } from "./Compras";
 
 // Fichas técnicas (Operação · fase 3): fichas copiadas do projeto "Fichas técnicas" (que continua como está),
 // com o custo pelo último preço pago de cada insumo e a venda na TOTVS. Duas abas:
@@ -48,6 +49,7 @@ const LIMITE_CMV = 0.35;
 export default function Fichas({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [acesso, setAcesso] = useState<boolean | null>(null);
+  const [socio, setSocio] = useState(true);
   const [fichas, setFichas] = useState<Ficha[]>([]);
   const [custos, setCustos] = useState<Record<string, Custo>>({});
   const [vendas, setVendas] = useState<Record<string, Venda[]>>({});
@@ -69,8 +71,12 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("notas_acesso").select("user_id").eq("user_id", userId);
-      if (!data?.length) return setAcesso(false);
+      const [{ data: pode }, { data: papel }] = await Promise.all([
+        supabase.rpc("fichas_pode", { p_user: userId }),
+        supabase.rpc("operacao_papel", { p_user: userId }),
+      ]);
+      if (!pode) return setAcesso(false);
+      setSocio(papel === "socio");
       setAcesso(true);
       carregar();
     })();
@@ -91,7 +97,7 @@ export default function Fichas({ userId, userEmail }: { userId: string; userEmai
 
   return (
     <div className="pagina">
-      <Topo email={userEmail} ativo="fichas" />
+      {socio ? <Topo email={userEmail} ativo="fichas" /> : <TopoSimples email={userEmail} nome="" area="Fichas técnicas" />}
       <main className="miolo tv es ft">
         <div className="es-topo">
           <div>

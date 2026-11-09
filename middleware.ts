@@ -65,6 +65,11 @@ export async function middleware(request: NextRequest) {
     const destino = papel === "estoque" ? "/estoque" : papel === "solicitante" || papel === "compras" ? "/compras" : papel === "lider" ? "/escala" : null;
     // o setor de compras (Fernanda) também abre as Notas fiscais (só NF-e, índice e nota avulsa)
     const liberadas = papel === "compras" ? ["/compras", "/notas"] : destino ? [destino] : [];
+    // quem tem a Operação completa (operacao_pessoas.operacao_completa) abre também as Fichas e os projetos de que é membro
+    if (papel === "compras") {
+      const { data: completa } = await supabase.rpc("operacao_completa", { p_user: user.id });
+      if (completa) liberadas.push("/fichas", "/projeto");
+    }
     // quem lidera um grupo da escala também abre a Escala
     if (destino && destino !== "/escala" && path.startsWith("/escala")) {
       const { data: lider } = await supabase.rpc("escala_eh_lider", { p_user: user.id });

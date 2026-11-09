@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 
 // Fotos das fichas técnicas enviadas pela página /fichas. Ficam no bucket
-// privado fichas-fotos e só abrem para quem vê as fichas (notas_pode_ver,
+// privado fichas-fotos e só abrem para quem vê as fichas (fichas_pode,
 // conferido também pela regra do próprio armazenamento).
 // Caminho: /api/fichas/foto/<arquivo>.jpg
 
@@ -21,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ nome: s
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return new Response("Entre no Brasico para ver esta foto.", { status: 401 });
-  const { data: pode } = await supabase.rpc("notas_pode_ver", { p_user: user.id });
+  const { data: pode } = await supabase.rpc("fichas_pode", { p_user: user.id });
   if (!pode) return new Response("Sem acesso às fichas.", { status: 403 });
 
   const { data: blob } = await supabase.storage.from(BUCKET).download(nome);
