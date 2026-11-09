@@ -400,10 +400,11 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   });
 
   // ---------- Mandar para a equipe ----------
-  const tituloEnvio = grupo || (casaPorId(casa ?? "")?.nome ?? "Escala");
+  const tituloEnvio = grupo || casaPorId(casa ?? "")?.nome || "";
+  const cabecaEnvio = tituloEnvio ? `Escala · ${tituloEnvio}` : "Escala";
   const faixa = periodo.length ? `${br(periodo[0])} a ${br(periodo[periodo.length - 1])}` : "";
   async function copiarWhatsApp() {
-    const linhas = [`*Escala · ${tituloEnvio}*`, faixa, ""];
+    const linhas = [`*${cabecaEnvio}*`, faixa, ""];
     for (const d of periodo) {
       const porRotulo = new Map<string, string[]>();
       for (const p of pessoas) {
@@ -415,7 +416,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       if (!porRotulo.size) continue;
       linhas.push(`*${SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]} ${br(d)}*${feriados.has(d) ? " (feriado)" : ""}`);
       const ordem = [...porRotulo.entries()].sort((a, b) => (/^\d/.test(a[0]) ? 0 : 1) - (/^\d/.test(b[0]) ? 0 : 1) || a[0].localeCompare(b[0]));
-      for (const [r, nomes] of ordem) linhas.push(`${/^\d/.test(r) ? r : `${r}:`} ${nomes.join(", ")}`);
+      for (const [r, nomes] of ordem) linhas.push(`${r}: ${nomes.join(", ")}`);
       linhas.push("");
     }
     if (linhas.length <= 3) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
@@ -437,7 +438,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     const fim = () => { document.title = antes; document.body.classList.remove("ep-imprimindo"); setImprimindo(false); };
     window.addEventListener("afterprint", fim, { once: true });
     document.body.classList.add("ep-imprimindo");
-    document.title = `Escala ${tituloEnvio} ${faixa}`.replace(/\//g, "-");
+    document.title = `${cabecaEnvio} ${faixa}`.replace(/\//g, "-");
     const t = setTimeout(() => window.print(), 300);
     return () => clearTimeout(t);
   }, [imprimindo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -524,7 +525,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       {imprimindo && createPortal(
         <div className="ep-impressao">
           <style>{"@page { size: A4 landscape; margin: 9mm; }"}</style>
-          <header><b>Escala · {tituloEnvio}</b><span>{faixa}</span></header>
+          <header><b>{cabecaEnvio}</b><span>{faixa}</span></header>
           <table>
             <thead>
               <tr><th>Nome</th>{periodo.map((d) => <th key={d} className={feriados.has(d) ? "fer" : ""}>{SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]}<br />{br(d)}</th>)}</tr>
@@ -537,14 +538,19 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
                     <td className="nome">{p.nome}</td>
                     {periodo.map((d) => {
                       const x = plano.get(p.chave)?.get(d);
-                      return <td key={d} className={x?.codigo && x.codigo !== "T" ? `c-${x.codigo}` : ""}>{x?.codigo ? rotuloDia(x, true) : ""}</td>;
+                      return (
+                        <td key={d} className={x?.codigo && x.codigo !== "T" ? `c-${x.codigo}` : ""}>
+                          {x?.codigo ? rotuloDia(x, true) : ""}
+                          {x && descanso(x) && <small className="desc">desc. {descanso(x)}</small>}
+                        </td>
+                      );
                     })}
                   </tr>
                 </Fragment>
               ))}
             </tbody>
           </table>
-          <footer>F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
+          <footer>desc. = horário de descanso (intervalo) · F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
         </div>, document.body)}
 
       {editor && (
@@ -562,8 +568,12 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
 const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 // O dia em texto: horário (07:00–15:20) ou o nome do código (Folga, Férias…); curto = a sigla, para a tabela
+// O descanso (intervalo) do dia: "12:00–13:00"
+const descanso = (x: DiaPlano) => (x.codigo === "T" && x.intervalo ? x.intervalo.replace("-", "–") : "");
 function rotuloDia(x: DiaPlano, curto: boolean) {
-  if (x.codigo === "T") return (x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho") + (x.posto ? (curto ? ` ${x.posto[0]}` : ` · ${x.posto}`) : "");
+  if (x.codigo === "T") return (x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho")
+    + (!curto && descanso(x) ? ` (descanso ${descanso(x)})` : "")
+    + (x.posto ? (curto ? ` ${x.posto[0]}` : ` · ${x.posto}`) : "");
   const c = CODIGOS.find((k) => k.codigo === x.codigo);
   return curto ? c?.curto ?? x.codigo : c?.nome.replace(" (feriado)", "") ?? x.codigo;
 }
@@ -578,6 +588,13 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   const [pos, setPos] = useState({ left: x, top: y });
   // Grupos que revezam: onde a pessoa fica (vai junto com o horário escolhido)
   const [posto, setPosto] = useState(atual?.posto && postos.includes(atual.posto) ? atual.posto : postos[0] ?? "");
+  // Horário do dia para ajustar (entrada, saída e descanso): começa com o do dia, se já tiver, ou com o último usado
+  const [h, setH] = useState(() => {
+    const [di, df] = (atual?.codigo === "T" && atual.intervalo ? atual.intervalo : outro.intervalo).split("-");
+    return atual?.codigo === "T" && atual.entrada && atual.saida
+      ? { entrada: atual.entrada, saida: atual.saida, desc: !!atual.intervalo, di: di ?? "12:00", df: df ?? "13:00" }
+      : { entrada: outro.entrada, saida: outro.saida, desc: /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(outro.intervalo), di: di ?? "12:00", df: df ?? "13:00" };
+  });
   // Fica dentro da tela
   useEffect(() => {
     const r = caixa.current?.getBoundingClientRect();
@@ -597,7 +614,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
     ? `${nome.split(" ")[0]} · ${SEMANA[new Date(`${dias[0]}T12:00:00Z`).getUTCDay()]} ${br(dias[0])}`
     : `${celulas.length} dias · ${pessoasN} ${pessoasN === 1 ? "pessoa" : "pessoas"} · ${br(dias[0])}${dias.length > 1 ? ` a ${br(dias[dias.length - 1])}` : ""}`;
   const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo && (atual.posto ?? "") === posto;
-  const intervaloOk = /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(outro.intervalo);
+
   return (
     <div ref={caixa} className="ep-editor" role="dialog" aria-label="Escolher o que o dia vira" style={{ left: pos.left, top: pos.top }}>
       <div className="ep-editor-cabeca"><b>{titulo}</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
@@ -615,19 +632,30 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
           <div className="ep-editor-opcoes">
             {horarios.map((h) => (
               <button key={`${h.entrada}${h.saida}${h.intervalo}`} className={`ep-pincel t${igual(h) ? " on" : ""}`} onClick={() => onEscolher({ ...h, posto: posto || undefined })}
-                title={h.intervalo ? `Intervalo ${h.intervalo.replace("-", "–")}` : "Sem intervalo"}>{h.rotulo}</button>
+                title={h.intervalo ? `Descanso ${h.intervalo.replace("-", "–")}` : "Sem descanso"}>
+                {h.rotulo}<small className="ep-desc">{h.intervalo ? `desc. ${h.intervalo.replace("-", "–")}` : "sem descanso"}</small>
+              </button>
             ))}
           </div>
         </div>
       )}
       <div className="ep-editor-grupo">
-        <span>Outro horário</span>
-        <div className="ep-outro">
-          <input type="time" value={outro.entrada} onChange={(e) => setOutro({ ...outro, entrada: e.target.value })} aria-label="Entrada" />
-          <span>–</span>
-          <input type="time" value={outro.saida} onChange={(e) => setOutro({ ...outro, saida: e.target.value })} aria-label="Saída" />
-          <input className="ep-intervalo" value={outro.intervalo} onChange={(e) => setOutro({ ...outro, intervalo: e.target.value })} placeholder="12:00-13:00" aria-label="Intervalo" title="Intervalo (início-fim)" />
-          <button className="small" onClick={() => onEscolher({ codigo: "T", entrada: outro.entrada, saida: outro.saida, intervalo: intervaloOk ? outro.intervalo : undefined, rotulo: `${outro.entrada}–${outro.saida}`, posto: posto || undefined })}>Usar</button>
+        <span>Definir o horário e o descanso</span>
+        <div className="ep-horario">
+          <label>Entra<input type="time" value={h.entrada} onChange={(e) => setH({ ...h, entrada: e.target.value })} /></label>
+          <label>Sai<input type="time" value={h.saida} onChange={(e) => setH({ ...h, saida: e.target.value })} /></label>
+          <label className="ep-horario-desc"><span><input type="checkbox" checked={h.desc} onChange={(e) => setH({ ...h, desc: e.target.checked })} /> Descanso</span>
+            <span className="ep-horario-faixa">
+              <input type="time" value={h.di} disabled={!h.desc} onChange={(e) => setH({ ...h, di: e.target.value })} aria-label="Descanso começa" />
+              <span>até</span>
+              <input type="time" value={h.df} disabled={!h.desc} onChange={(e) => setH({ ...h, df: e.target.value })} aria-label="Descanso termina" />
+            </span>
+          </label>
+          <button className="small" disabled={!h.entrada || !h.saida || (h.desc && (!h.di || !h.df))} onClick={() => {
+            const intervalo = h.desc ? `${h.di}-${h.df}` : undefined;
+            setOutro({ entrada: h.entrada, saida: h.saida, intervalo: intervalo ?? "" });
+            onEscolher({ codigo: "T", entrada: h.entrada, saida: h.saida, intervalo, rotulo: `${h.entrada}–${h.saida}`, posto: posto || undefined });
+          }}>Salvar</button>
         </div>
       </div>
       <div className="ep-editor-grupo">

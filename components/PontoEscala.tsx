@@ -689,7 +689,8 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
               // Semana: horário numa linha e, embaixo, o que foi batido (ou o nome do turno, se ainda não chegou)
               const linhas = !t.trabalha ? t.linhas
                 : visao === "mes" ? [t.linhas[0].replace(/^0?(\d{1,2}):00$/, "$1h").replace(/^0?(\d{1,2}):(\d{2})$/, "$1h$2")]
-                : visao === "semana" ? [t.horario, modo !== "planejada" && d <= agora && dd?.batidas.length ? dd.batidas.map((b) => b.hora).join(" · ") : TEXTOS.pt.turnos[t.tipo]]
+                : visao === "semana" ? [t.posto ? `${t.linhas[0]}–${t.linhas[1]}` : t.horario, modo !== "planejada" && d <= agora && dd?.batidas.length ? dd.batidas.map((b) => b.hora).join(" · ")
+                  : modo === "planejada" && t.intervalo ? `desc. ${t.intervalo}` : TEXTOS.pt.turnos[t.tipo]]
                 : t.linhas;
               return (
                 <td key={d} data-i={i}

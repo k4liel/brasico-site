@@ -2464,6 +2464,16 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-editor-opcoes { display: flex; flex-wrap: wrap; gap: 6px; }
 .ep-editor .ep-outro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ep-editor-postos { margin: 0; }
+.ep-editor .ep-pincel.t { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.2; }
+.ep-desc { font-size: 10.5px; font-weight: 500; opacity: .75; }
+.ep-horario { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+.ep-horario label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.ep-horario input[type="time"] { width: 104px; }
+.ep-horario-desc > span:first-child { display: inline-flex; align-items: center; gap: 4px; }
+.ep-horario-faixa { display: inline-flex; align-items: center; gap: 6px; }
+.ep-horario-faixa > span { font-size: 12px; }
+.ep-horario > button { margin-left: auto; }
+@media print { .ep-impressao td small.desc { display: block; font-size: 7px; color: #555; } }
 .pe-grade td.esc-c { position: relative; }
 .pe-posto { position: absolute; bottom: 2px; right: 3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 4px; font-style: normal; font-size: 9px; font-weight: 800; line-height: 13px; text-align: center;
   background: var(--strong); color: var(--bg); opacity: .8; pointer-events: none; }
