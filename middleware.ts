@@ -119,5 +119,5 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // A rota do Claude (/api/...) tem autenticação própria por token.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|escala/logos/).*)"],
 };
