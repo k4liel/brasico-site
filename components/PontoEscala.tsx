@@ -585,7 +585,7 @@ export default function PontoEscala({
           <span><i className="pe-alerta erro" /><b>Fora da lei</b></span>
           <span><i className="pe-alerta aviso" /><b>Atenção</b></span>
         </>}
-        <span className="muted">{pintar ? "Arraste sobre os dias para pintar com o código escolhido." : "Passe o mouse (ou toque) num dia para ver os detalhes."}</span>
+        <span className="muted">{pintar ? "Clique num dia para escolher o que ele vira; arraste para mudar vários." : "Passe o mouse (ou toque) num dia para ver os detalhes."}</span>
       </div>
 
       {fantasma && (

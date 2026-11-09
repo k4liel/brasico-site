@@ -38,7 +38,11 @@ const atualizadoEm = (p: Ponto) => (p.lendo ? "Lendo o RHiD…" : p.ultima ? `at
 export type ExtraEscala = PessoaEscala & { extraId: number; posicao: number | null };
 export type ItemExtra = { id: number; posicao: number; local?: string; setor?: string };
 
-export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras }: {
+export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras, organizarFixo, onPronto, somenteVer }: {
+  // Página Escala: abre já organizando e o "Pronto" volta para a escala
+  organizarFixo?: boolean; onPronto?: () => void;
+  // Página Escala, lado "Ponto oficial": sem o botão Organizar (ele fica no topo da página)
+  somenteVer?: boolean;
   ponto: Ponto; chavesRH: Set<string>; onAbrirPessoa: (chave: string) => void;
   // Grupos criados à mão ainda sem ninguém (Sempre Vivo · Reservas, Financeiro…)
   gruposVazios?: { local: string; setor: string }[];
@@ -51,7 +55,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
   const [setor, setSetor] = useState("");
   const [estado, setEstado] = useState<Estado | "">("");
   const [busca, setBusca] = useState("");
-  const [organizar, setOrganizar] = useState(false);
+  const [organizar, setOrganizar] = useState(!!organizarFixo);
   if (!pronto(ponto)) return <Aguarde ponto={ponto} />;
 
   const { vistas } = ponto;
@@ -193,9 +197,11 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
             <span className="pt-acoes">
               <span className="muted">{atualizadoEm(ponto)}</span>
               <button className="ghost small" onClick={ponto.atualizar} disabled={ponto.lendo}>Atualizar</button>
-              <button className={organizar ? "small" : "ghost small"} onClick={() => setOrganizar((v) => !v)} aria-pressed={organizar}>
-                {organizar ? "Pronto" : "Organizar"}
-              </button>
+              {!somenteVer && (
+                <button className={organizar ? "small" : "ghost small"} onClick={() => (organizarFixo && onPronto ? onPronto() : setOrganizar((v) => !v))} aria-pressed={organizar}>
+                  {organizar ? "Pronto" : "Organizar"}
+                </button>
+              )}
             </span>
           )} />
       )}

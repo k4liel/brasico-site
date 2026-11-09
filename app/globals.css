@@ -2451,6 +2451,46 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
   .ep-contratados-tabela td { border: 0; padding: 0; }
   .ep-contratados-tabela td:first-child, .ep-contratados-tabela td:nth-child(2), .ep-contratados-acoes { grid-column: 1 / -1; text-align: left; }
 }
+/* Escala única (09/11/2026): barra de ações e a janelinha do bloquinho */
+.ep-paleta.ep-barra-acoes { position: static; }
+.ep-barra-acoes .ep-acoes { border-top: 0; padding-top: 0; }
+.ep-editor { position: fixed; z-index: 60; width: min(420px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: auto; display: grid; gap: 12px; padding: 14px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--panel); box-shadow: 0 18px 48px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--gold) 25%, transparent); }
+.ep-editor-cabeca { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
+.ep-editor-cabeca button { all: unset; cursor: pointer; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); font-size: 18px; }
+.ep-editor-cabeca button:hover { background: var(--hover-bg); color: var(--strong); }
+.ep-editor-grupo { display: grid; gap: 6px; }
+.ep-editor-grupo > span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ep-editor-opcoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.ep-editor .ep-outro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ep-editor-rodape { display: flex; justify-content: flex-end; padding-top: 8px; border-top: 1px dashed var(--border); }
+/* Quem monta a escala e a barra do topo da página Escala */
+.ep-lid-casas { display: grid; gap: 4px; }
+.ep-lid-casa { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.ep-lid-casa:last-child { border-bottom: 0; }
+.ep-lid-linha { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 8px 16px; align-items: center; }
+.ep-lid-nome { font-size: 14px; }
+.ep-lid-chip { all: unset; cursor: pointer; display: inline-flex; align-items: baseline; gap: 6px; }
+.ep-lid-chip:hover { color: var(--gold); }
+.ep-lid-form { display: grid; gap: 10px; margin: 10px 0 4px; padding: 12px; border: 1px dashed color-mix(in srgb, var(--gold) 50%, var(--border)); border-radius: 12px; }
+.ep-lid-form label { display: grid; gap: 4px; font-size: 13px; }
+.ep-lid-form select { max-width: 320px; }
+.ep-lid-alcance, .ep-lid-setores { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.ep-lid-alcance label, .ep-lid-setores label { display: inline-flex; align-items: center; gap: 6px; }
+.ep-lid-acoes { display: flex; justify-content: flex-end; gap: 6px; }
+.ep-toggle { display: inline-flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+.ep-toggle > button:not(.ep-toggle-chave) { all: unset; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); }
+.ep-toggle > button.on { color: var(--strong); }
+.ep-toggle > button small { font-size: 11px; font-weight: 600; color: #2fa36b; margin-left: 4px; }
+.ep-toggle-chave { all: unset; cursor: pointer; position: relative; width: 44px; height: 24px; border-radius: 999px; background: color-mix(in srgb, var(--gold) 55%, var(--seg)); transition: background .18s ease; }
+.ep-toggle-chave i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .18s ease; }
+.ep-toggle-chave.ligada { background: #2fa36b; }
+.ep-toggle-chave.ligada i { transform: translateX(20px); }
+.ep-toggle-chave:focus-visible, .ep-toggle > button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.ep-topo-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; }
+.ep-topo-acoes .ep-casas { margin: 0; }
+.ep-topo-acoes .ep-topo-dir { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+@media (max-width: 760px) { .ep-lid-linha { grid-template-columns: 1fr; } }
 /* Grupo criado à mão ainda sem ninguém (escala_grupos.fixo) */
 .pe-grade tr.pe-grupo.pe-vazio th.pe-nome { color: var(--muted); }
 .pe-grade tr.pe-grupo.pe-vazio th.pe-nome em { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--gold); }

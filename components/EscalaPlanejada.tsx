@@ -8,13 +8,13 @@
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); o mês começa copiado do RHiD.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import PontoEscala, { ordemDaGrade, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { AFASTADOS, ordemDaGrade, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
 import { createPortal } from "react-dom";
 
-type Grupo = { id: string; nome: string; local: string; setor: string; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
+type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
 type PessoaDado = {
   cliente_id: number; id: number; nome: string; grupo_id: string; cargo: string; posicao: number | null; saldo_banco: number | null;
   comp_creditos: number; comp_debitos: number; comp_ajuste: number;
@@ -75,19 +75,23 @@ export function ModosEscala({ modo, onMudar, avisos }: { modo: ModoEscala; onMud
   );
 }
 
-export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onAbrirPessoa, cabecalho }: {
+export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onAbrirPessoa, cabecalho, recarga = 0 }: {
   supabase: SupabaseClient; modo: ModoEscala;
   // Só os grupos desta casa (lib/escala/casas.ts); sem casa = todos os grupos de quem está vendo
   casa?: string;
   // Página do RH (sócio): o local e o setor de cada pessoa, para os grupos acompanharem a escala do RH
   sincronizar?: { cliente_id: number; pessoa_id: number; local: string; setor: string }[];
   onAbrirPessoa?: (chave: string) => void; cabecalho?: ReactNode;
+  // Muda quando a organização do Ponto mudou (grupos sincronizados): relê o período da tela
+  recarga?: number;
 }) {
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState("");
   // Filtro do topo: um botão por local (os setores ficam dentro da grade); "" = todos
   const [grupo, setGrupo] = useState(SEM_GRUPO);
-  const [pincel, setPincel] = useState<Pincel | null>(null);
+  // Edição no bloquinho: clicar (ou arrastar sobre vários dias) abre a janelinha para escolher o que eles viram
+  const [editor, setEditor] = useState<{ celulas: Celula[]; x: number; y: number } | null>(null);
+  const ponteiro = useRef({ x: 0, y: 0 });
   const [outro, setOutro] = useState({ entrada: "08:00", saida: "16:20", intervalo: "12:00-13:00" });
   const [periodo, setPeriodo] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -131,6 +135,23 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     // Lê em trechos de até 75 dias (limite da função)
     for (let x = a; x <= b; x = somarDias(x, 76)) await ler(x, somarDias(x, 75) < b ? somarDias(x, 75) : b);
   }, [ler, supabase, sincronizar]);
+
+  // A organização do Ponto mudou: relê o período que está na tela
+  const periodoRef = useRef<string[]>([]);
+  const mudarPeriodo = useCallback((ds: string[]) => { periodoRef.current = ds; setPeriodo(ds); }, []);
+  useEffect(() => {
+    if (!recarga) return;
+    const ps = periodoRef.current;
+    lidos.current = null;
+    if (ps.length) garantir(ps[0], ps[ps.length - 1]);
+  }, [recarga]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Onde o dedo/mouse soltou (a janelinha abre ali)
+  useEffect(() => {
+    const f = (e: PointerEvent) => { ponteiro.current = { x: e.clientX, y: e.clientY }; };
+    window.addEventListener("pointerup", f, true);
+    return () => window.removeEventListener("pointerup", f, true);
+  }, []);
 
   // A leitura do RHiD a cada minuto: recarrega ontem e hoje quando termina
   useEffect(() => {
@@ -183,12 +204,16 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     const g = grupoDe.get(p.grupo_id);
     return {
       chave: chaveDe(p.cliente_id, p.id), nome: nomeProprio(p.nome), cargo: p.cargo ? nomeProprio(p.cargo) : "",
-      // A área "Afastados" fica só na escala do Ponto (pedido do dono): aqui a pessoa segue no setor dela
-      local: g?.local ?? "", setor: g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
+      // Espelho do Ponto: quem o RHiD afasta hoje fica na área "Afastados" no fim do local
+      local: g?.local ?? "", setor: p.afastado ? AFASTADOS : g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
       hoje: p.afastado ? { texto: `Afastado (${p.afastado})`, classe: "afastado" } : undefined,
       obs: p.fora_do_ponto ? "fora do ponto" : undefined,
     };
   });
+
+  // Grupos criados à mão ainda sem ninguém (Reservas, Financeiro…): aparecem vazios, como no Ponto
+  const gruposVazios = grupos.filter((g) => g.fixo && !daCasa.some((p) => p.grupo_id === g.id) && (!grupo || g.local === grupo))
+    .map((g) => ({ local: g.local, setor: g.setor }));
 
   // Avisos de lei de cada pessoa (só os que tocam o período da tela contam no painel)
   const avisos = useMemo(() => {
@@ -251,8 +276,14 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     return true;
   }
 
-  async function pintar(celulas: Celula[]) {
-    if (!pincel) return;
+  function pintar(celulas: Celula[]) {
+    if (!celulas.length) return;
+    const { x, y } = ponteiro.current;
+    setEditor({ celulas, x, y });
+  }
+
+  async function aplicar(celulas: Celula[], pincel: Pincel) {
+    setEditor(null);
     const antes = new Map<string, Aviso[]>();
     for (const c of celulas) if (!antes.has(c.chave)) antes.set(c.chave, avisos.get(c.chave) ?? []);
     const itens = celulas.map((c) => {
@@ -327,9 +358,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     avisar({ nivel: "ok", texto: "Saldo de folgas acertado" });
   }
 
-  // Esc larga o pincel
+  // Esc fecha a janelinha
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === "Escape" && setPincel(null);
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setEditor(null);
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, []);
@@ -424,35 +455,8 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       )}
 
       {podeEditar && (
-        <div className={`ep-paleta${pincel ? " ativa" : ""}`}>
-          <span className="ep-paleta-rotulo">{pincel ? <>Pintando com <b>{pincel.rotulo}</b> · arraste sobre os dias · <kbd>Esc</kbd> solta</> : "Escolha um pincel e arraste sobre os dias"}</span>
-          <div className="ep-pinceis" role="group" aria-label="Pincéis">
-            {pinceisHorario.map((p) => (
-              <button key={`${p.entrada}${p.saida}${p.intervalo}`} className={`ep-pincel t${pincel?.codigo === "T" && pincel.entrada === p.entrada && pincel.saida === p.saida && pincel.intervalo === p.intervalo ? " on" : ""}`}
-                onClick={() => setPincel((x) => (x?.codigo === "T" && x.entrada === p.entrada && x.saida === p.saida && x.intervalo === p.intervalo ? null : p))}
-                title={p.intervalo ? `Intervalo ${p.intervalo.replace("-", "–")}` : "Sem intervalo"}>
-                {p.rotulo}
-              </button>
-            ))}
-            <span className="ep-outro">
-              <input type="time" value={outro.entrada} onChange={(e) => setOutro({ ...outro, entrada: e.target.value })} aria-label="Entrada" />
-              <span>–</span>
-              <input type="time" value={outro.saida} onChange={(e) => setOutro({ ...outro, saida: e.target.value })} aria-label="Saída" />
-              <input className="ep-intervalo" value={outro.intervalo} onChange={(e) => setOutro({ ...outro, intervalo: e.target.value })} placeholder="12:00-13:00" aria-label="Intervalo" title="Intervalo (início-fim)" />
-              <button className={`ep-pincel t${pincel?.rotulo === "Outro horário" ? " on" : ""}`}
-                onClick={() => setPincel({ codigo: "T", entrada: outro.entrada, saida: outro.saida, intervalo: /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(outro.intervalo) ? outro.intervalo : undefined, rotulo: "Outro horário" })}>
-                Usar
-              </button>
-            </span>
-            <span className="ep-sep" aria-hidden="true" />
-            {CODIGOS.map((c) => (
-              <button key={c.codigo} className={`ep-pincel c-${c.codigo}${pincel?.codigo === c.codigo ? " on" : ""}`}
-                onClick={() => setPincel((x) => (x?.codigo === c.codigo ? null : { codigo: c.codigo, rotulo: c.nome }))} title={c.nome}>
-                <b>{c.curto}</b><span>{c.nome.replace(" (feriado)", "")}</span>
-              </button>
-            ))}
-            <button className={`ep-pincel limpar${pincel?.codigo === "" ? " on" : ""}`} onClick={() => setPincel((x) => (x?.codigo === "" ? null : { codigo: "", rotulo: "Limpar" }))}>Limpar</button>
-          </div>
+        <div className="ep-paleta ep-barra-acoes">
+          <span className="ep-paleta-rotulo">Clique num dia para escolher o que ele vira; arraste sobre vários dias para mudar todos de uma vez.</span>
           <div className="ep-acoes">
             <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>
             <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
@@ -487,7 +491,8 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       ) : null}
       {dados && pessoas.length > 0 && (
         <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir}
-          onPeriodo={setPeriodo} pintar={podeEditar && pincel ? pintar : undefined} colunasExtras={colunas}
+          onPeriodo={mudarPeriodo} pintar={podeEditar ? pintar : undefined} colunasExtras={colunas}
+          gruposVazios={gruposVazios}
           onAbrir={onAbrirPessoa} />
       )}
       {!dados && <PontoEscala modo={modo} pessoas={[]} garantir={garantir} onPeriodo={setPeriodo} />}
@@ -531,6 +536,13 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           <footer>F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
         </div>, document.body)}
 
+      {editor && (
+        <EditorDia celulas={editor.celulas} x={editor.x} y={editor.y} horarios={pinceisHorario} outro={outro} setOutro={setOutro}
+          atual={editor.celulas.length === 1 ? plano.get(editor.celulas[0].chave)?.get(editor.celulas[0].dia) : undefined}
+          nome={editor.celulas.length === 1 ? pessoas.find((p) => p.chave === editor.celulas[0].chave)?.nome ?? "" : ""}
+          onEscolher={(p) => aplicar(editor.celulas, p)} onFechar={() => setEditor(null)} />
+      )}
+
       {ajuste && <AjusteCompensacao pessoa={ajuste} onSalvar={salvarAjuste} onFechar={() => setAjuste(null)} />}
     </section>
   );
@@ -542,6 +554,75 @@ function rotuloDia(x: DiaPlano, curto: boolean) {
   if (x.codigo === "T") return x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho";
   const c = CODIGOS.find((k) => k.codigo === x.codigo);
   return curto ? c?.curto ?? x.codigo : c?.nome.replace(" (feriado)", "") ?? x.codigo;
+}
+
+// A janelinha do bloquinho: o que o dia (ou os dias escolhidos) vira
+function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar }: {
+  celulas: Celula[]; x: number; y: number; horarios: Pincel[];
+  outro: { entrada: string; saida: string; intervalo: string }; setOutro: (o: { entrada: string; saida: string; intervalo: string }) => void;
+  atual?: DiaPlano; nome: string; onEscolher: (p: Pincel) => void; onFechar: () => void;
+}) {
+  const caixa = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+  // Fica dentro da tela
+  useEffect(() => {
+    const r = caixa.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.max(8, Math.min(x - r.width / 2, window.innerWidth - r.width - 8));
+    const top = y + r.height + 16 > window.innerHeight ? Math.max(8, y - r.height - 12) : y + 12;
+    setPos({ left, top });
+  }, [x, y]);
+  useEffect(() => {
+    const fora = (e: PointerEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) onFechar(); };
+    const t = setTimeout(() => window.addEventListener("pointerdown", fora, true), 0);
+    return () => { clearTimeout(t); window.removeEventListener("pointerdown", fora, true); };
+  }, [onFechar]);
+  const dias = [...new Set(celulas.map((c) => c.dia))].sort();
+  const pessoasN = new Set(celulas.map((c) => c.chave)).size;
+  const titulo = celulas.length === 1
+    ? `${nome.split(" ")[0]} · ${SEMANA[new Date(`${dias[0]}T12:00:00Z`).getUTCDay()]} ${br(dias[0])}`
+    : `${celulas.length} dias · ${pessoasN} ${pessoasN === 1 ? "pessoa" : "pessoas"} · ${br(dias[0])}${dias.length > 1 ? ` a ${br(dias[dias.length - 1])}` : ""}`;
+  const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo;
+  const intervaloOk = /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(outro.intervalo);
+  return (
+    <div ref={caixa} className="ep-editor" role="dialog" aria-label="Escolher o que o dia vira" style={{ left: pos.left, top: pos.top }}>
+      <div className="ep-editor-cabeca"><b>{titulo}</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
+      {horarios.length > 0 && (
+        <div className="ep-editor-grupo">
+          <span>Trabalha</span>
+          <div className="ep-editor-opcoes">
+            {horarios.map((h) => (
+              <button key={`${h.entrada}${h.saida}${h.intervalo}`} className={`ep-pincel t${igual(h) ? " on" : ""}`} onClick={() => onEscolher(h)}
+                title={h.intervalo ? `Intervalo ${h.intervalo.replace("-", "–")}` : "Sem intervalo"}>{h.rotulo}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="ep-editor-grupo">
+        <span>Outro horário</span>
+        <div className="ep-outro">
+          <input type="time" value={outro.entrada} onChange={(e) => setOutro({ ...outro, entrada: e.target.value })} aria-label="Entrada" />
+          <span>–</span>
+          <input type="time" value={outro.saida} onChange={(e) => setOutro({ ...outro, saida: e.target.value })} aria-label="Saída" />
+          <input className="ep-intervalo" value={outro.intervalo} onChange={(e) => setOutro({ ...outro, intervalo: e.target.value })} placeholder="12:00-13:00" aria-label="Intervalo" title="Intervalo (início-fim)" />
+          <button className="small" onClick={() => onEscolher({ codigo: "T", entrada: outro.entrada, saida: outro.saida, intervalo: intervaloOk ? outro.intervalo : undefined, rotulo: `${outro.entrada}–${outro.saida}` })}>Usar</button>
+        </div>
+      </div>
+      <div className="ep-editor-grupo">
+        <span>Não trabalha</span>
+        <div className="ep-editor-opcoes">
+          {CODIGOS.map((c) => (
+            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })} title={c.nome}>
+              <b>{c.curto}</b><span>{c.nome.replace(" (feriado)", "")}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="ep-editor-rodape">
+        <button className="ghost small" onClick={() => onEscolher({ codigo: "", rotulo: "Limpar" })}>Deixar sem escala</button>
+      </div>
+    </div>
+  );
 }
 
 function PainelAvisos({ avisos, onIr }: { avisos: Grupo_Aviso[]; onIr: (chave: string) => void }) {

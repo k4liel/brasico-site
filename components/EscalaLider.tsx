@@ -1,35 +1,46 @@
 "use client";
 
-// Página Escala (/escala, 09/11/2026): saiu do RH e virou página própria (item do menu logo abaixo de "RH · eSocial"),
-// igual era a aba Escala do RH: no topo a troca rápida entre Ponto (RHiD) — a grade de todo mundo, com Organizar —,
-// Planejada (editável, com os avisos de lei, o PDF e o texto para o WhatsApp) e Comparar.
-// Sócios veem todos os grupos e, ao abrir, os grupos da planejada acompanham o local e o setor da grade
-// (escala_membros_sincronizar). Líderes (login de colaborador) veem só a planejada dos grupos que lideram.
-import { useCallback, useEffect, useMemo, useState } from "react";
+// Página Escala (/escala), escala única (09/11/2026, pedido do dono): uma grade só, organizada como o Ponto
+// (casas, setores, ordem, Afastados, "fora do ponto", grupos criados à mão). Nas células, a escala montada; dia sem
+// escala fica vazio. Para editar: clicar no bloquinho (ou arrastar sobre vários) e escolher na janelinha.
+// "Ver o ponto (RHiD)" mostra, nas mesmas linhas, o horário do relógio e o que foi batido — só quando ligado.
+// Sócios: "Organizar" (arrastar as linhas, a grade do Ponto), "Quem monta a escala" (líderes por casa inteira ou por
+// setores) e "Contratados sem ponto". Líderes (login de colaborador): só o que lideram, sem Organizar nem os quadros.
+// A organização do Ponto vira os grupos da escala sozinha (escala_membros_sincronizar) sempre que um sócio abre a página
+// ou organiza.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { TopoSimples } from "./Compras";
-import EscalaPlanejada, { ModosEscala } from "./EscalaPlanejada";
-import type { ModoEscala } from "./PontoEscala";
+import EscalaPlanejada from "./EscalaPlanejada";
 import { EscalaSecao } from "./Ponto";
 import { usePonto } from "./PontoDados";
 import EscalaContratados, { type Contratado } from "./EscalaContratados";
+import EscalaLideranca from "./EscalaLideranca";
 import type { ExtraEscala, ItemExtra } from "./Ponto";
 
-function useModo(padrao: ModoEscala) {
-  const [modo, setModo] = useState<ModoEscala>(padrao);
+function useVerPonto() {
+  const [ver, setVer] = useState(false);
   useEffect(() => {
-    try {
-      const m = localStorage.getItem("brasico-escala-modo");
-      if (m === "real" || m === "planejada") setModo(m);
-    } catch {}
+    try { setVer(localStorage.getItem("brasico-escala-ver-ponto") === "1"); } catch {}
   }, []);
-  function mudar(m: ModoEscala) {
-    setModo(m);
-    try { localStorage.setItem("brasico-escala-modo", m); } catch {}
+  function mudar(v: boolean) {
+    setVer(v);
+    try { localStorage.setItem("brasico-escala-ver-ponto", v ? "1" : "0"); } catch {}
   }
-  return [modo, mudar] as const;
+  return [ver, mudar] as const;
+}
+
+// Interruptor: de um lado a escala editável (o normal), do outro o ponto oficial do RHiD, atualizado a cada minuto
+function ChaveVerPonto({ ver, onMudar }: { ver: boolean; onMudar: (v: boolean) => void }) {
+  return (
+    <div className="ep-toggle">
+      <button className={!ver ? "on" : ""} onClick={() => onMudar(false)}>Escala editável</button>
+      <button role="switch" aria-checked={ver} aria-label="Ver o ponto oficial do RHiD" className={`ep-toggle-chave${ver ? " ligada" : ""}`} onClick={() => onMudar(!ver)}><i /></button>
+      <button className={ver ? "on" : ""} onClick={() => onMudar(true)}>Ponto oficial (RHiD) <small>ao vivo</small></button>
+    </div>
+  );
 }
 
 export default function EscalaLider({ userEmail }: { userEmail: string }) {
@@ -57,12 +68,12 @@ export default function EscalaLider({ userEmail }: { userEmail: string }) {
           <div>
             <span className="es-sobre">{socio ? "Recursos humanos" : "Escala da equipe"}</span>
             <h1>Escala</h1>
-            <p className="muted">Quem trabalha em cada dia, por local e setor: o que foi batido no relógio (RHiD) e a escala planejada.</p>
+            <p className="muted">Quem trabalha em cada dia, por casa e setor. Clique num dia para definir a escala.</p>
           </div>
         </div>
         {!eu ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
           : socio ? <EscalaSocio supabase={supabase} />
-          : !eu.lider ? <section className="es-bloco"><p className="muted">Você ainda não é líder de nenhum grupo da escala. Peça a um dos sócios.</p></section>
+          : !eu.lider ? <section className="es-bloco"><p className="muted">Você ainda não monta a escala de nenhuma casa. Peça a um dos sócios.</p></section>
           : <EscalaDoLider supabase={supabase} />}
       </main>
     </div>
@@ -71,19 +82,33 @@ export default function EscalaLider({ userEmail }: { userEmail: string }) {
 
 function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
   const ponto = usePonto(supabase, "todas");
-  const [modo, mudar] = useModo("real");
-  // Os grupos da planejada acompanham o local e o setor da grade (com o que foi organizado à mão)
-  const sincronizar = useMemo(() => ponto.linhas.map((l) => ({ cliente_id: l.p.cliente_id, pessoa_id: l.p.id, local: l.local, setor: l.setor })), [ponto.linhas]);
+  const [verPonto, setVerPonto] = useVerPonto();
+  const [organizando, setOrganizando] = useState(false);
+  const [recarga, setRecarga] = useState(0);
 
-  // Contratados do RH sem cadastro no relógio: lista para pôr na escala, e os já postos entram na grade do Ponto
+  // A organização do Ponto (local, setor e ordem de cada pessoa) vira os grupos da escala: ao abrir e a cada mudança
+  const chaveOrg = useMemo(() => ponto.linhas.map((l) => `${l.p.cliente_id}:${l.p.id}:${l.local}:${l.setor}:${l.posicao ?? ""}`).join("|"), [ponto.linhas]);
+  const ultimaOrg = useRef("");
+  useEffect(() => {
+    if (!ponto.carregado || !ponto.linhas.length || chaveOrg === ultimaOrg.current) return;
+    const t = setTimeout(async () => {
+      ultimaOrg.current = chaveOrg;
+      await supabase.rpc("escala_membros_sincronizar", {
+        p_itens: ponto.linhas.map((l) => ({ cliente_id: l.p.cliente_id, pessoa_id: l.p.id, local: l.local, setor: l.setor })),
+      });
+      setRecarga((n) => n + 1);
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [chaveOrg, ponto.carregado, ponto.linhas, supabase]);
+
+  // Contratados do RH sem cadastro no relógio: lista para pôr na escala; os já postos entram nas linhas
   const [contratados, setContratados] = useState<Contratado[]>([]);
-  const [versao, setVersao] = useState(0);
   const lerContratados = useCallback(async () => {
     const { data } = await supabase.rpc("escala_contratados_fora");
     setContratados((data ?? []) as Contratado[]);
   }, [supabase]);
   useEffect(() => { lerContratados(); }, [lerContratados]);
-  // Grupos criados à mão (escala_grupos.fixo), para aparecerem mesmo vazios
+  // Grupos criados à mão (escala_grupos.fixo), para aparecerem mesmo vazios no Organizar
   const [fixos, setFixos] = useState<{ local: string; setor: string }[]>([]);
   useEffect(() => {
     supabase.rpc("escala_grupos_fixos").then(({ data }) => setFixos((data ?? []) as { local: string; setor: string }[]));
@@ -109,10 +134,20 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
 
   return (
     <>
-      <ModosEscala modo={modo} onMudar={mudar} />
+      <EscalaLideranca supabase={supabase} onMudou={() => setRecarga((n) => n + 1)} />
       {ponto.carregado && <EscalaContratados supabase={supabase} lista={contratados} locais={locais}
-        onMudou={() => { lerContratados(); setVersao((v) => v + 1); }} />}
-      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos}
+        onMudou={() => { lerContratados(); setRecarga((n) => n + 1); }} />}
+      <div className="ep-topo-acoes">
+        {!organizando && <ChaveVerPonto ver={verPonto} onMudar={setVerPonto} />}
+        <div className="ep-topo-dir">
+          {organizando
+            ? <span className="muted small">Arraste as linhas; a escala de todos segue esta organização.</span>
+            : <button className="ghost small" onClick={() => setOrganizando(true)} disabled={!ponto.carregado} title="Mudar a ordem e o setor/casa das pessoas">Organizar linhas</button>}
+        </div>
+      </div>
+      {organizando ? (
+        <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos}
+          organizarFixo onPronto={() => setOrganizando(false)}
           onOrdenarExtras={async (itens: ItemExtra[]) => {
             // Na tela na hora; no banco em seguida
             setContratados((v) => v.map((c) => {
@@ -121,20 +156,24 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
             }));
             await supabase.rpc("escala_extras_ordenar", { p_itens: itens });
             lerContratados();
-            setVersao((x) => x + 1);
+            setRecarga((x) => x + 1);
           }} />
-        : !ponto.carregado ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
-        : <EscalaPlanejada key={versao} supabase={supabase} modo={modo} sincronizar={sincronizar} />}
+      ) : verPonto ? (
+        // O ponto oficial, atualizado a cada minuto, com a situação de agora de cada pessoa (só leitura)
+        <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos} somenteVer />
+      ) : (
+        <EscalaPlanejada supabase={supabase} modo="planejada" recarga={recarga} />
+      )}
     </>
   );
 }
 
 function EscalaDoLider({ supabase }: { supabase: SupabaseClient }) {
-  const [modo, mudar] = useModo("planejada");
+  const [verPonto, setVerPonto] = useVerPonto();
   return (
     <>
-      <ModosEscala modo={modo} onMudar={mudar} />
-      <EscalaPlanejada supabase={supabase} modo={modo} />
+      <div className="ep-topo-acoes"><ChaveVerPonto ver={verPonto} onMudar={setVerPonto} /></div>
+      <EscalaPlanejada supabase={supabase} modo={verPonto ? "real" : "planejada"} />
     </>
   );
 }
