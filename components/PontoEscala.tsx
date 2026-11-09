@@ -26,6 +26,8 @@ export type PessoaEscala = {
   ficha?: string;
   // Situação de hoje (bolinha ao lado do nome)
   hoje?: { texto: string; classe: string };
+  // Observação ao lado do nome, fora das células (ex.: "fora do ponto" = contratado sem relógio)
+  obs?: string;
 };
 export type ModoEscala = "real" | "planejada" | "comparar";
 export type Celula = { chave: string; dia: string };
@@ -644,7 +646,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
             className={`pe-pessoa${organizar ? " organizando" : ""}${levando === p.chave ? " levando" : ""}${soltarEm && "chave" in soltarEm && soltarEm.chave === p.chave ? ` soltar-${soltarEm.lado}` : ""}`}>
             <th className="pe-nome" scope="row" onPointerDown={organizar ? (e) => pegar(e, p) : undefined}
               title={organizar ? "Segure e arraste para mudar de lugar"
-                : [p.nome, p.cargo, p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : "", ...meus.map((a) => `⚠ ${a.titulo}: ${a.texto}`)].filter(Boolean).join("\n")}>
+                : [p.nome, p.cargo, p.obs ? `Observação: ${p.obs}` : "", p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : "", ...meus.map((a) => `⚠ ${a.titulo}: ${a.texto}`)].filter(Boolean).join("\n")}>
               {organizar ? (
                 <button className="pe-pega" aria-label={`Mover ${p.nome}: use as setas para cima e para baixo`}
                   onKeyDown={(e) => {
@@ -660,7 +662,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
                 ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.ficha ?? p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>
                 : <span className="esc-pessoa">{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</span>}
               {meus.length > 0 && <b className={`pe-avisos-n${erros ? " erro" : ""}`} aria-label={`${meus.length} avisos`}>{meus.length}</b>}
-              {p.cargo && <small className="pe-cargo">{p.cargo}</small>}
+              {(p.cargo || p.obs) && <small className="pe-cargo">{p.obs && <em className="pe-obs">{p.obs}</em>}{p.cargo}</small>}
             </th>
             {dias.map((d, i) => {
               const t = ts[i];

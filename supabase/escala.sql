@@ -124,7 +124,7 @@ grant execute on function public.escala_eh_lider(uuid) to authenticated;
 create or replace function public.escala_dados(p_de date, p_ate date)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare v_socio boolean := public.rhid_pode_ver(auth.uid()); v_grupos uuid[] := public.escala_grupos_do(auth.uid());
-  v_inicio date := '2026-11-01';
+  v_inicio date := '2026-11-01'; v_hoje date := (now() at time zone 'America/Fortaleza')::date;
 begin
   if not v_socio and cardinality(v_grupos) = 0 then raise exception 'Sem acesso à escala' using errcode = '42501'; end if;
   if p_ate < p_de or p_ate - p_de > 75 then raise exception 'Período inválido (até 75 dias).'; end if;
@@ -134,6 +134,11 @@ begin
       join public.rhid_pessoas p on p.cliente_id = m.cliente_id and p.id = m.pessoa_id and p.situacao = 1 and p.presente
       where m.grupo_id = any(v_grupos)
         and not exists (select 1 from public.rhid_escala_ordem f where f.cliente_id = m.cliente_id and f.pessoa_id = m.pessoa_id and f.fora_da_escala is not null)
+      union all
+      -- Contratados fora do ponto (escala_extras): cliente_id = 0
+      select m.cliente_id, m.pessoa_id, m.grupo_id from public.escala_membros m
+      join public.escala_extras e on m.cliente_id = 0 and e.id = m.pessoa_id and e.situacao = 'na_escala'
+      where m.grupo_id = any(v_grupos)
     )
     select jsonb_build_object(
       'socio', v_socio,
@@ -142,11 +147,12 @@ begin
                       from public.escala_lideres l join public.operacao_pessoas o on o.id = l.pessoa_id where l.grupo_id = g.id and l.arquivado_em is null and o.ativo))
           order by g.local, g.setor), '[]')
         from public.escala_grupos g where g.id = any(v_grupos)),
-      'pessoas', (select coalesce(jsonb_agg(jsonb_build_object(
+      'pessoas', (select coalesce(jsonb_agg(x.j order by x.nome), '[]') from (
+        select p.nome, jsonb_build_object(
           'cliente_id', p.cliente_id, 'id', p.id, 'nome', p.nome, 'grupo_id', m.grupo_id,
           'cargo', coalesce(c.nome, ''), 'admissao', p.admissao, 'posicao', o.posicao,
           'saldo_banco', (select d.saldo_banco from public.rhid_dias d where d.cliente_id = p.cliente_id and d.pessoa_id = p.id
-                          and d.dia <= (now() at time zone 'America/Fortaleza')::date and d.saldo_banco is not null order by d.dia desc limit 1),
+                          and d.dia <= v_hoje and d.saldo_banco is not null order by d.dia desc limit 1),
           'comp_creditos', (select count(*) from public.rhid_dias d where d.cliente_id = p.cliente_id and d.pessoa_id = p.id
                             and d.feriado and d.dia >= v_inicio and jsonb_array_length(d.batidas) > 0),
           'comp_debitos', (select count(*) from public.escala_planejada e where e.cliente_id = p.cliente_id and e.pessoa_id = p.id
@@ -156,15 +162,24 @@ begin
           'afastado', (select coalesce(jt.nome, j.texto, 'Afastado') from public.rhid_justificativas j
                        left join public.rhid_justificativa_tipos jt on jt.cliente_id = j.cliente_id and jt.id = j.tipo_id
                        where j.cliente_id = p.cliente_id and j.pessoa_id = p.id and coalesce(j.aprovacao, 2) = 2
-                         and (j.inicio at time zone 'America/Fortaleza')::date <= (now() at time zone 'America/Fortaleza')::date
-                         and (j.fim at time zone 'America/Fortaleza')::date >= (now() at time zone 'America/Fortaleza')::date
+                         and (j.inicio at time zone 'America/Fortaleza')::date <= v_hoje
+                         and (j.fim at time zone 'America/Fortaleza')::date >= v_hoje
                          and public.rhid_tipo_afasta(coalesce(jt.nome, j.texto))
-                       order by j.inicio desc limit 1)
-        ) order by p.nome), '[]')
+                       order by j.inicio desc limit 1)) j
         from membros m
         join public.rhid_pessoas p on p.cliente_id = m.cliente_id and p.id = m.pessoa_id
         left join public.rhid_cargos c on c.cliente_id = p.cliente_id and c.id = p.cargo_id
-        left join public.rhid_escala_ordem o on o.cliente_id = p.cliente_id and o.pessoa_id = p.id),
+        left join public.rhid_escala_ordem o on o.cliente_id = p.cliente_id and o.pessoa_id = p.id
+        where m.cliente_id <> 0
+        union all
+        select e.nome, jsonb_build_object(
+          'cliente_id', 0, 'id', e.id, 'nome', e.nome, 'grupo_id', m.grupo_id, 'cargo', e.cargo, 'posicao', null, 'saldo_banco', null,
+          'comp_creditos', 0,
+          'comp_debitos', (select count(*) from public.escala_planejada x where x.cliente_id = 0 and x.pessoa_id = e.id and x.codigo = 'FC' and x.dia >= v_inicio),
+          'comp_ajuste', (select coalesce(sum(a.dias), 0) from public.escala_compensacoes_ajustes a where a.cliente_id = 0 and a.pessoa_id = e.id),
+          'afastado', null, 'fora_do_ponto', true)
+        from membros m join public.escala_extras e on m.cliente_id = 0 and e.id = m.pessoa_id
+      ) x),
       'real', (select coalesce(jsonb_agg(jsonb_build_object('cliente_id', d.cliente_id, 'pessoa_id', d.pessoa_id, 'dia', d.dia,
           'horario', d.horario, 'folga', d.folga, 'feriado', d.feriado, 'falta', d.falta, 'justificado', d.justificado,
           'minutos_trabalhados', d.minutos_trabalhados, 'minutos_atraso', d.minutos_atraso, 'alerta', d.alerta,

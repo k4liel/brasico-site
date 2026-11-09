@@ -5,7 +5,7 @@
 // Planejada (editável, com os avisos de lei, o PDF e o texto para o WhatsApp) e Comparar.
 // Sócios veem todos os grupos e, ao abrir, os grupos da planejada acompanham o local e o setor da grade
 // (escala_membros_sincronizar). Líderes (login de colaborador) veem só a planejada dos grupos que lideram.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
@@ -14,6 +14,8 @@ import EscalaPlanejada, { ModosEscala } from "./EscalaPlanejada";
 import type { ModoEscala } from "./PontoEscala";
 import { EscalaSecao } from "./Ponto";
 import { usePonto } from "./PontoDados";
+import EscalaContratados, { type Contratado } from "./EscalaContratados";
+import type { PessoaEscala } from "./PontoEscala";
 
 function useModo(padrao: ModoEscala) {
   const [modo, setModo] = useState<ModoEscala>(padrao);
@@ -72,12 +74,37 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
   const [modo, mudar] = useModo("real");
   // Os grupos da planejada acompanham o local e o setor da grade (com o que foi organizado à mão)
   const sincronizar = useMemo(() => ponto.linhas.map((l) => ({ cliente_id: l.p.cliente_id, pessoa_id: l.p.id, local: l.local, setor: l.setor })), [ponto.linhas]);
+
+  // Contratados do RH sem cadastro no relógio: lista para pôr na escala, e os já postos entram na grade do Ponto
+  const [contratados, setContratados] = useState<Contratado[]>([]);
+  const [versao, setVersao] = useState(0);
+  const lerContratados = useCallback(async () => {
+    const { data } = await supabase.rpc("escala_contratados_fora");
+    setContratados((data ?? []) as Contratado[]);
+  }, [supabase]);
+  useEffect(() => { lerContratados(); }, [lerContratados]);
+  const locais = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    for (const l of ponto.linhas) {
+      const nome = l.local || "Sem local";
+      if (!m.has(nome)) m.set(nome, new Set());
+      if (l.setor) m.get(nome)!.add(l.setor);
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([local, s]) => ({ local, setores: [...s].sort() }));
+  }, [ponto.linhas]);
+  const extras = useMemo(() => contratados.filter((c) => c.situacao === "na_escala" && c.extra_id).map<PessoaEscala>((c) => ({
+    chave: `0:${c.extra_id}`, nome: c.nome.toLowerCase().replace(/(^|\s)\p{L}/gu, (x) => x.toUpperCase()), cargo: c.cargo,
+    local: c.local ?? "", setor: c.setor ?? "", dias: new Map(), obs: "fora do ponto",
+  })), [contratados]);
+
   return (
     <>
       <ModosEscala modo={modo} onMudar={mudar} />
-      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} />
+      {ponto.carregado && <EscalaContratados supabase={supabase} lista={contratados} locais={locais}
+        onMudou={() => { lerContratados(); setVersao((v) => v + 1); }} />}
+      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} />
         : !ponto.carregado ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
-        : <EscalaPlanejada supabase={supabase} modo={modo} sincronizar={sincronizar} />}
+        : <EscalaPlanejada key={versao} supabase={supabase} modo={modo} sincronizar={sincronizar} />}
     </>
   );
 }

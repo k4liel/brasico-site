@@ -2423,6 +2423,34 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-enviar { display: inline-flex; gap: 4px; padding-left: 8px; border-left: 1px solid var(--border); }
 .ep-casa .ep-modos { margin-top: 4px; }
 .ep-impressao { display: none; }
+/* Contratados sem ponto (09/11/2026): lista para pôr na escala e o aviso "fora do ponto" ao lado do nome */
+.pe-obs { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
+.ep-contratados { margin: 0 0 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.ep-contratados.aberto { border-color: color-mix(in srgb, var(--gold) 50%, var(--border)); }
+.ep-contratados-cabeca { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; width: 100%; padding: 12px 16px; font-size: 14px; }
+.ep-contratados-cabeca:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 14px; }
+.ep-contratados-n { display: inline-grid; place-items: center; min-width: 22px; height: 20px; margin: 0 4px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 12px; font-weight: 700; background: var(--gold); color: var(--bg); }
+.ep-contratados-corpo { padding: 0 16px 16px; display: grid; gap: 12px; }
+.ep-contratados-tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ep-contratados-tabela th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.ep-contratados-tabela td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ep-contratados-tabela td small { display: block; color: var(--muted); font-size: 12px; }
+.ep-contratados-tabela select { width: 100%; min-width: 130px; }
+.ep-contratados-acoes { white-space: nowrap; text-align: right; }
+.ep-contratados-acoes button + button { margin-left: 6px; }
+.ep-contratados-lista { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ep-contratados-chip { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; }
+.ep-contratados-chip small { color: var(--muted); font-size: 11.5px; }
+.ep-contratados-chip button { all: unset; cursor: pointer; padding: 0 7px; border-radius: 999px; color: var(--muted); }
+.ep-contratados-chip button:hover { background: var(--hover-bg); color: var(--strong); }
+.ep-contratados-chip.apagado { opacity: .7; }
+@media (max-width: 760px) {
+  .ep-contratados-tabela thead { display: none; }
+  .ep-contratados-tabela tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .ep-contratados-tabela td { border: 0; padding: 0; }
+  .ep-contratados-tabela td:first-child, .ep-contratados-tabela td:nth-child(2), .ep-contratados-acoes { grid-column: 1 / -1; text-align: left; }
+}
 /* Área "Afastados" no fim de cada local (09/11/2026) */
 .pe-grade tr.pe-grupo.pe-afastados th.pe-nome { color: var(--muted); padding-top: 18px; }
 .pe-grade tr.pe-grupo.pe-afastados > * { border-top: 1px dashed var(--border); }

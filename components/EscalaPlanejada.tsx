@@ -20,6 +20,8 @@ type PessoaDado = {
   comp_creditos: number; comp_debitos: number; comp_ajuste: number;
   // Afastado hoje (tipo da justificativa do RHiD): vai para a área "Afastados" no fim do local
   afastado?: string | null;
+  // Contratado do RH sem cadastro no relógio (escala_extras, cliente_id = 0)
+  fora_do_ponto?: boolean;
 };
 type RealDia = DiaEscala & { cliente_id: number; pessoa_id: number };
 type PlanoDia = DiaPlano & { cliente_id: number; pessoa_id: number; dia: string };
@@ -183,6 +185,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       chave: chaveDe(p.cliente_id, p.id), nome: nomeProprio(p.nome), cargo: p.cargo ? nomeProprio(p.cargo) : "",
       local: g?.local ?? "", setor: p.afastado ? AFASTADOS : g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
       hoje: p.afastado ? { texto: `Afastado (${p.afastado})`, classe: "afastado" } : undefined,
+      obs: p.fora_do_ponto ? "fora do ponto" : undefined,
     };
   });
 
