@@ -6,11 +6,13 @@
 // pessoas. Cada mudança grava na hora (escala_gravar), pode ser desfeita, e é conferida com a lei
 // (lib/escala/regras.ts): o que sai do padrão aparece na hora num aviso, no dia, no nome e no painel de avisos.
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); o mês começa copiado do RHiD.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import PontoEscala, { type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
+import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
+import { createPortal } from "react-dom";
 
 type Grupo = { id: string; nome: string; local: string; setor: string; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
 type PessoaDado = {
@@ -69,8 +71,10 @@ export function ModosEscala({ modo, onMudar, avisos }: { modo: ModoEscala; onMud
   );
 }
 
-export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPessoa, cabecalho }: {
+export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onAbrirPessoa, cabecalho }: {
   supabase: SupabaseClient; modo: ModoEscala;
+  // Só os grupos desta casa (lib/escala/casas.ts); sem casa = todos os grupos de quem está vendo
+  casa?: string;
   // Página do RH (sócio): o local e o setor de cada pessoa, para os grupos acompanharem a escala do RH
   sincronizar?: { cliente_id: number; pessoa_id: number; local: string; setor: string }[];
   onAbrirPessoa?: (chave: string) => void; cabecalho?: ReactNode;
@@ -136,9 +140,10 @@ export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPe
   }, [supabase, ler]);
 
   // ---------- Montagem ----------
-  const grupos = dados?.grupos ?? [];
+  const grupos = useMemo(() => (dados?.grupos ?? []).filter((g) => !casa || casaDoLocal(g.local) === casa), [dados?.grupos, casa]);
   const grupoDe = useMemo(() => new Map(grupos.map((g) => [g.id, g])), [grupos]);
-  const vistas = (dados?.pessoas ?? []).filter((p) => !grupo || p.grupo_id === grupo)
+  const daCasa = (dados?.pessoas ?? []).filter((p) => grupoDe.has(p.grupo_id));
+  const vistas = daCasa.filter((p) => !grupo || p.grupo_id === grupo)
     .slice().sort((a, b) => (a.posicao ?? 1e6) - (b.posicao ?? 1e6) || a.nome.localeCompare(b.nome));
   const realDe = useMemo(() => {
     const m = new Map<string, Map<string, DiaEscala>>();
@@ -338,6 +343,49 @@ export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPe
     valor: (p) => { const h = horasPlanejadas(p.chave); return h ? horasTxt(h) : <span className="muted">—</span>; },
   });
 
+  // ---------- Mandar para a equipe ----------
+  const tituloEnvio = grupo && grupoDe.get(grupo) ? grupoDe.get(grupo)!.nome : casaPorId(casa ?? "")?.nome ?? "Escala";
+  const faixa = periodo.length ? `${br(periodo[0])} a ${br(periodo[periodo.length - 1])}` : "";
+  async function copiarWhatsApp() {
+    const linhas = [`*Escala · ${tituloEnvio}*`, faixa, ""];
+    for (const d of periodo) {
+      const porRotulo = new Map<string, string[]>();
+      for (const p of pessoas) {
+        const x = plano.get(p.chave)?.get(d);
+        if (!x?.codigo) continue;
+        const r = rotuloDia(x, false);
+        porRotulo.set(r, [...(porRotulo.get(r) ?? []), p.nome.split(" ")[0] + (p.nome.split(" ").length > 1 ? ` ${p.nome.split(" ").slice(-1)[0][0]}.` : "")]);
+      }
+      if (!porRotulo.size) continue;
+      linhas.push(`*${SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]} ${br(d)}*${feriados.has(d) ? " (feriado)" : ""}`);
+      const ordem = [...porRotulo.entries()].sort((a, b) => (/^\d/.test(a[0]) ? 0 : 1) - (/^\d/.test(b[0]) ? 0 : 1) || a[0].localeCompare(b[0]));
+      for (const [r, nomes] of ordem) linhas.push(`${/^\d/.test(r) ? r : `${r}:`} ${nomes.join(", ")}`);
+      linhas.push("");
+    }
+    if (linhas.length <= 3) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
+    try {
+      await navigator.clipboard.writeText(linhas.join("\n").trim());
+      avisar({ nivel: "ok", texto: "Escala copiada: cole na conversa do WhatsApp" });
+    } catch {
+      avisar({ nivel: "erro", texto: "O navegador não deixou copiar. Use o Baixar PDF." });
+    }
+  }
+  const [imprimindo, setImprimindo] = useState(false);
+  function baixarPdf() {
+    if (!planejadosTela) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
+    setImprimindo(true);
+  }
+  useEffect(() => {
+    if (!imprimindo) return;
+    const antes = document.title;
+    const fim = () => { document.title = antes; document.body.classList.remove("ep-imprimindo"); setImprimindo(false); };
+    window.addEventListener("afterprint", fim, { once: true });
+    document.body.classList.add("ep-imprimindo");
+    document.title = `Escala ${tituloEnvio} ${faixa}`.replace(/\//g, "-");
+    const t = setTimeout(() => window.print(), 300);
+    return () => clearTimeout(t);
+  }, [imprimindo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (erro && !dados) return <section className="es-bloco"><p className="tv-alerta">{erro}</p></section>;
   const podeEditar = modo !== "real";
   const semEscala = !!dados && modo !== "real" && periodo.length > 0 && planejadosTela === 0 && pessoas.length > 0;
@@ -349,7 +397,7 @@ export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPe
 
       {grupos.length > 1 && (
         <div className="ep-grupos" role="group" aria-label="Grupo da escala">
-          <button className={grupo === SEM_GRUPO ? "on" : ""} onClick={() => setGrupo(SEM_GRUPO)}>Todos os grupos <span>{dados?.pessoas.length}</span></button>
+          <button className={grupo === SEM_GRUPO ? "on" : ""} onClick={() => setGrupo(SEM_GRUPO)}>Todos os grupos <span>{daCasa.length}</span></button>
           {grupos.map((g) => (
             <button key={g.id} className={grupo === g.id ? "on" : ""} onClick={() => setGrupo(g.id)}
               title={g.lideres.length ? `Líder: ${g.lideres.map((l) => l.nome).join(", ")}` : "Sem líder"}>
@@ -392,6 +440,10 @@ export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPe
           </div>
           <div className="ep-acoes">
             <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>
+            <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
+              <button className="ghost small" onClick={baixarPdf} title="Gera o PDF do período da tela para mandar no grupo">Baixar PDF</button>
+              <button className="ghost small" onClick={copiarWhatsApp} title="Copia a escala em texto, dia a dia, para colar no WhatsApp">Copiar p/ WhatsApp</button>
+            </span>
             <button className={`ep-avisos-botao${erros.length ? " erro" : atencoes.length ? " aviso" : " ok"}`} onClick={() => setVerAvisos((v) => !v)} aria-expanded={verAvisos}>
               {erros.length + atencoes.length ? <><b>{erros.length}</b> fora da lei · <b>{atencoes.length}</b> atenção</> : "✓ Dentro da lei"}
             </button>
@@ -416,7 +468,7 @@ export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPe
       )}
 
       {!dados ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div> : pessoas.length === 0 ? (
-        <p className="muted tv-nada">{dados.socio ? "Ninguém nos grupos ainda. Abra a escala do Ponto (RHiD) uma vez para montar os grupos." : "Nenhuma pessoa no seu grupo."}</p>
+        <p className="muted tv-nada">{dados.socio ? "Ninguém desta casa nos grupos da escala ainda. Os grupos seguem a escala do RH (local e setor de cada pessoa): abra RH › Escala uma vez para montá-los." : "Nenhuma pessoa no seu grupo."}</p>
       ) : null}
       {dados && pessoas.length > 0 && (
         <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir}
@@ -438,9 +490,43 @@ export default function EscalaPlanejada({ supabase, modo, sincronizar, onAbrirPe
         ))}
       </div>
 
+      {imprimindo && createPortal(
+        <div className="ep-impressao">
+          <style>{"@page { size: A4 landscape; margin: 9mm; }"}</style>
+          <header><b>Escala · {tituloEnvio}</b><span>{faixa}</span></header>
+          <table>
+            <thead>
+              <tr><th>Nome</th>{periodo.map((d) => <th key={d} className={feriados.has(d) ? "fer" : ""}>{SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]}<br />{br(d)}</th>)}</tr>
+            </thead>
+            <tbody>
+              {pessoas.map((p, i) => (
+                <Fragment key={p.chave}>
+                  {!grupo && (i === 0 || pessoas[i - 1].setor !== p.setor) && <tr key={`s${p.chave}`} className="setor"><td colSpan={periodo.length + 1}>{p.setor || p.local}</td></tr>}
+                  <tr key={p.chave}>
+                    <td className="nome">{p.nome}</td>
+                    {periodo.map((d) => {
+                      const x = plano.get(p.chave)?.get(d);
+                      return <td key={d} className={x?.codigo && x.codigo !== "T" ? `c-${x.codigo}` : ""}>{x?.codigo ? rotuloDia(x, true) : ""}</td>;
+                    })}
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+          <footer>F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
+        </div>, document.body)}
+
       {ajuste && <AjusteCompensacao pessoa={ajuste} onSalvar={salvarAjuste} onFechar={() => setAjuste(null)} />}
     </section>
   );
+}
+
+const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+// O dia em texto: horário (07:00–15:20) ou o nome do código (Folga, Férias…); curto = a sigla, para a tabela
+function rotuloDia(x: DiaPlano, curto: boolean) {
+  if (x.codigo === "T") return x.entrada && x.saida ? `${x.entrada}–${x.saida}` : "Trabalho";
+  const c = CODIGOS.find((k) => k.codigo === x.codigo);
+  return curto ? c?.curto ?? x.codigo : c?.nome.replace(" (feriado)", "") ?? x.codigo;
 }
 
 function PainelAvisos({ avisos, onIr }: { avisos: Grupo_Aviso[]; onIr: (chave: string) => void }) {

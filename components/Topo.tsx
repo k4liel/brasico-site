@@ -11,6 +11,11 @@ const HOTEIS = [
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
   { id: "filho-do-vento", nome: "Filho do Vento", icone: <path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h7" /> },
 ];
+// As outras casas no mesmo grupo do menu: por enquanto, só a escala de cada uma (/escala/<id>, lib/escala/casas.ts)
+const CASAS_MENU = [
+  { id: "cicchetti-centro", nome: "Cicchetti Centro", icone: <><path d="M4 11h16a8 8 0 0 1-16 0Z" /><path d="M8 7c0-1.5 1-2 1-3.5M12 7c0-1.5 1-2 1-3.5M16 7c0-1.5 1-2 1-3.5M6 21h12" /></> },
+  { id: "outras-casas", nome: "Outras casas", icone: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></> },
+];
 
 export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
@@ -137,6 +142,12 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}>
             {HOTEIS.map((h) => (
               <a key={h.id} className={ativo === `hotel:${h.id}` ? "ativo" : ""} href={`/hoteis/${h.id}`} tabIndex={aberto && hotAberta ? 0 : -1}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{h.icone}</svg>
+                {h.nome}
+              </a>
+            ))}
+            {CASAS_MENU.map((h) => (
+              <a key={h.id} className={ativo === `hotel:${h.id}` ? "ativo" : ""} href={`/escala/${h.id}`} tabIndex={aberto && hotAberta ? 0 : -1}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{h.icone}</svg>
                 {h.nome}
               </a>
