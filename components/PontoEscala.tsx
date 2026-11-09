@@ -142,11 +142,20 @@ const locaisDe = (ps: PessoaEscala[]) => [...new Set(ps.map(localDe))].sort((a, 
 // Área "Afastados" no fim de cada local (férias, atestado, licença hoje): quem monta a lista põe esse setor
 export const AFASTADOS = "Afastados";
 const pesoSetor = (s: string) => (s === AFASTADOS ? 2 : s === "" ? 1 : 0);
-const setoresDe = (ps: PessoaEscala[]) => [...new Set(ps.map((p) => p.setor))].sort((a, b) => pesoSetor(a) - pesoSetor(b) || a.localeCompare(b));
-export function ordemDaGrade(ps: PessoaEscala[]) {
+// Ordem dos setores escolhida à mão (escala_setores_ordem, chave "casa|setor"); sem ela, ordem alfabética
+export type OrdemSetores = Map<string, number>;
+const setoresDe = (ps: PessoaEscala[], ordem?: OrdemSetores) => {
+  const local = ps[0]?.local ?? "";
+  const pos = (x: string) => ordem?.get(`${local}|${x}`) ?? 1e6;
+  return [...new Set(ps.map((p) => p.setor))].sort((a, b) => pesoSetor(a) - pesoSetor(b) || pos(a) - pos(b) || a.localeCompare(b));
+};
+// Os setores de uma casa na ordem da grade (sem a área Afastados), para subir e descer
+export const setoresDaCasa = (ps: PessoaEscala[], local: string, ordem?: OrdemSetores) =>
+  setoresDe(ps.filter((p) => localDe(p) === (local || SEM_LOCAL)), ordem).filter((x) => x !== AFASTADOS);
+export function ordemDaGrade(ps: PessoaEscala[], ordem?: OrdemSetores) {
   return locaisDe(ps).flatMap((l) => {
     const doLocal = ps.filter((p) => localDe(p) === l);
-    return setoresDe(doLocal).flatMap((s) => doLocal.filter((p) => p.setor === s));
+    return setoresDe(doLocal, ordem).flatMap((s) => doLocal.filter((p) => p.setor === s));
   });
 }
 // Origem "O" = batida original do relógio; "I" = incluída/alterada no RHiD (justificativa, ajuste do gestor)
@@ -198,8 +207,10 @@ function gravarLocal(k: string, v: string) {
 
 export default function PontoEscala({
   pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar,
-  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo, gruposVazios = [], extraLocal, extraSetor,
+  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo, gruposVazios = [], extraLocal, extraSetor, ordemSetores, onMoverSetor,
 }: {
+  // Ordem dos setores de cada casa e, no Organizar, subir/descer um setor
+  ordemSetores?: OrdemSetores; onMoverSetor?: (local: string, setor: string, direcao: -1 | 1) => void;
   // Algo a mais no cabeçalho da casa e do setor (ex.: os líderes que montam a escala)
   extraLocal?: (local: string) => ReactNode; extraSetor?: (local: string, setor: string) => ReactNode;
   // Grupos criados à mão (escala_grupos.fixo) ainda sem ninguém: aparecem vazios para receber gente no Organizar
@@ -219,6 +230,14 @@ export default function PontoEscala({
   const [visao, setVisao] = useState<Visao>("quinzena");
   const [ref, setRef] = useState(agora);
   const [fechados, setFechados] = useState<Set<string>>(new Set());
+  // Setores fechados (como as casas): chave "casa|setor"
+  const [setoresFechados, setSetoresFechados] = useState<Set<string>>(new Set());
+  const alternarSetor = (k: string) => setSetoresFechados((s) => {
+    const n = new Set(s);
+    if (n.has(k)) n.delete(k);
+    else n.add(k);
+    return n;
+  });
   const [dica, setDica] = useState<Dica | null>(null);
   const ativo = useRef<HTMLElement | null>(null);
   const quadro = useRef<HTMLDivElement | null>(null);
@@ -304,7 +323,7 @@ export default function PontoEscala({
   }
 
   // Linhas visíveis, na ordem da tela (para o retângulo de pintar)
-  const visiveis = ordemDaGrade(pessoas).filter((p) => organizar || !fechados.has(localDe(p))).map((p) => p.chave);
+  const visiveis = ordemDaGrade(pessoas, ordemSetores).filter((p) => organizar || (!fechados.has(localDe(p)) && !setoresFechados.has(`${p.local}|${p.setor}`))).map((p) => p.chave);
   const linhaDe = new Map(visiveis.map((k, i) => [k, i]));
   const selecionada = (k: string, i: number) => {
     if (!selecao) return false;
@@ -510,8 +529,8 @@ export default function PontoEscala({
             const porDia = contar(doLocal);
             return (
               <tbody key={local} className={fechado ? "fechado" : ""}>
-                <tr className={`pe-local${soltarEm && !("chave" in soltarEm) && soltarEm.local === doLocal[0].local && soltarEm.setor === setoresDe(doLocal)[0] ? " soltar-grupo" : ""}`}
-                  data-grupo="" data-local={doLocal[0].local} data-setor={setoresDe(doLocal)[0]}>
+                <tr className={`pe-local${soltarEm && !("chave" in soltarEm) && soltarEm.local === doLocal[0].local && soltarEm.setor === setoresDe(doLocal, ordemSetores)[0] ? " soltar-grupo" : ""}`}
+                  data-grupo="" data-local={doLocal[0].local} data-setor={setoresDe(doLocal, ordemSetores)[0]}>
                   <th className="pe-nome" scope="rowgroup">
                     <button onClick={() => alternar(local)} aria-expanded={!fechado}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={fechado ? "M9 6l6 6-6 6" : "M6 9l6 6 6-6"} /></svg>
@@ -525,10 +544,12 @@ export default function PontoEscala({
                   <td className="pe-tot" /><td className="pe-tot" />
                   {colunasExtras.map((c) => <td key={c.titulo} className="pe-tot" />)}
                 </tr>
-                {!fechado && setoresDe(doLocal).map((setor) => {
+                {!fechado && setoresDe(doLocal, ordemSetores).map((setor) => {
                   const ps = doLocal.filter((p) => p.setor === setor);
                   return (
-                    <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(doLocal).length > 1 || !!setor}
+                    <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(doLocal, ordemSetores).length > 1 || !!setor}
+                      fechado={!organizar && setoresFechados.has(`${doLocal[0].local}|${setor}`)} onAlternar={() => alternarSetor(`${doLocal[0].local}|${setor}`)}
+                      onMoverSetor={organizar && onMoverSetor && setor !== AFASTADOS ? (d) => onMoverSetor(doLocal[0].local, setor, d) : undefined}
                       pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar}
                       organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave}
                       modo={modo} avisoDia={avisoDia} avisos={avisos} pintando={!!pintar} comecarPintura={comecarPintura}
@@ -536,7 +557,7 @@ export default function PontoEscala({
                       extra={extraSetor && setor !== AFASTADOS && setor ? extraSetor(doLocal[0].local, setor) : null} />
                   );
                 })}
-                {!fechado && gruposVazios.filter((g) => (g.local || "Sem local") === local && !setoresDe(doLocal).includes(g.setor)).map((g) => {
+                {!fechado && gruposVazios.filter((g) => (g.local || "Sem local") === local && !setoresDe(doLocal, ordemSetores).includes(g.setor)).map((g) => {
                   const alvo = !!soltarEm && !("chave" in soltarEm) && soltarEm.local === g.local && soltarEm.setor === g.setor;
                   return (
                     <tr key={`vazio-${g.setor}`} className={`pe-grupo pe-vazio${alvo ? " soltar-grupo" : ""}`} data-grupo="" data-local={g.local} data-setor={g.setor}>
@@ -636,8 +657,8 @@ export default function PontoEscala({
 }
 
 function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, pegar, soltarEm, levando,
-  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados, extra }: {
-  extra?: ReactNode;
+  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados, extra, fechado = false, onAlternar, onMoverSetor }: {
+  extra?: ReactNode; fechado?: boolean; onAlternar?: () => void; onMoverSetor?: (direcao: -1 | 1) => void;
   setor: string; mostrarSetor: boolean; pessoas: PessoaEscala[]; dias: string[]; agora: string; visao: Visao; turnosDe: Map<string, Turno[]>;
   onAbrir?: (chave: string) => void; colunas: number; mostrar: (td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) => void;
   organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; pegar: (e: React.PointerEvent, p: PessoaEscala) => void;
@@ -651,10 +672,22 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
     <>
       {mostrarSetor && (
         <tr className={`pe-grupo${grupoAlvo ? " soltar-grupo" : ""}${setor === AFASTADOS ? " pe-afastados" : ""}`} data-grupo="" data-local={pessoas[0]?.local} data-setor={pessoas[0]?.setor}>
-          <th className="pe-nome" colSpan={1}>{setor} <span>{pessoas.length}</span>{extra}</th><td colSpan={colunas - 1} />
+          <th className="pe-nome" colSpan={1}>
+            <button type="button" className="pe-setor-botao" onClick={onAlternar} aria-expanded={!fechado} title={fechado ? "Abrir o setor" : "Fechar o setor"}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={fechado ? "M9 6l6 6-6 6" : "M6 9l6 6 6-6"} /></svg>
+              {setor} <span>{pessoas.length}</span>
+            </button>
+            {extra}
+            {onMoverSetor && (
+              <span className="pe-setor-mover">
+                <button type="button" onClick={() => onMoverSetor(-1)} aria-label={`Subir o setor ${setor}`} title="Subir o setor">▲</button>
+                <button type="button" onClick={() => onMoverSetor(1)} aria-label={`Descer o setor ${setor}`} title="Descer o setor">▼</button>
+              </span>
+            )}
+          </th><td colSpan={colunas - 1} />
         </tr>
       )}
-      {pessoas.map((p) => {
+      {!fechado && pessoas.map((p) => {
         const ts = turnosDe.get(p.chave)!;
         const trab = ts.filter((t) => t.trabalha).length;
         const folgas = ts.filter((t) => t.tipo === "folga" || t.codigo === "FC" || t.codigo === "BH").length;

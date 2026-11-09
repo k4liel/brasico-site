@@ -6,7 +6,7 @@
 // (justificativas) e Folha e governo (ponto × eSocial e relógios). Só leitura.
 import { useState, type ReactNode } from "react";
 import { cpfVisivel, dataBR, somarDias } from "@/lib/esocial/rh";
-import PontoEscala, { AFASTADOS, ordemDaGrade, type Alvo, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { AFASTADOS, ordemDaGrade, setoresDaCasa, type Alvo, type OrdemSetores, type PessoaEscala } from "./PontoEscala";
 import {
   ESTADOS, chave, diaFortaleza, horaCurta, horas, iniciais, nomeProprio,
   type Estado, type ItemOrdem, type LinhaPonto, type Ponto,
@@ -38,7 +38,9 @@ const atualizadoEm = (p: Ponto) => (p.lendo ? "Lendo o RHiD…" : p.ultima ? `at
 export type ExtraEscala = PessoaEscala & { extraId: number; posicao: number | null };
 export type ItemExtra = { id: number; posicao: number; local?: string; setor?: string };
 
-export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras, organizarFixo, onPronto, somenteVer, apelidos }: {
+export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras, organizarFixo, onPronto, somenteVer, apelidos, ordemSetores, onOrdenarSetores }: {
+  // Ordem dos setores de cada casa (escala_setores_ordem) e gravar a ordem nova (Organizar: ▲▼ no setor)
+  ordemSetores?: OrdemSetores; onOrdenarSetores?: (local: string, setores: string[]) => void;
   // Apelidos da escala (escala_apelidos), pela chave da linha ("cliente:pessoa")
   apelidos?: Map<string, string>;
   // Página Escala: abre já organizando e o "Pronto" volta para a escala
@@ -89,7 +91,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
   // Renumera só os grupos que mudaram e grava; quem trocou de grupo guarda o grupo novo.
   const grupoDe = (x: PessoaEscala) => `${x.local || "Sem local"}|${x.setor}`;
   function soltar(k: string, alvo: Alvo) {
-    const lista = ordemDaGrade(pessoas);
+    const lista = ordemDaGrade(pessoas, ordemSetores);
     const eu = lista.find((x) => x.chave === k);
     if (!eu) return;
     const resto = lista.filter((x) => x.chave !== k);
@@ -140,8 +142,17 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
     if (itensExtras.length) onOrdenarExtras?.(itensExtras);
   }
   // Setas do teclado na alça: uma linha por vez; na ponta do grupo, passa para o vizinho
+  // Sobe ou desce um setor dentro da casa e grava a ordem de todos os setores dela
+  function moverSetor(local: string, setor: string, direcao: -1 | 1) {
+    const lista = setoresDaCasa(pessoas, local, ordemSetores);
+    const i = lista.indexOf(setor), j = i + direcao;
+    if (i < 0 || j < 0 || j >= lista.length) return;
+    const nova = [...lista];
+    [nova[i], nova[j]] = [nova[j], nova[i]];
+    onOrdenarSetores?.(local, nova);
+  }
   function mover(k: string, direcao: -1 | 1) {
-    const lista = ordemDaGrade(pessoas);
+    const lista = ordemDaGrade(pessoas, ordemSetores);
     const i = lista.findIndex((x) => x.chave === k);
     const alvo = lista[i + direcao];
     if (i < 0 || !alvo) return;
@@ -194,6 +205,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
       ) : (
         <PontoEscala garantir={ponto.garantir} onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
           organizar={organizar} onMover={mover} onSoltar={soltar} pessoas={pessoas}
+          ordemSetores={ordemSetores} onMoverSetor={onOrdenarSetores ? moverSetor : undefined}
           gruposVazios={gruposVazios.filter((g) => (!local || g.local === local) && !setor)}
           extra={(
             <span className="pt-acoes">

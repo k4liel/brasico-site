@@ -2536,6 +2536,14 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
   .ct-acoes, .cmp-acoes { grid-column: 1 / -1; justify-items: start; }
 }
 
+/* Setor que abre e fecha (como as casas) e sobe/desce no Organizar */
+.pe-setor-botao { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+.pe-setor-botao span { color: var(--muted); font-weight: 600; letter-spacing: 0; margin-left: 2px; }
+.pe-setor-botao:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
+.pe-setor-mover { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: middle; }
+.pe-setor-mover button { all: unset; cursor: pointer; display: grid; place-items: center; width: 20px; height: 18px; border-radius: 5px; font-size: 9px; color: var(--strong); background: var(--seg); border: 1px solid var(--border); }
+.pe-setor-mover button:hover { border-color: var(--gold); color: var(--gold); }
+
 /* Líderes direto na grade: bolinhas no cabeçalho da casa e do setor */
 .ep-lid-bolas { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; margin-left: 8px; vertical-align: middle; text-transform: none; letter-spacing: 0; }
 .ep-lid-bolas i { display: grid; place-items: center; width: 20px; height: 20px; margin-left: -5px; border-radius: 50%; font-style: normal; font-size: 9px; font-weight: 800;

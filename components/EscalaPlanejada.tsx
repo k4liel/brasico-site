@@ -8,7 +8,7 @@
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); o mês começa copiado do RHiD.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import PontoEscala, { AFASTADOS, ordemDaGrade, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
@@ -146,6 +146,12 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     for (let x = a; x <= b; x = somarDias(x, 76)) await ler(x, somarDias(x, 75) < b ? somarDias(x, 75) : b);
   }, [ler, supabase, sincronizar]);
 
+  // Ordem dos setores de cada casa (escala_setores_ordem), a mesma do Ponto
+  const [ordemSetores, setOrdemSetores] = useState<OrdemSetores>(new Map());
+  useEffect(() => {
+    supabase.from("escala_setores_ordem").select("local,setor,posicao").then(({ data }) =>
+      setOrdemSetores(new Map(((data ?? []) as { local: string; setor: string; posicao: number }[]).map((o) => [`${o.local}|${o.setor}`, o.posicao]))));
+  }, [supabase, recarga]);
   const lerComp = useCallback(async () => {
     const { data } = await supabase.rpc("escala_compensas_dados");
     if (data) setComp(data as CompDados);
@@ -516,7 +522,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       {dados && pessoas.length > 0 && (
         <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir}
           onPeriodo={mudarPeriodo} pintar={podeEditar ? pintar : undefined} colunasExtras={colunas}
-          gruposVazios={gruposVazios}
+          gruposVazios={gruposVazios} ordemSetores={ordemSetores}
           extraLocal={lid.dados ? (local) => (
             <ChipsLideres titulo={`${local} inteiro`} lideres={lid.dados!.lideres.filter((l) => l.local === local && l.tudo)}
               onAbrir={(x, y) => setLidEditor({ local, setor: null, x, y })} />
@@ -554,7 +560,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
               <tr><th>Nome</th>{periodo.map((d) => <th key={d} className={feriados.has(d) ? "fer" : ""}>{SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]}<br />{br(d)}</th>)}</tr>
             </thead>
             <tbody>
-              {ordemDaGrade(pessoas).map((p, i, lista) => (
+              {ordemDaGrade(pessoas, ordemSetores).map((p, i, lista) => (
                 <Fragment key={p.chave}>
                   {(i === 0 || lista[i - 1].setor !== p.setor || lista[i - 1].local !== p.local) && <tr key={`s${p.chave}`} className="setor"><td colSpan={periodo.length + 1}>{grupo ? p.setor || p.local : [p.local, p.setor].filter(Boolean).join(" · ")}</td></tr>}
                   <tr key={p.chave}>
