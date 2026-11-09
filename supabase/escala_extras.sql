@@ -34,7 +34,7 @@ begin
   return (select coalesce(jsonb_agg(jsonb_build_object(
       'empresa_id', t.empresa_id, 'cpf', t.cpf, 'nome', t.nome, 'cargo', coalesce(t.cargo, ''), 'unidade', coalesce(t.unidade, ''),
       'admissao', t.admissao, 'ponto', t.ponto_situacao,
-      'extra_id', x.id, 'situacao', x.situacao, 'local', x.local, 'setor', x.setor) order by t.nome), '[]')
+      'extra_id', x.id, 'situacao', x.situacao, 'local', x.local, 'setor', x.setor, 'posicao', x.posicao) order by t.nome), '[]')
     from public.esocial_trabalhadores t
     left join public.escala_extras x on x.empresa_id = t.empresa_id and x.cpf = t.cpf
     where t.ativo and (t.ponto_situacao = 'sem_ponto' or x.situacao = 'na_escala'));
@@ -169,3 +169,35 @@ begin
 end $$;
 revoke execute on function public.escala_dados(date, date) from public, anon;
 grant execute on function public.escala_dados(date, date) to authenticated;
+
+-- Organizar (09/11/2026): os de fora do ponto também se arrastam na grade do Ponto; posição no grupo e grupo novo
+alter table public.escala_extras add column if not exists posicao int;
+-- escala_contratados_fora passou a devolver 'posicao' (mesmo corpo de antes + 'posicao', x.posicao)
+create or replace function public.escala_extras_ordenar(p_itens jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare v jsonb; v_n int := 0; v_local text; v_setor text; v_grupo uuid;
+begin
+  if not public.rhid_pode_ver(auth.uid()) then raise exception 'Sem acesso' using errcode = '42501'; end if;
+  for v in select * from jsonb_array_elements(coalesce(p_itens, '[]')) loop
+    update public.escala_extras set posicao = (v->>'posicao')::int, atualizado_em = now(), atualizado_por = auth.uid()
+    where id = (v->>'id')::bigint;
+    if v ? 'local' then
+      v_local := coalesce(nullif(trim(v->>'local'), ''), 'Sem local');
+      v_setor := coalesce(trim(v->>'setor'), '');
+      update public.escala_extras set local = v_local, setor = v_setor where id = (v->>'id')::bigint;
+      select id into v_grupo from public.escala_grupos where local = v_local and setor = v_setor;
+      if v_grupo is null then
+        insert into public.escala_grupos (nome, local, setor) values (v_local || case when v_setor <> '' then ' · ' || v_setor else '' end, v_local, v_setor)
+        returning id into v_grupo;
+      else
+        update public.escala_grupos set arquivado_em = null where id = v_grupo and arquivado_em is not null;
+      end if;
+      insert into public.escala_membros (cliente_id, pessoa_id, grupo_id) values (0, (v->>'id')::bigint, v_grupo)
+      on conflict (cliente_id, pessoa_id) do update set grupo_id = excluded.grupo_id, atualizado_em = now();
+    end if;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end $$;
+revoke execute on function public.escala_extras_ordenar(jsonb) from public, anon;
+grant execute on function public.escala_extras_ordenar(jsonb) to authenticated;

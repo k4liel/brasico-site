@@ -8,7 +8,7 @@
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); o mês começa copiado do RHiD.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import PontoEscala, { AFASTADOS, ordemDaGrade, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { ordemDaGrade, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
@@ -58,8 +58,8 @@ const resumo = (g: Grupo_Aviso) => (g.vezes > 1 ? `${g.vezes} vezes (${g.todos.s
 export const MODOS: { id: ModoEscala; nome: string; texto: string }[] = [
   { id: "real", nome: "Ponto (RHiD)", texto: "a escala do relógio e o que foi batido, ao vivo" },
   { id: "planejada", nome: "Planejada", texto: "a escala que a casa monta, com os avisos de lei" },
-  { id: "comparar", nome: "Comparar", texto: "planejada × batido: faltas, atrasos e dias fora da escala" },
 ];
+// O modo "comparar" (planejada × batido) saiu da tela em 09/11/2026, a pedido do dono; o código dele continua no PontoEscala
 
 // Troca rápida entre as escalas (topo da aba Escala e da página do líder)
 export function ModosEscala({ modo, onMudar, avisos }: { modo: ModoEscala; onMudar: (m: ModoEscala) => void; avisos?: number }) {
@@ -183,7 +183,8 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     const g = grupoDe.get(p.grupo_id);
     return {
       chave: chaveDe(p.cliente_id, p.id), nome: nomeProprio(p.nome), cargo: p.cargo ? nomeProprio(p.cargo) : "",
-      local: g?.local ?? "", setor: p.afastado ? AFASTADOS : g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
+      // A área "Afastados" fica só na escala do Ponto (pedido do dono): aqui a pessoa segue no setor dela
+      local: g?.local ?? "", setor: g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
       hoje: p.afastado ? { texto: `Afastado (${p.afastado})`, classe: "afastado" } : undefined,
       obs: p.fora_do_ponto ? "fora do ponto" : undefined,
     };

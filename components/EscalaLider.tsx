@@ -15,14 +15,14 @@ import type { ModoEscala } from "./PontoEscala";
 import { EscalaSecao } from "./Ponto";
 import { usePonto } from "./PontoDados";
 import EscalaContratados, { type Contratado } from "./EscalaContratados";
-import type { PessoaEscala } from "./PontoEscala";
+import type { ExtraEscala, ItemExtra } from "./Ponto";
 
 function useModo(padrao: ModoEscala) {
   const [modo, setModo] = useState<ModoEscala>(padrao);
   useEffect(() => {
     try {
       const m = localStorage.getItem("brasico-escala-modo");
-      if (m === "real" || m === "planejada" || m === "comparar") setModo(m);
+      if (m === "real" || m === "planejada") setModo(m);
     } catch {}
   }, []);
   function mudar(m: ModoEscala) {
@@ -101,7 +101,8 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
     }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([local, s]) => ({ local, setores: [...s].sort() }));
   }, [ponto.linhas, fixos]);
-  const extras = useMemo(() => contratados.filter((c) => c.situacao === "na_escala" && c.extra_id).map<PessoaEscala>((c) => ({
+  const extras = useMemo(() => contratados.filter((c) => c.situacao === "na_escala" && c.extra_id).map<ExtraEscala>((c) => ({
+    extraId: c.extra_id!, posicao: c.posicao ?? null,
     chave: `0:${c.extra_id}`, nome: c.nome.toLowerCase().replace(/(^|\s)\p{L}/gu, (x) => x.toUpperCase()), cargo: c.cargo,
     local: c.local ?? "", setor: c.setor ?? "", dias: new Map(), obs: "fora do ponto",
   })), [contratados]);
@@ -111,7 +112,17 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
       <ModosEscala modo={modo} onMudar={mudar} />
       {ponto.carregado && <EscalaContratados supabase={supabase} lista={contratados} locais={locais}
         onMudou={() => { lerContratados(); setVersao((v) => v + 1); }} />}
-      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos} />
+      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos}
+          onOrdenarExtras={async (itens: ItemExtra[]) => {
+            // Na tela na hora; no banco em seguida
+            setContratados((v) => v.map((c) => {
+              const it = itens.find((i) => i.id === c.extra_id);
+              return it ? { ...c, posicao: it.posicao, ...(it.local !== undefined ? { local: it.local, setor: it.setor ?? "" } : {}) } : c;
+            }));
+            await supabase.rpc("escala_extras_ordenar", { p_itens: itens });
+            lerContratados();
+            setVersao((x) => x + 1);
+          }} />
         : !ponto.carregado ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
         : <EscalaPlanejada key={versao} supabase={supabase} modo={modo} sincronizar={sincronizar} />}
     </>

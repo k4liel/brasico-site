@@ -34,12 +34,18 @@ const atualizadoEm = (p: Ponto) => (p.lendo ? "Lendo o RHiD…" : p.ultima ? `at
 // =====================================================================
 // Escala: a grade na página toda, com filtros por local, setor, busca e situação de hoje
 // =====================================================================
-export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [] }: {
+// Contratado fora do ponto na grade (escala_extras): chave "0:<id>", posição no grupo
+export type ExtraEscala = PessoaEscala & { extraId: number; posicao: number | null };
+export type ItemExtra = { id: number; posicao: number; local?: string; setor?: string };
+
+export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras }: {
   ponto: Ponto; chavesRH: Set<string>; onAbrirPessoa: (chave: string) => void;
   // Grupos criados à mão ainda sem ninguém (Sempre Vivo · Reservas, Financeiro…)
   gruposVazios?: { local: string; setor: string }[];
   // Contratados do RH sem cadastro no relógio, postos na escala pela página Escala (aparecem com "fora do ponto")
-  extras?: PessoaEscala[];
+  extras?: ExtraEscala[];
+  // Organizar: grava a posição (e o grupo novo) de quem é de fora do ponto
+  onOrdenarExtras?: (itens: ItemExtra[]) => void;
 }) {
   const [local, setLocal] = useState("");
   const [setor, setSetor] = useState("");
@@ -59,16 +65,19 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
   const mostradas = (organizar ? doLocal : filtradas.filter((l) => !estado || l.estado === estado))
     .slice().sort((a, b) => (a.posicao ?? 1e6) - (b.posicao ?? 1e6) || a.p.nome.localeCompare(b.p.nome));
   const linhaDe = new Map(mostradas.map((l) => [l.k, l]));
-  const pessoasPonto = mostradas.map<PessoaEscala>((l) => ({
+  const pessoasPonto = mostradas.map<PessoaEscala & { pos: number }>((l) => ({
+    pos: l.posicao ?? 1e6,
     chave: l.k, ficha: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, dias: l.dias,
     // Afastado hoje vai para a área "Afastados" no fim do local (organizando, fica no setor dele para dar para arrastar)
-    setor: !organizar && l.estado === "Afastado" ? AFASTADOS : l.setor,
+    setor: !organizar && l.afastado ? AFASTADOS : l.setor,
     hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
   }));
-  // Os de fora do ponto entram no fim (não se arrastam no Organizar nem têm situação de hoje)
-  const extrasVistos = organizar || estado ? [] : extras.filter((x) => (!local || (x.local || "Sem local") === local) && (!setor || x.setor === setor)
-    && (!termo || x.nome.toLowerCase().includes(termo) || (x.cargo ?? "").toLowerCase().includes(termo)));
-  const pessoas = [...pessoasPonto, ...extrasVistos];
+  // Os de fora do ponto entram no grupo deles, na posição guardada (no Organizar também, para arrastar)
+  const extrasVistos = estado && !organizar ? [] : extras.filter((x) => (!local || (x.local || "Sem local") === local)
+    && (organizar || ((!setor || x.setor === setor) && (!termo || x.nome.toLowerCase().includes(termo) || (x.cargo ?? "").toLowerCase().includes(termo)))));
+  const extraDe = new Map(extras.map((x) => [x.chave, x]));
+  const pessoas: PessoaEscala[] = [...pessoasPonto, ...extrasVistos.map((x) => ({ ...x, pos: x.posicao ?? 1e6 }))]
+    .sort((a, b) => a.pos - b.pos || a.nome.localeCompare(b.nome));
 
   // Solta a pessoa arrastada: antes ou depois de outra (e fica no grupo dela) ou no começo de um setor/local.
   // Renumera só os grupos que mudaram e grava; quem trocou de grupo guarda o grupo novo.
@@ -96,12 +105,19 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
     const afetados = new Set([grupoDe(eu), grupoDe(movido)]);
     const conta = new Map<string, number>();
     const itens: ItemOrdem[] = [];
+    const itensExtras: ItemExtra[] = [];
     for (const x of nova) {
       const g = grupoDe(x);
       if (!afetados.has(g)) continue;
       const pos = conta.get(g) ?? 0;
       conta.set(g, pos + 1);
-      const l: LinhaPonto = linhaDe.get(x.chave)!;
+      const ex = extraDe.get(x.chave);
+      if (ex) {
+        itensExtras.push({ id: ex.extraId, posicao: pos, ...(x.chave === k && trocouGrupo ? { local: x.local, setor: x.setor } : {}) });
+        continue;
+      }
+      const l: LinhaPonto | undefined = linhaDe.get(x.chave);
+      if (!l) continue;
       const it: ItemOrdem = { cliente_id: l.p.cliente_id, pessoa_id: l.p.id, posicao: pos };
       // Quem trocou de grupo guarda o grupo novo (ou volta ao automático, se for o dele)
       if (x.chave === k && trocouGrupo) {
@@ -110,7 +126,8 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
       }
       itens.push(it);
     }
-    ponto.ordenar(itens);
+    if (itens.length) ponto.ordenar(itens);
+    if (itensExtras.length) onOrdenarExtras?.(itensExtras);
   }
   // Setas do teclado na alça: uma linha por vez; na ponta do grupo, passa para o vizinho
   function mover(k: string, direcao: -1 | 1) {

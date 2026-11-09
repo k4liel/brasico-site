@@ -12,6 +12,7 @@ import { dataBR } from "@/lib/esocial/rh";
 export type Contratado = {
   empresa_id: string; cpf: string; nome: string; cargo: string; unidade: string; admissao: string | null; ponto: string;
   extra_id: number | null; situacao: "na_escala" | "ignorado" | "fora" | null; local: string | null; setor: string | null;
+  posicao?: number | null;
 };
 
 const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e"]);
