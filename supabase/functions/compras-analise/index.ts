@@ -114,7 +114,7 @@ type Parte = { text: string } | { inlineData: { mimeType: string; data: string }
 type Item = Record<string, unknown> & { nome: string };
 type Lista = { titulo: string; pedido?: string; itens: Item[] };
 type Separacao = { listas: { titulo: string; itens: { item: string; buscas: string[] }[] }[] };
-type Mensagem = { autor_nome: string; tipo: string; texto: string; enviada_em: string; midia: string | null };
+type Mensagem = { id: string; autor_nome: string; tipo: string; texto: string; enviada_em: string; midia: string | null };
 type Contexto = { modo: "substituir" | "adicionar"; desde: string | null; aumento_pct: number; listas: { titulo: string | null; status: string; mexida: boolean }[] };
 type Pessoa = { id: string; nome: string; unidade: string; setor: string; wa_nome: string; analise?: number; de?: string; ate?: string };
 type Cand = { descricao_na_nota: string; unidade: string; fornecedor: string; semelhanca: number; ultima: string | null; ultimo_preco: number | null;
@@ -259,10 +259,15 @@ async function comecar(pessoa: Pessoa, semana: { id: string; inicio: string }, a
     const de = pessoa.de ?? j.de;
     const ate = new Date(Math.min(new Date(pessoa.ate ?? j.ate).getTime(), Date.now() + 60000)).toISOString();
     const { data: msgs, error: e1 } = await supabase.from("wa_mensagens")
-      .select("autor_nome,tipo,texto,enviada_em,midia").eq("grupo_id", GRUPO_COMPRAS).eq("de_nos", false)
+      .select("id,autor_nome,tipo,texto,enviada_em,midia").eq("grupo_id", GRUPO_COMPRAS).eq("de_nos", false)
       .gte("enviada_em", de).lt("enviada_em", ate).order("enviada_em").limit(2000);
     if (e1) throw new Error(e1.message);
-    let minhas = ((msgs ?? []) as Mensagem[]).filter((m) => normal(m.autor_nome ?? "") === normal(pessoa.wa_nome));
+    // pedido mandado por outra pessoa em nome desta (compras_mensagens_pessoa): conta para quem é a lista, não para quem enviou
+    const todas = (msgs ?? []) as Mensagem[];
+    const { data: deOutro } = await supabase.from("compras_mensagens_pessoa").select("mensagem_id,pessoa_id")
+      .is("removido_em", null).gte("criado_em", new Date(Date.now() - 60 * 864e5).toISOString()); // tabela pequena: sem lista de ids na URL
+    const dono = new Map(((deOutro ?? []) as { mensagem_id: string; pessoa_id: string }[]).map((x) => [x.mensagem_id, x.pessoa_id]));
+    let minhas = todas.filter((m) => dono.has(m.id) ? dono.get(m.id) === pessoa.id : normal(m.autor_nome ?? "") === normal(pessoa.wa_nome));
     if (ctx.modo === "adicionar" && ctx.desde) minhas = minhas.filter((m) => new Date(m.enviada_em) > new Date(ctx.desde!));
     if (!minhas.length) {
       await fechar({ status: "sem_pedido", mensagens: 0, erro: ctx.modo === "adicionar" ? "sem mensagens novas depois da revisão da pessoa" : null });
