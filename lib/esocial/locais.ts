@@ -15,12 +15,22 @@ const SIGLAS: Record<string, string> = {
 const nomeBonito = (s: string) =>
   s.trim().toLowerCase().replace(/(^|[\s/(-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\bDe\b|\bDa\b|\bDo\b/g, (m) => m.toLowerCase());
 
+// Locais que são o mesmo lugar: a Vila da Barra fica no Hello Barra (pedido do dono, 09/11/2026)
+const MESMO_LUGAR: Record<string, string> = { "VILA DA BARRA": "Hello Barra" };
+const juntar = (r: { local: string; setor: string }) => ({ ...r, local: MESMO_LUGAR[r.local.trim().toUpperCase()] ?? r.local });
+
 export function localESetor(departamento: string, unidadeRH = "", centroCusto = ""): { local: string; setor: string } {
+  return juntar(localESetorBruto(departamento, unidadeRH, centroCusto));
+}
+
+function localESetorBruto(departamento: string, unidadeRH: string, centroCusto: string): { local: string; setor: string } {
   const d = (departamento ?? "").trim();
   const m = d.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
   // A equipe da produção trabalha no Sempre Vivo: entra na cozinha de lá (pedido do dono, 30/10/2026;
   // a separação entre cozinha e produção ainda vai ser definida)
   if (/^PRODU[ÇC][ÃA]O$/i.test(m ? m[1] : d)) return { local: "Sempre Vivo", setor: "Cozinha" };
+  // A Fazenda é um lugar à parte, não um setor do Sempre Vivo (pedido do dono, 09/11/2026)
+  if (/^FAZENDA$/i.test(m ? m[1] : d)) return { local: "Fazenda", setor: "" };
   if (m) {
     const sigla = m[2].trim().toUpperCase();
     return { local: SIGLAS[sigla] ?? nomeBonito(m[2]), setor: nomeBonito(m[1]) };
@@ -43,6 +53,6 @@ const SETORES = new Set(["ADMINISTRATIVO", "COZINHA", "LIMPEZA", "SALÃO/BAR", "
 export const localDaUnidadeRH = (unidade: string) => {
   const u = (unidade ?? "").trim();
   const m = u.match(/\(([^)]+)\)\s*$/);
-  if (m) return SIGLAS[m[1].trim().toUpperCase()] ?? nomeBonito(m[1]);
-  return SIGLAS[u.toUpperCase()] ?? (u ? nomeBonito(u) : "");
+  const l = m ? SIGLAS[m[1].trim().toUpperCase()] ?? nomeBonito(m[1]) : SIGLAS[u.toUpperCase()] ?? (u ? nomeBonito(u) : "");
+  return MESMO_LUGAR[l.toUpperCase()] ?? l;
 };
