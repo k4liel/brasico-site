@@ -489,7 +489,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           <span className="ep-paleta-rotulo">Clique num dia para escolher o que ele vira; arraste sobre vários dias para mudar todos de uma vez.</span>
           <div className="ep-acoes">
             {dados?.socio && <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>}
-            {/* Imprimir só na visão Semana (o texto para o WhatsApp saiu, pedido do dono); 2 semanas e Mês são só para ver (pedido do dono) */}
+            {/* Imprimir só na visão Semana (o texto para o WhatsApp saiu, pedido do dono); o Mês é só para ver (pedido do dono) */}
             {periodo.length === 7 ? (
               <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
                 <button className="ghost small" onClick={baixarPdf} title="Gera o PDF da semana para mandar no grupo">Baixar PDF</button>

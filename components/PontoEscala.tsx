@@ -6,7 +6,7 @@
 //   planejada — a escala que a casa monta (escala_planejada): pinta-se arrastando sobre os dias, com os
 //               avisos de lei em cada dia e no nome (lib/escala/regras.ts);
 //   comparar  — a planejada com a marca do que foi batido (faltou, atrasou, trabalhou na folga).
-// Três visões: semana (células grandes), 2 semanas e mês. O cabeçalho dos dias e a coluna dos nomes ficam
+// Duas visões: semana (células grandes) e mês (a de 2 semanas saiu em 09/11/2026, pedido do dono). O cabeçalho dos dias e a coluna dos nomes ficam
 // presos ao rolar. Pessoas agrupadas por local (abre e fecha, com quantos trabalham por dia) e por setor.
 // Ao passar o mouse (ou tocar), o balão mostra o previsto, o batido e os avisos do dia.
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -44,7 +44,7 @@ export type Visao = "semana" | "quinzena" | "mes";
 // Onde soltar uma pessoa arrastada: antes ou depois de outra, ou no começo de um grupo (setor/local)
 export type Alvo = { chave: string; lado: "antes" | "depois" } | { local: string; setor: string };
 const mesmoAlvo = (a: Alvo | null, b: Alvo | null) => JSON.stringify(a) === JSON.stringify(b);
-const VISOES: [Visao, string][] = [["semana", "Semana"], ["quinzena", "2 semanas"], ["mes", "Mês"]];
+const VISOES: [Visao, string][] = [["semana", "Semana"], ["mes", "Mês"]];
 const dois = (n: number) => String(n).padStart(2, "0");
 const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -227,7 +227,7 @@ export default function PontoEscala({
   onPeriodo?: (dias: string[]) => void;
 }) {
   const agora = hoje();
-  const [visao, setVisao] = useState<Visao>("quinzena");
+  const [visao, setVisao] = useState<Visao>("semana");
   const [ref, setRef] = useState(agora);
   const [fechados, setFechados] = useState<Set<string>>(new Set());
   // Setores fechados (como as casas): chave "casa|setor"
@@ -259,7 +259,7 @@ export default function PontoEscala({
 
   useEffect(() => {
     const v = lerLocal(plan ? "brasico-escala-visao-plano" : "brasico-escala-visao");
-    if (v === "semana" || v === "quinzena" || v === "mes") setVisao(v);
+    if (v === "semana" || v === "mes") setVisao(v);
     else if (plan) setVisao("semana");
   }, [plan]);
   function escolherVisao(v: Visao) {

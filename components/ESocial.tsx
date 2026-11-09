@@ -742,7 +742,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     <summary><Icone nome="livro" /><strong>Como esta área funciona</strong> <span className="muted">· o que tem em cada aba</span></summary>
                     <ul className="es-ajuda-lista">
                       <li><strong>Início</strong>: o ponto de hoje (quem está trabalhando, quem está atrasado), o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
-                      <li><strong>Escala</strong>: a escala de todo mundo na página inteira (semana, 2 semanas ou mês), por local e setor, com o previsto e o batido de cada dia.</li>
+                      <li><strong>Escala</strong>: a escala de todo mundo na página inteira (semana ou mês), por local e setor, com o previsto e o batido de cada dia.</li>
                       <li><strong>Equipe</strong>: as pessoas (com a ficha e a linha do tempo), o ponto do mês (faltas, atrasos, horas), o banco de horas e os salários de contrato (escondidos até você mostrar).</li>
                       <li><strong>Ausências e contratos</strong>: atestados, férias e licenças lançados no ponto, contratos de experiência a vencer, admissões e saídas com os prazos do eSocial, e os afastamentos que o governo registra.</li>
                       <li><strong>Folha e governo</strong>: o fechamento da folha, o calendário de obrigações, o andamento da leitura do eSocial, o cruzamento ponto × eSocial, os relógios e os registros técnicos.</li>
