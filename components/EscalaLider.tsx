@@ -83,6 +83,11 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
     setContratados((data ?? []) as Contratado[]);
   }, [supabase]);
   useEffect(() => { lerContratados(); }, [lerContratados]);
+  // Grupos criados à mão (escala_grupos.fixo), para aparecerem mesmo vazios
+  const [fixos, setFixos] = useState<{ local: string; setor: string }[]>([]);
+  useEffect(() => {
+    supabase.rpc("escala_grupos_fixos").then(({ data }) => setFixos((data ?? []) as { local: string; setor: string }[]));
+  }, [supabase]);
   const locais = useMemo(() => {
     const m = new Map<string, Set<string>>();
     for (const l of ponto.linhas) {
@@ -90,8 +95,12 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
       if (!m.has(nome)) m.set(nome, new Set());
       if (l.setor) m.get(nome)!.add(l.setor);
     }
+    for (const g of fixos) {
+      if (!m.has(g.local)) m.set(g.local, new Set());
+      if (g.setor) m.get(g.local)!.add(g.setor);
+    }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([local, s]) => ({ local, setores: [...s].sort() }));
-  }, [ponto.linhas]);
+  }, [ponto.linhas, fixos]);
   const extras = useMemo(() => contratados.filter((c) => c.situacao === "na_escala" && c.extra_id).map<PessoaEscala>((c) => ({
     chave: `0:${c.extra_id}`, nome: c.nome.toLowerCase().replace(/(^|\s)\p{L}/gu, (x) => x.toUpperCase()), cargo: c.cargo,
     local: c.local ?? "", setor: c.setor ?? "", dias: new Map(), obs: "fora do ponto",
@@ -102,7 +111,7 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
       <ModosEscala modo={modo} onMudar={mudar} />
       {ponto.carregado && <EscalaContratados supabase={supabase} lista={contratados} locais={locais}
         onMudou={() => { lerContratados(); setVersao((v) => v + 1); }} />}
-      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} />
+      {modo === "real" ? <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos} />
         : !ponto.carregado ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
         : <EscalaPlanejada key={versao} supabase={supabase} modo={modo} sincronizar={sincronizar} />}
     </>

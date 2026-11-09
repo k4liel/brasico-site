@@ -2451,6 +2451,9 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
   .ep-contratados-tabela td { border: 0; padding: 0; }
   .ep-contratados-tabela td:first-child, .ep-contratados-tabela td:nth-child(2), .ep-contratados-acoes { grid-column: 1 / -1; text-align: left; }
 }
+/* Grupo criado à mão ainda sem ninguém (escala_grupos.fixo) */
+.pe-grade tr.pe-grupo.pe-vazio th.pe-nome { color: var(--muted); }
+.pe-grade tr.pe-grupo.pe-vazio th.pe-nome em { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--gold); }
 /* Área "Afastados" no fim de cada local (09/11/2026) */
 .pe-grade tr.pe-grupo.pe-afastados th.pe-nome { color: var(--muted); padding-top: 18px; }
 .pe-grade tr.pe-grupo.pe-afastados > * { border-top: 1px dashed var(--border); }

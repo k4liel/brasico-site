@@ -34,8 +34,10 @@ const atualizadoEm = (p: Ponto) => (p.lendo ? "Lendo o RHiD…" : p.ultima ? `at
 // =====================================================================
 // Escala: a grade na página toda, com filtros por local, setor, busca e situação de hoje
 // =====================================================================
-export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [] }: {
+export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [] }: {
   ponto: Ponto; chavesRH: Set<string>; onAbrirPessoa: (chave: string) => void;
+  // Grupos criados à mão ainda sem ninguém (Sempre Vivo · Reservas, Financeiro…)
+  gruposVazios?: { local: string; setor: string }[];
   // Contratados do RH sem cadastro no relógio, postos na escala pela página Escala (aparecem com "fora do ponto")
   extras?: PessoaEscala[];
 }) {
@@ -165,6 +167,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [] }: {
       ) : (
         <PontoEscala garantir={ponto.garantir} onAbrir={(k) => chavesRH.has(k) && onAbrirPessoa(k)}
           organizar={organizar} onMover={mover} onSoltar={soltar} pessoas={pessoas}
+          gruposVazios={gruposVazios.filter((g) => (!local || g.local === local) && !setor)}
           extra={(
             <span className="pt-acoes">
               <span className="muted">{atualizadoEm(ponto)}</span>

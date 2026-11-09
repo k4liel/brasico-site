@@ -195,8 +195,10 @@ function gravarLocal(k: string, v: string) {
 
 export default function PontoEscala({
   pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar,
-  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo,
+  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo, gruposVazios = [],
 }: {
+  // Grupos criados à mão (escala_grupos.fixo) ainda sem ninguém: aparecem vazios para receber gente no Organizar
+  gruposVazios?: { local: string; setor: string }[];
   pessoas: PessoaEscala[]; onAbrir?: (chave: string) => void; garantir?: (de: string, ate: string) => void;
   // Modo Organizar: segura o nome e arrasta (ou usa as setas do teclado na alça)
   organizar?: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; onSoltar?: (chave: string, alvo: Alvo) => void;
@@ -525,6 +527,14 @@ export default function PontoEscala({
                       organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave}
                       modo={modo} avisoDia={avisoDia} avisos={avisos} pintando={!!pintar} comecarPintura={comecarPintura}
                       selecionada={selecionada} colunasExtras={colunasExtras} feriados={feriados} />
+                  );
+                })}
+                {!fechado && gruposVazios.filter((g) => (g.local || "Sem local") === local && !setoresDe(doLocal).includes(g.setor)).map((g) => {
+                  const alvo = !!soltarEm && !("chave" in soltarEm) && soltarEm.local === g.local && soltarEm.setor === g.setor;
+                  return (
+                    <tr key={`vazio-${g.setor}`} className={`pe-grupo pe-vazio${alvo ? " soltar-grupo" : ""}`} data-grupo="" data-local={g.local} data-setor={g.setor}>
+                      <th className="pe-nome">{g.setor} <span>0</span>{organizar && <em> · solte alguém aqui</em>}</th><td colSpan={colunas - 1} />
+                    </tr>
                   );
                 })}
               </tbody>
