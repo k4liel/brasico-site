@@ -98,8 +98,9 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
       idx = resto.findIndex((x) => grupoDe(x) === `${local || "Sem local"}|${setor}`);
       if (idx < 0) idx = resto.length;
     }
-    // A área "Afastados" é calculada (justificativa do RHiD de hoje): ninguém é solto nela
-    if (setor === AFASTADOS) return;
+    // A área "Afastados" junta quem o RHiD afasta hoje (calculado) e quem foi posto nela à mão (grava o setor
+    // "Afastados"). Quem o RHiD afasta já está nela: soltar ali de novo não muda nada.
+    if (setor === AFASTADOS && linhaDe.get(k)?.afastado) return;
     const movido = { ...eu, local, setor };
     const nova = [...resto.slice(0, idx), movido, ...resto.slice(idx)];
     if (nova.every((x, i) => x.chave === lista[i].chave) && grupoDe(movido) === grupoDe(eu)) return;
@@ -110,7 +111,8 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
     const itensExtras: ItemExtra[] = [];
     for (const x of nova) {
       const g = grupoDe(x);
-      if (!afetados.has(g) || x.setor === AFASTADOS) continue;
+      // Quem está em "Afastados" pelo RHiD não tem posição gravada (a área é calculada)
+      if (!afetados.has(g) || (x.setor === AFASTADOS && x.chave !== k && linhaDe.get(x.chave)?.afastado)) continue;
       const pos = conta.get(g) ?? 0;
       conta.set(g, pos + 1);
       const ex = extraDe.get(x.chave);
