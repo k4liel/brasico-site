@@ -115,11 +115,15 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
         tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,unidade,ponto_situacao,ponto_ultima_batida,ativo")
           .eq("ativo", true).order("nome").range(a, b)),
         lerDias(de, ate),
-        supabase.from("rhid_escala_ordem").select("cliente_id,pessoa_id,local,setor,posicao"),
+        supabase.from("rhid_escala_ordem").select("cliente_id,pessoa_id,local,setor,posicao,fora_da_escala"),
       ]);
       // Cadastros sem departamento nem cargo e sem nenhuma batida (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
       const comPonto = new Set(di.filter((d) => d.batidas.length).map((d) => chave(d.cliente_id, d.pessoa_id)));
-      setPessoas(pe.filter((p) => (p.cpf && (p.departamento_id != null || p.cargo_id != null)) || comPonto.has(chave(p.cliente_id, p.id))));
+      // Quem o dono tirou da escala (rhid_escala_ordem.fora_da_escala) não aparece no ponto nem na escala do site
+      const fora = new Set(((or.data ?? []) as { cliente_id: number; pessoa_id: number; fora_da_escala: string | null }[])
+        .filter((o) => o.fora_da_escala).map((o) => chave(o.cliente_id, o.pessoa_id)));
+      setPessoas(pe.filter((p) => !fora.has(chave(p.cliente_id, p.id)))
+        .filter((p) => (p.cpf && (p.departamento_id != null || p.cargo_id != null)) || comPonto.has(chave(p.cliente_id, p.id))));
       setEmpresas((em.data ?? []) as EmpresaPonto[]);
       setNomes({
         deptos: (dp.data ?? []) as Nome[], cargos: (cg.data ?? []) as Nome[], centros: (cc.data ?? []) as Nome[],

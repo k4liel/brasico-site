@@ -2423,6 +2423,9 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-enviar { display: inline-flex; gap: 4px; padding-left: 8px; border-left: 1px solid var(--border); }
 .ep-casa .ep-modos { margin-top: 4px; }
 .ep-impressao { display: none; }
+/* Área "Afastados" no fim de cada local (09/11/2026) */
+.pe-grade tr.pe-grupo.pe-afastados th.pe-nome { color: var(--muted); padding-top: 18px; }
+.pe-grade tr.pe-grupo.pe-afastados > * { border-top: 1px dashed var(--border); }
 @media print {
   body.ep-imprimindo > *:not(.ep-impressao) { display: none !important; }
   body.ep-imprimindo { background: #fff !important; }

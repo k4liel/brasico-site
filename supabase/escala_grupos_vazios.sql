@@ -49,3 +49,10 @@ where m.grupo_id in (select id from public.escala_grupos where local = 'Sempre V
 update public.escala_membros m set grupo_id = (select id from public.escala_grupos where local = 'Hello Barra' and setor = ''), atualizado_em = now()
 where m.grupo_id in (select id from public.escala_grupos where local = 'Vila da Barra');
 select public.escala_arquivar_vazios();
+
+-- Fora da escala (09/11/2026): pessoa que o dono mandou tirar da escala (continua no RHiD). Some do ponto e da
+-- escala do site (usePonto e escala_dados); null = aparece. Primeiro caso: Jessica Carolina, do Sempre Vivo.
+alter table public.rhid_escala_ordem add column if not exists fora_da_escala timestamptz;
+-- escala_dados (supabase/escala.sql) ganhou no "membros": and not exists (... rhid_escala_ordem ... fora_da_escala is not null)
+update public.rhid_escala_ordem set local = null, setor = null, fora_da_escala = now(), atualizado_em = now()
+where cliente_id = 34040 and pessoa_id = 204;

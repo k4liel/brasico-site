@@ -8,7 +8,7 @@
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); o mês começa copiado do RHiD.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import PontoEscala, { type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { AFASTADOS, ordemDaGrade, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
@@ -18,6 +18,8 @@ type Grupo = { id: string; nome: string; local: string; setor: string; lideres: 
 type PessoaDado = {
   cliente_id: number; id: number; nome: string; grupo_id: string; cargo: string; posicao: number | null; saldo_banco: number | null;
   comp_creditos: number; comp_debitos: number; comp_ajuste: number;
+  // Afastado hoje (tipo da justificativa do RHiD): vai para a área "Afastados" no fim do local
+  afastado?: string | null;
 };
 type RealDia = DiaEscala & { cliente_id: number; pessoa_id: number };
 type PlanoDia = DiaPlano & { cliente_id: number; pessoa_id: number; dia: string };
@@ -81,6 +83,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 }) {
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState("");
+  // Filtro do topo: um botão por local (os setores ficam dentro da grade); "" = todos
   const [grupo, setGrupo] = useState(SEM_GRUPO);
   const [pincel, setPincel] = useState<Pincel | null>(null);
   const [outro, setOutro] = useState({ entrada: "08:00", saida: "16:20", intervalo: "12:00-13:00" });
@@ -143,7 +146,15 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const grupos = useMemo(() => (dados?.grupos ?? []).filter((g) => !casa || casaDoLocal(g.local) === casa), [dados?.grupos, casa]);
   const grupoDe = useMemo(() => new Map(grupos.map((g) => [g.id, g])), [grupos]);
   const daCasa = (dados?.pessoas ?? []).filter((p) => grupoDe.has(p.grupo_id));
-  const vistas = daCasa.filter((p) => !grupo || p.grupo_id === grupo)
+  // Um botão por local no topo (antes era um por local + setor: ficava comprido demais)
+  const locais = useMemo(() => {
+    const m = new Map<string, { local: string; pessoas: number; lideres: string[] }>();
+    for (const g of grupos) if (!m.has(g.local)) m.set(g.local, { local: g.local, pessoas: 0, lideres: [] });
+    for (const p of daCasa) { const l = m.get(grupoDe.get(p.grupo_id)?.local ?? ""); if (l) l.pessoas++; }
+    for (const g of grupos) for (const l of g.lideres) { const x = m.get(g.local)!; if (!x.lideres.includes(l.nome)) x.lideres.push(l.nome); }
+    return [...m.values()].filter((l) => l.pessoas > 0).sort((a, b) => a.local.localeCompare(b.local));
+  }, [grupos, grupoDe, daCasa]);
+  const vistas = daCasa.filter((p) => !grupo || grupoDe.get(p.grupo_id)?.local === grupo)
     .slice().sort((a, b) => (a.posicao ?? 1e6) - (b.posicao ?? 1e6) || a.nome.localeCompare(b.nome));
   const realDe = useMemo(() => {
     const m = new Map<string, Map<string, DiaEscala>>();
@@ -170,7 +181,8 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     const g = grupoDe.get(p.grupo_id);
     return {
       chave: chaveDe(p.cliente_id, p.id), nome: nomeProprio(p.nome), cargo: p.cargo ? nomeProprio(p.cargo) : "",
-      local: g?.local ?? "", setor: g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
+      local: g?.local ?? "", setor: p.afastado ? AFASTADOS : g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
+      hoje: p.afastado ? { texto: `Afastado (${p.afastado})`, classe: "afastado" } : undefined,
     };
   });
 
@@ -291,7 +303,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
   async function copiarRhid() {
     if (!periodo.length || !dados) return;
-    const ids = grupo ? [grupo] : grupos.map((g) => g.id);
+    const ids = grupos.filter((g) => !grupo || g.local === grupo).map((g) => g.id);
     if (!window.confirm(`Preencher os dias ainda vazios de ${dataBR(periodo[0])} a ${dataBR(periodo[periodo.length - 1])} com a escala do RHiD? O que já foi montado não muda.`)) return;
     setOcupado(true);
     const { data, error } = await supabase.rpc("escala_copiar_rhid", { p_grupos: ids, p_de: periodo[0], p_ate: periodo[periodo.length - 1], p_sobrescrever: false });
@@ -344,7 +356,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   });
 
   // ---------- Mandar para a equipe ----------
-  const tituloEnvio = grupo && grupoDe.get(grupo) ? grupoDe.get(grupo)!.nome : casaPorId(casa ?? "")?.nome ?? "Escala";
+  const tituloEnvio = grupo || (casaPorId(casa ?? "")?.nome ?? "Escala");
   const faixa = periodo.length ? `${br(periodo[0])} a ${br(periodo[periodo.length - 1])}` : "";
   async function copiarWhatsApp() {
     const linhas = [`*Escala · ${tituloEnvio}*`, faixa, ""];
@@ -395,14 +407,13 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       {cabecalho}
       {erro && <p className="tv-alerta">{erro}</p>}
 
-      {grupos.length > 1 && (
-        <div className="ep-grupos" role="group" aria-label="Grupo da escala">
-          <button className={grupo === SEM_GRUPO ? "on" : ""} onClick={() => setGrupo(SEM_GRUPO)}>Todos os grupos <span>{daCasa.length}</span></button>
-          {grupos.map((g) => (
-            <button key={g.id} className={grupo === g.id ? "on" : ""} onClick={() => setGrupo(g.id)}
-              title={g.lideres.length ? `Líder: ${g.lideres.map((l) => l.nome).join(", ")}` : "Sem líder"}>
-              {g.nome} <span>{dados?.pessoas.filter((p) => p.grupo_id === g.id).length}</span>
-              {g.lideres.length > 0 && <em>{g.lideres.map((l) => l.nome.split(" ")[0]).join(", ")}</em>}
+      {locais.length > 1 && (
+        <div className="ep-grupos" role="group" aria-label="Local da escala">
+          <button className={grupo === SEM_GRUPO ? "on" : ""} onClick={() => setGrupo(SEM_GRUPO)}>Todos <span>{daCasa.length}</span></button>
+          {locais.map((l) => (
+            <button key={l.local} className={grupo === l.local ? "on" : ""} onClick={() => setGrupo(l.local)}
+              title={l.lideres.length ? `Líderes: ${l.lideres.join(", ")}` : "Sem líder"}>
+              {l.local} <span>{l.pessoas}</span>
             </button>
           ))}
         </div>
@@ -499,9 +510,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
               <tr><th>Nome</th>{periodo.map((d) => <th key={d} className={feriados.has(d) ? "fer" : ""}>{SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]}<br />{br(d)}</th>)}</tr>
             </thead>
             <tbody>
-              {pessoas.map((p, i) => (
+              {ordemDaGrade(pessoas).map((p, i, lista) => (
                 <Fragment key={p.chave}>
-                  {!grupo && (i === 0 || pessoas[i - 1].setor !== p.setor) && <tr key={`s${p.chave}`} className="setor"><td colSpan={periodo.length + 1}>{p.setor || p.local}</td></tr>}
+                  {(i === 0 || lista[i - 1].setor !== p.setor || lista[i - 1].local !== p.local) && <tr key={`s${p.chave}`} className="setor"><td colSpan={periodo.length + 1}>{grupo ? p.setor || p.local : [p.local, p.setor].filter(Boolean).join(" · ")}</td></tr>}
                   <tr key={p.chave}>
                     <td className="nome">{p.nome}</td>
                     {periodo.map((d) => {

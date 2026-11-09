@@ -134,7 +134,10 @@ export function nomeCurto(nome: string, max = 22) {
 const SEM_LOCAL = "Sem local";
 const localDe = (p: PessoaEscala) => p.local || SEM_LOCAL;
 const locaisDe = (ps: PessoaEscala[]) => [...new Set(ps.map(localDe))].sort((a, b) => (a === SEM_LOCAL ? 1 : b === SEM_LOCAL ? -1 : a.localeCompare(b)));
-const setoresDe = (ps: PessoaEscala[]) => [...new Set(ps.map((p) => p.setor))].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
+// Área "Afastados" no fim de cada local (férias, atestado, licença hoje): quem monta a lista põe esse setor
+export const AFASTADOS = "Afastados";
+const pesoSetor = (s: string) => (s === AFASTADOS ? 2 : s === "" ? 1 : 0);
+const setoresDe = (ps: PessoaEscala[]) => [...new Set(ps.map((p) => p.setor))].sort((a, b) => pesoSetor(a) - pesoSetor(b) || a.localeCompare(b));
 export function ordemDaGrade(ps: PessoaEscala[]) {
   return locaisDe(ps).flatMap((l) => {
     const doLocal = ps.filter((p) => localDe(p) === l);
@@ -624,7 +627,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
   return (
     <>
       {mostrarSetor && (
-        <tr className={grupoAlvo ? "pe-grupo soltar-grupo" : "pe-grupo"} data-grupo="" data-local={pessoas[0]?.local} data-setor={pessoas[0]?.setor}>
+        <tr className={`pe-grupo${grupoAlvo ? " soltar-grupo" : ""}${setor === AFASTADOS ? " pe-afastados" : ""}`} data-grupo="" data-local={pessoas[0]?.local} data-setor={pessoas[0]?.setor}>
           <th className="pe-nome" colSpan={1}>{setor} <span>{pessoas.length}</span></th><td colSpan={colunas - 1} />
         </tr>
       )}

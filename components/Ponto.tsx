@@ -6,7 +6,7 @@
 // (justificativas) e Folha e governo (ponto × eSocial e relógios). Só leitura.
 import { useState, type ReactNode } from "react";
 import { cpfVisivel, dataBR, somarDias } from "@/lib/esocial/rh";
-import PontoEscala, { ordemDaGrade, type Alvo, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { AFASTADOS, ordemDaGrade, type Alvo, type PessoaEscala } from "./PontoEscala";
 import {
   ESTADOS, chave, diaFortaleza, horaCurta, horas, iniciais, nomeProprio,
   type Estado, type ItemOrdem, type LinhaPonto, type Ponto,
@@ -54,7 +54,9 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa }: { ponto: Ponto; 
     .slice().sort((a, b) => (a.posicao ?? 1e6) - (b.posicao ?? 1e6) || a.p.nome.localeCompare(b.p.nome));
   const linhaDe = new Map(mostradas.map((l) => [l.k, l]));
   const pessoas = mostradas.map<PessoaEscala>((l) => ({
-    chave: l.k, ficha: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, setor: l.setor, dias: l.dias,
+    chave: l.k, ficha: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, dias: l.dias,
+    // Afastado hoje vai para a área "Afastados" no fim do local (organizando, fica no setor dele para dar para arrastar)
+    setor: !organizar && l.estado === "Afastado" ? AFASTADOS : l.setor,
     hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
   }));
 

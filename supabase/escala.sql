@@ -133,6 +133,7 @@ begin
       select m.cliente_id, m.pessoa_id, m.grupo_id from public.escala_membros m
       join public.rhid_pessoas p on p.cliente_id = m.cliente_id and p.id = m.pessoa_id and p.situacao = 1 and p.presente
       where m.grupo_id = any(v_grupos)
+        and not exists (select 1 from public.rhid_escala_ordem f where f.cliente_id = m.cliente_id and f.pessoa_id = m.pessoa_id and f.fora_da_escala is not null)
     )
     select jsonb_build_object(
       'socio', v_socio,
@@ -150,7 +151,15 @@ begin
                             and d.feriado and d.dia >= v_inicio and jsonb_array_length(d.batidas) > 0),
           'comp_debitos', (select count(*) from public.escala_planejada e where e.cliente_id = p.cliente_id and e.pessoa_id = p.id
                            and e.codigo = 'FC' and e.dia >= v_inicio),
-          'comp_ajuste', (select coalesce(sum(a.dias), 0) from public.escala_compensacoes_ajustes a where a.cliente_id = p.cliente_id and a.pessoa_id = p.id)
+          'comp_ajuste', (select coalesce(sum(a.dias), 0) from public.escala_compensacoes_ajustes a where a.cliente_id = p.cliente_id and a.pessoa_id = p.id),
+          -- Afastado hoje (férias, atestado, licença…: justificativa do RHiD que afasta): vai para a área "Afastados" do local
+          'afastado', (select coalesce(jt.nome, j.texto, 'Afastado') from public.rhid_justificativas j
+                       left join public.rhid_justificativa_tipos jt on jt.cliente_id = j.cliente_id and jt.id = j.tipo_id
+                       where j.cliente_id = p.cliente_id and j.pessoa_id = p.id and coalesce(j.aprovacao, 2) = 2
+                         and (j.inicio at time zone 'America/Fortaleza')::date <= (now() at time zone 'America/Fortaleza')::date
+                         and (j.fim at time zone 'America/Fortaleza')::date >= (now() at time zone 'America/Fortaleza')::date
+                         and public.rhid_tipo_afasta(coalesce(jt.nome, j.texto))
+                       order by j.inicio desc limit 1)
         ) order by p.nome), '[]')
         from membros m
         join public.rhid_pessoas p on p.cliente_id = m.cliente_id and p.id = m.pessoa_id
