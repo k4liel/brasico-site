@@ -403,30 +403,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const tituloEnvio = grupo || casaPorId(casa ?? "")?.nome || "";
   const cabecaEnvio = tituloEnvio ? `Escala · ${tituloEnvio}` : "Escala";
   const faixa = periodo.length ? `${br(periodo[0])} a ${br(periodo[periodo.length - 1])}` : "";
-  async function copiarWhatsApp() {
-    const linhas = [`*${cabecaEnvio}*`, faixa, ""];
-    for (const d of periodo) {
-      const porRotulo = new Map<string, string[]>();
-      for (const p of pessoas) {
-        const x = plano.get(p.chave)?.get(d);
-        if (!x?.codigo) continue;
-        const r = rotuloDia(x, false);
-        porRotulo.set(r, [...(porRotulo.get(r) ?? []), p.nome.split(" ")[0] + (p.nome.split(" ").length > 1 ? ` ${p.nome.split(" ").slice(-1)[0][0]}.` : "")]);
-      }
-      if (!porRotulo.size) continue;
-      linhas.push(`*${SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]} ${br(d)}*${feriados.has(d) ? " (feriado)" : ""}`);
-      const ordem = [...porRotulo.entries()].sort((a, b) => (/^\d/.test(a[0]) ? 0 : 1) - (/^\d/.test(b[0]) ? 0 : 1) || a[0].localeCompare(b[0]));
-      for (const [r, nomes] of ordem) linhas.push(`${r}: ${nomes.join(", ")}`);
-      linhas.push("");
-    }
-    if (linhas.length <= 3) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
-    try {
-      await navigator.clipboard.writeText(linhas.join("\n").trim());
-      avisar({ nivel: "ok", texto: "Escala copiada: cole na conversa do WhatsApp" });
-    } catch {
-      avisar({ nivel: "erro", texto: "O navegador não deixou copiar. Use o Baixar PDF." });
-    }
-  }
   const [imprimindo, setImprimindo] = useState(false);
   function baixarPdf() {
     if (!planejadosTela) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
@@ -469,13 +445,12 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           <span className="ep-paleta-rotulo">Clique num dia para escolher o que ele vira; arraste sobre vários dias para mudar todos de uma vez.</span>
           <div className="ep-acoes">
             {dados?.socio && <button className="ghost small" onClick={copiarRhid} disabled={ocupado}>Copiar do RHiD</button>}
-            {/* Imprimir e mandar só na visão Semana; 2 semanas e Mês são só para ver (pedido do dono) */}
+            {/* Imprimir só na visão Semana (o texto para o WhatsApp saiu, pedido do dono); 2 semanas e Mês são só para ver (pedido do dono) */}
             {periodo.length === 7 ? (
               <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
                 <button className="ghost small" onClick={baixarPdf} title="Gera o PDF da semana para mandar no grupo">Baixar PDF</button>
-                <button className="ghost small" onClick={copiarWhatsApp} title="Copia a escala da semana em texto, dia a dia, para colar no WhatsApp">Copiar p/ WhatsApp</button>
               </span>
-            ) : <span className="muted small">Para imprimir ou mandar no WhatsApp, use a visão Semana.</span>}
+            ) : <span className="muted small">Para imprimir, use a visão Semana.</span>}
             <button className={`ep-avisos-botao${erros.length ? " erro" : atencoes.length ? " aviso" : " ok"}`} onClick={() => setVerAvisos((v) => !v)} aria-expanded={verAvisos}>
               {erros.length + atencoes.length ? <><b>{erros.length}</b> fora da lei · <b>{atencoes.length}</b> atenção</> : "✓ Dentro da lei"}
             </button>
