@@ -4,9 +4,12 @@
 // comida de funcionário...), que a pessoa revisa, junta se quiser e aprova no site (/compras).
 // Chamada pelo pg_cron (agenda compras-continuo) com o segredo compras_segredo no cabeçalho x-segredo. A Edge Function
 // só roda 150 s e o plano grátis do Gemini aceita poucas chamadas por minuto, então cada chamada faz UMA etapa:
-//   1. começar: o Gemini separa as listas e dá até 4 nomes de busca por item; a busca roda no banco
-//      (compras_auto_buscar: notas fiscais + cadastro de insumos); tudo fica guardado na análise ('no_lote', lote 'gemini');
-//   2. terminar (na chamada seguinte): o Gemini liga cada item ao produto, faz as contas e as listas são gravadas.
+//   1. começar: o Gemini separa as listas e dá até 4 nomes de busca por item; fica guardado na análise
+//      ('no_lote', lote 'gemini', fase 'buscar');
+//   1b. buscar (chamada(s) seguinte(s), até 100 s cada): a busca roda no banco (compras_auto_buscar: notas fiscais +
+//      cadastro de insumos) e continua de onde parou, para pedido grande (planilha) não estourar o tempo;
+//   2. terminar: o Gemini liga cada item ao produto, faz as contas e as listas são gravadas.
+// Cada modelo do Gemini tem um teto de tempo; o que travar passa a vez para o próximo (09/11/2026).
 // Se a pessoa já mexeu ou aprovou alguma lista, só as mensagens novas viram listas novas; nada do que ela fez é trocado.
 // Corpo opcional: { "data": "2026-11-03" } outra semana; { "pessoa": "<id>" } refaz essa pessoa agora;
 // { "teste": true, "pessoa": "<id>" } analisa sem gravar listas (resultado em compras_testes).
@@ -118,7 +121,7 @@ type Cand = { descricao_na_nota: string; unidade: string; fornecedor: string; se
   casa_da_pessoa?: { compras_4s: number; comprado_4s: number; media_semanal_4s: number }; grupo_todo?: { compras_4s: number; compras_8s: number; media_semanal_4s: number } };
 type ItemCand = { lista: string; item: string; candidatos: Cand[] };
 type Dados = { modo: Contexto["modo"]; pedido: string; mensagens: number; teste?: number; texto: string; midias: { midia: string; enviada_em: string }[];
-  candidatos: ItemCand[]; tentativas?: number; aumento?: number };
+  candidatos: ItemCand[]; tentativas?: number; aumento?: number; separacao?: Separacao; fase?: "buscar" };
 const LIMITE_ARQUIVO = 8 * 1024 * 1024;
 const IMAGENS: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
@@ -137,10 +140,14 @@ function lerResposta(j: any, modelo: string) {
   return { json: JSON.parse(texto), modelo, uso: { entrada: uso.promptTokenCount, saida: uso.candidatesTokenCount, pensando: uso.thoughtsTokenCount } };
 }
 
-// Chamada ao Gemini com resposta em JSON. Tenta os modelos em ordem quando um não está no plano grátis ou estourou a cota.
-async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs: number, pensar: number) {
+// Chamada ao Gemini com resposta em JSON. Tenta os modelos em ordem quando um não está no plano grátis, estourou a cota
+// ou travou: cada modelo tem no máximo porModeloMs (09/11/2026: o 3.8 ficou parado os 135 s inteiros e nada saiu).
+async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs: number, pensar: number, porModeloMs = 60_000) {
   let ultimoErro = "";
+  const limite = Date.now() + prazoMs;
   for (const modelo of MODELOS) {
+    const resta = limite - Date.now();
+    if (resta < 15_000) break;
     const corpo: Record<string, unknown> = {
       systemInstruction: { parts: [{ text: sistema }] },
       contents: [{ role: "user", parts: partes }],
@@ -148,14 +155,15 @@ async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs
         thinkingConfig: { thinkingBudget: pensar } },
     };
     const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), Math.max(10_000, prazoMs));
+    const t = setTimeout(() => ctl.abort(), Math.min(resta, porModeloMs));
     let r: Response;
     try {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
         method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": CHAVE }, body: JSON.stringify(corpo), signal: ctl.signal,
       });
     } catch (e) {
-      throw new Error(ctl.signal.aborted ? `o Gemini (${modelo}) demorou demais` : erroTexto(e));
+      if (!ctl.signal.aborted) throw new Error(erroTexto(e));
+      ultimoErro = `o Gemini (${modelo}) demorou demais`; continue;
     } finally { clearTimeout(t); }
     const j = await r.json().catch(() => ({}));
     // modelo que não aceita o limite de raciocínio: repete sem ele
@@ -172,7 +180,7 @@ async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs
     if (!r.ok) throw new Error(`Gemini ${modelo}: ${r.status} ${(j.error?.message ?? "").slice(0, 300)}`);
     return lerResposta(j, modelo);
   }
-  throw new Error(`cota grátis do Gemini esgotada agora (${ultimoErro}); tenta de novo na próxima rodada`);
+  throw new Error(/demorou/.test(ultimoErro) ? `${ultimoErro}; tenta de novo na próxima rodada` : `cota grátis do Gemini esgotada agora (${ultimoErro}); tenta de novo na próxima rodada`);
 }
 
 // Arquivo anexado no grupo (bucket whatsapp): planilha vira texto; PDF e foto vão inteiros
@@ -210,15 +218,18 @@ async function candidatosDoItem(buscas: string[], unidade: string) {
   const candidatos = [...vistos.values()].sort((a, b) => Number(b.semelhanca ?? 0) - Number(a.semelhanca ?? 0)).slice(0, 6);
   return { candidatos, recentes };
 }
-async function buscarTudo(sep: Separacao, unidade: string) {
+// Busca os candidatos a partir do item `desde`, de 10 em 10, até acabar ou passar de `prazoMs`
+async function buscarParte(sep: Separacao, unidade: string, desde: number, prazoMs: number) {
+  const fim = Date.now() + prazoMs;
   const itens = sep.listas.flatMap((l) => (l.itens ?? []).map((i) => ({ lista: l.titulo, ...i })));
   const saida: Record<string, unknown>[] = [];
-  for (let k = 0; k < itens.length; k += 8) {
-    const parte = itens.slice(k, k + 8);
+  let k = desde;
+  for (; k < itens.length && Date.now() < fim; k += 10) {
+    const parte = itens.slice(k, k + 10);
     const r = await Promise.all(parte.map((i) => candidatosDoItem(i.buscas ?? [], unidade)));
     parte.forEach((i, n) => saida.push({ lista: i.lista, item: i.item, ...r[n] }));
   }
-  return saida;
+  return { saida, acabou: k >= itens.length, total: itens.length };
 }
 
 // Etapa 1: separar o pedido e buscar os candidatos; guarda tudo na análise para a etapa 2
@@ -256,18 +267,18 @@ async function comecar(pessoa: Pessoa, semana: { id: string; inicio: string }, a
       `Listas das semanas anteriores desta pessoa (JSON):\n${JSON.stringify(historico ?? [])}\n\n` +
       `<pedido autor="${pessoa.nome}" mensagens="${minhas.length}" arquivos="${anexos.length}">\n${pedido}\n</pedido>`;
 
-    const sep = await gemini(INSTRUCOES_SEPARAR, [...anexos, { text: texto }], SCHEMA_SEPARAR, PRAZO_MS - (Date.now() - inicio), 1024);
+    const sep = await gemini(INSTRUCOES_SEPARAR, [...anexos, { text: texto }], SCHEMA_SEPARAR, PRAZO_MS - (Date.now() - inicio), 1024, 55_000);
     const separacao = sep.json as Separacao;
     if (!separacao?.listas?.some((l) => l.itens?.length)) {
       await fechar({ status: "sem_pedido", mensagens: minhas.length, itens: 0, erro: "nenhum item no pedido" });
       return { pessoa: pessoa.nome, sem_itens: true };
     }
-    const candidatos = await buscarTudo(separacao, pessoa.unidade);
-    const uso = { modelo: sep.modelo, separar: sep.uso, itens_buscados: candidatos.length, segundos_etapa1: Math.round((Date.now() - inicio) / 1000) };
-    const dados: Dados = { modo: ctx.modo, pedido, mensagens: minhas.length, texto, midias, candidatos: candidatos as ItemCand[],
+    // a busca dos produtos nas notas fica para a(s) próxima(s) chamada(s) (fase "buscar"): pedido grande não estoura o tempo
+    const uso = { modelo: sep.modelo, separar: sep.uso, segundos_etapa1: Math.round((Date.now() - inicio) / 1000) };
+    const dados: Dados = { modo: ctx.modo, pedido, mensagens: minhas.length, texto, midias, candidatos: [], separacao, fase: "buscar",
       aumento: Number(ctx.aumento_pct ?? 0), ...(teste ? { teste } : {}) };
     await supabase.from("compras_analises").update({ status: "no_lote", lote: "gemini", dados, uso, mensagens: minhas.length }).eq("id", analiseId);
-    return { pessoa: pessoa.nome, etapa1: true, itens: candidatos.length, uso };
+    return { pessoa: pessoa.nome, etapa1: true, itens: separacao.listas.reduce((n, l) => n + (l.itens?.length ?? 0), 0), uso };
   } catch (e) {
     await fechar({ status: "falha", erro: erroTexto(e) });
     if (teste) await supabase.from("compras_testes").update({ resultado: { erro: erroTexto(e) }, fim: new Date().toISOString() }).eq("id", teste);
@@ -351,11 +362,21 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
   const d = a.dados;
   const fechar = (campos: Record<string, unknown>) =>
     supabase.from("compras_analises").update({ ...campos, fim: new Date().toISOString() }).eq("id", a.id);
+  if (d.fase === "buscar" && d.separacao) {
+    const { data: p } = await supabase.from("operacao_pessoas").select("unidade").eq("id", a.pessoa_id).single();
+    const r = await buscarParte(d.separacao, p?.unidade ?? "", d.candidatos?.length ?? 0, 100_000);
+    const candidatos = [...(d.candidatos ?? []), ...r.saida] as ItemCand[];
+    const novo: Dados = { ...d, candidatos };
+    if (r.acabou) delete novo.fase;
+    const uso = { ...(a.uso ?? {}), itens_buscados: candidatos.length, segundos_busca: Math.round((Date.now() - inicio) / 1000) + Number((a.uso ?? {}).segundos_busca ?? 0) };
+    await supabase.from("compras_analises").update({ dados: novo, uso }).eq("id", a.id);
+    return { analise: a.id, buscados: candidatos.length, de: r.total, tenta_de_novo: r.acabou ? "busca pronta" : "busca continua" };
+  }
   let resp;
   try {
     const anexos = await Promise.all((d.midias ?? []).map(anexo));
     resp = await gemini(INSTRUCOES, [...anexos, { text: `${d.texto}\n\n<candidatos>\n${JSON.stringify(d.candidatos)}\n</candidatos>` }],
-      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048);
+      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048, 100_000);
   } catch (e) {
     // cota ou demora: fica para a próxima rodada; depois de 3 tentativas, falha
     const tentativas = (d.tentativas ?? 0) + 1;
