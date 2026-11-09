@@ -108,6 +108,12 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
     setContratados((data ?? []) as Contratado[]);
   }, [supabase]);
   useEffect(() => { lerContratados(); }, [lerContratados]);
+  // Apelidos da escala, para a grade do Ponto (a escala editável já os recebe do banco)
+  const [apelidos, setApelidos] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    supabase.from("escala_apelidos").select("cliente_id,pessoa_id,apelido").neq("apelido", "").then(({ data }) =>
+      setApelidos(new Map(((data ?? []) as { cliente_id: number; pessoa_id: number; apelido: string }[]).map((a) => [`${a.cliente_id}:${a.pessoa_id}`, a.apelido]))));
+  }, [supabase, recarga]);
   // Grupos criados à mão (escala_grupos.fixo), para aparecerem mesmo vazios no Organizar
   const [fixos, setFixos] = useState<{ local: string; setor: string }[]>([]);
   useEffect(() => {
@@ -146,7 +152,7 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
         </div>
       </div>
       {organizando ? (
-        <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos}
+        <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos} apelidos={apelidos}
           organizarFixo onPronto={() => setOrganizando(false)}
           onOrdenarExtras={async (itens: ItemExtra[]) => {
             // Na tela na hora; no banco em seguida
@@ -160,7 +166,7 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
           }} />
       ) : verPonto ? (
         // O ponto oficial, atualizado a cada minuto, com a situação de agora de cada pessoa (só leitura)
-        <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos} somenteVer />
+        <EscalaSecao ponto={ponto} chavesRH={new Set()} onAbrirPessoa={() => {}} extras={extras} gruposVazios={fixos} somenteVer apelidos={apelidos} />
       ) : (
         <EscalaPlanejada supabase={supabase} modo="planejada" recarga={recarga} />
       )}

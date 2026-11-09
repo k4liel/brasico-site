@@ -12,6 +12,7 @@ import PontoEscala, { AFASTADOS, ordemDaGrade, type Celula, type ColunaExtra, ty
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
+import EscalaCompensas, { prazo, type CompDados, type PessoaComp } from "./EscalaCompensas";
 import { createPortal } from "react-dom";
 
 type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; postos?: string[]; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
@@ -22,6 +23,8 @@ type PessoaDado = {
   afastado?: string | null;
   // Contratado do RH sem cadastro no relógio (escala_extras, cliente_id = 0)
   fora_do_ponto?: boolean;
+  // Apelido na escala (escala_apelidos): a linha mostra só ele
+  apelido?: string | null;
 };
 type RealDia = DiaEscala & { cliente_id: number; pessoa_id: number };
 type PlanoDia = DiaPlano & { cliente_id: number; pessoa_id: number; dia: string };
@@ -96,7 +99,10 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const [periodo, setPeriodo] = useState<string[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [verAvisos, setVerAvisos] = useState(false);
-  const [ajuste, setAjuste] = useState<PessoaDado | null>(null);
+  // Banco de compensas (escala_compensas_dados): saldo de cada pessoa, feriados a confirmar
+  const [comp, setComp] = useState<CompDados | null>(null);
+  // Apelido: clicar no nome abre a caixinha para escrever
+  const [apelidoDe, setApelidoDe] = useState<{ chave: string; nome: string; apelido: string; x: number; y: number } | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const lidos = useRef<{ de: string; ate: string } | null>(null);
   const sincronizado = useRef(false);
@@ -135,6 +141,12 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     // Lê em trechos de até 75 dias (limite da função)
     for (let x = a; x <= b; x = somarDias(x, 76)) await ler(x, somarDias(x, 75) < b ? somarDias(x, 75) : b);
   }, [ler, supabase, sincronizar]);
+
+  const lerComp = useCallback(async () => {
+    const { data } = await supabase.rpc("escala_compensas_dados");
+    if (data) setComp(data as CompDados);
+  }, [supabase]);
+  useEffect(() => { lerComp(); }, [lerComp, recarga]);
 
   // A organização do Ponto mudou: relê o período que está na tela
   const periodoRef = useRef<string[]>([]);
@@ -203,7 +215,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const pessoas: PessoaEscala[] = vistas.map((p) => {
     const g = grupoDe.get(p.grupo_id);
     return {
-      chave: chaveDe(p.cliente_id, p.id), nome: nomeProprio(p.nome), cargo: p.cargo ? nomeProprio(p.cargo) : "",
+      chave: chaveDe(p.cliente_id, p.id), nome: p.apelido || nomeProprio(p.nome), completo: nomeProprio(p.nome), cargo: p.cargo ? nomeProprio(p.cargo) : "",
       // Espelho do Ponto: quem o RHiD afasta hoje fica na área "Afastados" no fim do local
       local: g?.local ?? "", setor: p.afastado ? AFASTADOS : g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
       hoje: p.afastado ? { texto: `Afastado (${p.afastado})`, classe: "afastado" } : undefined,
@@ -267,6 +279,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       ],
     });
     const { error } = await supabase.rpc("escala_gravar", { p_itens: itens });
+    lerComp();
     if (error) {
       avisar({ nivel: "erro", texto: `Não salvou: ${error.message}` });
       const l = lidos.current;
@@ -274,6 +287,33 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       return false;
     }
     return true;
+  }
+
+  const compDe = useMemo(() => new Map((comp?.pessoas ?? []).map((x) => [chaveDe(x.cliente_id, x.id), x] as [string, PessoaComp])), [comp]);
+  // FC só com compensa em aberto: quantas FC novas cada pessoa ganharia × quantas compensas ela tem
+  function fcSemSaldo(celulas: Celula[]) {
+    const novas = new Map<string, number>();
+    for (const c of celulas) if (plano.get(c.chave)?.get(c.dia)?.codigo !== "FC") novas.set(c.chave, (novas.get(c.chave) ?? 0) + 1);
+    const faltam = [...novas].filter(([k, n]) => n > (compDe.get(k)?.compensas.filter((x) => x.situacao === "aberta").length ?? 0));
+    return faltam.map(([k]) => pessoas.find((p) => p.chave === k)?.nome.split(" ")[0] ?? "");
+  }
+  // Feriados entre os dias escolhidos: o que já se disse (trabalhou → compensa) de cada um
+  function feriadosDe(celulas: Celula[]) {
+    return celulas.filter((c) => feriados.has(c.dia)).map((c) => {
+      const x = compDe.get(c.chave)?.compensas.find((k) => k.origem === "feriado" && k.feriado === c.dia);
+      return { celula: c, passou: c.dia <= agora, compensa: x && x.situacao !== "cancelada" ? x : null, naoTrabalhou: x?.situacao === "cancelada" };
+    });
+  }
+  async function marcarFeriado(celulas: Celula[], trabalhou: boolean) {
+    setEditor(null);
+    for (const c of celulas) {
+      const p = pessoaDe.get(c.chave);
+      if (!p) continue;
+      const { error } = await supabase.rpc("escala_compensa_feriado", { p_cliente: p.cliente_id, p_pessoa: p.id, p_feriado: c.dia, p_trabalhou: trabalhou });
+      if (error) { avisar({ nivel: "erro", texto: error.message }); break; }
+    }
+    await lerComp();
+    avisar({ nivel: "ok", texto: trabalhou ? `${celulas.length === 1 ? "Compensa lançada" : `${celulas.length} compensas lançadas`}: vale 60 dias` : "Marcado: não trabalhou no feriado" });
   }
 
   // Onde a pessoa fica no dia, nos grupos que revezam (escala_grupos.postos): só quando todos os escolhidos têm postos
@@ -356,15 +396,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     avisar({ nivel: "ok", texto: data ? `${data} dias copiados do RHiD` : "Nada a copiar: os dias já estavam montados (ou o RHiD ainda não leu esse período)" });
   }
 
-  async function salvarAjuste(dias: number, motivo: string) {
-    if (!ajuste) return;
-    const { error } = await supabase.rpc("escala_compensacao_ajustar", { p_cliente: ajuste.cliente_id, p_pessoa: ajuste.id, p_dias: dias, p_motivo: motivo });
-    if (error) return avisar({ nivel: "erro", texto: error.message });
-    setAjuste(null);
-    const l = lidos.current;
-    if (l) await ler(somarDias(agora, -14), somarDias(agora, 14));
-    avisar({ nivel: "ok", texto: "Saldo de folgas acertado" });
-  }
+
 
   // Esc fecha a janelinha
   useEffect(() => {
@@ -375,24 +407,27 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
   // ---------- Colunas a mais ----------
   // Comp. e Banco vêm do RHiD: só para sócios (o líder não vê nada do RHiD)
-  const colunas: ColunaExtra[] = modo === "real" || !dados?.socio ? [] : [
+  // Comp. = compensas em aberto do banco de compensas (todos veem); Banco = banco de horas do RHiD (só sócios)
+  const colunas: ColunaExtra[] = modo === "real" ? [] : [
     {
-      titulo: "Comp.", dica: "Folgas a compensar: feriados trabalhados desde 01/11/2026 + acertos − folgas compensadas (FC) já marcadas",
+      titulo: "Comp.", dica: "Compensas em aberto: feriados trabalhados ainda sem a folga compensada (FC)",
       valor: (p) => {
-        const d = pessoaDe.get(p.chave);
-        if (!d) return null;
-        const s = d.comp_creditos + Number(d.comp_ajuste) - d.comp_debitos;
-        return <button className={`ep-comp${s > 0 ? " deve" : s < 0 ? " neg" : ""}`} onClick={() => setAjuste(d)} title={`${d.comp_creditos} feriado(s) trabalhado(s), ${d.comp_debitos} FC marcada(s), acerto ${d.comp_ajuste}. Clique para acertar.`}>{s > 0 ? `+${s}` : s}</button>;
+        const c = compDe.get(p.chave);
+        const ab = c?.compensas.filter((x) => x.situacao === "aberta") ?? [];
+        if (!ab.length) return <span className="muted">0</span>;
+        const pior = ab.some((x) => prazo(x, comp!.hoje) === "vencida") ? " vencida" : ab.some((x) => prazo(x, comp!.hoje) === "vencendo") ? " vencendo" : "";
+        return <span className={`ep-comp deve${pior}`} title={ab.map((x) => (x.feriado ? `Feriado ${dataBR(x.feriado)}` : `Saldo: ${x.motivo}`) + (x.vence_em ? ` · até ${dataBR(x.vence_em)}` : "")).join("\n")}>{ab.length}</span>;
       },
     },
-    {
+    ...(dados?.socio ? [{
       titulo: "Banco", dica: "Saldo do banco de horas no RHiD",
-      valor: (p) => {
-        const s = pessoaDe.get(p.chave)?.saldo_banco;
-        return s == null ? <span className="muted">—</span> : <span className={s < 0 ? "es-ruim" : ""}>{horas(s)}</span>;
+      valor: (p: PessoaEscala) => {
+        const sb = pessoaDe.get(p.chave)?.saldo_banco;
+        return sb == null ? <span className="muted">—</span> : <span className={sb < 0 ? "es-ruim" : ""}>{horas(sb)}</span>;
       },
-    },
+    }] : []),
   ];
+
   const horasPlanejadas = (k: string) => periodo.reduce((t, d) => t + (jornada(plano.get(k)?.get(d))?.liquido ?? 0), 0);
   if (modo !== "real") colunas.unshift({
     titulo: "Horas", dica: "Horas de trabalho planejadas no período da tela (sem o intervalo)",
@@ -458,6 +493,11 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         </div>
       )}
 
+      {comp && modo !== "real" && (
+        <EscalaCompensas supabase={supabase} dados={comp} local={grupo} onMudou={lerComp}
+          nomeDe={(c, id, nome) => pessoas.find((p) => p.chave === chaveDe(c, id))?.nome ?? nomeProprio(nome)} />
+      )}
+
       {semEscala && (
         <div className="ep-vazio">
           {dados?.socio ? <>
@@ -483,7 +523,10 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir}
           onPeriodo={mudarPeriodo} pintar={podeEditar ? pintar : undefined} colunasExtras={colunas}
           gruposVazios={gruposVazios}
-          onAbrir={onAbrirPessoa} />
+          onAbrir={modo === "real" ? onAbrirPessoa : (k) => {
+            const d = pessoaDe.get(k);
+            if (d) setApelidoDe({ chave: k, nome: nomeProprio(d.nome), apelido: d.apelido ?? "", x: ponteiro.current.x, y: ponteiro.current.y });
+          }} />
       )}
       {!dados && <PontoEscala modo={modo} pessoas={[]} garantir={garantir} onPeriodo={setPeriodo} />}
 
@@ -531,15 +574,27 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           <footer>desc. = horário de descanso (intervalo) · F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
         </div>, document.body)}
 
+      {apelidoDe && (
+        <CaixaApelido {...apelidoDe} onFechar={() => setApelidoDe(null)} onSalvar={async (apelido) => {
+          const d = pessoaDe.get(apelidoDe.chave);
+          if (!d) return;
+          const { error } = await supabase.rpc("escala_apelido_definir", { p_cliente: d.cliente_id, p_pessoa: d.id, p_apelido: apelido });
+          if (error) return avisar({ nivel: "erro", texto: error.message });
+          setDados((v) => v && { ...v, pessoas: v.pessoas.map((x) => (x.cliente_id === d.cliente_id && x.id === d.id ? { ...x, apelido: apelido.trim() || null } : x)) });
+          setApelidoDe(null);
+          avisar({ nivel: "ok", texto: apelido.trim() ? `Na escala: ${apelido.trim()}` : "Apelido tirado: volta o nome" });
+        }} />
+      )}
+
       {editor && (
         <EditorDia celulas={editor.celulas} x={editor.x} y={editor.y} horarios={pinceisHorario} outro={outro} setOutro={setOutro}
-          postos={postosDe(editor.celulas)}
+          postos={postosDe(editor.celulas)} fcSemSaldo={fcSemSaldo(editor.celulas)} feriadosDia={feriadosDe(editor.celulas)}
+          nomeFeriado={(d) => comp?.feriados.find((f) => f.dia === d)?.nome ?? "Feriado"} onFeriado={(cs, t) => marcarFeriado(cs, t)}
           atual={editor.celulas.length === 1 ? plano.get(editor.celulas[0].chave)?.get(editor.celulas[0].dia) : undefined}
           nome={editor.celulas.length === 1 ? pessoas.find((p) => p.chave === editor.celulas[0].chave)?.nome ?? "" : ""}
           onEscolher={(p) => aplicar(editor.celulas, p)} onFechar={() => setEditor(null)} />
       )}
 
-      {ajuste && <AjusteCompensacao pessoa={ajuste} onSalvar={salvarAjuste} onFechar={() => setAjuste(null)} />}
     </section>
   );
 }
@@ -557,8 +612,27 @@ function rotuloDia(x: DiaPlano, curto: boolean) {
 }
 
 // A janelinha do bloquinho: o que o dia (ou os dias escolhidos) vira
-function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [] }: {
+// Caixinha do apelido (clicar no nome na escala)
+function CaixaApelido({ nome, apelido, x, y, onSalvar, onFechar }: { nome: string; apelido: string; x: number; y: number; onSalvar: (a: string) => void; onFechar: () => void }) {
+  const [valor, setValor] = useState(apelido);
+  const left = Math.max(8, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1000) - 300));
+  return (
+    <div className="ep-editor ep-apelido" role="dialog" aria-label="Apelido na escala" style={{ left, top: y + 10 }}>
+      <div className="ep-editor-cabeca"><b>Apelido na escala</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
+      <p className="muted small">{nome}</p>
+      <form onSubmit={(e) => { e.preventDefault(); onSalvar(valor); }} className="ep-apelido-form">
+        <input autoFocus value={valor} maxLength={30} onChange={(e) => setValor(e.target.value)} placeholder="Ex.: Dani, Zé, Tio Paulo" />
+        <button className="small" type="submit">Salvar</button>
+      </form>
+      <p className="muted small">A escala e o PDF mostram só o apelido. Deixe em branco para voltar o nome.</p>
+    </div>
+  );
+}
+
+type FeriadoDia = { celula: Celula; passou: boolean; compensa: { situacao: string; vence_em: string | null; usada_dia: string | null } | null; naoTrabalhou: boolean };
+function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [], fcSemSaldo = [], feriadosDia = [], nomeFeriado, onFeriado }: {
   celulas: Celula[]; x: number; y: number; horarios: Pincel[]; postos?: string[];
+  fcSemSaldo?: string[]; feriadosDia?: FeriadoDia[]; nomeFeriado?: (d: string) => string; onFeriado?: (cs: Celula[], trabalhou: boolean) => void;
   outro: { entrada: string; saida: string; intervalo: string }; setOutro: (o: { entrada: string; saida: string; intervalo: string }) => void;
   atual?: DiaPlano; nome: string; onEscolher: (p: Pincel) => void; onFechar: () => void;
 }) {
@@ -596,6 +670,30 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   return (
     <div ref={caixa} className="ep-editor" role="dialog" aria-label="Escolher o que o dia vira" style={{ left: pos.left, top: pos.top }}>
       <div className="ep-editor-cabeca"><b>{titulo}</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
+      {feriadosDia.length > 0 && (() => {
+        const um = feriadosDia.length === 1 ? feriadosDia[0] : null;
+        const passados = feriadosDia.filter((f) => f.passou);
+        const semResposta = passados.filter((f) => !f.compensa && !f.naoTrabalhou).map((f) => f.celula);
+        return (
+          <div className="ep-editor-grupo ep-editor-feriado">
+            <span>Feriado{um ? ` · ${nomeFeriado?.(um.celula.dia) ?? ""}` : "s"}</span>
+            {um && !um.passou ? <p className="muted small">A compensa se lança depois do feriado, dizendo se a pessoa trabalhou.</p>
+              : um?.compensa ? (
+                <p className="small">{um.compensa.situacao === "usada"
+                  ? <>✓ Trabalhou. Compensa já dada: folga em {um.compensa.usada_dia ? br(um.compensa.usada_dia) : "—"}.</>
+                  : <>✓ Trabalhou. Compensa em aberto{um.compensa.vence_em ? <> até {br(um.compensa.vence_em)}</> : null}.
+                    <button className="ghost small" onClick={() => onFeriado?.([um.celula], false)}>Não trabalhou</button></>}</p>
+              ) : um?.naoTrabalhou ? (
+                <p className="small muted">Marcado: não trabalhou. <button className="ghost small" onClick={() => onFeriado?.([um.celula], true)}>Trabalhou</button></p>
+              ) : semResposta.length > 0 ? (
+                <div className="ep-editor-opcoes">
+                  <button className="small" onClick={() => onFeriado?.(semResposta, true)}>{semResposta.length === 1 ? "Trabalhou no feriado (gera compensa)" : `Trabalharam (${semResposta.length} compensas)`}</button>
+                  <button className="ghost small" onClick={() => onFeriado?.(semResposta, false)}>Não trabalhou</button>
+                </div>
+              ) : <p className="muted small">Feriados já respondidos.</p>}
+          </div>
+        );
+      })()}
       {postos.length > 0 && (
         <div className="ep-editor-grupo">
           <span>Onde trabalha</span>
@@ -640,7 +738,9 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
         <span>Não trabalha</span>
         <div className="ep-editor-opcoes">
           {CODIGOS.map((c) => (
-            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })} title={c.nome}>
+            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })}
+              disabled={c.codigo === "FC" && fcSemSaldo.length > 0}
+              title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.` : c.nome}>
               <b>{c.curto}</b><span>{c.nome.replace(" (feriado)", "")}</span>
             </button>
           ))}
@@ -678,28 +778,3 @@ function PainelAvisos({ avisos, onIr }: { avisos: Grupo_Aviso[]; onIr: (chave: s
   );
 }
 
-function AjusteCompensacao({ pessoa, onSalvar, onFechar }: { pessoa: PessoaDado; onSalvar: (dias: number, motivo: string) => void; onFechar: () => void }) {
-  const [dias, setDias] = useState("1");
-  const [motivo, setMotivo] = useState("");
-  const saldo = pessoa.comp_creditos + Number(pessoa.comp_ajuste) - pessoa.comp_debitos;
-  return (
-    <div className="ep-fundo" onClick={onFechar}>
-      <div className="ep-dialogo" role="dialog" aria-label="Acertar folgas a compensar" onClick={(e) => e.stopPropagation()}>
-        <h3>Folgas a compensar · {nomeProprio(pessoa.nome)}</h3>
-        <dl>
-          <div><dt>Feriados trabalhados</dt><dd>{pessoa.comp_creditos}</dd></div>
-          <div><dt>Folgas compensadas (FC)</dt><dd>{pessoa.comp_debitos}</dd></div>
-          <div><dt>Acertos</dt><dd>{Number(pessoa.comp_ajuste)}</dd></div>
-          <div className="total"><dt>Saldo</dt><dd>{saldo}</dd></div>
-        </dl>
-        <p className="muted">Para o saldo que já existia antes da escala no Brasico, ou folga dada fora dela. Use número negativo para tirar.</p>
-        <label>Dias<input type="number" step="0.5" value={dias} onChange={(e) => setDias(e.target.value)} /></label>
-        <label>Motivo<input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: saldo de outubro" /></label>
-        <div className="ep-dialogo-acoes">
-          <button className="ghost small" onClick={onFechar}>Cancelar</button>
-          <button className="small" disabled={!Number(dias) || !motivo.trim()} onClick={() => onSalvar(Number(dias), motivo)}>Salvar acerto</button>
-        </div>
-      </div>
-    </div>
-  );
-}

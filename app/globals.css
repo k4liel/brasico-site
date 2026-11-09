@@ -2464,6 +2464,32 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-editor-opcoes { display: flex; flex-wrap: wrap; gap: 6px; }
 .ep-editor .ep-outro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ep-editor-postos { margin: 0; }
+.ep-apelido { width: min(300px, calc(100vw - 16px)); }
+.ep-apelido p { margin: 0; }
+.ep-apelido-form { display: flex; gap: 6px; }
+.ep-apelido-form input { flex: 1; min-width: 0; }
+/* Banco de compensas (09/11/2026) */
+.ep-comp-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.ep-comp-tag.vencendo { background: color-mix(in srgb, #c98a1b 22%, transparent); color: #c98a1b; }
+.ep-comp-tag.vencida { background: color-mix(in srgb, var(--danger, #c0392b) 20%, transparent); color: var(--danger, #c0392b); }
+.ep-comp-tag.confirmar { background: color-mix(in srgb, var(--gold) 22%, transparent); color: var(--gold); }
+.ep-comp-bloco { display: grid; gap: 8px; }
+.ep-comp-bloco > button { justify-self: start; }
+.ep-comp-bloco h4 { margin: 0; font-size: 13px; font-weight: 700; }
+.ep-comp-bloco h4 small { font-weight: 400; margin-left: 6px; }
+.ep-comp-lista { list-style: none; margin: 0; padding: 0; display: grid; }
+.ep-comp-lista > li { display: grid; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.ep-comp-lista > li.ep-comp-pessoa { grid-template-columns: minmax(160px, 220px) minmax(0, 1fr); }
+.ep-comp-acoes { display: inline-flex; gap: 6px; }
+.ep-comp-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ep-comp-saldo { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 6px; border-radius: 999px; font-weight: 800; font-size: 12px; background: var(--seg); }
+.ep-contratados-chip.ep-comp-vencendo { border-color: #c98a1b; }
+.ep-contratados-chip.ep-comp-vencida { border-color: var(--danger, #c0392b); color: var(--danger, #c0392b); }
+.ep-comp.deve.vencendo { box-shadow: inset 0 0 0 1px #c98a1b; }
+.ep-comp.deve.vencida { box-shadow: inset 0 0 0 1px var(--danger, #c0392b); color: var(--danger, #c0392b); }
+.ep-editor-feriado p { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ep-editor .ep-pincel:disabled { opacity: .35; cursor: not-allowed; }
+@media (max-width: 760px) { .ep-comp-lista > li, .ep-comp-lista > li.ep-comp-pessoa { grid-template-columns: 1fr; } }
 .ep-editor .ep-pincel.t { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; line-height: 1.2; }
 .ep-desc { font-size: 10.5px; font-weight: 500; opacity: .75; }
 .ep-horario { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }

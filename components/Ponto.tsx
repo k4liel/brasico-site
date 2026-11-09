@@ -38,7 +38,9 @@ const atualizadoEm = (p: Ponto) => (p.lendo ? "Lendo o RHiD…" : p.ultima ? `at
 export type ExtraEscala = PessoaEscala & { extraId: number; posicao: number | null };
 export type ItemExtra = { id: number; posicao: number; local?: string; setor?: string };
 
-export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras, organizarFixo, onPronto, somenteVer }: {
+export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], gruposVazios = [], onOrdenarExtras, organizarFixo, onPronto, somenteVer, apelidos }: {
+  // Apelidos da escala (escala_apelidos), pela chave da linha ("cliente:pessoa")
+  apelidos?: Map<string, string>;
   // Página Escala: abre já organizando e o "Pronto" volta para a escala
   organizarFixo?: boolean; onPronto?: () => void;
   // Página Escala, lado "Ponto oficial": sem o botão Organizar (ele fica no topo da página)
@@ -71,7 +73,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
   const linhaDe = new Map(mostradas.map((l) => [l.k, l]));
   const pessoasPonto = mostradas.map<PessoaEscala & { pos: number }>((l) => ({
     pos: l.posicao ?? 1e6,
-    chave: l.k, ficha: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, dias: l.dias,
+    chave: l.k, ficha: l.chaveRH, nome: apelidos?.get(l.k) || nomeProprio(l.p.nome), completo: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, dias: l.dias,
     // Afastado hoje vai para a área "Afastados" no fim do local (no Organizar também; arrastar para fora o põe no setor escolhido)
     setor: l.afastado ? AFASTADOS : l.setor,
     hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
@@ -80,7 +82,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
   const extrasVistos = estado && !organizar ? [] : extras.filter((x) => (!local || (x.local || "Sem local") === local)
     && (organizar || ((!setor || x.setor === setor) && (!termo || x.nome.toLowerCase().includes(termo) || (x.cargo ?? "").toLowerCase().includes(termo)))));
   const extraDe = new Map(extras.map((x) => [x.chave, x]));
-  const pessoas: PessoaEscala[] = [...pessoasPonto, ...extrasVistos.map((x) => ({ ...x, pos: x.posicao ?? 1e6 }))]
+  const pessoas: PessoaEscala[] = [...pessoasPonto, ...extrasVistos.map((x) => ({ ...x, nome: apelidos?.get(x.chave) || x.nome, completo: x.nome, pos: x.posicao ?? 1e6 }))]
     .sort((a, b) => a.pos - b.pos || a.nome.localeCompare(b.nome));
 
   // Solta a pessoa arrastada: antes ou depois de outra (e fica no grupo dela) ou no começo de um setor/local.
