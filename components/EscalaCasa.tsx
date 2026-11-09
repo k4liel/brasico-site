@@ -1,8 +1,8 @@
 "use client";
 
 // A escala de uma casa (09/11/2026): a troca rápida entre Planejada (editável), Ponto (RHiD) e Comparar, só com
-// os grupos da casa (lib/escala/casas.ts). Usada na aba Escala de cada hotel, nas páginas /escala/<casa>
-// (Cicchetti Centro e Outras casas) e na página dos líderes. A escala do RH fica só para ver.
+// os grupos da casa (lib/escala/casas.ts). Usada na aba Escala do RH (uma aba por casa; "Todas" é só para ver)
+// e na página dos líderes (/escala).
 import { useEffect, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import EscalaPlanejada, { ModosEscala } from "./EscalaPlanejada";

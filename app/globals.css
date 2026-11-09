@@ -2415,10 +2415,9 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-casas button:hover { color: var(--strong); }
 .ep-casas button.on { background: var(--strong); color: var(--bg); }
 .ep-casas button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.ep-rh-casas { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 16px; padding: 10px 14px; border: 1px dashed var(--border); border-radius: 12px; font-size: 13px; color: var(--muted); }
-.ep-rh-casas b { color: var(--strong); }
-.ep-rh-casas a { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); color: var(--strong); font-weight: 600; text-decoration: none; }
-.ep-rh-casas a:hover { border-color: var(--gold); color: var(--gold); }
+.ep-casas-rh { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; font-size: 13px; }
+.ep-casas-rh .ep-casas { margin: 0; }
+.ep-casas button small { margin-left: 6px; font-size: 11px; font-weight: 500; opacity: .75; }
 .ep-paleta .ep-acoes { grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; padding-top: 10px; border-top: 1px dashed var(--border); }
 .ep-paleta .ep-acoes .ep-avisos-botao { margin-left: auto; }
 .ep-enviar { display: inline-flex; gap: 4px; padding-left: 8px; border-left: 1px solid var(--border); }

@@ -1,5 +1,5 @@
-// As casas da escala planejada (09/11/2026): cada casa tem a sua página com a escala editável — os hotéis
-// dentro da página do hotel (/hoteis/<id>, aba Escala) e as demais em /escala/<id> (grupo Hotéis do menu).
+// As casas da escala planejada (09/11/2026): tudo fica na aba Escala do RH — "Todas" (a grade do RHiD, só para
+// ver) e uma aba por casa com a escala editável. Os líderes veem as suas casas em /escala (/escala/<id>).
 // O local de cada grupo vem da grade do RH (lib/esocial/locais.ts): "Cicchetti Pipa" é o Cicchetti Centro, e
 // todo local que não é de uma casa daqui (Hello Barra, Hello Pipa, Vila da Barra…) cai em "Outras casas".
 
@@ -22,5 +22,3 @@ export function casaDoLocal(local: string): string {
 
 export const casaPorId = (id: string) => CASAS.find((c) => c.id === id);
 
-// Onde fica a escala editável de cada casa
-export const linkDaCasa = (id: string) => (casaPorId(id)?.hotel ? `/hoteis/${id}#escala` : `/escala/${id}`);

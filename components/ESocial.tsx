@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
@@ -10,9 +10,8 @@ import {
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
-import { EscalaSecao, HojeNoPonto, Justificativas, PontoGoverno, PontoMes } from "./Ponto";
+import { HojeNoPonto, Justificativas, PontoGoverno, PontoMes } from "./Ponto";
 import { usePonto } from "./PontoDados";
-import { CASAS, linkDaCasa } from "@/lib/escala/casas";
 import BancoHoras from "./BancoHoras";
 import Salarios from "./Salarios";
 
@@ -36,6 +35,7 @@ type FiltroLeitura = (typeof LEITURAS)[number];
 // (#pessoas, #ponto, #banco…) continuam funcionando e abrem a aba nova certa.
 const SECOES = [
   { id: "inicio", rotulo: "Início", icone: "inicio", titulo: "Início", texto: "O que pede atenção hoje: o ponto, os alertas, os números da equipe e os próximos prazos." },
+  // A Escala virou página própria (/escala, 09/11/2026): a aba só leva até ela
   { id: "escala", rotulo: "Escala", icone: "ponto", titulo: "Escala", texto: "Quem trabalha em cada dia, por local e setor, e o que foi batido no relógio (RHiD)." },
   { id: "equipe", rotulo: "Equipe", icone: "equipe", titulo: "Equipe", texto: "Todas as pessoas com a ficha de cada uma, o ponto do mês, o banco de horas e os salários." },
   { id: "contratos", rotulo: "Ausências e contratos", icone: "ausencias", titulo: "Ausências e contratos", texto: "Quem está fora, atestados e férias lançados no ponto, contratos de experiência a vencer e as entradas e saídas." },
@@ -107,6 +107,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   useEffect(() => {
     const ler = () => {
       const h = window.location.hash.replace("#", "");
+      if (h === "escala" || h === "ponto") return window.location.replace("/escala");
       const a = ALIAS[h];
       if (a?.[1]) setVisaoEquipe(a[1]);
       setSecao(SECOES.some((s) => s.id === h) ? (h as Secao) : a ? a[0] : SECAO_PADRAO);
@@ -117,6 +118,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     return () => window.removeEventListener("hashchange", ler);
   }, []);
   function irPara(s: Secao, v?: VisaoEquipe) {
+    if (s === "escala") {
+      window.location.href = "/escala";
+      return;
+    }
     setSecao(s);
     if (v) setVisaoEquipe(v);
     window.history.replaceState(null, "", `#${s}`);
@@ -228,17 +233,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const bloqueado = diaDoMes() <= 7;
   const ponto = usePonto(supabase, filtroEmpresa);
   const atrasadosPonto = ponto.vistas.filter((l) => l.estado === "Atrasado").length;
-  // Os grupos da escala planejada acompanham o local e o setor da escala do RH (com o que foi organizado à mão)
-  // Os grupos da escala planejada (uma por casa, editável na página de cada casa) seguem o local e o setor desta
-  // grade: ao abrir o RH, um sócio os atualiza uma vez
-  const escalaSincronizada = useRef(false);
-  useEffect(() => {
-    if (escalaSincronizada.current || !ponto.carregado || !ponto.linhas.length) return;
-    escalaSincronizada.current = true;
-    supabase.rpc("escala_membros_sincronizar", {
-      p_itens: ponto.linhas.map((l) => ({ cliente_id: l.p.cliente_id, pessoa_id: l.p.id, local: l.local, setor: l.setor })),
-    }).then(() => {}, () => {});
-  }, [ponto.carregado, ponto.linhas, supabase]);
 
   const termo = busca.trim().toLowerCase();
   const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
@@ -472,17 +466,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     </section>
                   </div>
 
-                </>
-              )}
-
-              {/* ===================== Escala ===================== */}
-              {secao === "escala" && (
-                <>
-                  <nav className="ep-rh-casas" aria-label="Escala de cada casa">
-                    <span><b>Só para ver.</b> A escala de cada casa se monta na página dela:</span>
-                    {CASAS.filter((c) => c.id !== "filho-do-vento").map((c) => <a key={c.id} href={linkDaCasa(c.id)}>{c.nome}</a>)}
-                  </nav>
-                  <EscalaSecao ponto={ponto} chavesRH={chavesRH} onAbrirPessoa={setAberta} />
                 </>
               )}
 

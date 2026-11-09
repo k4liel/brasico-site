@@ -11,13 +11,8 @@ const HOTEIS = [
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
   { id: "filho-do-vento", nome: "Filho do Vento", icone: <path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h7" /> },
 ];
-// As outras casas no mesmo grupo do menu: por enquanto, só a escala de cada uma (/escala/<id>, lib/escala/casas.ts)
-const CASAS_MENU = [
-  { id: "cicchetti-centro", nome: "Cicchetti Centro", icone: <><path d="M4 11h16a8 8 0 0 1-16 0Z" /><path d="M8 7c0-1.5 1-2 1-3.5M12 7c0-1.5 1-2 1-3.5M16 7c0-1.5 1-2 1-3.5M6 21h12" /></> },
-  { id: "outras-casas", nome: "Outras casas", icone: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></> },
-];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "receita" | "certificados" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -115,6 +110,13 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
             RH · eSocial
           </a>
+          {/* Escala: subpágina do RH (/escala), com a escala editável de cada casa */}
+          <div className="menu-sub aberto">
+            <a className={ativo === "escala" ? "ativo" : ""} href="/escala" tabIndex={aberto ? 0 : -1}>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h4M14 13h3M14 17h3" /></svg>
+              Escala
+            </a>
+          </div>
           <a className={ativo === "receita" ? "ativo" : ""} href="/receita" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" /></svg>
             Receita Federal
@@ -142,12 +144,6 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}>
             {HOTEIS.map((h) => (
               <a key={h.id} className={ativo === `hotel:${h.id}` ? "ativo" : ""} href={`/hoteis/${h.id}`} tabIndex={aberto && hotAberta ? 0 : -1}>
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{h.icone}</svg>
-                {h.nome}
-              </a>
-            ))}
-            {CASAS_MENU.map((h) => (
-              <a key={h.id} className={ativo === `hotel:${h.id}` ? "ativo" : ""} href={`/escala/${h.id}`} tabIndex={aberto && hotAberta ? 0 : -1}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{h.icone}</svg>
                 {h.nome}
               </a>

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 
 // Cabeçalho das páginas dos hotéis: nome, situação ao vivo (última leitura do PMS em pms_horas) e as abas.
 
-export type Vista = "gerencial" | "reservas" | "mapa" | "hospedes" | "transacoes" | "relatorios" | "escala" | "documento";
+export type Vista = "gerencial" | "reservas" | "mapa" | "hospedes" | "transacoes" | "relatorios" | "documento";
 type Hora = { lido_em: string; ocupacao: number | null; ocupadas: number | null; livres: number | null; bloqueadas: number | null;
   checkins: number | null; checkouts: number | null; checkins_previstos: number | null; checkouts_previstos: number | null };
 
@@ -16,10 +16,9 @@ const ICONES: Record<Vista, ReactNode> = {
   hospedes: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .7 3.2 2.5 3.6 5.2" /></>,
   transacoes: <><path d="M7 7h13l-3-3M17 17H4l3 3" /></>,
   relatorios: <><path d="M4 20V4h11l5 5v11z" /><path d="M8 13h3v4H8zM13 10h3v7h-3z" /></>,
-  escala: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /><circle cx="9" cy="15" r="1.6" /><path d="M13 14h5M13 17h3" /></>,
   documento: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></>,
 };
-const ABAS: [Vista, string][] = [["gerencial", "Visão geral"], ["reservas", "Reservas"], ["mapa", "Mapa de reservas"], ["hospedes", "Hóspedes"], ["transacoes", "Transações"], ["relatorios", "Relatórios"], ["escala", "Escala"], ["documento", "Documento"]];
+const ABAS: [Vista, string][] = [["gerencial", "Visão geral"], ["reservas", "Reservas"], ["mapa", "Mapa de reservas"], ["hospedes", "Hóspedes"], ["transacoes", "Transações"], ["relatorios", "Relatórios"], ["documento", "Documento"]];
 
 function ha(iso: string) {
   const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
