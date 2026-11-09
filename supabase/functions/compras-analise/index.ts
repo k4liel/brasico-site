@@ -9,7 +9,7 @@
 //   1b. buscar (chamada(s) seguinte(s), até 100 s cada): a busca roda no banco (compras_auto_buscar: notas fiscais +
 //      cadastro de insumos) e continua de onde parou, para pedido grande (planilha) não estourar o tempo;
 //   2. terminar: o Gemini liga cada item ao produto, faz as contas e as listas são gravadas.
-// Cada modelo do Gemini tem um teto de tempo; o que travar passa a vez para o próximo (09/11/2026).
+// Os modelos do Gemini correm em paralelo escalonado: se um demora, o próximo começa junto; vale a primeira resposta (09/11/2026).
 // Se a pessoa já mexeu ou aprovou alguma lista, só as mensagens novas viram listas novas; nada do que ela fez é trocado.
 // Corpo opcional: { "data": "2026-11-03" } outra semana; { "pessoa": "<id>" } refaz essa pessoa agora;
 // { "teste": true, "pessoa": "<id>" } analisa sem gravar listas (resultado em compras_testes).
@@ -140,47 +140,60 @@ function lerResposta(j: any, modelo: string) {
   return { json: JSON.parse(texto), modelo, uso: { entrada: uso.promptTokenCount, saida: uso.candidatesTokenCount, pensando: uso.thoughtsTokenCount } };
 }
 
-// Chamada ao Gemini com resposta em JSON. Tenta os modelos em ordem quando um não está no plano grátis, estourou a cota
-// ou travou: cada modelo tem no máximo porModeloMs (09/11/2026: o 3.8 ficou parado os 135 s inteiros e nada saiu).
-async function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs: number, pensar: number, porModeloMs = 60_000) {
-  let ultimoErro = "";
-  const limite = Date.now() + prazoMs;
-  for (const modelo of MODELOS) {
-    const resta = limite - Date.now();
-    if (resta < 15_000) break;
-    const corpo: Record<string, unknown> = {
-      systemInstruction: { parts: [{ text: sistema }] },
-      contents: [{ role: "user", parts: partes }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2, maxOutputTokens: 65536,
-        thinkingConfig: { thinkingBudget: pensar } },
-    };
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), Math.min(resta, porModeloMs));
-    let r: Response;
-    try {
-      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": CHAVE }, body: JSON.stringify(corpo), signal: ctl.signal,
-      });
-    } catch (e) {
-      if (!ctl.signal.aborted) throw new Error(erroTexto(e));
-      ultimoErro = `o Gemini (${modelo}) demorou demais`; continue;
-    } finally { clearTimeout(t); }
-    const j = await r.json().catch(() => ({}));
-    // modelo que não aceita o limite de raciocínio: repete sem ele
-    if (r.status === 400 && /thinking/i.test(j.error?.message ?? "") && (corpo.generationConfig as Record<string, unknown>).thinkingConfig) {
-      delete (corpo.generationConfig as Record<string, unknown>).thinkingConfig;
-      const r2 = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
-        method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": CHAVE }, body: JSON.stringify(corpo) });
-      const j2 = await r2.json().catch(() => ({}));
-      if (r2.ok) return lerResposta(j2, modelo);
-      ultimoErro = `${modelo}: ${r2.status} ${j2.error?.message ?? ""}`.slice(0, 300); continue;
-    }
-    // sem cota, modelo fora do plano grátis ou sobrecarregado: tenta o próximo
-    if ([403, 404, 429, 500, 503].includes(r.status)) { ultimoErro = `${modelo}: ${r.status} ${j.error?.message ?? ""}`.slice(0, 300); continue; }
-    if (!r.ok) throw new Error(`Gemini ${modelo}: ${r.status} ${(j.error?.message ?? "").slice(0, 300)}`);
-    return lerResposta(j, modelo);
+// Uma chamada a um modelo do Gemini (resposta em JSON). Erro = esse modelo não serve agora (cota, fora do plano, lento).
+async function chamarModelo(modelo: string, sistema: string, partes: Parte[], schema: unknown, pensar: number, sinal: AbortSignal) {
+  const corpo: Record<string, unknown> = {
+    systemInstruction: { parts: [{ text: sistema }] },
+    contents: [{ role: "user", parts: partes }],
+    generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.2, maxOutputTokens: 65536,
+      thinkingConfig: { thinkingBudget: pensar } },
+  };
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`;
+  const pedir = () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": CHAVE }, body: JSON.stringify(corpo), signal: sinal });
+  let r = await pedir();
+  let j = await r.json().catch(() => ({}));
+  // modelo que não aceita o limite de raciocínio: repete sem ele
+  if (r.status === 400 && /thinking/i.test(j.error?.message ?? "")) {
+    delete (corpo.generationConfig as Record<string, unknown>).thinkingConfig;
+    r = await pedir();
+    j = await r.json().catch(() => ({}));
   }
-  throw new Error(/demorou/.test(ultimoErro) ? `${ultimoErro}; tenta de novo na próxima rodada` : `cota grátis do Gemini esgotada agora (${ultimoErro}); tenta de novo na próxima rodada`);
+  if (!r.ok) throw new Error(`${modelo}: ${r.status} ${j.error?.message ?? ""}`.slice(0, 200));
+  return lerResposta(j, modelo);
+}
+
+// Chamada ao Gemini em "corrida" (09/11/2026: os modelos ficaram lentos e um deles travou os 135 s inteiros): começa pelo
+// primeiro modelo; se em `escalonarMs` ele não respondeu, pede também ao próximo, e assim por diante; o que falha passa a
+// vez na hora. Fica com a primeira resposta boa e cancela as outras. Tudo para no prazo.
+function gemini(sistema: string, partes: Parte[], schema: unknown, prazoMs: number, pensar: number, escalonarMs = 30_000) {
+  return new Promise<ReturnType<typeof lerResposta>>((resolve, reject) => {
+    const limite = Date.now() + prazoMs;
+    const ctls: AbortController[] = [];
+    const erros: string[] = [];
+    let proximo = 0, ativos = 0, feito = false;
+    let espera: ReturnType<typeof setTimeout> | undefined;
+    const acabar = (fn: () => void) => {
+      if (feito) return;
+      feito = true; clearTimeout(espera); clearTimeout(geral); ctls.forEach((c) => c.abort()); fn();
+    };
+    const desistir = () => acabar(() => reject(new Error(erros.some((e) => /429|quota|cota/i.test(e))
+      ? `cota grátis do Gemini esgotada agora (${erros.slice(-2).join(" · ")}); tenta de novo na próxima rodada`
+      : `o Gemini demorou demais ou falhou (${erros.slice(-3).join(" · ") || "nenhum modelo respondeu a tempo"}); tenta de novo na próxima rodada`)));
+    const geral = setTimeout(() => { erros.push("prazo da função"); desistir(); }, prazoMs);
+    const lancar = () => {
+      if (feito) return;
+      clearTimeout(espera);
+      if (proximo >= MODELOS.length || limite - Date.now() < 12_000) { if (!ativos) desistir(); return; }
+      const modelo = MODELOS[proximo++];
+      const ctl = new AbortController();
+      ctls.push(ctl); ativos++;
+      chamarModelo(modelo, sistema, partes, schema, pensar, ctl.signal)
+        .then((res) => acabar(() => resolve(res)))
+        .catch((e) => { ativos--; if (feito) return; erros.push(ctl.signal.aborted ? `${modelo}: cancelado` : erroTexto(e)); lancar(); });
+      espera = setTimeout(lancar, escalonarMs);
+    };
+    lancar();
+  });
 }
 
 // Arquivo anexado no grupo (bucket whatsapp): planilha vira texto; PDF e foto vão inteiros
@@ -267,7 +280,7 @@ async function comecar(pessoa: Pessoa, semana: { id: string; inicio: string }, a
       `Listas das semanas anteriores desta pessoa (JSON):\n${JSON.stringify(historico ?? [])}\n\n` +
       `<pedido autor="${pessoa.nome}" mensagens="${minhas.length}" arquivos="${anexos.length}">\n${pedido}\n</pedido>`;
 
-    const sep = await gemini(INSTRUCOES_SEPARAR, [...anexos, { text: texto }], SCHEMA_SEPARAR, PRAZO_MS - (Date.now() - inicio), 1024, 55_000);
+    const sep = await gemini(INSTRUCOES_SEPARAR, [...anexos, { text: texto }], SCHEMA_SEPARAR, PRAZO_MS - (Date.now() - inicio), 1024, 30_000);
     const separacao = sep.json as Separacao;
     if (!separacao?.listas?.some((l) => l.itens?.length)) {
       await fechar({ status: "sem_pedido", mensagens: minhas.length, itens: 0, erro: "nenhum item no pedido" });
@@ -376,7 +389,7 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
   try {
     const anexos = await Promise.all((d.midias ?? []).map(anexo));
     resp = await gemini(INSTRUCOES, [...anexos, { text: `${d.texto}\n\n<candidatos>\n${JSON.stringify(d.candidatos)}\n</candidatos>` }],
-      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048, 100_000);
+      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048, 45_000);
   } catch (e) {
     // cota ou demora: fica para a próxima rodada; depois de 3 tentativas, falha
     const tentativas = (d.tentativas ?? 0) + 1;
