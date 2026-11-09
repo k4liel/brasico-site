@@ -31,12 +31,11 @@ const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
 // Segundo filtro: o que o governo já entregou de cada pessoa
 const LEITURAS = ["Todas", "Já lidas", "Ainda não lidas"] as const;
 type FiltroLeitura = (typeof LEITURAS)[number];
-// Seções do RH: cinco abas no topo da página (antes eram dez itens num menu lateral). Os endereços antigos
+// A Escala é página própria (/escala, item do menu logo abaixo do RH, 09/11/2026); #escala e #ponto levam até ela.
+// Seções do RH: quatro abas no topo da página (antes eram dez itens num menu lateral). Os endereços antigos
 // (#pessoas, #ponto, #banco…) continuam funcionando e abrem a aba nova certa.
 const SECOES = [
   { id: "inicio", rotulo: "Início", icone: "inicio", titulo: "Início", texto: "O que pede atenção hoje: o ponto, os alertas, os números da equipe e os próximos prazos." },
-  // A Escala virou página própria (/escala, 09/11/2026): a aba só leva até ela
-  { id: "escala", rotulo: "Escala", icone: "ponto", titulo: "Escala", texto: "Quem trabalha em cada dia, por local e setor, e o que foi batido no relógio (RHiD)." },
   { id: "equipe", rotulo: "Equipe", icone: "equipe", titulo: "Equipe", texto: "Todas as pessoas com a ficha de cada uma, o ponto do mês, o banco de horas e os salários." },
   { id: "contratos", rotulo: "Ausências e contratos", icone: "ausencias", titulo: "Ausências e contratos", texto: "Quem está fora, atestados e férias lançados no ponto, contratos de experiência a vencer e as entradas e saídas." },
   { id: "folha", rotulo: "Folha e governo", icone: "folha", titulo: "Folha e governo", texto: "O fechamento da folha, o calendário de obrigações, a leitura do eSocial, o ponto × eSocial e a ajuda." },
@@ -46,7 +45,7 @@ const SECAO_PADRAO: Secao = "inicio";
 const VISOES_EQUIPE = [["pessoas", "Pessoas"], ["ponto", "Ponto do mês"], ["banco", "Banco de horas"], ["salarios", "Salários"]] as const;
 type VisaoEquipe = (typeof VISOES_EQUIPE)[number][0];
 const ALIAS: Record<string, [Secao, VisaoEquipe?]> = {
-  visao: ["inicio"], pessoas: ["equipe", "pessoas"], ponto: ["escala"], banco: ["equipe", "banco"], salarios: ["equipe", "salarios"],
+  visao: ["inicio"], pessoas: ["equipe", "pessoas"], banco: ["equipe", "banco"], salarios: ["equipe", "salarios"],
   ausencias: ["contratos"], movimentacoes: ["contratos"], integracao: ["folha"], ajuda: ["folha"],
 };
 
@@ -118,10 +117,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     return () => window.removeEventListener("hashchange", ler);
   }, []);
   function irPara(s: Secao, v?: VisaoEquipe) {
-    if (s === "escala") {
-      window.location.href = "/escala";
-      return;
-    }
     setSecao(s);
     if (v) setVisaoEquipe(v);
     window.history.replaceState(null, "", `#${s}`);
@@ -232,7 +227,6 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const chavesRH = useMemo(() => new Set(pessoas.map((p) => p.chave)), [pessoas]);
   const bloqueado = diaDoMes() <= 7;
   const ponto = usePonto(supabase, filtroEmpresa);
-  const atrasadosPonto = ponto.vistas.filter((l) => l.estado === "Atrasado").length;
 
   const termo = busca.trim().toLowerCase();
   const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
@@ -318,7 +312,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="esocial" />
-      <main className={secao === "escala" ? "miolo es es-sistema es-largo" : "miolo es es-sistema"}>
+      <main className="miolo es es-sistema">
         {/* Cabeçalho do sistema de RH */}
         <div className="es-topo">
           <div>
@@ -361,12 +355,12 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             <nav className="es-abas" aria-label="Seções do RH">
               {SECOES.map((s) => {
                 const vence = emExperiencia.filter((p) => diasEntre(hoje(), p.fimContrato!) <= 10).length;
-                const n = s.id === "inicio" ? alertas.length : s.id === "escala" ? atrasadosPonto : s.id === "equipe" ? numeros.ativos : s.id === "contratos" ? vence : 0;
+                const n = s.id === "inicio" ? alertas.length : s.id === "equipe" ? numeros.ativos : s.id === "contratos" ? vence : 0;
                 return (
                   <button key={s.id} className={secao === s.id ? "es-aba on" : "es-aba"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
                     <Icone nome={s.icone} />
                     <span>{s.rotulo}</span>
-                    {n > 0 && <b className={s.id === "equipe" ? "es-nav-n" : "es-nav-n atencao"} title={s.id === "escala" ? "atrasados agora" : undefined}>{n}</b>}
+                    {n > 0 && <b className={s.id === "equipe" ? "es-nav-n" : "es-nav-n atencao"}>{n}</b>}
                   </button>
                 );
               })}
@@ -418,7 +412,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                     )}
                   </section>
 
-                  <HojeNoPonto ponto={ponto} icone={(n) => <Icone nome={n} />} onAbrirEscala={() => irPara("escala")} />
+                  <HojeNoPonto ponto={ponto} icone={(n) => <Icone nome={n} />} onAbrirEscala={() => (window.location.href = "/escala")} />
 
                   <div className="es-numeros">
                     <Numero rotulo="Trabalhando" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}

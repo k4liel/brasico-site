@@ -1,5 +1,5 @@
-// As casas da escala planejada (09/11/2026): tudo fica na aba Escala do RH — "Todas" (a grade do RHiD, só para
-// ver) e uma aba por casa com a escala editável. Os líderes veem as suas casas em /escala (/escala/<id>).
+// As casas da escala planejada (09/11/2026): agrupam os locais da grade do RH (usado no título do PDF e do
+// texto do WhatsApp quando a escala é filtrada por casa).
 // O local de cada grupo vem da grade do RH (lib/esocial/locais.ts): "Cicchetti Pipa" é o Cicchetti Centro, e
 // todo local que não é de uma casa daqui (Hello Barra, Hello Pipa, Vila da Barra…) cai em "Outras casas".
 
