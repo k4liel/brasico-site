@@ -68,8 +68,8 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
   const pessoasPonto = mostradas.map<PessoaEscala & { pos: number }>((l) => ({
     pos: l.posicao ?? 1e6,
     chave: l.k, ficha: l.chaveRH, nome: nomeProprio(l.p.nome), cargo: l.cargo, local: l.local, dias: l.dias,
-    // Afastado hoje vai para a área "Afastados" no fim do local (organizando, fica no setor dele para dar para arrastar)
-    setor: !organizar && l.afastado ? AFASTADOS : l.setor,
+    // Afastado hoje vai para a área "Afastados" no fim do local (no Organizar também; arrastar para fora o põe no setor escolhido)
+    setor: l.afastado ? AFASTADOS : l.setor,
     hoje: { texto: l.estado + (l.estado === "Atrasado" || l.estado === "Entra mais tarde" ? ` (entrada ${l.entradaHoje})` : l.afastado ? ` (${l.afastado.tipo})` : ""), classe: BOLINHA[l.estado] },
   }));
   // Os de fora do ponto entram no grupo deles, na posição guardada (no Organizar também, para arrastar)
@@ -98,6 +98,8 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
       idx = resto.findIndex((x) => grupoDe(x) === `${local || "Sem local"}|${setor}`);
       if (idx < 0) idx = resto.length;
     }
+    // A área "Afastados" é calculada (justificativa do RHiD de hoje): ninguém é solto nela
+    if (setor === AFASTADOS) return;
     const movido = { ...eu, local, setor };
     const nova = [...resto.slice(0, idx), movido, ...resto.slice(idx)];
     if (nova.every((x, i) => x.chave === lista[i].chave) && grupoDe(movido) === grupoDe(eu)) return;
@@ -108,7 +110,7 @@ export function EscalaSecao({ ponto, chavesRH, onAbrirPessoa, extras = [], grupo
     const itensExtras: ItemExtra[] = [];
     for (const x of nova) {
       const g = grupoDe(x);
-      if (!afetados.has(g)) continue;
+      if (!afetados.has(g) || x.setor === AFASTADOS) continue;
       const pos = conta.get(g) ?? 0;
       conta.set(g, pos + 1);
       const ex = extraDe.get(x.chave);
