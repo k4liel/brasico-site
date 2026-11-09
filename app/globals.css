@@ -2468,6 +2468,97 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-apelido p { margin: 0; }
 .ep-apelido-form { display: flex; gap: 6px; }
 .ep-apelido-form input { flex: 1; min-width: 0; }
+/* Escala: botões com ícone no canto, painéis laterais (compensas, sem ponto) e líderes na grade (09/11/2026) */
+.ep-icone-botao { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--panel); font-size: 13px; font-weight: 600; color: var(--strong); white-space: nowrap; transition: border-color .15s ease, transform .15s ease; }
+.ep-icone-botao:hover:not(:disabled) { border-color: var(--gold); transform: translateY(-1px); }
+.ep-icone-botao:disabled { opacity: .5; cursor: default; }
+.ep-icone-botao:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.ep-icone-botao svg { color: var(--muted); }
+.ep-icone-botao > b { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; font-size: 11.5px; background: var(--seg); color: var(--strong); }
+.ep-icone-botao > em { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 11.5px; font-weight: 700; background: var(--gold); color: var(--bg); }
+.ep-icone-botao.aviso > b { background: color-mix(in srgb, #c98a1b 25%, var(--seg)); color: #c98a1b; }
+.ep-icone-botao.erro { border-color: color-mix(in srgb, var(--danger, #c0392b) 50%, var(--border)); }
+.ep-icone-botao.erro > b { background: var(--danger, #c0392b); color: #fff; }
+.ep-topo-dir { flex-wrap: wrap; justify-content: flex-end; }
+
+/* Painéis laterais */
+.cmp-numeros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 0 28px 14px; }
+.cmp-numeros > div { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.cmp-numeros span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.cmp-numeros b { font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--strong); }
+.cmp-numeros small { font-size: 11.5px; color: var(--muted); }
+.cmp-numeros .aviso b { color: #c98a1b; }
+.cmp-numeros .erro { border-color: color-mix(in srgb, var(--danger, #c0392b) 45%, var(--border)); }
+.cmp-numeros .erro b { color: var(--danger, #c0392b); }
+.cmp-vazio { margin: 24px 0; padding: 22px; text-align: center; font-size: 14px; color: var(--muted); border: 1px dashed var(--border); border-radius: 14px; }
+.cmp-cartao { margin: 0 0 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); display: grid; gap: 10px; }
+.cmp-cartao > header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cmp-cartao > header b { font-size: 15px; color: var(--strong); }
+.cmp-cartao > header span { font-size: 12.5px; color: var(--muted); }
+.cmp-cartao ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.cmp-cartao li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
+.cmp-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; font-style: normal; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--gold) 20%, var(--seg)); color: var(--strong); }
+.cmp-quem { display: grid; min-width: 0; }
+.cmp-quem b { font-size: 14px; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-quem small { font-size: 12px; color: var(--muted); }
+.cmp-acoes { display: inline-flex; gap: 6px; }
+.cmp-pessoas { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cmp-pessoa { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.cmp-saldo { display: grid; place-items: center; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 999px; font-size: 14px; font-weight: 800; background: color-mix(in srgb, #2fa36b 20%, var(--seg)); color: #2fa36b; }
+.cmp-itens { grid-column: 2 / -1; list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.cmp-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--seg); font-size: 13px; }
+.cmp-item small { color: var(--muted); margin-left: 4px; }
+.cmp-item em { font-style: normal; font-size: 12px; color: var(--muted); }
+.cmp-item.p-vencendo em { color: #c98a1b; font-weight: 600; }
+.cmp-item.p-vencida { background: color-mix(in srgb, var(--danger, #c0392b) 12%, var(--seg)); }
+.cmp-item.p-vencida em { color: var(--danger, #c0392b); font-weight: 700; }
+.cmp-item button { all: unset; cursor: pointer; padding: 0 6px; border-radius: 6px; color: var(--muted); }
+.cmp-item button:hover { color: var(--strong); background: var(--hover-bg); }
+.cmp-historico { list-style: none; margin: 0; padding: 0; display: grid; }
+.cmp-historico li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.cmp-data { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--strong); }
+.cmp-lancar label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.cmp-lancar-linha { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; }
+.cmp-lancar > button { justify-self: end; }
+.ct-busca { width: 100%; margin: 0 0 12px; }
+.ct-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ct-pessoa { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.ct-info { display: grid; gap: 2px; min-width: 0; }
+.ct-info b { font-size: 14px; color: var(--strong); }
+.ct-info small { font-size: 12px; color: var(--muted); }
+.ct-lugar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ct-lugar select { min-width: 140px; }
+.ct-acoes { display: grid; gap: 6px; justify-items: end; }
+@media (max-width: 640px) {
+  .cmp-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 16px 12px; }
+  .ct-pessoa, .cmp-cartao li { grid-template-columns: 34px minmax(0, 1fr); }
+  .ct-acoes, .cmp-acoes { grid-column: 1 / -1; justify-items: start; }
+}
+
+/* Líderes direto na grade: bolinhas no cabeçalho da casa e do setor */
+.ep-lid-bolas { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; margin-left: 8px; vertical-align: middle; text-transform: none; letter-spacing: 0; }
+.ep-lid-bolas i { display: grid; place-items: center; width: 20px; height: 20px; margin-left: -5px; border-radius: 50%; font-style: normal; font-size: 9px; font-weight: 800;
+  background: var(--gold); color: var(--bg); box-shadow: 0 0 0 2px var(--panel); }
+.ep-lid-bolas i:first-child { margin-left: 0; }
+.ep-lid-bolas i.mais { background: var(--seg); color: var(--strong); }
+.ep-lid-bolas.vazio span { font-size: 10.5px; font-weight: 600; color: var(--muted); padding: 1px 7px; border: 1px dashed var(--border); border-radius: 999px; opacity: 0; transition: opacity .15s ease; }
+.pe-grade tr:hover .ep-lid-bolas.vazio span, .ep-lid-bolas.vazio:focus-visible span { opacity: 1; }
+.ep-lid-bolas:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 999px; }
+.pe-grade tr.pe-local th.pe-nome .ep-lid-bolas { margin: 4px 0 0 22px; display: flex; }
+.ep-lid-editor { width: min(340px, calc(100vw - 16px)); }
+.ep-lid-alvo { margin: 0; font-size: 13px; color: var(--muted); }
+.ep-lid-alvo b { color: var(--strong); }
+.ep-lid-busca { width: 100%; }
+.ep-lid-usuarios { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 300px; overflow: auto; }
+.ep-lid-usuarios label { display: grid; grid-template-columns: auto 28px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; cursor: pointer; }
+.ep-lid-usuarios label:hover { background: var(--hover-bg); }
+.ep-lid-usuarios label.pela-casa { opacity: .6; cursor: default; }
+.ep-lid-usuarios i { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-style: normal; font-size: 11px; font-weight: 700; background: var(--seg); color: var(--strong); }
+.ep-lid-usuarios span { display: grid; min-width: 0; }
+.ep-lid-usuarios b { font-size: 13.5px; }
+.ep-lid-usuarios small { font-size: 11.5px; color: var(--muted); }
+
 /* Banco de compensas (09/11/2026) */
 .ep-comp-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
 .ep-comp-tag.vencendo { background: color-mix(in srgb, #c98a1b 22%, transparent); color: #c98a1b; }

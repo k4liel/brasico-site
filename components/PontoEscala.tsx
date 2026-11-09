@@ -198,8 +198,10 @@ function gravarLocal(k: string, v: string) {
 
 export default function PontoEscala({
   pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar,
-  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo, gruposVazios = [],
+  modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo, gruposVazios = [], extraLocal, extraSetor,
 }: {
+  // Algo a mais no cabeçalho da casa e do setor (ex.: os líderes que montam a escala)
+  extraLocal?: (local: string) => ReactNode; extraSetor?: (local: string, setor: string) => ReactNode;
   // Grupos criados à mão (escala_grupos.fixo) ainda sem ninguém: aparecem vazios para receber gente no Organizar
   gruposVazios?: { local: string; setor: string }[];
   pessoas: PessoaEscala[]; onAbrir?: (chave: string) => void; garantir?: (de: string, ate: string) => void;
@@ -515,6 +517,7 @@ export default function PontoEscala({
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={fechado ? "M9 6l6 6-6 6" : "M6 9l6 6 6-6"} /></svg>
                       {local} <span>{doLocal.length}</span>
                     </button>
+                    {extraLocal?.(doLocal[0].local)}
                   </th>
                   {porDia.map((v, i) => (
                     <td key={dias[i]} className={`pe-conta${diaSemana(dias[i]) === 0 ? " dom" : ""}${dias[i] === agora ? " hoje" : ""}`} title={`${v} trabalhando em ${dataBR(dias[i])}`}>{v || ""}</td>
@@ -529,7 +532,8 @@ export default function PontoEscala({
                       pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar}
                       organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave}
                       modo={modo} avisoDia={avisoDia} avisos={avisos} pintando={!!pintar} comecarPintura={comecarPintura}
-                      selecionada={selecionada} colunasExtras={colunasExtras} feriados={feriados} />
+                      selecionada={selecionada} colunasExtras={colunasExtras} feriados={feriados}
+                      extra={extraSetor && setor !== AFASTADOS && setor ? extraSetor(doLocal[0].local, setor) : null} />
                   );
                 })}
                 {!fechado && gruposVazios.filter((g) => (g.local || "Sem local") === local && !setoresDe(doLocal).includes(g.setor)).map((g) => {
@@ -632,7 +636,8 @@ export default function PontoEscala({
 }
 
 function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, pegar, soltarEm, levando,
-  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados }: {
+  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados, extra }: {
+  extra?: ReactNode;
   setor: string; mostrarSetor: boolean; pessoas: PessoaEscala[]; dias: string[]; agora: string; visao: Visao; turnosDe: Map<string, Turno[]>;
   onAbrir?: (chave: string) => void; colunas: number; mostrar: (td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) => void;
   organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; pegar: (e: React.PointerEvent, p: PessoaEscala) => void;
@@ -646,7 +651,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
     <>
       {mostrarSetor && (
         <tr className={`pe-grupo${grupoAlvo ? " soltar-grupo" : ""}${setor === AFASTADOS ? " pe-afastados" : ""}`} data-grupo="" data-local={pessoas[0]?.local} data-setor={pessoas[0]?.setor}>
-          <th className="pe-nome" colSpan={1}>{setor} <span>{pessoas.length}</span></th><td colSpan={colunas - 1} />
+          <th className="pe-nome" colSpan={1}>{setor} <span>{pessoas.length}</span>{extra}</th><td colSpan={colunas - 1} />
         </tr>
       )}
       {pessoas.map((p) => {

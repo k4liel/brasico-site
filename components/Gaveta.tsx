@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 // ---------------------------------------------------------------------
 // Gaveta lateral (painel por cima da página)
@@ -15,7 +16,11 @@ export default function Gaveta({ titulo, sub, fechar, children, topo }: { titulo
     document.body.style.overflow = "hidden";
     return () => { window.removeEventListener("keydown", f); document.body.style.overflow = ""; };
   }, []);
-  return (
+  // Vai direto no <body>: dentro da escala (cabeçalhos presos, rolagem) o painel ficava cortado por baixo
+  const [pronto, setPronto] = useState(false);
+  useEffect(() => setPronto(true), []);
+  if (!pronto) return null;
+  return createPortal(
     <div className="fx-fundo" onClick={fechar}>
       <aside className="fx-gaveta" role="dialog" aria-label={titulo} onClick={(ev) => ev.stopPropagation()}>
         <header className="fx-gaveta-topo">
@@ -25,7 +30,8 @@ export default function Gaveta({ titulo, sub, fechar, children, topo }: { titulo
         {topo}
         <div className="fx-gaveta-corpo">{children}</div>
       </aside>
-    </div>
+    </div>,
+    document.body
   );
 }
 

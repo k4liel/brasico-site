@@ -13,6 +13,7 @@ import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Cod
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
 import EscalaCompensas, { prazo, type CompDados, type PessoaComp } from "./EscalaCompensas";
+import { ChipsLideres, EditorLideres, useLideranca } from "./EscalaLideres";
 import { createPortal } from "react-dom";
 
 type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; postos?: string[]; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
@@ -101,6 +102,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const [verAvisos, setVerAvisos] = useState(false);
   // Banco de compensas (escala_compensas_dados): saldo de cada pessoa, feriados a confirmar
   const [comp, setComp] = useState<CompDados | null>(null);
+  // Líderes direto na grade: bolinhas no cabeçalho da casa e do setor (só sócios)
+  const lid = useLideranca(supabase, !!dados?.socio && modo === "planejada");
+  const [lidEditor, setLidEditor] = useState<{ local: string; setor: string | null; x: number; y: number } | null>(null);
   // Apelido: clicar no nome abre a caixinha para escrever
   const [apelidoDe, setApelidoDe] = useState<{ chave: string; nome: string; apelido: string; x: number; y: number } | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -456,7 +460,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
   if (erro && !dados) return <section className="es-bloco"><p className="tv-alerta">{erro}</p></section>;
   const podeEditar = modo !== "real";
-  const semEscala = !!dados && modo !== "real" && periodo.length > 0 && planejadosTela === 0 && pessoas.length > 0;
 
   return (
     <section className="es-bloco pt-escala-bloco ep">
@@ -486,6 +489,10 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
                 <button className="ghost small" onClick={baixarPdf} title="Gera o PDF da semana para mandar no grupo">Baixar PDF</button>
               </span>
             ) : <span className="muted small">Para imprimir, use a visão Semana.</span>}
+            {comp && (
+              <EscalaCompensas supabase={supabase} dados={comp} local={grupo} onMudou={lerComp}
+                nomeDe={(c, id, nome) => pessoas.find((p) => p.chave === chaveDe(c, id))?.nome ?? nomeProprio(nome)} />
+            )}
             <button className={`ep-avisos-botao${erros.length ? " erro" : atencoes.length ? " aviso" : " ok"}`} onClick={() => setVerAvisos((v) => !v)} aria-expanded={verAvisos}>
               {erros.length + atencoes.length ? <><b>{erros.length}</b> fora da lei · <b>{atencoes.length}</b> atenção</> : "✓ Dentro da lei"}
             </button>
@@ -493,19 +500,6 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         </div>
       )}
 
-      {comp && modo !== "real" && (
-        <EscalaCompensas supabase={supabase} dados={comp} local={grupo} onMudou={lerComp}
-          nomeDe={(c, id, nome) => pessoas.find((p) => p.chave === chaveDe(c, id))?.nome ?? nomeProprio(nome)} />
-      )}
-
-      {semEscala && (
-        <div className="ep-vazio">
-          {dados?.socio ? <>
-            <div><b>Este período ainda não tem escala planejada.</b><span className="muted"> Comece com a escala que já está no RHiD e ajuste em cima.</span></div>
-            <button className="small" onClick={copiarRhid} disabled={ocupado}>Começar copiando do RHiD</button>
-          </> : <div><b>Este período ainda não tem escala.</b><span className="muted"> Clique num dia para escolher o horário ou a folga; arraste para mudar vários de uma vez.</span></div>}
-        </div>
-      )}
 
       {podeEditar && verAvisos && (
         <PainelAvisos avisos={agrupados} onIr={(k) => {
@@ -523,6 +517,14 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir}
           onPeriodo={mudarPeriodo} pintar={podeEditar ? pintar : undefined} colunasExtras={colunas}
           gruposVazios={gruposVazios}
+          extraLocal={lid.dados ? (local) => (
+            <ChipsLideres titulo={`${local} inteiro`} lideres={lid.dados!.lideres.filter((l) => l.local === local && l.tudo)}
+              onAbrir={(x, y) => setLidEditor({ local, setor: null, x, y })} />
+          ) : undefined}
+          extraSetor={lid.dados ? (local, setor) => (
+            <ChipsLideres titulo={setor} lideres={lid.dados!.lideres.filter((l) => l.local === local && !l.tudo && l.setores.includes(setor))}
+              onAbrir={(x, y) => setLidEditor({ local, setor, x, y })} />
+          ) : undefined}
           onAbrir={modo === "real" ? onAbrirPessoa : (k) => {
             const d = pessoaDe.get(k);
             if (d) setApelidoDe({ chave: k, nome: nomeProprio(d.nome), apelido: d.apelido ?? "", x: ponteiro.current.x, y: ponteiro.current.y });
@@ -573,6 +575,11 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           </table>
           <footer>desc. = horário de descanso (intervalo) · F folga · FC folga compensada · BH folga do banco de horas · FÉR férias · AT atestado · LIC licença · Gerada no Brasico em {dataBR(hoje())}</footer>
         </div>, document.body)}
+
+      {lidEditor && lid.dados && (
+        <EditorLideres supabase={supabase} dados={lid.dados} local={lidEditor.local} setor={lidEditor.setor} x={lidEditor.x} y={lidEditor.y}
+          onFechar={() => setLidEditor(null)} onMudou={lid.ler} />
+      )}
 
       {apelidoDe && (
         <CaixaApelido {...apelidoDe} onFechar={() => setApelidoDe(null)} onSalvar={async (apelido) => {

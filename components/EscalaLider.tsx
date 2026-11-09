@@ -4,8 +4,8 @@
 // (casas, setores, ordem, Afastados, "fora do ponto", grupos criados à mão). Nas células, a escala montada; dia sem
 // escala fica vazio. Para editar: clicar no bloquinho (ou arrastar sobre vários) e escolher na janelinha.
 // "Ver o ponto (RHiD)" mostra, nas mesmas linhas, o horário do relógio e o que foi batido — só quando ligado.
-// Sócios: "Organizar" (arrastar as linhas, a grade do Ponto), "Quem monta a escala" (líderes por casa inteira ou por
-// setores) e "Contratados sem ponto". Líderes (login de colaborador): só o que lideram, sem Organizar nem os quadros.
+// Sócios: "Organizar linhas" (arrastar as linhas, a grade do Ponto), "Sem ponto" (contratados sem relógio) e os
+// líderes de cada casa e setor direto no cabeçalho da grade (EscalaLideres.tsx). Líderes (login de colaborador): só o que lideram, sem Organizar nem os quadros.
 // A organização do Ponto vira os grupos da escala sozinha (escala_membros_sincronizar) sempre que um sócio abre a página
 // ou organiza.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +17,6 @@ import EscalaPlanejada from "./EscalaPlanejada";
 import { EscalaSecao } from "./Ponto";
 import { usePonto } from "./PontoDados";
 import EscalaContratados, { type Contratado } from "./EscalaContratados";
-import EscalaLideranca from "./EscalaLideranca";
 import type { ExtraEscala, ItemExtra } from "./Ponto";
 
 function useVerPonto() {
@@ -140,15 +139,19 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
 
   return (
     <>
-      <EscalaLideranca supabase={supabase} onMudou={() => setRecarga((n) => n + 1)} />
-      {ponto.carregado && <EscalaContratados supabase={supabase} lista={contratados} locais={locais}
-        onMudou={() => { lerContratados(); setRecarga((n) => n + 1); }} />}
       <div className="ep-topo-acoes">
         {!organizando && <ChaveVerPonto ver={verPonto} onMudar={setVerPonto} />}
         <div className="ep-topo-dir">
           {organizando
             ? <span className="muted small">Arraste as linhas; a escala de todos segue esta organização.</span>
-            : <button className="ghost small" onClick={() => setOrganizando(true)} disabled={!ponto.carregado} title="Mudar a ordem e o setor/casa das pessoas">Organizar linhas</button>}
+            : <>
+              {ponto.carregado && <EscalaContratados supabase={supabase} lista={contratados} locais={locais}
+                onMudou={() => { lerContratados(); setRecarga((n) => n + 1); }} />}
+              <button className="ep-icone-botao" onClick={() => setOrganizando(true)} disabled={!ponto.carregado} title="Mudar a ordem e o setor/casa das pessoas">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+                Organizar linhas
+              </button>
+            </>}
         </div>
       </div>
       {organizando ? (
