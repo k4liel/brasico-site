@@ -65,6 +65,13 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
     return () => window.removeEventListener("keydown", f);
   }, [aberto]);
 
+  // Áreas que a pessoa vê no menu (usuario_areas; null = todas, como os sócios). Até chegar, nada aparece.
+  const [areas, setAreas] = useState<string[] | null | undefined>(undefined);
+  useEffect(() => {
+    createClient().rpc("minhas_areas").then(({ data, error }) => setAreas(error ? null : ((data as string[] | null) ?? null)));
+  }, []);
+  const ve = (a: string) => areas === null || (areas !== undefined && areas.includes(a));
+
   const inicial = (email || "?").trim().charAt(0).toUpperCase();
 
   return (
@@ -90,23 +97,23 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
         </div>
 
         <nav className="menu-nav">
-          <a ref={primeiro} className={ativo === "projetos" ? "ativo" : ""} href="/" tabIndex={aberto ? 0 : -1}>
+          {ve("projetos") && (<><a ref={primeiro} className={ativo === "projetos" ? "ativo" : ""} href="/" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" /></svg>
             Projetos
-          </a>
-          <a className={ativo === "brainstorm" ? "ativo" : ""} href="/brainstorm" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("brainstorm") && (<><a className={ativo === "brainstorm" ? "ativo" : ""} href="/brainstorm" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2V16h5v-.2c.1-.8.5-1.5 1.1-2A6 6 0 0 0 12 3Z" /></svg>
             Brainstorm
-          </a>
-          <a className={ativo === "whatsapp" ? "ativo" : ""} href="/whatsapp" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("whatsapp") && (<><a className={ativo === "whatsapp" ? "ativo" : ""} href="/whatsapp" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4.1A8 8 0 1 1 20 11.5Z" /></svg>
             WhatsApp
-          </a>
-          <a className={ativo === "vendas" ? "ativo" : ""} href="/vendas" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("totvs") && (<><a className={ativo === "vendas" ? "ativo" : ""} href="/vendas" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>
             TOTVS
-          </a>
-          <a className={ativo === "esocial" ? "ativo" : ""} href="/esocial" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("rh") && (<><a className={ativo === "esocial" ? "ativo" : ""} href="/esocial" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
             RH · eSocial
           </a>
@@ -116,26 +123,26 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h4M14 13h3M14 17h3" /></svg>
               Escala
             </a>
-          </div>
-          <a className={ativo === "receita" ? "ativo" : ""} href="/receita" tabIndex={aberto ? 0 : -1}>
+          </div></>)}
+          {ve("receita") && (<><a className={ativo === "receita" ? "ativo" : ""} href="/receita" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" /></svg>
             Receita Federal
-          </a>
-          <a className={ativo === "certificados" ? "ativo" : ""} href="/certificados" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("certificados") && (<><a className={ativo === "certificados" ? "ativo" : ""} href="/certificados" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="5" /><path d="M9 13.5 8 21l4-2 4 2-1-7.5" /></svg>
             Certificados digitais
-          </a>
-          <a className={ativo === "usuarios" ? "ativo" : ""} href="/usuarios" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("usuarios") && (<><a className={ativo === "usuarios" ? "ativo" : ""} href="/usuarios" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
             Usuários
-          </a>
-          <a className={ativo === "conectar" ? "ativo" : ""} href="/conectar" tabIndex={aberto ? 0 : -1}>
+          </a></>)}
+          {ve("conectar") && (<><a className={ativo === "conectar" ? "ativo" : ""} href="/conectar" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 4.5a3 3 0 0 1 0 6M17.5 14.2A5 5 0 0 1 20.5 19" /></svg>
             Claude e equipe
-          </a>
+          </a></>)}
 
           {/* Hotéis: um item que abre e fecha, com uma página por hotel */}
-          <button className={(ativo ?? "").startsWith("hotel:") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setHotAberta((o) => !o)}
+          {ve("hoteis") && (<><button className={(ativo ?? "").startsWith("hotel:") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setHotAberta((o) => !o)}
             aria-expanded={hotAberta} aria-controls="menu-hoteis" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></svg>
             Hotéis
@@ -148,10 +155,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
                 {h.nome}
               </a>
             ))}
-          </div>
+          </div></>)}
 
           {/* Operação: um item que abre e fecha, com as páginas de notas, compras, fichas, estoque e produção dentro */}
-          <button className={OPERACAO.includes(ativo ?? "") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setOpAberta((o) => !o)}
+          {ve("operacao") && (<><button className={OPERACAO.includes(ativo ?? "") ? "menu-pasta ativo" : "menu-pasta"} onClick={() => setOpAberta((o) => !o)}
             aria-expanded={opAberta} aria-controls="menu-operacao" tabIndex={aberto ? 0 : -1}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5" /></svg>
             Operação
@@ -178,7 +185,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4M8 15l2.5 2.5L16 13" /></svg>
               Produção
             </a>
-          </div>
+          </div></>)}
         </nav>
 
         <div className="menu-rodape">

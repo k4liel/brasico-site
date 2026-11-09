@@ -1,6 +1,21 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Páginas de cada área (as mesmas do menu, components/Topo.tsx; tabela usuario_areas). A primeira é a de entrada.
+const PAGINAS_DA_AREA: Record<string, string[]> = {
+  projetos: ["/", "/projeto"],
+  brainstorm: ["/brainstorm"],
+  whatsapp: ["/whatsapp"],
+  totvs: ["/vendas"],
+  rh: ["/esocial", "/escala"],
+  receita: ["/receita"],
+  certificados: ["/certificados"],
+  usuarios: ["/usuarios"],
+  conectar: ["/conectar"],
+  hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua"],
+  operacao: ["/notas", "/compras", "/fichas", "/estoque", "/producao"],
+};
+
 export async function middleware(request: NextRequest) {
   // Se o Supabase devolver o login para outra página (ex.: a raiz do site,
   // quando a Redirect URL não está cadastrada), encaminha o código para o callback.
@@ -55,6 +70,22 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
+  }
+
+  // Quem tem áreas definidas (usuario_areas) só abre as páginas delas; o resto leva à primeira área dele.
+  if (user && !isPublic) {
+    const { data: areas } = await supabase.rpc("minhas_areas");
+    if (Array.isArray(areas)) {
+      const caminhos = (areas as string[]).flatMap((a) => PAGINAS_DA_AREA[a] ?? []);
+      const pode = caminhos.some((c) => (c === "/" ? path === "/" : path === c || path.startsWith(c + "/")));
+      if (!pode) {
+        const url = request.nextUrl.clone();
+        url.pathname = caminhos[0] ?? "/login";
+        url.search = "";
+        if (url.pathname === "/login") await supabase.auth.signOut();
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   // Solicitantes e setor de compras (operacao_pessoas) só abrem as Compras e o Estoque;
