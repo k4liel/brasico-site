@@ -3952,7 +3952,7 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
   --hx-ciano: #0891b2; --hx-cinza: #94a3b8; --hx-ouro: #b08d57; --hx-grade: rgba(100, 116, 139, .16);
   --hx-bom: #059669; --hx-ruim: #e11d48;
   --fase-reservada: #4f46e5; --fase-pendente: #d97706; --fase-hospedada: #059669; --fase-finalizada: #64748b;
-  --fase-bloqueio: #b91c1c; --fase-manutencao: #ea580c; --fase-noshow: #9333ea; --fase-cancelada: #e11d48;
+  --fase-bloqueio: #8b7d6b; --fase-manutencao: #ea580c; --fase-noshow: #9333ea; --fase-cancelada: #e11d48;
   --hx-sombra: 0 1px 2px rgba(15, 23, 42, .04);
 }
 :root[data-theme="dark"] {
@@ -3960,7 +3960,7 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
   --hx-ciano: #22d3ee; --hx-cinza: #64748b; --hx-ouro: #d4b06a; --hx-grade: rgba(148, 163, 184, .12);
   --hx-bom: #34d399; --hx-ruim: #fb7185;
   --fase-reservada: #6366f1; --fase-pendente: #d97706; --fase-hospedada: #059669; --fase-finalizada: #64748b;
-  --fase-bloqueio: #b91c1c; --fase-manutencao: #ea580c; --fase-noshow: #9333ea; --fase-cancelada: #e11d48;
+  --fase-bloqueio: #6f6455; --fase-manutencao: #ea580c; --fase-noshow: #9333ea; --fase-cancelada: #e11d48;
   --hx-sombra: none;
 }
 .fase-reservada { --fase: var(--fase-reservada); } .fase-pendente { --fase: var(--fase-pendente); }
@@ -4254,7 +4254,7 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .mr-legenda li { display: inline-flex; align-items: center; gap: 8px; }
 .mr-legenda i { width: 22px; height: 12px; background: var(--fase); clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 50%, calc(100% - 4px) 100%, 4px 100%, 0 50%); transform: skewX(-12deg); }
 /* Bloqueio: vermelho escuro listrado, para não confundir com a finalizada (cinza liso) */
-.mr-barra.fase-bloqueio, .mr-legenda i.fase-bloqueio { background: repeating-linear-gradient(135deg, #b91c1c 0 7px, #7f1d1d 7px 14px); }
+.mr-barra.fase-bloqueio, .mr-legenda i.fase-bloqueio { background: repeating-linear-gradient(135deg, var(--fase-bloqueio) 0 7px, color-mix(in srgb, var(--fase-bloqueio) 82%, #0f172a) 7px 14px); }
 .mr-pendencias { padding: 12px 16px; border: 1px solid #c9922a; border-radius: 12px; background: color-mix(in srgb, #c9922a 12%, var(--panel)); font-size: 13px; }
 .mr-pendencias ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; }
 .mr-nota { margin: 0; }

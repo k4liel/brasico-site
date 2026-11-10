@@ -137,9 +137,20 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
     for (const bl of bloqueios) {
       if (!bl.uh_id || !bl.inicio || !bl.fim || !ids.has(bl.uh_id)) continue;
       const f = faseBloqueio(bl);
-      // Bloqueio ocupa dias inteiros: do começo do primeiro dia ao fim do último (no PMS ele termina às 23h do último dia)
+      // Bloqueio ocupa dias inteiros: do começo do primeiro dia ao fim do último (o PMS conta o último dia como bloqueado).
       const b = montar(`b${bl.bloqueio_id}`, bl.inicio, bl.fim, f, { bloqueio: bl, rotulo: f === "manutencao" ? "Manutenção" : "Bloqueio", sub: bl.comentario || bl.motivo || "" }, [0.03, 0.97]);
-      if (b) m.set(bl.uh_id, [...(m.get(bl.uh_id) ?? []), b]);
+      if (!b) continue;
+      // Mas no PMS o bloqueio libera a UH no último dia antes do check-in (e só começa depois do check-out):
+      // uma reserva que entra no último dia do bloqueio, ou sai no primeiro, nunca fica por baixo dele no mapa.
+      for (const r of m.get(bl.uh_id) ?? []) {
+        if (!r.estadia) continue;
+        // Estadia que cobre o bloqueio inteiro (hóspede trocado de UH depois): o bloqueio não aparece
+        if (r.ini <= b.ini && r.fim >= b.fim) { b.fim = b.ini; break; }
+        if (r.ini >= b.ini && r.ini < b.fim) b.fim = r.ini;
+        if (r.fim > b.ini && r.fim <= b.fim) b.ini = r.fim;
+      }
+      if (b.fim - b.ini < 0.05) continue;
+      m.set(bl.uh_id, [...(m.get(bl.uh_id) ?? []), b]);
     }
     for (const [k, l] of m) {
       l.sort((a, b) => a.ini - b.ini || a.chave.localeCompare(b.chave));
