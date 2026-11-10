@@ -33,6 +33,9 @@ type Dados = { socio: boolean; grupos: Grupo[]; pessoas: PessoaDado[]; real: Rea
 // Horários que sempre aparecem na janelinha do bloquinho (09/11/2026, pedido do dono)
 const HORARIOS_FIXOS: { codigo: "T"; entrada: string; saida: string; intervalo: string; rotulo: string }[] = [
   { codigo: "T", entrada: "14:00", saida: "22:20", intervalo: "17:00-18:00", rotulo: "14:00–22:20" },
+  // Plantões de 12 horas (pedido do dono, 10/11/2026)
+  { codigo: "T", entrada: "07:00", saida: "19:00", intervalo: "12:00-13:00", rotulo: "07:00–19:00" },
+  { codigo: "T", entrada: "17:00", saida: "05:00", intervalo: "22:00-23:00", rotulo: "17:00–05:00" },
 ];
 // O pincel escolhido na paleta
 type Pincel = { codigo: Codigo; entrada?: string; saida?: string; intervalo?: string; rotulo: string; posto?: string };
