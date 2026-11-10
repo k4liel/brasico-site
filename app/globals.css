@@ -2871,7 +2871,7 @@ tr.ep-piscar > * { animation: ep-piscar 1.6s ease; }
 /* =====================================================================
    Operação · Compras (usa o padrão visual do RH: .es)
    ===================================================================== */
-.cp-topo { justify-content: space-between; }
+.cp-topo { justify-content: space-between; flex-wrap: wrap; height: auto; min-height: 56px; padding-top: 8px; padding-bottom: 8px; }
 .cp-quem { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--muted); }
 .cp-semana { padding: 8px 10px; }
 .cp-abas { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid var(--border); }
@@ -3939,7 +3939,7 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
 .fx-cartao.desligada { background: transparent; border-style: dashed; opacity: .8; }
 .fx-cartao.desligada:hover { opacity: 1; }
 /* Topo simples da equipe com duas áreas (TopoSimples em components/Compras.tsx) */
-.cp-menu { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cp-menu { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .cp-menu .marca { margin-right: 10px; }
 .cp-menu-item { padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; border: 1px solid transparent; }
 a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border-color: var(--border); }

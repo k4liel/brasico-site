@@ -131,11 +131,12 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 }
 
 // Para quem só tem a área de Compras: sem o menu do Brasico
-const ORDEM_AREAS = ["Compras", "Notas fiscais", "Fichas técnicas", "Câmara fria", "Produção", "Escala"];
-// Quem tem a Operação completa (operacao_pessoas.operacao_completa) vê todas as áreas e os projetos de que é membro
+const ORDEM_AREAS = ["Compras", "Notas fiscais", "Fichas técnicas", "Câmara fria", "Escala"];
+// Quem tem a Operação completa (operacao_pessoas.operacao_completa) vê todas as áreas e os projetos de que é membro.
+// A página Produção saiu do menu em 10/11/2026 (a produção se organiza no projeto Produção Sempre Vivo).
 const AREAS_OPERACAO = [
   { href: "/compras", nome: "Compras" }, { href: "/notas", nome: "Notas fiscais" }, { href: "/fichas", nome: "Fichas técnicas" },
-  { href: "/estoque", nome: "Câmara fria" }, { href: "/producao", nome: "Produção" },
+  { href: "/estoque", nome: "Câmara fria" },
 ];
 // Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
 export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
@@ -152,7 +153,9 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
       const { data: ok } = await sb.rpc("operacao_completa", { p_user: user.id });
       if (!ok) return;
       const { data: ws } = await sb.from("workspaces").select("id,name").is("removido_em", null).order("name");
-      setCompleta([...AREAS_OPERACAO, ...((ws ?? []) as { id: string; name: string }[]).map((w) => ({ href: `/projeto/${w.id}`, nome: w.name }))]);
+      // os projetos logo depois das Compras, para não ficarem no fim do menu
+      const projetos = ((ws ?? []) as { id: string; name: string }[]).map((w) => ({ href: `/projeto/${w.id}`, nome: w.name }));
+      setCompleta([AREAS_OPERACAO[0], ...projetos, ...AREAS_OPERACAO.slice(1)]);
     })();
   }, []);
   async function sair() {
