@@ -10,7 +10,7 @@ import Gaveta from "./Gaveta";
 
 export type Compensa = { id: number; origem: "feriado" | "ajuste"; feriado: string | null; motivo: string; vence_em: string | null; situacao: "aberta" | "usada" | "cancelada"; usada_dia: string | null };
 export type PessoaComp = { cliente_id: number; id: number; nome: string; local: string; setor: string; compensas: Compensa[]; a_confirmar: { dia: string; entrada: string | null; saida: string | null }[] };
-export type CompDados = { hoje: string; socio: boolean; feriados: { dia: string; nome: string; origem: string }[]; pessoas: PessoaComp[] };
+export type CompDados = { hoje: string; socio: boolean; gerencia?: boolean; feriados: { dia: string; nome: string; origem: string }[]; pessoas: PessoaComp[] };
 
 const br = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 const diasAte = (de: string, ate: string) => Math.round((Date.parse(ate) - Date.parse(de)) / 86400000);
@@ -39,6 +39,7 @@ export default function EscalaCompensas({ supabase, dados, local, nomeDe, onMudo
   const [erro, setErro] = useState("");
   const [ocupado, setOcupado] = useState("");
   const [lancar, setLancar] = useState({ chave: "", qtd: "1", motivo: "" });
+  const gerencia = dados.gerencia ?? dados.socio;
   const nomeFer = new Map(dados.feriados.map((f) => [f.dia, f.nome]));
   const pessoas = dados.pessoas.filter((p) => !local || p.local === local);
   const abertas = pessoas.flatMap((p) => p.compensas.filter((c) => c.situacao === "aberta").map((c) => ({ p, c })));
@@ -90,7 +91,7 @@ export default function EscalaCompensas({ supabase, dados, local, nomeDe, onMudo
               </div>
               <nav className="fx-abas" role="tablist">
                 {([["confirmar", `A confirmar${confirmar.length ? ` (${confirmar.length})` : ""}`], ["aberto", "Em aberto"], ["historico", "Já dadas"],
-                  ...(dados.socio ? [["lancar", "Lançar saldo"]] : [])] as [Aba, string][]).map(([v, t]) => (
+                  ...(gerencia ? [["lancar", "Lançar saldo"]] : [])] as [Aba, string][]).map(([v, t]) => (
                   <button key={v} role="tab" aria-selected={aba === v} className={aba === v ? "on" : ""} onClick={() => setAba(v)}>{t}</button>
                 ))}
               </nav>
@@ -135,8 +136,8 @@ export default function EscalaCompensas({ supabase, dados, local, nomeDe, onMudo
                         <li key={c.id} className={`cmp-item p-${prazo(c, dados.hoje)}`}>
                           <span>{c.origem === "feriado" && c.feriado ? <>{nomeFer.get(c.feriado) ?? "Feriado"} <small>{br(c.feriado)}</small></> : <>Saldo antigo <small>{c.motivo}</small></>}</span>
                           <em>{textoPrazo(c, dados.hoje)}</em>
-                          {dados.socio && c.origem === "ajuste" && (
-                            <button onClick={() => rpc(`c${c.id}`, "escala_compensa_cancelar", { p_id: c.id })} disabled={ocupado === `c${c.id}`} title="Cancelar este lançamento" aria-label="Cancelar lançamento">×</button>
+                          {gerencia && (
+                            <button onClick={() => { if (confirm("Cancelar esta compensa? Ela sai do saldo da pessoa.")) rpc(`c${c.id}`, "escala_compensa_cancelar", { p_id: c.id }); }} disabled={ocupado === `c${c.id}`} title="Cancelar esta compensa" aria-label="Cancelar compensa">×</button>
                           )}
                         </li>
                       ))}
@@ -160,7 +161,7 @@ export default function EscalaCompensas({ supabase, dados, local, nomeDe, onMudo
               </ul>
             ))}
 
-          {aba === "lancar" && dados.socio && (
+          {aba === "lancar" && gerencia && (
             <section className="cmp-cartao cmp-lancar">
               <header><b>Lançar saldo antigo</b><span>compensas que a pessoa já tinha antes do Brasico</span></header>
               <label>Pessoa
