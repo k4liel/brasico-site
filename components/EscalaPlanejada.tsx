@@ -14,6 +14,7 @@ import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
 import EscalaCompensas, { prazo, type CompDados, type PessoaComp } from "./EscalaCompensas";
 import { ChipsLideres, EditorLideres, useLideranca } from "./EscalaLideres";
+import { createPortal } from "react-dom";
 
 type Grupo = { id: string; nome: string; local: string; setor: string; fixo?: boolean; postos?: string[]; lideres: { pessoa_id: string; nome: string; usuario: string }[] };
 type PessoaDado = {
@@ -444,8 +445,25 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   const faixa = periodo.length ? `${br(periodo[0])} a ${br(periodo[periodo.length - 1])}` : "";
   // PDF de verdade (lib/escala/pdf.ts, pdf-lib): cada casa numa folha, com cores e título (09/11/2026)
   const [gerandoPdf, setGerandoPdf] = useState(false);
-  async function baixarPdf() {
-    if (!planejadosTela) return avisar({ nivel: "aviso", texto: "Nada planejado no período da tela para mandar." });
+  // Setores que dá para imprimir sozinhos (na ordem da grade), com quantos dias planejados cada um tem na semana
+  const [menuPdf, setMenuPdf] = useState<{ x: number; y: number } | null>(null);
+  const setoresPdf = useMemo(() => {
+    const m = new Map<string, { local: string; setor: string; pessoas: number; dias: number }>();
+    for (const p of ordemDaGrade(pessoas, ordemSetores)) {
+      const k = `${p.local}|${p.setor}`;
+      if (!m.has(k)) m.set(k, { local: p.local, setor: p.setor, pessoas: 0, dias: 0 });
+      const x = m.get(k)!;
+      x.pessoas++;
+      x.dias += periodo.filter((d) => plano.get(p.chave)?.get(d)?.codigo).length;
+    }
+    return [...m.values()];
+  }, [pessoas, ordemSetores, periodo, plano]);
+  // so = um setor só ({local, setor}); sem = todos os setores da tela
+  async function baixarPdf(so?: { local: string; setor: string }) {
+    setMenuPdf(null);
+    const doPdf = so ? pessoas.filter((p) => p.local === so.local && p.setor === so.setor) : pessoas;
+    if (!doPdf.some((p) => periodo.some((d) => plano.get(p.chave)?.get(d)?.codigo)))
+      return avisar({ nivel: "aviso", texto: so ? `Nada planejado em ${so.setor || so.local} nesta semana.` : "Nada planejado no período da tela para mandar." });
     setGerandoPdf(true);
     try {
       const { gerarPdfEscala } = await import("@/lib/escala/pdf");
@@ -456,7 +474,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           const r = await fetch(`/escala/logos/${arquivo}.png`);
           return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
         },
-        linhas: ordemDaGrade(pessoas, ordemSetores).map((p) => ({
+        linhas: ordemDaGrade(doPdf, ordemSetores).map((p) => ({
           nome: p.nome, cargo: p.cargo, local: p.local, setor: p.setor,
           dias: Object.fromEntries(periodo.map((d) => [d, plano.get(p.chave)?.get(d)])), minutos: horasPlanejadas(p.chave),
         })),
@@ -464,7 +482,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${cabecaEnvio} ${faixa}.pdf`.replace(/\//g, "-").replace(/·/g, "-");
+      a.download = `${so ? `Escala · ${[so.local, so.setor].filter(Boolean).join(" · ")}` : cabecaEnvio} ${faixa}.pdf`.replace(/\//g, "-").replace(/·/g, "-");
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -503,7 +521,11 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
             {/* Imprimir só na visão Semana (o texto para o WhatsApp saiu, pedido do dono); o Mês é só para ver (pedido do dono) */}
             {periodo.length === 7 ? (
               <span className="ep-enviar" role="group" aria-label="Mandar para a equipe">
-                <button className="ghost small" onClick={baixarPdf} disabled={gerandoPdf} title="Gera o PDF da semana para mandar no grupo">{gerandoPdf ? "Gerando…" : "Baixar PDF"}</button>
+                <button className="ghost small" onClick={(ev) => { const r = ev.currentTarget.getBoundingClientRect(); setMenuPdf((v) => (v ? null : { x: r.left, y: r.bottom + 6 })); }} disabled={gerandoPdf} aria-expanded={!!menuPdf}
+                  title="Gera o PDF da semana para mandar no grupo: todos os setores ou um só">{gerandoPdf ? "Gerando…" : "Baixar PDF ▾"}</button>
+                {menuPdf && (
+                  <MenuPdf setores={setoresPdf} x={menuPdf.x} y={menuPdf.y} onFechar={() => setMenuPdf(null)} onTodos={() => baixarPdf()} onSetor={(x) => baixarPdf(x)} />
+                )}
               </span>
             ) : <span className="muted small">Para imprimir, use a visão Semana.</span>}
             {comp && (
@@ -593,6 +615,42 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 }
 
 const SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+// Menu do "Baixar PDF": todos os setores da tela ou um setor só (09/11/2026, pedido do dono)
+function MenuPdf({ setores, x, y, onTodos, onSetor, onFechar }: {
+  x: number; y: number;
+  setores: { local: string; setor: string; pessoas: number; dias: number }[];
+  onTodos: () => void; onSetor: (x: { local: string; setor: string }) => void; onFechar: () => void;
+}) {
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const fora = (e: PointerEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) onFechar(); };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
+    const t = setTimeout(() => window.addEventListener("pointerdown", fora, true), 0);
+    window.addEventListener("keydown", esc);
+    return () => { clearTimeout(t); window.removeEventListener("pointerdown", fora, true); window.removeEventListener("keydown", esc); };
+  }, [onFechar]);
+  const locais = [...new Set(setores.map((s) => s.local))];
+  const comAlgo = setores.filter((s) => s.dias > 0).length;
+  // Vai direto no <body> (dentro da barra da escala ficava cortado), preso à tela abaixo do botão
+  const left = Math.max(8, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1000) - 328));
+  return createPortal(
+    <div ref={caixa} className="ep-menu-pdf" role="menu" aria-label="O que imprimir" style={{ left, top: y }}>
+      <button role="menuitem" className="ep-menu-pdf-todos" onClick={onTodos} disabled={!comAlgo}>
+        <b>Todos os setores</b><small>{comAlgo} {comAlgo === 1 ? "setor" : "setores"} com escala nesta semana · cada casa numa folha</small>
+      </button>
+      {locais.map((l) => (
+        <div key={l} className="ep-menu-pdf-casa">
+          {locais.length > 1 && <span>{l}</span>}
+          {setores.filter((s) => s.local === l).map((s) => (
+            <button key={s.setor} role="menuitem" onClick={() => onSetor(s)} disabled={!s.dias} title={s.dias ? "" : "Nada planejado nesta semana"}>
+              <b>{s.setor || l}</b><small>{s.dias ? `${s.pessoas} ${s.pessoas === 1 ? "pessoa" : "pessoas"}` : "sem escala nesta semana"}</small>
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>, document.body);
+}
+
 // A janelinha do bloquinho: o que o dia (ou os dias escolhidos) vira
 // Caixinha do apelido (clicar no nome na escala)
 function CaixaApelido({ nome, apelido, x, y, onSalvar, onFechar }: { nome: string; apelido: string; x: number; y: number; onSalvar: (a: string) => void; onFechar: () => void }) {

@@ -153,12 +153,14 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
       }
       if (!cont) {
         texto(p, "ESCALA DE TRABALHO", xt + 4, topo - 16, 8.5, f.negrito, destaque, { espaco: 1.6 });
-        texto(p, local || e.titulo || "Escala", xt + 4, topo - 44, 26, f.negrito, cor, { larg: LARG * 0.55 - (xt - M) });
+        // Um setor só: o setor vai no título, ao lado da casa
+        const so = setores.length === 1 && setores[0] && setores[0] !== local ? setores[0] : "";
+        texto(p, so ? `${local} · ${so}` : local || e.titulo || "Escala", xt + 4, topo - 44, 26, f.negrito, cor, { larg: LARG * 0.6 - (xt - M) });
         texto(p, `Semana de ${faixa}`, W - M, topo - 24, 13, f.negrito, cor, { alinhar: "dir" });
         const n = linhas.length;
         texto(p, `${n} ${n === 1 ? "pessoa" : "pessoas"} · ${setores.length} ${setores.length === 1 ? "setor" : "setores"}`, W - M, topo - 40, 9, f.normal, CINZA, { alinhar: "dir" });
       } else {
-        texto(p, `${local}  ·  continuação`, xt + 4, topo - 18, 13, f.negrito, cor);
+        texto(p, `${local}${setores.length === 1 && setores[0] && setores[0] !== local ? ` · ${setores[0]}` : ""}  ·  continuação`, xt + 4, topo - 18, 13, f.negrito, cor);
         texto(p, `Semana de ${faixa}`, W - M, topo - 18, 10, f.negrito, cor, { alinhar: "dir" });
       }
       y = topo - altLogo - 8;

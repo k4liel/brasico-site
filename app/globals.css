@@ -2420,7 +2420,19 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .ep-casas button small { margin-left: 6px; font-size: 11px; font-weight: 500; opacity: .75; }
 .ep-paleta .ep-acoes { grid-column: 1 / -1; justify-self: stretch; flex-wrap: wrap; padding-top: 10px; border-top: 1px dashed var(--border); }
 .ep-paleta .ep-acoes .ep-avisos-botao { margin-left: auto; }
-.ep-enviar { display: inline-flex; gap: 4px; padding-left: 8px; border-left: 1px solid var(--border); }
+.ep-enviar { position: relative; display: inline-flex; gap: 4px; padding-left: 8px; border-left: 1px solid var(--border); }
+/* Menu do Baixar PDF: todos os setores ou um só (09/11/2026) */
+.ep-menu-pdf { position: fixed; z-index: 70; width: min(320px, calc(100vw - 16px)); max-height: min(70vh, 520px); overflow: auto;
+  display: grid; gap: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); box-shadow: 0 12px 32px var(--shadow); }
+.ep-menu-pdf { overflow-x: hidden; }
+.ep-menu-pdf button { display: grid; gap: 1px; width: 100%; min-width: 0; white-space: normal; height: auto; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--strong); text-align: left; cursor: pointer; }
+.ep-menu-pdf button:hover:not(:disabled) { background: color-mix(in srgb, var(--gold) 10%, transparent); border-color: color-mix(in srgb, var(--gold) 35%, transparent); }
+.ep-menu-pdf button:disabled { opacity: .45; cursor: default; }
+.ep-menu-pdf button b { font-size: 13.5px; font-weight: 650; }
+.ep-menu-pdf button small { font-size: 11.5px; color: var(--muted); }
+.ep-menu-pdf .ep-menu-pdf-todos { border-color: var(--border); background: color-mix(in srgb, var(--gold) 7%, transparent); }
+.ep-menu-pdf-casa { display: grid; gap: 2px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.ep-menu-pdf-casa > span { padding: 0 10px 2px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .ep-casa .ep-modos { margin-top: 4px; }
 /* Contratados sem ponto (09/11/2026): lista para pôr na escala e o aviso "fora do ponto" ao lado do nome */
 .pe-obs { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .02em;
