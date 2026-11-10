@@ -129,49 +129,89 @@ button.danger { color: var(--danger); }
 .menu-botao.aberto span:nth-child(2) { opacity: 0; }
 .menu-botao.aberto span:nth-child(3) { transform: translateY(-5.8px) rotate(-45deg); }
 
-/* Menu lateral retrátil */
-.menu-fundo { position: fixed; inset: 0; z-index: 40; background: rgba(15, 20, 32, .32); opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility .25s; }
+/* Menu lateral retrátil (refeito em 10/11/2026: a lista rola, seções, visual mais limpo).
+   Marca em cima e conta embaixo ficam presas; só a lista do meio rola. */
+.menu-fundo { position: fixed; inset: 0; z-index: 40; background: rgba(12, 16, 26, .38); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility .3s; }
 .menu-fundo.on { opacity: 1; visibility: visible; }
 .menu-lateral {
-  position: fixed; top: 0; left: 0; bottom: 0; z-index: 41;
-  width: min(300px, 84vw); display: flex; flex-direction: column;
-  background: var(--panel); border-right: 1px solid var(--border);
-  box-shadow: 12px 0 40px var(--shadow);
-  transform: translateX(-100%); visibility: hidden;
-  transition: transform .28s cubic-bezier(.4, 0, .2, 1), visibility .28s;
+  --menu-curva: cubic-bezier(.22, 1, .36, 1);
+  position: fixed; top: 10px; left: 10px; bottom: 10px; z-index: 41;
+  width: min(296px, calc(100vw - 20px)); display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: 0 24px 60px -12px var(--shadow), 0 2px 8px var(--shadow);
+  transform: translateX(calc(-100% - 24px)); visibility: hidden;
+  transition: transform .42s var(--menu-curva), visibility .42s;
 }
 .menu-lateral.aberto { transform: none; visibility: visible; }
-.menu-cabeca { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--border); }
-.menu-nav { display: grid; gap: 2px; padding: 14px 10px; }
-.menu-nav a {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 9px;
-  color: var(--muted); text-decoration: none; font-size: 14.5px; font-weight: 500;
-}
-.menu-nav a:hover { background: var(--seg); color: var(--strong); }
-.menu-nav a.ativo { background: var(--beige); color: var(--strong); }
-.menu-nav a.ativo svg { color: var(--gold); }
-/* Item que abre e fecha (Operação) com as páginas dentro */
-.menu-pasta { all: unset; box-sizing: border-box; cursor: pointer; display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px;
-  border-radius: 9px; color: var(--muted); font-size: 14.5px; font-weight: 500; }
-.menu-pasta:hover { background: var(--seg); color: var(--strong); }
-.menu-pasta.ativo { color: var(--strong); }
-.menu-pasta.ativo svg { color: var(--gold); }
-.menu-pasta:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-.menu-pasta-seta { margin-left: auto; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
-  transform: rotate(45deg) translate(-2px, -2px); transition: transform .2s; }
+.menu-cabeca { flex: none; display: flex; align-items: center; justify-content: space-between; height: 60px; padding: 0 12px 0 20px;
+  border-bottom: 1px solid var(--border); }
+.menu-cabeca .fechar { width: 32px; height: 32px; border-radius: 9px; }
+
+/* A lista: rola por dentro, com barra fina e um esfumado nas bordas */
+.menu-nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 16px;
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 16px), transparent 100%); }
+.menu-nav::-webkit-scrollbar { width: 6px; }
+.menu-nav::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; }
+.menu-secao { margin: 14px 12px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); opacity: .75; }
+.menu-secao:first-child { margin-top: 8px; }
+
+.menu-item { all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: flex; align-items: center; gap: 11px; width: 100%;
+  min-height: 40px; padding: 6px 10px; border-radius: 10px; color: var(--muted); font-size: 14px; font-weight: 500; text-decoration: none;
+  transition: background .18s ease, color .18s ease; }
+.menu-item:hover { background: var(--seg); color: var(--strong); }
+.menu-item:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.menu-texto { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-icone { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: inherit;
+  transition: background .18s ease, color .18s ease; }
+.menu-item:hover .menu-icone { color: var(--strong); }
+/* Página aberta: fundo dourado suave, ícone dourado e um traço à esquerda */
+.menu-item.ativo { background: var(--soft); color: var(--strong); font-weight: 600; }
+.menu-item.ativo .menu-icone { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+.menu-item.ativo::before { content: ""; position: absolute; left: -10px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--gold); }
+.menu-pasta.ativo-grupo { color: var(--strong); }
+.menu-pasta.ativo-grupo .menu-icone { color: var(--gold); }
+
+/* Item que abre e fecha (Hotéis, Operação), com as páginas dentro */
+.menu-pasta-seta { flex: none; margin: 0 4px 0 auto; width: 6px; height: 6px; border-right: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor;
+  opacity: .7; transform: rotate(45deg) translate(-2px, -2px); transition: transform .3s var(--menu-curva); }
 .menu-pasta-seta.aberta { transform: rotate(-135deg) translate(-2px, -2px); }
-.menu-sub { display: grid; gap: 2px; margin: 0 0 4px 20px; padding-left: 8px; border-left: 1px solid var(--border); }
-.menu-sub:not(.aberto) { display: none; }
-.menu-sub a { padding: 8px 12px; font-size: 14px; }
-@media (prefers-reduced-motion: reduce) { .menu-pasta-seta { transition: none; } }
-.menu-rodape { margin-top: auto; padding: 12px 14px 18px; border-top: 1px solid var(--border); display: grid; gap: 12px; }
-.menu-tema { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: 13px; color: var(--muted); }
-.menu-conta { display: flex; align-items: center; gap: 10px; padding: 8px 6px 0; }
-.menu-avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--beige); color: var(--strong); font-size: 13px; font-weight: 600; }
-.menu-email { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--muted); }
-.menu-sair { flex: none; height: 28px; padding: 0 12px; font-size: 12.5px; background: transparent; color: var(--strong); border: 1px solid var(--border); border-radius: 7px; }
-.menu-sair:hover { background: var(--seg); filter: none; }
-@media (prefers-reduced-motion: reduce) { .menu-lateral, .menu-fundo, .menu-botao span { transition: none; } }
+.menu-sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .32s var(--menu-curva), opacity .25s ease; opacity: 0; }
+.menu-sub.aberto { grid-template-rows: 1fr; opacity: 1; }
+.menu-sub > div { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 2px;
+  margin-left: 24px; padding-left: 10px; border-left: 1px solid var(--border); }
+.menu-sub.aberto > div { padding-top: 2px; padding-bottom: 4px; }
+.menu-sub .menu-item { min-height: 36px; font-size: 13.5px; }
+.menu-sub .menu-icone { width: 24px; height: 24px; }
+.menu-sub .menu-item.ativo::before { left: -11px; }
+
+/* Ao abrir, os itens entram em cascata */
+.menu-lateral.aberto .menu-nav > :not(.menu-sub) { animation: menu-entra .45s var(--menu-curva) both; }
+.menu-lateral.aberto .menu-nav > :not(.menu-sub):nth-child(n+2) { animation-delay: .03s; }
+.menu-lateral.aberto .menu-nav > :not(.menu-sub):nth-child(n+5) { animation-delay: .06s; }
+.menu-lateral.aberto .menu-nav > :not(.menu-sub):nth-child(n+9) { animation-delay: .09s; }
+.menu-lateral.aberto .menu-nav > :not(.menu-sub):nth-child(n+13) { animation-delay: .12s; }
+@keyframes menu-entra { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+
+.menu-rodape { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--border); display: grid; gap: 8px; background: var(--panel); }
+.menu-tema { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px; font-size: 13px; color: var(--muted); }
+.menu-conta { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; background: var(--seg); }
+.menu-avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--gold) 70%, #fff), var(--gold)); color: #fff; font-size: 13px; font-weight: 700; }
+.menu-email { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text); }
+.menu-sair { flex: none; height: 28px; padding: 0 12px; font-size: 12.5px; background: var(--panel); color: var(--strong); border: 1px solid var(--border); border-radius: 8px; }
+.menu-sair:hover { border-color: var(--line-strong); filter: none; }
+/* Celular: o menu ocupa a altura toda, sem a moldura flutuante */
+@media (max-width: 560px) {
+  .menu-lateral { top: 0; left: 0; bottom: 0; width: min(300px, 86vw); border-radius: 0 18px 18px 0; border-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-lateral, .menu-fundo, .menu-botao span, .menu-sub, .menu-pasta-seta { transition: none; }
+  .menu-lateral.aberto .menu-nav > :not(.menu-sub) { animation: none; }
+}
 
 /* ---------- Páginas ---------- */
 .pagina { min-height: 100vh; }

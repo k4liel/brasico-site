@@ -62,13 +62,16 @@ export default function Central({ userId, userEmail }: { userId: string; userEma
     const r: Record<string, Info> = {};
     ids.forEach((id) => (r[id] = { capitulos: 0, quando: null, quem: null, claude: false }));
     (notas ?? []).forEach((n: { workspace_id: string }) => r[n.workspace_id].capitulos++);
+    // Mudança gravada direto no banco (o Claude pelo SQL) chega sem usuário: mostra quem editou o projeto por último,
+    // marcado "via Claude", em vez de "Atualizado automaticamente" (pedido do dono, 10/11/2026)
     semDuplicatas(log as { workspace_id: string; user_id: string | null; entity_id: string | null; created_at: string; source: string }[]).forEach((l) => {
       const x = r[l.workspace_id];
-      if (x && !x.quando) {
+      if (!x) return;
+      if (!x.quando) {
         x.quando = l.created_at;
-        x.quem = l.user_id ? nomeDe(l.user_id) : null;
-        x.claude = l.source === "claude";
+        x.claude = l.source === "claude" || !l.user_id;
       }
+      if (!x.quem && l.user_id) x.quem = nomeDe(l.user_id);
     });
     setInfo(r);
     // Mais recentes primeiro: pela última edição (ou pela criação, se nunca foi editado)

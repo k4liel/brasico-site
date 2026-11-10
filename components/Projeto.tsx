@@ -211,7 +211,10 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     });
   }, [abaAtual?.id, emAbas]);
 
+  // Mudança gravada direto no banco (o Claude pelo SQL) chega sem usuário: vale quem editou o projeto por último
+  const ultimoAutor = logTodo.find((l) => l.user_id)?.user_id ?? null;
   const nomeDe = (id: string | null) => {
+    if (!id) id = ultimoAutor;
     if (!id) return "Alguém";
     if (id === userId) return "Você";
     const p = perfis[id];
@@ -531,7 +534,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
               </span>
               <span className="muted small">
                 {haQuanto(l.created_at)}
-                {l.source === "claude" && <span className="via">via Claude</span>}
+                {(l.source === "claude" || !l.user_id) && <span className="via">via Claude</span>}
               </span>
             </li>
           ))}
