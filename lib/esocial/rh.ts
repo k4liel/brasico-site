@@ -15,19 +15,29 @@ export type EventoRH = {
 export type TrabalhadorRH = {
   empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; admissao: string | null; unidade: string;
   origem: string; ativo: boolean; consultado_ate: string | null; consultado_desde: string | null;
+  // Situação no relógio de ponto (RHiD): batendo, parou, inativo, sem_ponto, afastado
+  ponto_situacao?: string | null;
 };
+// Um pagamento do S-1210 (view rh_pagamentos): líquido pago, mês de referência e tipo
+export type PagamentoRH = { empresa_id: string; cpf: string; dt_pgto: string | null; per_ref: string | null; tipo: string; vr_liq: number };
 export type ExecucaoRH = {
   id: string; empresa_id: string; ambiente: number; tipo: string; parametros: Record<string, unknown>; origem: string; status: string;
   cd_resposta: number | null; desc_resposta: string; resultado: Record<string, unknown>; erro: string; created_at: string;
 };
 
-export type Situacao = "trabalhando" | "experiencia" | "afastado" | "ferias" | "saiu" | "aguardando";
+// saiu_ponto = inativo no relógio de ponto e o desligamento ainda não chegou do eSocial (quase sempre já saiu)
+export type Situacao = "trabalhando" | "experiencia" | "afastado" | "ferias" | "saiu" | "saiu_ponto" | "aguardando";
 
 export type Pessoa = {
   chave: string; empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; unidade: string; vinculo: string;
   dtAdm: string | null; dtDeslig: string | null; motivoSaida: string | null; codSaida: string | null; fimContrato: string | null;
   afastamento: { desde: string; motivo: string; saude: boolean } | null;
   salario: string | null; situacao: Situacao; eventos: EventoRH[]; alertas: Alerta[];
+  // Pagamentos (S-1210), do mais novo ao mais velho, e o líquido do último mês pago (só os mensais somados)
+  pagamentos: PagamentoRH[]; liquido: { mes: string; valor: number } | null;
+  pontoSituacao: string | null;
+  // O que falta na ficha (para a conferência dos dados)
+  faltando: string[];
   // Até onde o governo já foi lido para esta pessoa (datas de recepção dos eventos)
   leitura: { desde: string | null; ate: string | null; eventos: number };
 };
@@ -110,7 +120,12 @@ function validos(eventos: EventoRH[]) {
 // ---------------------------------------------------------------------
 // Pessoas
 // ---------------------------------------------------------------------
-export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[]): Pessoa[] {
+export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[], pagamentos: PagamentoRH[] = []): Pessoa[] {
+  const pagosDe = new Map<string, PagamentoRH[]>();
+  for (const g of pagamentos) {
+    const k = `${g.empresa_id}:${g.cpf}`;
+    pagosDe.set(k, [...(pagosDe.get(k) ?? []), g]);
+  }
   const porChave = new Map<string, EventoRH[]>();
   for (const e of validos(eventos)) {
     if (!e.cpf_trab) continue;
@@ -147,6 +162,7 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
     let situacao: Situacao = "aguardando";
     if (saiu) situacao = "saiu";
     else if (afastamento) situacao = afastamento.motivo === "15" ? "ferias" : "afastado";
+    else if (t?.ponto_situacao === "inativo") situacao = "saiu_ponto";
     else if (fimContrato && fimContrato >= agora) situacao = "experiencia";
     else if (adm || t?.admissao) situacao = "trabalhando";
 
@@ -158,10 +174,55 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
       codSaida: saiu ? saida!.resumo.mtvDeslig || null : null,
       fimContrato, afastamento, salario: comSalario?.resumo.vrSalFx ?? null, situacao, eventos: evs, alertas: [],
       leitura: { desde: t?.consultado_desde?.slice(0, 10) ?? null, ate: t?.consultado_ate?.slice(0, 10) ?? null, eventos: evs.length },
+      pagamentos: [], liquido: null, pontoSituacao: t?.ponto_situacao ?? null, faltando: [],
     };
+    p.pagamentos = (pagosDe.get(chave) ?? []).slice().sort((a, b) => (b.dt_pgto ?? "").localeCompare(a.dt_pgto ?? ""));
+    p.liquido = liquidoDoUltimoMes(p.pagamentos);
+    p.faltando = faltandoNaFicha(p);
     p.alertas = alertasDaPessoa(p);
     return p;
   }).sort((a, b) => (a.nome || "~").localeCompare(b.nome || "~", "pt-BR"));
+}
+
+// Líquido do último mês pago: soma os pagamentos mensais com o mês de referência mais novo
+export function liquidoDoUltimoMes(pagamentos: PagamentoRH[]): { mes: string; valor: number } | null {
+  const mensais = pagamentos.filter((g) => g.tipo === "mensal" && g.per_ref && g.per_ref.length === 7);
+  if (!mensais.length) return null;
+  const mes = mensais.map((g) => g.per_ref!).sort().at(-1)!;
+  const valor = Math.round(mensais.filter((g) => g.per_ref === mes).reduce((t, g) => t + Number(g.vr_liq || 0), 0) * 100) / 100;
+  return { mes, valor };
+}
+
+// O que ainda falta na ficha de quem está na equipe (quem já saiu não conta)
+export function faltandoNaFicha(p: Pessoa): string[] {
+  if (p.situacao === "saiu") return [];
+  const f: string[] = [];
+  if (!p.salario) f.push("salário de contrato");
+  if (!p.liquido) f.push("pagamento");
+  if (!p.leitura.ate) f.push("leitura do eSocial");
+  if (!p.pontoSituacao || p.pontoSituacao === "sem_ponto") f.push("cadastro no ponto");
+  return f;
+}
+
+// Conferência dos dados: quanto da equipe tem cada informação
+export type Cobertura = {
+  ativos: number; comSalario: number; comLiquido: number; lidos: number; noPonto: number;
+  semSalario: Pessoa[]; semLiquido: Pessoa[]; saiuPonto: Pessoa[]; semPonto: Pessoa[];
+};
+export const NA_EQUIPE: Situacao[] = ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"];
+export function montarCobertura(pessoas: Pessoa[]): Cobertura {
+  const ativos = pessoas.filter((p) => NA_EQUIPE.includes(p.situacao));
+  return {
+    ativos: ativos.length,
+    comSalario: ativos.filter((p) => p.salario).length,
+    comLiquido: ativos.filter((p) => p.liquido).length,
+    lidos: ativos.filter((p) => p.leitura.ate).length,
+    noPonto: ativos.filter((p) => p.pontoSituacao && p.pontoSituacao !== "sem_ponto").length,
+    semSalario: ativos.filter((p) => !p.salario),
+    semLiquido: ativos.filter((p) => !p.liquido),
+    saiuPonto: pessoas.filter((p) => p.situacao === "saiu_ponto"),
+    semPonto: ativos.filter((p) => !p.pontoSituacao || p.pontoSituacao === "sem_ponto"),
+  };
 }
 
 function alertasDaPessoa(p: Pessoa): Alerta[] {
@@ -547,6 +608,7 @@ export function montarAusencias(pessoas: Pessoa[]): Ausencia[] {
 
 export const ROTULO_SITUACAO: Record<Situacao, string> = {
   trabalhando: "Trabalhando", experiencia: "Em experiência", afastado: "Afastado", ferias: "De férias", saiu: "Saiu", aguardando: "Aguardando leitura",
+  saiu_ponto: "Saiu do ponto",
 };
 
 export const cpfVisivel = (cpf: string, ver: boolean) =>

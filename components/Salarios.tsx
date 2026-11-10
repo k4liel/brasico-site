@@ -1,10 +1,10 @@
 "use client";
 
-// Seção Salários do RH: o salário de contrato de cada pessoa (último S-2200/S-2206 lido do eSocial),
-// agrupado por local e setor, com totais. Dado sensível: vem escondido e só aparece com o olhinho,
+// Seção Salários do RH: o salário de contrato de cada pessoa (último S-2200/S-2206 lido do eSocial) e o
+// líquido pago no último mês (S-1210, view rh_pagamentos; desde 10/11/2026), agrupados por local, com totais. Dado sensível: vem escondido e só aparece com o olhinho,
 // e o valor nunca sai desta tela (não vai para o conector).
 import { useState, type ReactNode } from "react";
-import { cpfVisivel, dataBR, nomeCurto, type EmpresaRH, type Pessoa } from "@/lib/esocial/rh";
+import { cpfVisivel, dataBR, nomeCurto, nomeMes, type EmpresaRH, type Pessoa } from "@/lib/esocial/rh";
 import { localDaUnidadeRH } from "@/lib/esocial/locais";
 
 const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
@@ -22,8 +22,8 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
   const [local, setLocal] = useState("");
   const termo = busca.trim().toLowerCase();
 
-  // Só quem está trabalhando (inclui férias e afastados); quem saiu fica de fora
-  const ativas = pessoas.filter((p) => p.situacao !== "saiu")
+  // Só quem está na equipe (inclui férias e afastados); quem saiu (ou saiu do ponto) fica de fora
+  const ativas = pessoas.filter((p) => p.situacao !== "saiu" && p.situacao !== "saiu_ponto")
     .map((p) => ({ p, local: localDaUnidadeRH(p.unidade) || nomeCurto(empresas.find((e) => e.id === p.empresa_id)?.nome ?? ""), salario: p.salario ? Number(p.salario) : null }));
   const locais = [...new Set(ativas.map((x) => x.local || "Sem local"))].sort();
   const vistas = ativas.filter((x) => !local || (x.local || "Sem local") === local)
@@ -31,14 +31,18 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
   const comSalario = vistas.filter((x) => x.salario != null);
   const total = comSalario.reduce((t, x) => t + x.salario!, 0);
   const media = comSalario.length ? total / comSalario.length : 0;
+  const comLiquido = vistas.filter((x) => x.p.liquido);
+  const totalLiquido = comLiquido.reduce((t, x) => t + x.p.liquido!.valor, 0);
+  const mesLiquido = comLiquido.map((x) => x.p.liquido!.mes).sort().at(-1);
   const valor = (v: number | null) => (v == null ? "—" : ver ? reais(v) : ESCONDIDO);
 
   return (
     <>
       <div className="es-numeros">
         <div className="es-numero"><span className="tv-cartao-rotulo">Folha de contrato</span><span className="es-numero-valor">{ver ? reais(total) : ESCONDIDO}</span><span className="tv-cartao-detalhe">soma dos salários lidos · {comSalario.length} pessoas</span></div>
+        <div className="es-numero"><span className="tv-cartao-rotulo">Líquido pago</span><span className="es-numero-valor">{ver ? reais(totalLiquido) : ESCONDIDO}</span><span className="tv-cartao-detalhe">{mesLiquido ? `último mês pago (${nomeMes(mesLiquido)}) · ${comLiquido.length} pessoas` : "nenhum pagamento lido ainda"}</span></div>
         <div className="es-numero"><span className="tv-cartao-rotulo">Salário médio</span><span className="es-numero-valor">{ver ? reais(media) : ESCONDIDO}</span><span className="tv-cartao-detalhe">entre quem já tem o salário lido</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Já lidos do governo</span><span className="es-numero-valor">{comSalario.length} de {vistas.length}</span><span className="tv-cartao-detalhe">o resto chega com a leitura dos eventos de admissão</span></div>
+        <div className="es-numero"><span className="tv-cartao-rotulo">Salários lidos</span><span className="es-numero-valor">{comSalario.length} de {vistas.length}</span><span className="tv-cartao-detalhe">o resto chega com a leitura da admissão no eSocial (10 por dia por empresa)</span></div>
       </div>
 
       <section className="es-bloco">
@@ -63,7 +67,7 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
           <p className="muted tv-nada">Ninguém neste filtro.</p>
         ) : (
           <>
-            <div className="bh-cabeca sl-cabeca" aria-hidden="true"><span>Pessoa</span><span>Cargo</span><span>Salário</span><span>Desde</span></div>
+            <div className="bh-cabeca sl-cabeca" aria-hidden="true"><span>Pessoa</span><span>Cargo</span><span>Salário</span><span>Líquido</span><span>Desde</span></div>
             <ul className="bh-lista">
               {locais.filter((g) => !local || g === local).map((g) => {
                 const do_ = vistas.filter((x) => (x.local || "Sem local") === g).sort((a, b) => (b.salario ?? -1) - (a.salario ?? -1) || a.p.nome.localeCompare(b.p.nome));
@@ -82,6 +86,9 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
                               <span className="bh-nome"><strong>{x.p.nome ? nomeProprio(x.p.nome) : "Nome ainda não lido"}</strong><span className="muted">{cpfVisivel(x.p.cpf, verCpf)}</span></span>
                               <span className="sl-cargo muted">{titulo(x.p.cargo) || "—"}</span>
                               <span className={`bh-saldo ${x.salario == null ? "muted" : ""}`}>{valor(x.salario)}</span>
+                              <span className={`bh-saldo sl-liquido ${x.p.liquido ? "" : "muted"}`} title={x.p.liquido ? `Líquido de ${nomeMes(x.p.liquido.mes)}` : "Nenhum pagamento lido"}>
+                                {valor(x.p.liquido?.valor ?? null)}{x.p.liquido && <small>{nomeMes(x.p.liquido.mes).slice(0, 3)}</small>}
+                              </span>
                               <span className="bh-var">{ult ? dataBR(ult.resumo?.dtAlteracao || ult.resumo?.dtAdm || "") : "não lido"}</span>
                             </button>
                           </li>
@@ -94,7 +101,7 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
             </ul>
           </>
         )}
-        <p className="muted es-nota">Salário de contrato (salário fixo) informado pelo contador ao eSocial na admissão (S-2200) ou na última alteração contratual (S-2206). Quem entrou antes do período já lido ainda aparece sem valor; o salário chega quando a leitura do histórico alcançar a admissão.
+        <p className="muted es-nota">Salário = salário de contrato (fixo) informado pelo contador ao eSocial na admissão (S-2200) ou na última alteração (S-2206); quem ainda está sem valor recebe quando a leitura da admissão chegar. Líquido = o que foi pago no último mês de referência (pagamentos do S-1210, com horas extras, adicionais e descontos), sem férias, 13º e rescisão.
           Os valores não saem desta tela: o conector do Claude não tem acesso a eles.</p>
       </section>
     </>

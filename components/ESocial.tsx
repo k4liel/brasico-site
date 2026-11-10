@@ -5,8 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { NOMES } from "@/lib/esocial/nomes";
 import {
   cpfVisivel, dataBR, diasEntre, ehAssociacao, nomeCurto, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
-  montarAusencias, montarCalendario, montarLeitura, montarMovimentacoes, montarPessoas, nomeMes, ROTULO_SITUACAO, somarDias, tempoDeCasa,
-  type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type Pessoa, type Situacao,
+  montarAusencias, montarCalendario, montarCobertura, montarLeitura, montarMovimentacoes, montarPessoas, nomeMes, ROTULO_SITUACAO, somarDias, tempoDeCasa,
+  type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type PagamentoRH, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
@@ -14,39 +14,60 @@ import { HojeNoPonto, Justificativas, PontoGoverno, PontoMes } from "./Ponto";
 import { usePonto } from "./PontoDados";
 import BancoHoras from "./BancoHoras";
 import Salarios from "./Salarios";
+import { Conferencia, SaudeFaixa, type SaudeRH } from "./RhDados";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+// O banco devolve no máximo 1000 linhas por pedido: lê em páginas até acabar (antes os eventos mais antigos
+// — admissões e salários — ficavam de fora quando passaram de 1000; corrigido em 10/11/2026)
+async function lerTudo<T>(pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const todos: T[] = [];
+  for (let de = 0; de < 50000; de += 1000) {
+    const { data, error } = await pagina(de, de + 999);
+    if (error) throw new Error(error.message);
+    todos.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  return todos;
+}
+type Sb = SupabaseClient;
 
 type Consulta = { id: string; user_id: string | null; origem: string; ferramenta: string; parametros: Record<string, unknown>; quantidade: number; created_at: string };
 
 const ABAS = ["Eventos", "Trabalhadores", "Pedidos"] as const;
 type Aba = (typeof ABAS)[number];
-const FILTROS = ["Trabalhando", "Em experiência", "Afastados", "Saíram", "Todos"] as const;
+const FILTROS = ["Na equipe", "Em experiência", "Afastados", "Saíram do ponto", "Saíram", "Todos"] as const;
 type Filtro = (typeof FILTROS)[number];
 const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
-  Trabalhando: (s) => ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"].includes(s),
+  "Na equipe": (s) => ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"].includes(s),
   "Em experiência": (s) => s === "experiencia",
   Afastados: (s) => s === "afastado" || s === "ferias",
+  "Saíram do ponto": (s) => s === "saiu_ponto",
   Saíram: (s) => s === "saiu",
   Todos: () => true,
 };
-// Segundo filtro: o que o governo já entregou de cada pessoa
-const LEITURAS = ["Todas", "Já lidas", "Ainda não lidas"] as const;
+// Segundo filtro: a ficha está completa? (salário, pagamento, leitura do eSocial, ponto)
+const LEITURAS = ["Todas", "Ficha completa", "Falta algo"] as const;
 type FiltroLeitura = (typeof LEITURAS)[number];
 // A Escala é página própria (/escala, item do menu logo abaixo do RH, 09/11/2026); #escala e #ponto levam até ela.
-// Seções do RH: quatro abas no topo da página (antes eram dez itens num menu lateral). Os endereços antigos
-// (#pessoas, #ponto, #banco…) continuam funcionando e abrem a aba nova certa.
+// Seções do RH (refeitas em 10/11/2026, revisão pedida pelo dono): cinco abas no topo — Painel, Pessoas,
+// Horas (ponto e banco), Folha e salários, Dados (conferência e leitura do governo). Os endereços antigos
+// (#inicio, #equipe, #contratos, #banco, #salarios, #integracao…) continuam abrindo a aba certa.
 const SECOES = [
-  { id: "inicio", rotulo: "Início", icone: "inicio", titulo: "Início", texto: "O que pede atenção hoje: o ponto, os alertas, os números da equipe e os próximos prazos." },
-  { id: "equipe", rotulo: "Equipe", icone: "equipe", titulo: "Equipe", texto: "Todas as pessoas com a ficha de cada uma, o ponto do mês, o banco de horas e os salários." },
-  { id: "contratos", rotulo: "Ausências e contratos", icone: "ausencias", titulo: "Ausências e contratos", texto: "Quem está fora, atestados e férias lançados no ponto, contratos de experiência a vencer e as entradas e saídas." },
-  { id: "folha", rotulo: "Folha e governo", icone: "folha", titulo: "Folha e governo", texto: "O fechamento da folha, o calendário de obrigações, a leitura do eSocial, o ponto × eSocial e a ajuda." },
+  { id: "painel", rotulo: "Painel", icone: "inicio", titulo: "Painel", texto: "Se os dados estão em dia, o que pede atenção hoje, quem está trabalhando agora e os próximos prazos." },
+  { id: "pessoas", rotulo: "Pessoas", icone: "equipe", titulo: "Pessoas", texto: "A equipe inteira com a ficha de cada um, os contratos de experiência, as entradas e saídas e quem está fora." },
+  { id: "horas", rotulo: "Ponto e banco de horas", icone: "ponto", titulo: "Ponto e banco de horas", texto: "Faltas, atrasos e horas do mês pelo relógio de ponto, e o saldo do banco de horas de cada pessoa." },
+  { id: "folha", rotulo: "Folha e salários", icone: "salario", titulo: "Folha e salários", texto: "Salário de contrato e líquido pago de cada pessoa, o fechamento da folha pelo contador e o calendário do mês." },
+  { id: "dados", rotulo: "Dados", icone: "leitura", titulo: "Dados", texto: "De onde vem cada informação, se está atualizada, o que falta e o andamento da leitura do governo." },
 ] as const;
 type Secao = (typeof SECOES)[number]["id"];
-const SECAO_PADRAO: Secao = "inicio";
-const VISOES_EQUIPE = [["pessoas", "Pessoas"], ["ponto", "Ponto do mês"], ["banco", "Banco de horas"], ["salarios", "Salários"]] as const;
-type VisaoEquipe = (typeof VISOES_EQUIPE)[number][0];
-const ALIAS: Record<string, [Secao, VisaoEquipe?]> = {
-  visao: ["inicio"], pessoas: ["equipe", "pessoas"], banco: ["equipe", "banco"], salarios: ["equipe", "salarios"],
-  ausencias: ["contratos"], movimentacoes: ["contratos"], integracao: ["folha"], ajuda: ["folha"],
+const SECAO_PADRAO: Secao = "painel";
+const VISOES_PESSOAS = [["lista", "Lista"], ["experiencia", "Experiência"], ["movimentos", "Entradas e saídas"], ["ausencias", "Quem está fora"]] as const;
+type VisaoPessoas = (typeof VISOES_PESSOAS)[number][0];
+const VISOES_HORAS = [["ponto", "Ponto do mês"], ["banco", "Banco de horas"]] as const;
+type VisaoHoras = (typeof VISOES_HORAS)[number][0];
+const ALIAS: Record<string, [Secao, string?]> = {
+  inicio: ["painel"], visao: ["painel"], equipe: ["pessoas", "lista"], contratos: ["pessoas", "experiencia"], ausencias: ["pessoas", "ausencias"],
+  movimentacoes: ["pessoas", "movimentos"], banco: ["horas", "banco"], salarios: ["folha"], integracao: ["dados"], ajuda: ["dados"],
 };
 
 const TIPO_PEDIDO: Record<string, string> = {
@@ -85,8 +106,9 @@ function gravarLocal(chave: string, valor: string) {
   } catch {}
 }
 
-export default function ESocial({ userId, userEmail }: { userId: string; userEmail: string }) {
-  const supabase = useMemo(() => createClient(), []);
+// cliente: só para testes com dados de exemplo (sem ele, a conexão normal do site)
+export default function ESocial({ userId, userEmail, cliente }: { userId: string; userEmail: string; cliente?: Sb }) {
+  const supabase = useMemo(() => cliente ?? createClient(), [cliente]);
   const [acesso, setAcesso] = useState<boolean | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [eventos, setEventos] = useState<Evento[]>([]);
@@ -95,20 +117,24 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const [consultas, setConsultas] = useState<Consulta[]>([]);
   const [carregado, setCarregado] = useState(false);
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
-  const [filtro, setFiltro] = useState<Filtro>("Trabalhando");
+  const [filtro, setFiltro] = useState<Filtro>("Na equipe");
   const [busca, setBusca] = useState("");
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [filtroLeitura, setFiltroLeitura] = useState<FiltroLeitura>("Todas");
   const [filtroUnidade, setFiltroUnidade] = useState("");
   const [secao, setSecao] = useState<Secao>(SECAO_PADRAO);
-  const [visaoEquipe, setVisaoEquipe] = useState<VisaoEquipe>("pessoas");
+  const [visaoPessoas, setVisaoPessoas] = useState<VisaoPessoas>("lista");
+  const [visaoHoras, setVisaoHoras] = useState<VisaoHoras>("ponto");
+  const [pagamentos, setPagamentos] = useState<PagamentoRH[]>([]);
+  const [saude, setSaude] = useState<SaudeRH | null>(null);
   // A seção fica no endereço (#pessoas, #folha…) para dar para voltar e compartilhar
   useEffect(() => {
     const ler = () => {
       const h = window.location.hash.replace("#", "");
       if (h === "escala" || h === "ponto") return window.location.replace("/escala");
       const a = ALIAS[h];
-      if (a?.[1]) setVisaoEquipe(a[1]);
+      if (a?.[1] && a[0] === "pessoas") setVisaoPessoas(a[1] as VisaoPessoas);
+      if (a?.[1] && a[0] === "horas") setVisaoHoras(a[1] as VisaoHoras);
       setSecao(SECOES.some((s) => s.id === h) ? (h as Secao) : a ? a[0] : SECAO_PADRAO);
       window.scrollTo({ top: 0 });
     };
@@ -116,9 +142,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
     window.addEventListener("hashchange", ler);
     return () => window.removeEventListener("hashchange", ler);
   }, []);
-  function irPara(s: Secao, v?: VisaoEquipe) {
+  function irPara(s: Secao, v?: VisaoPessoas | VisaoHoras) {
     setSecao(s);
-    if (v) setVisaoEquipe(v);
+    if (v && s === "pessoas") setVisaoPessoas(v as VisaoPessoas);
+    if (v && s === "horas") setVisaoHoras(v as VisaoHoras);
     window.history.replaceState(null, "", `#${s}`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -136,20 +163,35 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   }, []);
 
   const carregar = useCallback(async () => {
-    const [em, ev, tr, ex] = await Promise.all([
-      supabase.from("esocial_empresas")
+    const sb: Sb = supabase;
+    let ev: Evento[] = [], tr: Trabalhador[] = [], pg: PagamentoRH[] = [];
+    const [em, ex, sd] = await Promise.all([
+      sb.from("esocial_empresas")
         .select("id,nome,cnpj,leitura_automatica,limite_diario,historico_desde,cert_validade,cert_emissor,cert_atualizado_em,falhas_contam,aviso_acessos")
         .order("ordem").order("nome"),
-      supabase.from("esocial_eventos").select("id_evento,empresa_id,tipo,cpf_trab,per_apur,situacao,nr_recibo,resumo,descoberto_em,baixado_em")
-        .eq("ambiente", 1).order("descoberto_em", { ascending: false }).limit(5000),
-      supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,matricula,cargo,admissao,unidade,origem,ativo,consultado_ate,consultado_desde").order("nome"),
-      supabase.from("esocial_execucoes").select("id,empresa_id,ambiente,tipo,parametros,origem,status,cd_resposta,desc_resposta,resultado,erro,created_at")
+      sb.from("esocial_execucoes").select("id,empresa_id,ambiente,tipo,parametros,origem,status,cd_resposta,desc_resposta,resultado,erro,created_at")
         .order("created_at", { ascending: false }).limit(300),
+      sb.rpc("rh_saude"),
+      (async () => {
+        try {
+          [ev, tr, pg] = await Promise.all([
+            lerTudo<Evento>((de, ate) => sb.from("esocial_eventos").select("id_evento,empresa_id,tipo,cpf_trab,per_apur,situacao,nr_recibo,resumo,descoberto_em,baixado_em")
+              .eq("ambiente", 1).order("descoberto_em", { ascending: false }).order("id_evento").range(de, ate)),
+            lerTudo<Trabalhador>((de, ate) => sb.from("esocial_trabalhadores")
+              .select("empresa_id,cpf,nome,matricula,cargo,admissao,unidade,origem,ativo,consultado_ate,consultado_desde,ponto_situacao").order("nome").order("cpf").range(de, ate)),
+            lerTudo<PagamentoRH>((de, ate) => sb.from("rh_pagamentos").select("empresa_id,cpf,dt_pgto,per_ref,tipo,vr_liq").order("dt_pgto", { ascending: false }).order("cpf").range(de, ate)),
+          ]);
+        } catch (e) {
+          setErro(`Não deu para ler todos os dados do RH: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      })(),
     ]);
     setEmpresas((em.data ?? []) as Empresa[]);
-    setEventos((ev.data ?? []) as Evento[]);
-    setTrabalhadores((tr.data ?? []) as Trabalhador[]);
+    setEventos(ev);
+    setTrabalhadores(tr);
+    setPagamentos(pg.map((g) => ({ ...g, vr_liq: Number(g.vr_liq) })));
     setExecucoes((ex.data ?? []) as Execucao[]);
+    setSaude((sd.data as SaudeRH) ?? null);
     const { data: cs } = await supabase.from("esocial_consultas").select("id,user_id,origem,ferramenta,parametros,quantidade,created_at")
       .order("created_at", { ascending: false }).limit(60);
     setConsultas((cs ?? []) as Consulta[]);
@@ -212,12 +254,17 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   // Tudo o que a página mostra sai destes cálculos (lib/esocial/rh.ts)
   const daEmpresa = <T extends { empresa_id: string }>(l: T[]) => (filtroEmpresa === "todas" ? l : l.filter((x) => x.empresa_id === filtroEmpresa));
   const empresasVistas = filtroEmpresa === "todas" ? empresas : empresas.filter((e) => e.id === filtroEmpresa);
-  const pessoas = useMemo(() => montarPessoas(eventos, trabalhadores), [eventos, trabalhadores]);
+  const pessoas = useMemo(() => montarPessoas(eventos, trabalhadores, pagamentos), [eventos, trabalhadores, pagamentos]);
   const pessoasVistas = daEmpresa(pessoas);
+  const cobertura = montarCobertura(pessoasVistas);
   const competencias = [mesAnterior(), mesAnterior(hoje(), 2)];
   const folhas = montarFolhas(empresasVistas, eventos, execucoes, competencias, pessoas);
   const calendario = montarCalendario(folhas, empresasVistas);
-  const alertas = montarAlertas(empresasVistas, pessoasVistas, folhas, daEmpresa(execucoes));
+  const alertas = [...montarAlertas(empresasVistas, pessoasVistas, folhas, daEmpresa(execucoes))];
+  if (cobertura.saiuPonto.length) alertas.splice(alertas.findIndex((x) => x.nivel !== "erro") < 0 ? alertas.length : alertas.findIndex((x) => x.nivel !== "erro"), 0, {
+    nivel: "atencao", empresa_id: "", acao: "dados",
+    texto: `${cobertura.saiuPonto.length} ${cobertura.saiuPonto.length === 1 ? "pessoa saiu" : "pessoas saíram"} do ponto e o desligamento ainda não apareceu no eSocial`,
+    detalhe: "Estão inativas no RHiD. Confira com o contador se as rescisões foram enviadas; enquanto isso ficam fora da contagem da equipe." });
   const numeros = montarNumeros(pessoasVistas, empresasVistas);
   const passos = montarPassos(empresas, trabalhadores, execucoes);
   const ultimaLeitura = execucoes.find((x) => x.ambiente === 1 && ["ok", "sem_dados"].includes(x.status) && x.tipo !== "teste_conexao");
@@ -232,7 +279,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
   const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
   const equipe = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao))
     .filter((p) => !filtroUnidade || p.unidade === filtroUnidade)
-    .filter((p) => filtroLeitura === "Todas" || (filtroLeitura === "Já lidas") === !!p.leitura.ate)
+    .filter((p) => filtroLeitura === "Todas" || (filtroLeitura === "Ficha completa") === (p.faltando.length === 0))
     .filter((p) => !termo || p.nome.toLowerCase().includes(termo) || p.cpf.includes(termo.replace(/\D/g, "") || "#") || p.cargo.toLowerCase().includes(termo));
   // Lista longa: mostra 30 e um botão para ver o resto (a busca mostra tudo)
   const visiveis = mostrarTodos || termo ? equipe : equipe.slice(0, 30);
@@ -291,9 +338,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
 
   function agirAlerta(a: Alerta) {
     if (a.pessoa) return setAberta(a.pessoa);
+    if (a.acao === "dados") return irPara("dados");
     if (a.acao === "certificado") return (window.location.href = "/certificados");
     if (a.acao === "leitura") return rodar(() => supabase.rpc("esocial_configurar", { p_empresa: a.empresa_id, p_leitura: true, p_limite: null, p_historico_desde: null }), "Leitura automática ligada.");
-    if (a.acao === "tecnico") irPara("folha");
+    if (a.acao === "tecnico") irPara("dados");
   }
 
   if (acesso === false) {
@@ -354,13 +402,12 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
             {/* Abas do RH */}
             <nav className="es-abas" aria-label="Seções do RH">
               {SECOES.map((s) => {
-                const vence = emExperiencia.filter((p) => diasEntre(hoje(), p.fimContrato!) <= 10).length;
-                const n = s.id === "inicio" ? alertas.length : s.id === "equipe" ? numeros.ativos : s.id === "contratos" ? vence : 0;
+                const n = s.id === "painel" ? alertas.length : s.id === "pessoas" ? numeros.ativos : s.id === "dados" ? cobertura.saiuPonto.length : 0;
                 return (
                   <button key={s.id} className={secao === s.id ? "es-aba on" : "es-aba"} onClick={() => irPara(s.id)} aria-current={secao === s.id ? "page" : undefined}>
                     <Icone nome={s.icone} />
                     <span>{s.rotulo}</span>
-                    {n > 0 && <b className={s.id === "equipe" ? "es-nav-n" : "es-nav-n atencao"}>{n}</b>}
+                    {n > 0 && <b className={s.id === "pessoas" ? "es-nav-n" : "es-nav-n atencao"}>{n}</b>}
                   </button>
                 );
               })}
@@ -371,9 +418,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 const s = SECOES.find((x) => x.id === secao)!;
                 return <header className="es-secao"><h2>{s.titulo}</h2><p>{s.texto}</p></header>;
               })()}
-              {/* ===================== Início ===================== */}
-              {secao === "inicio" && (
+              {/* ===================== Painel ===================== */}
+              {secao === "painel" && (
                 <>
+                  <SaudeFaixa saude={saude} cobertura={cobertura} onVer={() => irPara("dados")} />
                   {proximo && (
                     <section className="es-bloco">
                       <div className="es-bloco-cabeca">
@@ -405,7 +453,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                           <li key={i} className={`es-alerta ${a.nivel}`}>
                             <span className="es-alerta-icone" aria-hidden="true">{a.nivel === "info" ? "i" : "!"}</span>
                             <div><strong>{a.texto}</strong><span className="muted">{a.detalhe}</span></div>
-                            {(a.pessoa || a.acao) && <button className="ghost small" onClick={() => agirAlerta(a)}>{a.pessoa ? "Ver ficha" : a.acao === "leitura" ? "Ligar" : "Ver"}</button>}
+                            {(a.pessoa || a.acao) && <button className="ghost small" onClick={() => agirAlerta(a)}>{a.pessoa ? "Ver ficha" : a.acao === "leitura" ? "Ligar" : a.acao === "dados" ? "Ver quem" : "Ver"}</button>}
                           </li>
                         ))}
                       </ul>
@@ -415,18 +463,15 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                   <HojeNoPonto ponto={ponto} icone={(n) => <Icone nome={n} />} onAbrirEscala={() => (window.location.href = "/escala")} />
 
                   <div className="es-numeros">
-                    <Numero rotulo="Trabalhando" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}
-                      ajuda="Pessoas com admissão informada e sem desligamento. Inclui quem está de férias ou afastado." onClick={() => { setFiltro("Trabalhando"); irPara("equipe", "pessoas"); }} />
+                    <Numero rotulo="Na equipe" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}
+                      ajuda="Pessoas com admissão e sem desligamento, incluindo férias e afastados. Quem já saiu do relógio de ponto e está só esperando o desligamento no eSocial fica fora." onClick={() => { setFiltro("Na equipe"); irPara("pessoas", "lista"); }} />
                     <Numero rotulo="Fora hoje" valor={String(foraAgora.length)} detalhe={`${numeros.ferias} de férias · ${numeros.afastados} afastados`}
-                      ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => irPara("contratos")} />
+                      ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => irPara("pessoas", "ausencias")} />
                     <Numero rotulo="Em experiência" valor={String(emExperiencia.length)} detalhe={emExperiencia[0] ? `próximo acaba ${dataBR(emExperiencia[0].fimContrato)}` : "nenhum contrato a vencer"}
-                      ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("contratos")} />
+                      ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("pessoas", "experiencia")} />
                     <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
                       detalhe={numeros.rotatividade != null ? (empresasVistas.every((e) => !ehAssociacao(e.nome)) ? "Restaurantes: 73% a 78% ao ano" : "Troca da equipe no último ano") : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
-                      ajuda="Quanto da equipe foi trocada nos últimos 12 meses: (entradas + saídas) ÷ 2 ÷ pessoas trabalhando hoje. Falecimento, transferência e aposentadoria não contam, porque não são troca de equipe. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
-                    <Numero rotulo="Saíram antes de 90 dias" valor={String(numeros.cedo)}
-                      detalhe={numeros.saidasAno ? `de ${numeros.saidasAno} saídas no ano · ${numeros.pediram} pediram para sair` : "nenhuma saída lida neste ano"}
-                      ajuda="Quem saiu ainda no período de experiência, neste ano. Muitas saídas cedo costumam indicar problema na contratação ou no acolhimento." onClick={() => { setFiltro("Saíram"); irPara("equipe", "pessoas"); }} />
+                      ajuda="Quanto da equipe foi trocada nos últimos 12 meses: (entradas + saídas) ÷ 2 ÷ pessoas na equipe hoje. Falecimento, transferência e aposentadoria não contam. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
                   </div>
 
                   <div className="es-duas">
@@ -443,7 +488,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       </ol>
                     </section>
                     <section className="es-bloco">
-                      <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Movimentações recentes</h2><button className="ghost small" onClick={() => irPara("contratos")}>Ver todas</button></div>
+                      <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Movimentações recentes</h2><button className="ghost small" onClick={() => irPara("pessoas", "movimentos")}>Ver todas</button></div>
                       {movimentacoes.length === 0 ? (
                         <p className="muted tv-nada">Nenhuma admissão ou saída lida nos últimos 3 meses.</p>
                       ) : (
@@ -463,12 +508,12 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 </>
               )}
 
-              {/* ===================== Equipe ===================== */}
-              {secao === "equipe" && (
+              {/* ===================== Pessoas ===================== */}
+              {secao === "pessoas" && (
                 <div className="es-visoes">
-                  <div className="es-segmentos" role="tablist" aria-label="O que ver da equipe">
-                    {VISOES_EQUIPE.map(([v, r]) => (
-                      <button key={v} role="tab" aria-selected={visaoEquipe === v} className={visaoEquipe === v ? "on" : ""} onClick={() => setVisaoEquipe(v)}>{r}</button>
+                  <div className="es-segmentos" role="tablist" aria-label="O que ver das pessoas">
+                    {VISOES_PESSOAS.map(([v, r]) => (
+                      <button key={v} role="tab" aria-selected={visaoPessoas === v} className={visaoPessoas === v ? "on" : ""} onClick={() => setVisaoPessoas(v)}>{r}</button>
                     ))}
                   </div>
                   <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
@@ -476,7 +521,7 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                   </button>
                 </div>
               )}
-              {secao === "equipe" && visaoEquipe === "pessoas" && (
+              {secao === "pessoas" && visaoPessoas === "lista" && (
                 <section className="es-bloco" id="es-equipe">
                   <div className="es-bloco-cabeca">
                     <h2><Icone nome="equipe" />Pessoas <span className="muted">{pessoasVistas.length}</span></h2>
@@ -501,9 +546,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                         ))}
                       </div>
                     )}
-                    <div className="tv-unidades es-filtro-leitura" role="group" aria-label="Leitura do governo">
+                    <div className="tv-unidades es-filtro-leitura" role="group" aria-label="Ficha completa ou não">
                       {LEITURAS.map((f) => {
-                        const n = f === "Todas" ? pessoasVistas.length : pessoasVistas.filter((p) => (f === "Já lidas") === !!p.leitura.ate).length;
+                        const daSituacao = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao));
+                        const n = f === "Todas" ? daSituacao.length : daSituacao.filter((p) => (f === "Ficha completa") === (p.faltando.length === 0)).length;
                         return (
                           <button key={f} className={f === filtroLeitura ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroLeitura(f)}>{f} <span className="muted">{n}</span></button>
                         );
@@ -534,7 +580,9 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                             </span>
                             <span className="es-pessoa-desde muted">
                               {p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}
-                              <small className={p.leitura.ate ? "es-lida" : "es-nao-lida"}>{p.leitura.ate ? `governo lido até ${dataBR(p.leitura.ate)}` : "governo ainda não lido"}</small>
+                              {p.situacao !== "saiu" && (p.faltando.length
+                                ? <small className="es-nao-lida" title={`Falta: ${p.faltando.join(", ")}`}>falta {p.faltando[0]}{p.faltando.length > 1 ? ` +${p.faltando.length - 1}` : ""}</small>
+                                : <small className="es-lida">ficha completa ✓</small>)}
                             </span>
                             <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
                             {p.alertas.length > 0 && <span className="es-pessoa-alerta" title={p.alertas[0].texto}>!</span>}
@@ -549,18 +597,24 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 </section>
               )}
 
-              {secao === "equipe" && visaoEquipe === "ponto" && <PontoMes ponto={ponto} verCpf={verCpf} />}
-              {secao === "equipe" && visaoEquipe === "banco" && (
+              {/* ===================== Ponto e banco de horas ===================== */}
+              {secao === "horas" && (
+                <div className="es-visoes">
+                  <div className="es-segmentos" role="tablist" aria-label="Ponto ou banco de horas">
+                    {VISOES_HORAS.map(([v, r]) => (
+                      <button key={v} role="tab" aria-selected={visaoHoras === v} className={visaoHoras === v ? "on" : ""} onClick={() => setVisaoHoras(v)}>{r}</button>
+                    ))}
+                  </div>
+                  <a className="ghost small es-olho" href="/escala">Abrir a escala →</a>
+                </div>
+              )}
+              {secao === "horas" && visaoHoras === "ponto" && <PontoMes ponto={ponto} verCpf={verCpf} />}
+              {secao === "horas" && visaoHoras === "banco" && (
                 <BancoHoras supabase={supabase} filtroEmpresa={filtroEmpresa} chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
               )}
-              {secao === "equipe" && visaoEquipe === "salarios" && (
-                <Salarios pessoas={pessoasVistas} empresas={empresas} verCpf={verCpf} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
-              )}
 
-              {/* ===================== Ausências e contratos ===================== */}
-              {secao === "contratos" && (
+              {secao === "pessoas" && visaoPessoas === "experiencia" && (
                 <>
-                  <Justificativas ponto={ponto} icone={(n) => <Icone nome={n} />} />
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca"><h2><Icone nome="passos" />Contratos de experiência</h2><span className="muted">{emExperiencia.length}</span></div>
                     {emExperiencia.length === 0 ? (
@@ -580,6 +634,10 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       </ul>
                     )}
                   </section>
+                </>
+              )}
+              {secao === "pessoas" && visaoPessoas === "movimentos" && (
+                <>
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Admissões e saídas</h2><span className="muted">últimos 6 meses · {movimentacoes6.length}</span></div>
                     {movimentacoes6.length === 0 ? (
@@ -597,6 +655,11 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       </ul>
                     )}
                   </section>
+                </>
+              )}
+              {secao === "pessoas" && visaoPessoas === "ausencias" && (
+                <>
+                  <Justificativas ponto={ponto} icone={(n) => <Icone nome={n} />} />
                   <div className="es-duas">
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca"><h2><Icone nome="ausencias" />Fora agora, pelo governo</h2><span className="muted">{foraAgora.length}</span></div>
@@ -637,9 +700,15 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                 </>
               )}
 
-              {/* ===================== Folha e governo ===================== */}
+              {/* ===================== Folha e salários ===================== */}
               {secao === "folha" && (
                 <>
+                  <div className="es-visoes es-visoes-direita">
+                    <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
+                      <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
+                    </button>
+                  </div>
+                  <Salarios pessoas={pessoasVistas} empresas={empresas} verCpf={verCpf} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
                       <h2><Icone nome="folha" />Folha do mês</h2>
@@ -696,9 +765,16 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                       ))}
                     </ol>
                   </section>
+                </>
+              )}
+
+              {/* ===================== Dados ===================== */}
+              {secao === "dados" && (
+                <>
+                  <Conferencia saude={saude} cobertura={cobertura} nomeEmpresa={nomeEmpresa} onAbrir={setAberta} />
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
-                      <h2><Icone nome="leitura" />Andamento da leitura</h2>
+                      <h2><Icone nome="leitura" />Andamento da leitura do eSocial</h2>
                       <Ajuda texto="O governo libera só 10 acessos por dia por empresa (consultas e downloads somados) e entrega os dados de cada funcionário um por vez. Por isso a leitura é feita aos poucos: todo dia, das 8h às 20h, um acesso a cada 40 minutos. Quando o servidor do governo cai (página de erro), a chamada é repetida na hora e não conta no limite. Aqui você vê o que já chegou e o que ainda falta." />
                     </div>
                     <div className="es-leituras">
@@ -741,11 +817,11 @@ export default function ESocial({ userId, userEmail }: { userId: string; userEma
                   <details className="es-bloco es-glossario">
                     <summary><Icone nome="livro" /><strong>Como esta área funciona</strong> <span className="muted">· o que tem em cada aba</span></summary>
                     <ul className="es-ajuda-lista">
-                      <li><strong>Início</strong>: o ponto de hoje (quem está trabalhando, quem está atrasado), o que precisa da sua atenção, os números do mês, os próximos prazos e as últimas movimentações.</li>
-                      <li><strong>Escala</strong>: a escala de todo mundo na página inteira (semana ou mês), por local e setor, com o previsto e o batido de cada dia.</li>
-                      <li><strong>Equipe</strong>: as pessoas (com a ficha e a linha do tempo), o ponto do mês (faltas, atrasos, horas), o banco de horas e os salários de contrato (escondidos até você mostrar).</li>
-                      <li><strong>Ausências e contratos</strong>: atestados, férias e licenças lançados no ponto, contratos de experiência a vencer, admissões e saídas com os prazos do eSocial, e os afastamentos que o governo registra.</li>
-                      <li><strong>Folha e governo</strong>: o fechamento da folha, o calendário de obrigações, o andamento da leitura do eSocial, o cruzamento ponto × eSocial, os relógios e os registros técnicos.</li>
+                      <li><strong>Painel</strong>: se os dados estão em dia (ponto, eSocial, fichas), o que precisa da sua atenção, quem está trabalhando agora, os números da equipe, os próximos prazos e as últimas movimentações.</li>
+                      <li><strong>Pessoas</strong>: a equipe com a ficha de cada um (contrato, salário, pagamentos, ponto, linha do tempo), os contratos de experiência, as entradas e saídas e quem está fora (atestados, férias, afastamentos).</li>
+                      <li><strong>Ponto e banco de horas</strong>: faltas, atrasos e horas do mês pelo relógio, e o saldo do banco de horas. A escala é a página Escala do menu.</li>
+                      <li><strong>Folha e salários</strong>: salário de contrato e líquido pago de cada pessoa (escondidos até você mostrar), o fechamento da folha e o calendário do mês.</li>
+                      <li><strong>Dados</strong>: a conferência (o que já chegou e o que falta de cada pessoa), o andamento da leitura do eSocial, o cruzamento ponto × eSocial, os relógios e os registros técnicos.</li>
                     </ul>
                     <p className="muted">O cadastro inicial (nome, cargo, admissão, unidade) veio da relação do contador. O ponto vem do RHiD ao longo do dia; o governo (eSocial) libera 10 consultas por dia por empresa e os dados chegam aos poucos.</p>
                   </details>
@@ -825,6 +901,10 @@ function Numero({ rotulo, valor, detalhe, ajuda, onClick }: { rotulo: string; va
   );
 }
 
+const PONTO_SIT: Record<string, string> = {
+  batendo: "batendo ponto", parou: "parou de bater há alguns dias", inativo: "inativo no RHiD", afastado: "afastado (justificativa no RHiD)", sem_ponto: "não bate ponto (fora do RHiD)",
+};
+
 function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFechar }: {
   pessoa: Pessoa; empresa: string; verCpf: boolean; alternarCpf: () => void; historicoDesde: string; onFechar: () => void;
 }) {
@@ -860,8 +940,10 @@ function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFech
           <div><dt>CPF</dt><dd>{cpfVisivel(p.cpf, verCpf)} <button className="es-olho-mini" onClick={alternarCpf} aria-label={verCpf ? "Esconder CPF" : "Mostrar CPF"}><Olho aberto={verCpf} /></button></dd></div>
           {p.matricula && <div><dt>Matrícula</dt><dd>{p.matricula}</dd></div>}
           <div><dt>Leitura do governo</dt><dd>{p.leitura.ate ? `${dataBR(p.leitura.desde)} a ${dataBR(p.leitura.ate)} · ${p.leitura.eventos} evento${p.leitura.eventos === 1 ? "" : "s"}` : "ainda não lida"}</dd></div>
-          {p.salario && <div><dt>Salário</dt><dd>{verSalario ? reais(p.salario) : "R$ •••••"} <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder salário" : "Mostrar salário"}><Olho aberto={verSalario} /></button></dd></div>}
-          {p.afastamento && <div><dt>Afastado desde</dt><dd>{dataBR(p.afastamento.desde)} ({diasEntre(p.afastamento.desde, agora)} dias)</dd></div>}
+          <div><dt>Salário de contrato</dt><dd>{p.salario ? <>{verSalario ? reais(p.salario) : "R$ •••••"} <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button></> : <span className="muted">ainda não lido do eSocial</span>}</dd></div>
+          <div><dt>Líquido pago</dt><dd>{p.liquido ? <>{verSalario ? reais(String(p.liquido.valor)) : "R$ •••••"} <span className="muted">· {nomeMes(p.liquido.mes)}</span>{!p.salario && <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button>}</> : <span className="muted">nenhum pagamento lido</span>}</dd></div>
+          <div><dt>Relógio de ponto</dt><dd>{PONTO_SIT[p.pontoSituacao ?? ""] ?? "sem cadastro no RHiD"}</dd></div>
+          {p.afastamento && <div><dt>{p.afastamento.motivo === "15" ? "De férias desde" : "Afastado desde"}</dt><dd>{dataBR(p.afastamento.desde)} ({diasEntre(p.afastamento.desde, agora)} dias)</dd></div>}
         </dl>
 
         {p.alertas.length > 0 && (
@@ -870,6 +952,25 @@ function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFech
               <li key={i} className={`es-alerta ${a.nivel}`}><span className="es-alerta-icone" aria-hidden="true">!</span><div><strong>{a.texto}</strong><span className="muted">{a.detalhe}</span></div></li>
             ))}
           </ul>
+        )}
+
+        {p.faltando.length > 0 && (
+          <p className="es-falta-ficha"><b>Falta nesta ficha:</b> {p.faltando.join(", ")}. <span className="muted">A leitura automática completa sozinha; a aba Dados mostra o andamento.</span></p>
+        )}
+
+        {p.pagamentos.length > 0 && (
+          <>
+            <h3>Pagamentos <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button></h3>
+            <ul className="es-pagamentos">
+              {p.pagamentos.slice(0, 8).map((g, i) => (
+                <li key={i}>
+                  <span>{g.dt_pgto ? dataBR(g.dt_pgto) : "—"}</span>
+                  <span className="muted">{g.tipo === "mensal" && g.per_ref ? `salário de ${nomeMes(g.per_ref)}` : g.tipo === "13º salário" ? `13º de ${g.per_ref}` : g.tipo}</span>
+                  <b>{verSalario ? reais(String(g.vr_liq)) : "R$ •••••"}</b>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
 
         <h3>Linha do tempo</h3>

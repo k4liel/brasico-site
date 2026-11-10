@@ -2018,6 +2018,7 @@ a.wa-doc:hover { background: color-mix(in srgb, var(--wa-citacao) 60%, var(--wa-
 .es-selo.trabalhando { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); }
 .es-selo.experiencia, .es-selo.afastado { color: var(--es-amber-ink); border-color: color-mix(in srgb, var(--es-amber) 40%, transparent); background: color-mix(in srgb, var(--es-amber) 10%, transparent); }
 .es-selo.ferias { color: var(--strong); border-color: var(--soft-line); background: var(--soft); }
+.es-selo.saiu_ponto { color: #b4532a; border-color: color-mix(in srgb, #b4532a 40%, transparent); background: color-mix(in srgb, #b4532a 9%, transparent); }
 .es-ponto-mov { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
 .es-ponto-mov.saida { background: var(--danger); }
 
@@ -2827,11 +2828,12 @@ tr.ep-piscar > * { animation: ep-piscar 1.6s ease; }
   .us-acessos { grid-column: 1 / -1; }
   .us-papeis, .us-duas { grid-template-columns: 1fr; }
 }
-.sl-cabeca, .sl-linha { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 120px 90px; }
+.sl-cabeca, .sl-linha { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 120px 130px 90px; }
+.sl-liquido small { margin-left: 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
 .sl-cargo { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sl-grupo-wrap + .sl-grupo-wrap { margin-top: 4px; }
 .sl-linha .bh-saldo { color: var(--strong); }
-@media (max-width: 640px) { .sl-cabeca, .sl-linha { grid-template-columns: minmax(0, 1fr) 110px; } .sl-cargo, .sl-linha .bh-var, .sl-cabeca span:nth-child(2), .sl-cabeca span:nth-child(4) { display: none; } }
+@media (max-width: 640px) { .sl-cabeca, .sl-linha { grid-template-columns: minmax(0, 1fr) 100px 100px; } .sl-cargo, .sl-linha .bh-var, .sl-cabeca span:nth-child(2), .sl-cabeca span:nth-child(5) { display: none; } }
 
 /* =====================================================================
    Operação · Notas fiscais (usa o padrão visual do RH: .es)
@@ -4465,3 +4467,42 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
   .rv-texto .colunas > ul, .rv-texto .card-doc, .rv-texto .check-doc, .rv-texto tr { break-inside: avoid; }
   .rv-texto h2, .rv-texto h3 { break-after: avoid; }
 }
+
+/* RH · saúde dos dados e conferência (10/11/2026; components/RhDados.tsx) */
+.rd-faixa { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: center; margin: 0 0 16px; padding: 8px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
+.rd-fonte { display: flex; gap: 10px; align-items: center; min-width: 0; padding: 8px 10px; border-radius: 12px; }
+.rd-fonte > i, .rd-fonte-titulo > i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #2e9e5b; box-shadow: 0 0 0 4px color-mix(in srgb, #2e9e5b 18%, transparent); }
+.rd-fonte.atencao > i, .rd-fonte-cartao.atencao .rd-fonte-titulo > i { background: #d39b12; box-shadow: 0 0 0 4px color-mix(in srgb, #d39b12 20%, transparent); }
+.rd-fonte.erro > i, .rd-fonte-cartao.erro .rd-fonte-titulo > i { background: #d14343; box-shadow: 0 0 0 4px color-mix(in srgb, #d14343 20%, transparent); }
+.rd-fonte span { display: grid; min-width: 0; }
+.rd-fonte b { font-size: 13.5px; color: var(--strong); }
+.rd-fonte small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-faixa > button { margin-right: 4px; }
+@media (max-width: 760px) { .rd-faixa { grid-template-columns: minmax(0, 1fr); } .rd-faixa > button { justify-self: start; margin: 0 10px 6px; } }
+.rd-fontes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 0 0 20px; }
+.rd-fonte-cartao { padding: 14px 16px; border: 1px solid var(--border); border-radius: 14px; }
+.rd-fonte-cartao.erro { border-color: color-mix(in srgb, #d14343 45%, var(--border)); }
+.rd-fonte-titulo { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; font-weight: 650; font-size: 14px; color: var(--strong); }
+.rd-fonte-cartao dl { display: grid; gap: 6px; margin: 0; }
+.rd-fonte-cartao dl > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; font-size: 12.5px; }
+.rd-fonte-cartao dt { color: var(--muted); }
+.rd-fonte-cartao dd { margin: 0; color: var(--text); }
+.rd-barras { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px 20px; margin: 0 0 20px; }
+.rd-barra { display: grid; gap: 6px; }
+.rd-barra-cabeca { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--strong); }
+.rd-barra-trilho { height: 8px; border-radius: 999px; background: var(--hover-bg); overflow: hidden; }
+.rd-barra-trilho > i { display: block; height: 100%; border-radius: inherit; background: #2e9e5b; }
+.rd-barra-trilho.atencao > i { background: #d39b12; }
+.rd-barra-trilho.erro > i { background: #d14343; }
+.rd-barra small { font-size: 12px; line-height: 1.4; }
+.rd-listas { display: grid; gap: 8px; }
+.rd-lista { border: 1px solid var(--border); border-radius: 12px; }
+.rd-lista > summary { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 12px 14px; cursor: pointer; list-style: none; }
+.rd-lista > summary::-webkit-details-marker { display: none; }
+.rd-lista > summary small { flex-basis: 100%; font-size: 12px; }
+.rd-n { padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
+.rd-lista ul { list-style: none; margin: 0; padding: 0 6px 8px; display: grid; gap: 2px; }
+.es-visoes-direita { justify-content: flex-end; }
+.es-falta-ficha { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; background: color-mix(in srgb, var(--gold) 10%, transparent); }
+.es-pagamentos { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.es-pagamentos li { display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
