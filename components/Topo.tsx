@@ -99,12 +99,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
 
         {/* A lista rola sozinha: a marca em cima e a conta embaixo ficam presas */}
         <nav className="menu-nav">
-          {(ve("projetos") || ve("brainstorm") || ve("whatsapp")) && <p className="menu-secao">Central</p>}
           {ve("projetos") && <Item ref={primeiro} href="/" on={ativo === "projetos"} vis={aberto} icone={I.projetos}>Projetos</Item>}
           {ve("brainstorm") && <Item href="/brainstorm" on={ativo === "brainstorm"} vis={aberto} icone={I.brainstorm}>Brainstorm</Item>}
           {ve("whatsapp") && <Item href="/whatsapp" on={ativo === "whatsapp"} vis={aberto} icone={I.whatsapp}>WhatsApp</Item>}
 
-          {(ve("totvs") || ve("rh") || ve("receita")) && <p className="menu-secao">Gestão</p>}
           {ve("totvs") && <Item href="/vendas" on={ativo === "vendas"} vis={aberto} icone={I.vendas}>Vendas · TOTVS</Item>}
           {ve("rh") && (<>
             {/* RH: um item que abre e fecha (começa fechado), com o RH · eSocial e a Escala dentro */}
@@ -116,7 +114,6 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           </>)}
           {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto} icone={I.receita}>Receita Federal</Item>}
 
-          {(ve("hoteis") || ve("operacao")) && <p className="menu-secao">Unidades</p>}
           {/* Hotéis: um item que abre e fecha, com uma página por hotel */}
           {ve("hoteis") && (<>
             <Pasta id="menu-hoteis" on={(ativo ?? "").startsWith("hotel:")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis</Pasta>
@@ -137,7 +134,6 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             </div></div>
           </>)}
 
-          {(ve("certificados") || ve("usuarios") || ve("conectar")) && <p className="menu-secao">Sistema</p>}
           {ve("certificados") && <Item href="/certificados" on={ativo === "certificados"} vis={aberto} icone={I.certificados}>Certificados digitais</Item>}
           {ve("usuarios") && <Item href="/usuarios" on={ativo === "usuarios"} vis={aberto} icone={I.usuarios}>Usuários</Item>}
           {ve("conectar") && <Item href="/conectar" on={ativo === "conectar"} vis={aberto} icone={I.conectar}>Claude e equipe</Item>}
