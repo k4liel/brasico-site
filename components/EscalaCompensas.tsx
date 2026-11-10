@@ -8,7 +8,7 @@ import { useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Gaveta from "./Gaveta";
 
-export type Compensa = { id: number; origem: "feriado" | "ajuste"; feriado: string | null; motivo: string; vence_em: string | null; situacao: "aberta" | "usada" | "cancelada"; usada_dia: string | null };
+export type Compensa = { id: number; origem: "feriado" | "ajuste"; feriado: string | null; motivo: string; vence_em: string | null; situacao: "aberta" | "usada" | "cancelada"; usada_dia: string | null; criado_em?: string };
 export type PessoaComp = { cliente_id: number; id: number; nome: string; local: string; setor: string; compensas: Compensa[]; a_confirmar: { dia: string; entrada: string | null; saida: string | null }[] };
 export type CompDados = { hoje: string; socio: boolean; gerencia?: boolean; feriados: { dia: string; nome: string; origem: string }[]; pessoas: PessoaComp[] };
 

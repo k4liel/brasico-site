@@ -12,7 +12,7 @@ import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, t
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
-import EscalaCompensas, { prazo, type CompDados, type PessoaComp } from "./EscalaCompensas";
+import EscalaCompensas, { prazo, type CompDados, type Compensa, type PessoaComp } from "./EscalaCompensas";
 import { ChipsLideres, EditorLideres, useLideranca } from "./EscalaLideres";
 import { createPortal } from "react-dom";
 
@@ -38,7 +38,7 @@ const HORARIOS_FIXOS: { codigo: "T"; entrada: string; saida: string; intervalo: 
   { codigo: "T", entrada: "17:00", saida: "05:00", intervalo: "22:00-23:00", rotulo: "17:00–05:00" },
 ];
 // O pincel escolhido na paleta
-type Pincel = { codigo: Codigo; entrada?: string; saida?: string; intervalo?: string; rotulo: string; posto?: string };
+type Pincel = { codigo: Codigo; entrada?: string; saida?: string; intervalo?: string; rotulo: string; posto?: string; compensa_id?: number };
 type Toast = { id: number; nivel: "ok" | "aviso" | "erro"; texto: string; detalhes?: string[]; desfazer?: () => void };
 
 const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
@@ -287,7 +287,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   }
 
   // ---------- Gravar ----------
-  async function gravar(itens: { cliente_id: number; pessoa_id: number; dia: string; codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; posto?: string | null }[]) {
+  async function gravar(itens: { cliente_id: number; pessoa_id: number; dia: string; codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; posto?: string | null; compensa_id?: number | null }[]) {
     // Na tela na hora; no banco em seguida
     setDados((v) => v && {
       ...v,
@@ -315,6 +315,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     const faltam = [...novas].filter(([k, n]) => n > (compDe.get(k)?.compensas.filter((x) => x.situacao === "aberta").length ?? 0));
     return faltam.map(([k]) => pessoas.find((p) => p.chave === k)?.nome.split(" ")[0] ?? "");
   }
+  // Compensa que a FC deste dia usa, e as que a pessoa pode usar no dia (em aberto, de feriado até o dia)
+  const usadaNoDia = (chave: string, dia: string) => compDe.get(chave)?.compensas.find((x) => x.situacao === "usada" && x.usada_dia === dia) ?? null;
+  const abertasNoDia = (chave: string, dia: string) => compDe.get(chave)?.compensas.filter((x) => x.situacao === "aberta" && (!x.feriado || x.feriado <= dia)) ?? [];
   // Feriados entre os dias escolhidos: o que já se disse (trabalhou → compensa) de cada um
   function feriadosDe(celulas: Celula[]) {
     return celulas.filter((c) => feriados.has(c.dia)).map((c) => {
@@ -358,16 +361,20 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         entrada: pincel.codigo === "T" ? pincel.entrada : null, saida: pincel.codigo === "T" ? pincel.saida : null,
         intervalo: pincel.codigo === "T" ? pincel.intervalo ?? null : null,
         posto: pincel.codigo === "T" ? pincel.posto ?? "" : "",
+        // FC com a compensa escolhida no bloquinho (sem escolha, o banco usa a mais antiga)
+        compensa_id: pincel.codigo === "FC" ? pincel.compensa_id ?? null : null,
       };
     }).filter((i) => {
       // Não grava o que já está igual
       const d = plano.get(chaveDe(i.cliente_id, i.pessoa_id))?.get(i.dia);
-      return (d?.codigo ?? "") !== i.codigo || (i.codigo === "T" && (d?.entrada !== i.entrada || d?.saida !== i.saida || (d?.intervalo ?? null) !== i.intervalo || (d?.posto ?? "") !== i.posto));
+      const trocaCompensa = i.codigo === "FC" && i.compensa_id != null && usadaNoDia(chaveDe(i.cliente_id, i.pessoa_id), i.dia)?.id !== i.compensa_id;
+      return (d?.codigo ?? "") !== i.codigo || trocaCompensa || (i.codigo === "T" && (d?.entrada !== i.entrada || d?.saida !== i.saida || (d?.intervalo ?? null) !== i.intervalo || (d?.posto ?? "") !== i.posto));
     });
     if (!itens.length) return;
     const desfazer = itens.map((i) => {
       const d = plano.get(chaveDe(i.cliente_id, i.pessoa_id))?.get(i.dia);
-      return { cliente_id: i.cliente_id, pessoa_id: i.pessoa_id, dia: i.dia, codigo: (d?.codigo ?? "") as Codigo, entrada: d?.entrada ?? null, saida: d?.saida ?? null, intervalo: d?.intervalo ?? null, posto: d?.posto ?? "" };
+      return { cliente_id: i.cliente_id, pessoa_id: i.pessoa_id, dia: i.dia, codigo: (d?.codigo ?? "") as Codigo, entrada: d?.entrada ?? null, saida: d?.saida ?? null, intervalo: d?.intervalo ?? null, posto: d?.posto ?? "",
+        compensa_id: d?.codigo === "FC" ? usadaNoDia(chaveDe(i.cliente_id, i.pessoa_id), i.dia)?.id ?? null : null };
     });
     const ok = await gravar(itens);
     if (!ok) return;
@@ -609,6 +616,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           postos={postosDe(editor.celulas)} fcSemSaldo={fcSemSaldo(editor.celulas)} feriadosDia={feriadosDe(editor.celulas)}
           nomeFeriado={(d) => comp?.feriados.find((f) => f.dia === d)?.nome ?? "Feriado"} onFeriado={(cs, t) => marcarFeriado(cs, t)}
           atual={editor.celulas.length === 1 ? plano.get(editor.celulas[0].chave)?.get(editor.celulas[0].dia) : undefined}
+          compensas={editor.celulas.length === 1 ? abertasNoDia(editor.celulas[0].chave, editor.celulas[0].dia) : undefined}
+          compensaUsada={editor.celulas.length === 1 ? usadaNoDia(editor.celulas[0].chave, editor.celulas[0].dia) : null}
+          hojeComp={comp?.hoje ?? agora}
           nome={editor.celulas.length === 1 ? pessoas.find((p) => p.chave === editor.celulas[0].chave)?.nome ?? "" : ""}
           onEscolher={(p) => aplicar(editor.celulas, p)} onFechar={() => setEditor(null)} />
       )}
@@ -673,14 +683,27 @@ function CaixaApelido({ nome, apelido, x, y, onSalvar, onFechar }: { nome: strin
 }
 
 type FeriadoDia = { celula: Celula; passou: boolean; compensa: { situacao: string; vence_em: string | null; usada_dia: string | null } | null; naoTrabalhou: boolean };
-function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [], fcSemSaldo = [], feriadosDia = [], nomeFeriado, onFeriado }: {
+// Como a compensa aparece no bloquinho: de onde veio (feriado ou saldo lançado, com a data), o motivo e o prazo
+function textoCompensa(c: Compensa, nomeFeriado?: (d: string) => string) {
+  const titulo = c.origem === "feriado" && c.feriado
+    ? `Feriado ${br(c.feriado)} · ${nomeFeriado?.(c.feriado) ?? "Feriado"}`
+    : `Saldo lançado${c.criado_em ? ` em ${br(c.criado_em.slice(0, 10))}` : ""}`;
+  const motivo = (c.motivo ?? "").trim();
+  return { titulo, motivo, prazo: c.vence_em ? `vale até ${br(c.vence_em)}` : "sem prazo" };
+}
+
+function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [], fcSemSaldo = [], feriadosDia = [], nomeFeriado, onFeriado,
+  compensas, compensaUsada = null, hojeComp }: {
   celulas: Celula[]; x: number; y: number; horarios: Pincel[]; postos?: string[];
+  compensas?: Compensa[]; compensaUsada?: Compensa | null; hojeComp?: string;
   fcSemSaldo?: string[]; feriadosDia?: FeriadoDia[]; nomeFeriado?: (d: string) => string; onFeriado?: (cs: Celula[], trabalhou: boolean) => void;
   outro: { entrada: string; saida: string; intervalo: string }; setOutro: (o: { entrada: string; saida: string; intervalo: string }) => void;
   atual?: DiaPlano; nome: string; onEscolher: (p: Pincel) => void; onFechar: () => void;
 }) {
   const caixa = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  // FC num dia só: antes de gravar, escolher qual compensa da pessoa está sendo dada
+  const [escolherFC, setEscolherFC] = useState(false);
   // Grupos que revezam: onde a pessoa fica (vai junto com o horário escolhido)
   const [posto, setPosto] = useState(atual?.posto && postos.includes(atual.posto) ? atual.posto : postos[0] ?? "");
   // Horário do dia para ajustar (entrada, saída e descanso): começa com o do dia, se já tiver, ou com o último usado
@@ -714,7 +737,40 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   return (
     <div ref={caixa} className="ep-editor" role="dialog" aria-label="Escolher o que o dia vira" style={{ left: pos.left, top: pos.top }}>
       <div className="ep-editor-cabeca"><b>{titulo}</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
-      {feriadosDia.length > 0 && (() => {
+      {compensaUsada && atual?.codigo === "FC" && !escolherFC && (() => {
+        const t = textoCompensa(compensaUsada, nomeFeriado);
+        return (
+          <div className="ep-editor-grupo ep-fc-usada">
+            <span>Compensa dada neste dia</span>
+            <div className="ep-fc-cartao">
+              <b>{t.titulo}</b>
+              {t.motivo && <small>{t.motivo}</small>}
+            </div>
+            {(compensas?.length ?? 0) > 0 && <button className="ghost small" onClick={() => setEscolherFC(true)}>Trocar a compensa</button>}
+          </div>
+        );
+      })()}
+      {escolherFC && compensas && (
+        <div className="ep-editor-grupo ep-fc-escolha">
+          <span>{atual?.codigo === "FC" ? "Trocar por qual compensa?" : "Qual compensa está dando?"}</span>
+          <div className="ep-fc-lista" role="list">
+            {compensas.map((c) => {
+              const t = textoCompensa(c, nomeFeriado);
+              const p = hojeComp ? prazo(c, hojeComp) : "ok";
+              return (
+                <button key={c.id} role="listitem" className={`ep-fc-cartao ep-fc-${p}`}
+                  onClick={() => onEscolher({ codigo: "FC", rotulo: "Folga compensada", compensa_id: c.id })}>
+                  <b>{t.titulo}</b>
+                  {t.motivo && <small>{t.motivo}</small>}
+                  <small className="ep-fc-prazo">{p === "vencida" ? "vencida · " : p === "vencendo" ? "vencendo · " : ""}{t.prazo}</small>
+                </button>
+              );
+            })}
+          </div>
+          <button className="ghost small" onClick={() => setEscolherFC(false)}>Voltar</button>
+        </div>
+      )}
+      {!escolherFC && feriadosDia.length > 0 && (() => {
         const um = feriadosDia.length === 1 ? feriadosDia[0] : null;
         const passados = feriadosDia.filter((f) => f.passou);
         const semResposta = passados.filter((f) => !f.compensa && !f.naoTrabalhou).map((f) => f.celula);
@@ -738,6 +794,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
           </div>
         );
       })()}
+      {!escolherFC && (<>
       {postos.length > 0 && (
         <div className="ep-editor-grupo">
           <span>Onde trabalha</span>
@@ -782,7 +839,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
         <span>Não trabalha</span>
         <div className="ep-editor-opcoes">
           {CODIGOS.map((c) => (
-            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })}
+            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => (c.codigo === "FC" && compensas?.length ? setEscolherFC(true) : onEscolher({ codigo: c.codigo, rotulo: c.nome }))}
               disabled={(c.codigo === "FC" && fcSemSaldo.length > 0) || (c.codigo === "DM" && !soDomingos)}
               title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.`
                 : c.codigo === "DM" && !soDomingos ? "Domingo do mês só num domingo" : c.nome}>
@@ -794,6 +851,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
       <div className="ep-editor-rodape">
         <button className="ghost small" onClick={() => onEscolher({ codigo: "", rotulo: "Limpar" })}>Deixar sem escala</button>
       </div>
+      </>)}
     </div>
   );
 }
