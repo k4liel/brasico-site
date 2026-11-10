@@ -67,8 +67,8 @@ grant execute on function public.escala_contratado_definir(text, text, text, tex
 
 -- Fiamma (Reservas) e Elvis (Financeiro), Sempre Vivo
 insert into public.escala_extras (empresa_id, cpf, nome, cargo, local, setor, situacao)
-values ('terceiro', 'a-confirmar-fiamma', 'FIAMA', 'Terceirizada? Acordo a confirmar com o diretor', 'Sempre Vivo', 'Reservas', 'na_escala'),
-       ('terceiro', 'a-confirmar-elvis', 'ELVIS', 'Terceirizado? Acordo a confirmar com o diretor', 'Sempre Vivo', 'Financeiro', 'na_escala')
+values ('terceiro', 'a-confirmar-fiamma', 'FIAMA', '???', 'Sempre Vivo', 'Reservas', 'na_escala'),
+       ('terceiro', 'a-confirmar-elvis', 'ELVIS', '???', 'Sempre Vivo', 'Financeiro', 'na_escala')
 on conflict (empresa_id, cpf) do nothing;
 insert into public.escala_membros (cliente_id, pessoa_id, grupo_id)
 select 0, x.id, g.id from public.escala_extras x
