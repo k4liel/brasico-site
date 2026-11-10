@@ -5,6 +5,7 @@ import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
 const OPERACAO = ["notas", "compras", "fichas", "estoque", "producao"];
+const RH = ["esocial", "escala"];
 // Hotéis: uma página por hotel (/hoteis/<id>, tabela hoteis)
 const HOTEIS = [
   { id: "filha-da-lua", nome: "Filha da Lua", icone: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /> },
@@ -55,6 +56,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   const [aberto, setAberto] = useState(false);
   // Operação começa fechada, a não ser quando a página aberta é uma das dela
   const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
+  const [rhAberta, setRhAberta] = useState(RH.includes(ativo ?? ""));
   const [hotAberta, setHotAberta] = useState((ativo ?? "").startsWith("hotel:"));
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
@@ -106,10 +108,11 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           {(ve("totvs") || ve("rh") || ve("receita")) && <p className="menu-secao">Gestão</p>}
           {ve("totvs") && <Item href="/vendas" on={ativo === "vendas"} vis={aberto} icone={I.vendas}>Vendas · TOTVS</Item>}
           {ve("rh") && (<>
-            <Item href="/esocial" on={ativo === "esocial"} vis={aberto} icone={I.rh}>RH · eSocial</Item>
-            {/* Escala: subpágina do RH (/escala), com a escala editável de cada casa */}
-            <div className="menu-sub aberto"><div>
-              <Item href="/escala" on={ativo === "escala"} vis={aberto} icone={I.escala}>Escala</Item>
+            {/* RH: um item que abre e fecha (começa fechado), com o RH · eSocial e a Escala dentro */}
+            <Pasta id="menu-rh" on={RH.includes(ativo ?? "")} aberta={rhAberta} alternar={() => setRhAberta((o) => !o)} vis={aberto} icone={I.rh}>RH</Pasta>
+            <div id="menu-rh" className={rhAberta ? "menu-sub aberto" : "menu-sub"}><div>
+              <Item href="/esocial" on={ativo === "esocial"} vis={aberto && rhAberta} icone={I.rh}>RH · eSocial</Item>
+              <Item href="/escala" on={ativo === "escala"} vis={aberto && rhAberta} icone={I.escala}>Escala</Item>
             </div></div>
           </>)}
           {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto} icone={I.receita}>Receita Federal</Item>}
