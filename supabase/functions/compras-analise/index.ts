@@ -8,7 +8,12 @@
 //      ('no_lote', lote 'gemini', fase 'buscar');
 //   1b. buscar (chamada(s) seguinte(s), até 100 s cada): a busca roda no banco (compras_auto_buscar: notas fiscais +
 //      cadastro de insumos) e continua de onde parou, para pedido grande (planilha) não estourar o tempo;
-//   2. terminar: o Gemini liga cada item ao produto, faz as contas e as listas são gravadas.
+//   2. terminar: o Gemini liga cada item ao produto e o sistema faz as contas;
+//   3. revisar (na mesma chamada, se der tempo, ou na seguinte): um segundo Gemini, o REVISOR, confere item a item se o
+//      produto da nota é mesmo o pedido, se o fornecedor de fato vende aquilo (pelas compras antigas) e se preço e unidade
+//      fazem sentido; troca pelo candidato certo ou marca "confira" para o setor de compras. Se o revisor falhar, as
+//      listas são gravadas assim mesmo (nunca trava). Depois as listas são gravadas.
+// Corpo {"novas": true}: só começa pedidos novos (a agenda manda duas chamadas por minuto: uma termina, outra começa).
 // Os modelos do Gemini correm em paralelo escalonado: se um demora, o próximo começa junto; vale a primeira resposta (09/11/2026).
 // Se a pessoa já mexeu ou aprovou alguma lista, só as mensagens novas viram listas novas; nada do que ela fez é trocado.
 // Corpo opcional: { "data": "2026-11-03" } outra semana; { "pessoa": "<id>" } refaz essa pessoa agora;
@@ -77,6 +82,22 @@ Junto vem uma separação prévia em listas e, para cada item, os candidatos ach
 
 Responda só com o JSON pedido, em português.`;
 
+const INSTRUCOES_REVISOR = `Você é o REVISOR das listas de compras da Brasico (restaurantes e hotéis em Pipa/RN). Outra análise já ligou cada item pedido no grupo de WhatsApp a um produto das notas fiscais de compra (produto_nota), com o fornecedor e o preço dessa nota. Seu trabalho é pegar os erros antes que a lista vá para o setor de compras.
+${AVISO_DADOS}
+
+Para cada item (campo k), confira:
+1. PRODUTO: produto_nota é o MESMO produto pedido? Mesmo tipo e forma (fresco × congelado × seco, com × sem sal, inteiro × ralado × fatiado, zero × normal, integral × desnatado), mesmo tamanho/medida quando o pedido diz (saco de lixo 100 L não é 200 L), mesma marca quando o pedido cita marca. Nome parecido não basta ("ventilador" não é "pilha de ventilador"; "limão" não é "tempero lemon pepper").
+2. FORNECEDOR: o fornecedor é o da nota escolhida, então ele já vendeu aquilo. Se nas alternativas houver o MESMO produto comprado pela casa da pessoa mais recentemente (ou com mais compras nas últimas 4 semanas) de outro fornecedor, prefira esse (veredito trocar).
+3. PREÇO E UNIDADE: o preço e a unidade fazem sentido para o que foi pedido? Ex.: pilha a R$ 100 a unidade é preço de caixa; ventilador a R$ 27 não é ventilador; 24 unidades de vinagre quando a nota é caixa com 12. Se não fizerem, explique em motivo.
+
+Veredito de cada item:
+- "ok": está certo.
+- "trocar": uma das alternativas é o produto certo (ou o mesmo produto num fornecedor melhor); produto_nota = a descricao_na_nota EXATA dessa alternativa, letra por letra.
+- "conferir": o produto até pode ser esse, mas há dúvida de preço, unidade, tamanho ou quantidade; motivo = uma frase curta e prática para o setor de compras.
+- "sem_nota": o produto escolhido NÃO é o pedido e nenhuma alternativa serve (o item fica sem produto da nota, para o setor de compras pesquisar).
+Itens sem produto_nota: se uma alternativa for o produto certo, "trocar"; senão "ok".
+Responda só com o JSON pedido, um objeto por item, em português.`;
+
 // Esquemas de resposta do Gemini (OpenAPI do responseSchema)
 const T = (type: string, extra: Record<string, unknown> = {}) => ({ type, ...extra });
 const NULO = { nullable: true };
@@ -110,6 +131,16 @@ const SCHEMA_LISTAS = T("OBJECT", {
   required: ["listas", "observacao"],
 });
 
+const SCHEMA_REVISOR = T("OBJECT", {
+  properties: {
+    itens: T("ARRAY", { items: T("OBJECT", {
+      properties: { k: T("INTEGER"), veredito: T("STRING", { enum: ["ok", "trocar", "conferir", "sem_nota"] }),
+        produto_nota: T("STRING", NULO), motivo: T("STRING", NULO) },
+      required: ["k", "veredito"] }) }),
+  },
+  required: ["itens"],
+});
+
 type Parte = { text: string } | { inlineData: { mimeType: string; data: string } };
 type Item = Record<string, unknown> & { nome: string };
 type Lista = { titulo: string; pedido?: string; itens: Item[] };
@@ -121,7 +152,8 @@ type Cand = { descricao_na_nota: string; unidade: string; fornecedor: string; se
   casa_da_pessoa?: { compras_4s: number; comprado_4s: number; media_semanal_4s: number }; grupo_todo?: { compras_4s: number; compras_8s: number; media_semanal_4s: number } };
 type ItemCand = { lista: string; item: string; candidatos: Cand[] };
 type Dados = { modo: Contexto["modo"]; pedido: string; mensagens: number; teste?: number; texto: string; midias: { midia: string; enviada_em: string }[];
-  candidatos: ItemCand[]; tentativas?: number; aumento?: number; separacao?: Separacao; fase?: "buscar" };
+  candidatos: ItemCand[]; tentativas?: number; aumento?: number; separacao?: Separacao; fase?: "buscar" | "revisar";
+  entrega?: { listas: Lista[]; observacao: string }; modelo2?: string; uso2?: unknown };
 const LIMITE_ARQUIVO = 8 * 1024 * 1024;
 const IMAGENS: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
@@ -374,7 +406,52 @@ function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento
     motivo: motivos.length ? motivos.join(" ") : motivoGemini || null };
 }
 
-// Etapa 2: liga os itens, faz as contas e grava as listas
+// Monta as listas a partir da resposta da etapa 2 (k = posição do item, na mesma ordem que o revisor vê), aplicando as
+// correções do revisor quando houver
+type Ajuste = { veredito: string; produto_nota?: string | null; motivo?: string | null };
+const valido = (i: Item) => i && String(i.nome ?? "").trim();
+function montar(entrega: { listas: Lista[] }, porItem: Map<string, ItemCand>, todos: Cand[], aumento: number, ajustes?: Map<number, Ajuste>) {
+  let k = 0;
+  return (entrega.listas ?? [])
+    .map((l) => ({ titulo: String(l.titulo ?? "").trim(), pedido: String(l.pedido ?? "").trim(),
+      itens: (l.itens ?? []).filter(valido).map((i) => {
+        const a = ajustes?.get(k++);
+        const base = a?.veredito === "trocar" && a.produto_nota ? { ...i, produto_nota: a.produto_nota }
+          : a?.veredito === "sem_nota" ? { ...i, produto_nota: null } : i;
+        const x = ajustar(base, porItem, todos, aumento);
+        if (!a || a.veredito === "ok") return x;
+        const nota = a.motivo?.trim() ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota." : "";
+        return { ...x, motivo: [nota, x.motivo].filter(Boolean).join(" ") || null,
+          ...(a.veredito === "conferir" && x.confianca === "alta" ? { confianca: "media" } : {}) };
+      }) }))
+    .filter((l) => l.itens.length);
+}
+
+// O revisor: segundo Gemini que confere produto × fornecedor × preço de cada item com as compras antigas
+async function revisar(entrega: { listas: Lista[] }, d: Dados, porItem: Map<string, ItemCand>, todos: Cand[], aumento: number, prazoMs: number) {
+  const itens: Record<string, unknown>[] = [];
+  let k = 0;
+  for (const l of entrega.listas ?? []) for (const i of (l.itens ?? []).filter(valido)) {
+    const entrada = porItem.get(normal(String(i.item_pedido ?? ""))) ?? null;
+    const x = ajustar(i, porItem, todos, aumento);
+    itens.push({ k: k++, lista: l.titulo, pedido: entrada?.item ?? i.item_pedido ?? i.nome, nome: x.nome, qtd_pedida: x.qtd_pedida,
+      produto_nota: x.produto_nota, fornecedor: x.fornecedor, unidade: x.unidade, preco: x.preco, ultima_compra_base: x.base,
+      alternativas: (entrada?.candidatos ?? []).slice(0, 6).map((c) => ({ descricao_na_nota: c.descricao_na_nota, fornecedor: c.fornecedor,
+        unidade: c.unidade, ultimo_preco: c.ultimo_preco, ultima: c.ultima, compras_da_casa_4s: c.casa_da_pessoa?.compras_4s ?? 0,
+        compras_do_grupo_4s: c.grupo_todo?.compras_4s ?? 0 })) });
+  }
+  if (!itens.length) return { ajustes: new Map<number, Ajuste>(), uso: null };
+  const texto = `<pedido>\n${d.pedido}\n</pedido>\n\nItens para revisar (JSON):\n${JSON.stringify(itens)}`;
+  const r = await gemini(INSTRUCOES_REVISOR, [{ text: texto }], SCHEMA_REVISOR, prazoMs, 1024, 30_000);
+  const ajustes = new Map<number, Ajuste>();
+  for (const a of ((r.json as { itens?: (Ajuste & { k: number })[] }).itens ?? [])) {
+    if (typeof a.k === "number" && a.k >= 0 && a.k < itens.length && a.veredito && a.veredito !== "ok") ajustes.set(a.k, a);
+  }
+  const conta = (v: string) => [...ajustes.values()].filter((a) => a.veredito === v).length;
+  return { ajustes, uso: { modelo: r.modelo, ...r.uso, itens: itens.length, trocados: conta("trocar"), conferir: conta("conferir"), sem_nota: conta("sem_nota") } };
+}
+
+// Etapa 2: liga os itens, faz as contas, passa pelo revisor e grava as listas
 async function terminar(a: { id: number; semana_id: string; pessoa_id: string; dados: Dados; uso: Record<string, unknown> | null }) {
   const inicio = Date.now();
   const d = a.dados;
@@ -390,11 +467,14 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
     await supabase.from("compras_analises").update({ dados: novo, uso }).eq("id", a.id);
     return { analise: a.id, buscados: candidatos.length, de: r.total, tenta_de_novo: r.acabou ? "busca pronta" : "busca continua" };
   }
-  let resp;
+  let resp: { json: unknown; modelo: string; uso: unknown };
   try {
-    const anexos = await Promise.all((d.midias ?? []).map(anexo));
-    resp = await gemini(INSTRUCOES, [...anexos, { text: `${d.texto}\n\n<candidatos>\n${JSON.stringify(d.candidatos)}\n</candidatos>` }],
-      SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048, 45_000);
+    if (d.fase === "revisar" && d.entrega) resp = { json: d.entrega, modelo: d.modelo2 ?? "", uso: d.uso2 };
+    else {
+      const anexos = await Promise.all((d.midias ?? []).map(anexo));
+      resp = await gemini(INSTRUCOES, [...anexos, { text: `${d.texto}\n\n<candidatos>\n${JSON.stringify(d.candidatos)}\n</candidatos>` }],
+        SCHEMA_LISTAS, PRAZO_MS - (Date.now() - inicio), 2048, 45_000);
+    }
   } catch (e) {
     // cota ou demora: fica para a próxima rodada; depois de 3 tentativas, falha
     const tentativas = (d.tentativas ?? 0) + 1;
@@ -407,14 +487,27 @@ async function terminar(a: { id: number; semana_id: string; pessoa_id: string; d
     return { analise: a.id, erro: erroTexto(e) };
   }
   const entrega = resp.json as { listas: Lista[]; observacao: string };
-  const uso = { ...(a.uso ?? {}), modelo_etapa2: resp.modelo, listas: resp.uso, segundos_etapa2: Math.round((Date.now() - inicio) / 1000) };
+  const uso: Record<string, unknown> = { ...(a.uso ?? {}), modelo_etapa2: resp.modelo, listas: resp.uso };
+  if (d.fase !== "revisar") uso.segundos_etapa2 = Math.round((Date.now() - inicio) / 1000);
   const porItem = new Map((d.candidatos ?? []).map((x) => [normal(x.item), x] as [string, ItemCand]));
   const todos = (d.candidatos ?? []).flatMap((x) => x.candidatos ?? []);
   const aumento = Number(d.aumento ?? 0);
-  const listas = (entrega.listas ?? [])
-    .map((l) => ({ titulo: String(l.titulo ?? "").trim(), pedido: String(l.pedido ?? "").trim(),
-      itens: (l.itens ?? []).filter((i) => i && String(i.nome ?? "").trim()).map((i) => ajustar(i, porItem, todos, aumento)) }))
-    .filter((l) => l.itens.length);
+  // o revisor precisa de ~40 s; se a etapa 2 já gastou o tempo da chamada, ele fica para a próxima (fase "revisar")
+  const resta = PRAZO_MS - (Date.now() - inicio);
+  if (d.fase !== "revisar" && resta < 55_000) {
+    await supabase.from("compras_analises").update({ dados: { ...d, fase: "revisar", entrega, modelo2: resp.modelo, uso2: resp.uso, tentativas: 0 }, uso }).eq("id", a.id);
+    return { analise: a.id, tenta_de_novo: "revisor na próxima chamada" };
+  }
+  let ajustes: Map<number, Ajuste> | undefined;
+  const t0 = Date.now();
+  try {
+    const r = await revisar(entrega, d, porItem, todos, aumento, resta - 8_000);
+    ajustes = r.ajustes;
+    uso.revisor = { ...(r.uso ?? {}), segundos: Math.round((Date.now() - t0) / 1000) };
+  } catch (e) {
+    uso.revisor = { erro: erroTexto(e), segundos: Math.round((Date.now() - t0) / 1000) }; // sem revisor, grava assim mesmo
+  }
+  const listas = montar(entrega, porItem, todos, aumento, ajustes);
   // cada lista guarda só o seu trecho do pedido; a observação da análise vai na primeira
   if (entrega.observacao && listas[0]) listas[0].pedido = `${listas[0].pedido || d.pedido}\n\nObservação da análise: ${entrega.observacao}`;
   const nItens = listas.reduce((s, l) => s + l.itens.length, 0);
@@ -449,7 +542,7 @@ Deno.serve(async (req) => {
   // Uma etapa por chamada: primeiro termina a análise mais antiga que já passou pela etapa 1. A análise é reservada
   // (lote = "gemini@<hora>") para duas chamadas ao mesmo tempo não gravarem as listas duas vezes; reserva com mais de
   // 5 min (chamada que caiu no meio) volta a valer.
-  if (!corpo.pessoa) {
+  if (!corpo.pessoa && !corpo.novas) {
     const corte = new Date(Date.now() - 5 * 60_000).toISOString();
     const { data: pend } = await supabase.from("compras_analises").select("id,semana_id,pessoa_id,dados,uso,lote")
       .eq("status", "no_lote").or(`lote.eq.gemini,and(lote.like.gemini@*,lote.lt.gemini@${corte})`).order("inicio").limit(1);

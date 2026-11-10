@@ -1087,6 +1087,59 @@ type PainelDados = {
   alertas_preco: { descricao: string; fornecedor: string; preco: number; media_anterior: number; alta_pct: number; unidade: string; emissao: string }[];
 };
 type Casa = { unidade: string; pessoas: number; com_lista: number; aprovadas: number; listas: number; valor: number };
+// Mensagens do grupo COMPRAS mandadas por quem não pede compras (Fernanda, sócio...) e que o sistema não soube de quem é:
+// escolher a pessoa faz a análise montar a lista dela em poucos minutos; "Não é pedido" tira do quadro
+// (compras_mensagens_sem_dono, compras_mensagem_atribuir; supabase/compras_fluxo_continuo.sql)
+type MsgSemDono = { id: string; enviada_em: string; autor: string; tipo: string; texto: string | null; arquivo: string | null };
+function SemDono({ semana }: { semana: Semana }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [msgs, setMsgs] = useState<MsgSemDono[]>([]);
+  const [pessoas, setPessoas] = useState<{ id: string; nome: string; unidade: string | null }[]>([]);
+  const [escolha, setEscolha] = useState<Record<string, string>>({});
+  const [aviso, setAviso] = useState("");
+  const carregar = useCallback(() => {
+    supabase.rpc("compras_mensagens_sem_dono", { p_semana: semana.id }).then(({ data }) => setMsgs((data ?? []) as MsgSemDono[]));
+  }, [supabase, semana.id]);
+  useEffect(() => {
+    carregar();
+    supabase.from("operacao_pessoas").select("id,nome,unidade").eq("papel", "solicitante").eq("ativo", true).order("nome")
+      .then(({ data }) => setPessoas((data ?? []) as { id: string; nome: string; unidade: string | null }[]));
+  }, [supabase, carregar]);
+  async function atribuir(id: string, pessoa: string | null) {
+    setAviso("");
+    const { error } = await supabase.rpc("compras_mensagem_atribuir", { p_mensagem: id, p_pessoa: pessoa });
+    if (error) return setAviso(error.message);
+    const nome = pessoas.find((p) => p.id === pessoa)?.nome;
+    setAviso(pessoa ? `Pronto: o pedido foi para ${nome}. A lista aparece em poucos minutos.` : "Pronto: a mensagem saiu do quadro.");
+    carregar();
+  }
+  if (!msgs.length && !aviso) return null;
+  return (
+    <section className="pn-bloco pn-sem-dono">
+      <header><h2>Mensagens do grupo sem dono</h2><small>mandadas por quem não pede compras · diga de quem é o pedido</small></header>
+      {aviso && <p className="pn-sem-dono-aviso">{aviso}</p>}
+      <ul>
+        {msgs.map((m) => (
+          <li key={m.id}>
+            <div className="pn-sem-dono-msg">
+              <small>{m.autor} · {quando(m.enviada_em)}{m.arquivo ? ` · 📎 ${m.arquivo}` : ""}</small>
+              {m.texto && <p>{m.texto}</p>}
+            </div>
+            <div className="pn-sem-dono-acoes">
+              <select value={escolha[m.id] ?? ""} onChange={(v) => setEscolha({ ...escolha, [m.id]: v.target.value })} aria-label="De quem é o pedido">
+                <option value="">De quem é o pedido?</option>
+                {pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome}{p.unidade ? ` · ${UNIDADES[p.unidade] ?? p.unidade}` : ""}</option>)}
+              </select>
+              <button className="small" disabled={!escolha[m.id]} onClick={() => atribuir(m.id, escolha[m.id])}>Montar a lista</button>
+              <button className="ghost small" onClick={() => atribuir(m.id, null)}>Não é pedido</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Painel({ semana }: { semana: Semana }) {
   const supabase = useMemo(() => createClient(), []);
   const [d, setD] = useState<PainelDados | null>(null);
@@ -1168,6 +1221,8 @@ function Painel({ semana }: { semana: Semana }) {
           </li>
         ))}
       </ol>
+
+      <SemDono semana={semana} />
 
       <div className="pn-duas">
         {/* Por casa */}
