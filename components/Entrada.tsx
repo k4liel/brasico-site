@@ -14,7 +14,8 @@ const DOMINIO_EQUIPE = "usuarios.brasico";
 export const paraEmail = (v: string) => { const t = v.trim().toLowerCase(); return t.includes("@") ? t : `${t}@${DOMINIO_EQUIPE}`; };
 
 // Papéis da equipe das casas (operacao_papel); sócio = 'socio'
-const PAPEIS_EQUIPE = ["solicitante", "compras", "estoque"];
+// "lider" = quem só monta a escala (abre só /escala); entra pela área dos colaboradores
+const PAPEIS_EQUIPE = ["solicitante", "compras", "estoque", "lider"];
 
 /** Depois de entrar: confere se a pessoa é desta tela. Se não for, desconecta e devolve o aviso. */
 export async function conferirArea(tipo: TipoEntrada): Promise<string | null> {
