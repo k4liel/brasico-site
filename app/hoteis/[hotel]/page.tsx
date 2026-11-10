@@ -5,7 +5,7 @@ import Hotel from "@/components/Hotel";
 export const dynamic = "force-dynamic";
 
 // Nomes dos hotéis do menu (o nome de verdade vem da tabela hoteis)
-const NOMES: Record<string, string> = { "filha-da-lua": "Filha da Lua", "sempre-vivo": "Sempre Vivo", "filho-do-vento": "Filho do Vento" };
+const NOMES: Record<string, string> = { "filha-da-lua": "Filha da Lua", "sempre-vivo": "Sempre Vivo" }; // Filho do Vento saiu em 10/11/2026 (usam outro sistema)
 
 export default async function HotelPage({ params }: { params: Promise<{ hotel: string }> }) {
   const { hotel } = await params;

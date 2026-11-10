@@ -10,7 +10,6 @@ const RH = ["esocial", "escala"];
 const HOTEIS = [
   { id: "filha-da-lua", nome: "Filha da Lua", icone: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /> },
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
-  { id: "filho-do-vento", nome: "Filho do Vento", icone: <path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h7" /> },
 ];
 
 export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
