@@ -50,7 +50,9 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
   const [deHoje, setDeHoje] = useState<Estadia[]>([]);
   const [estado, setEstado] = useState<"carregando" | "ok" | "atualizando" | "falhou">("carregando");
   const [erro, setErro] = useState<string | null>(null);
-  const [previa, setPrevia] = useState<{ b: Barra; x: number; y: number; fixa: boolean } | null>(null);
+  // Prévia ao passar o mouse: abre embaixo ou em cima da barra (o lado com mais espaço), sem nunca cobrir a barra;
+  // enquanto não está fixa (clique), ela não pega o mouse, para não fechar e abrir sem parar.
+  const [previa, setPrevia] = useState<{ b: Barra; x: number; y: number; acima: boolean; max: number; fixa: boolean } | null>(null);
   const [aberta, setAberta] = useState<Estadia | null>(null);
   // Prévia completa: financeiro (transações), hóspedes da reserva e total da reserva (detalhes do PMS)
   const [fin, setFin] = useState<Map<string, Fin>>(new Map());
@@ -198,8 +200,9 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
 
   function abrirPrevia(b: Barra, alvo: HTMLElement, fixa: boolean) {
     const r = alvo.getBoundingClientRect();
-    const abaixo = r.bottom + 440 < window.innerHeight;
-    setPrevia({ b, x: Math.min(Math.max(8, r.left), window.innerWidth - 356), y: abaixo ? r.bottom + 6 : Math.max(8, r.top - 6 - 430), fixa });
+    const embaixo = window.innerHeight - r.bottom - 14, emCima = r.top - 14;
+    const acima = embaixo < 440 && emCima > embaixo;
+    setPrevia({ b, x: Math.min(Math.max(8, r.left), window.innerWidth - 336), y: acima ? r.top - 6 : r.bottom + 6, acima, max: Math.max(160, acima ? emCima : embaixo), fixa });
   }
 
   const intervalo = `${dataBr(inicio)} a ${dataBr(somaDias(inicio, janela - 1))}`;
@@ -326,7 +329,7 @@ export default function HotelMapa({ hotel }: { hotel: string }) {
 
       {/* Prévia */}
       {previa && (
-        <div className="mr-previa" style={{ left: previa.x, top: previa.y }} role="dialog" aria-label="Detalhe da reserva">
+        <div className={previa.fixa ? "mr-previa fixa" : "mr-previa"} style={{ left: previa.x, top: previa.y, maxHeight: previa.max, transform: previa.acima ? "translateY(-100%)" : undefined }} role="dialog" aria-label="Detalhe da reserva">
           {previa.fixa && <button type="button" className="mr-previa-fechar" aria-label="Fechar" onClick={() => setPrevia(null)}>×</button>}
           {previa.b.estadia ? (() => {
             const e = previa.b.estadia!;

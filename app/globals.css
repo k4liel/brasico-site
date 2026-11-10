@@ -4262,6 +4262,8 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .mr-esqueleto { display: grid; gap: 10px; }
 .mr-esqueleto i { display: block; height: 56px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); animation: tp-pulso 1.6s ease-in-out infinite; }
 .mr-previa { position: fixed; z-index: 50; width: 320px; max-width: calc(100vw - 16px); padding: 14px 16px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--gold); box-shadow: 0 12px 32px var(--shadow); display: grid; gap: 10px; font-size: 13px; }
+.mr-previa { overflow-y: auto; pointer-events: none; }
+.mr-previa.fixa { pointer-events: auto; }
 .mr-previa-fechar { position: absolute; top: 6px; right: 8px; background: transparent; border: 0; color: var(--muted); font-size: 18px; padding: 2px 6px; }
 .mr-previa-topo { display: grid; gap: 2px; padding-right: 20px; }
 .mr-previa-topo b { font-size: 15px; color: var(--strong); }
