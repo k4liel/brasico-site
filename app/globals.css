@@ -2571,6 +2571,31 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 .cmp-lancar label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
 .cmp-lancar-linha { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; }
 .cmp-lancar > button { justify-self: end; }
+/* Escala · histórico (quem mudou o quê; components/EscalaHistorico.tsx) */
+.eh-periodo { font-size: 18px !important; }
+.eh-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 28px 14px; border-bottom: 1px solid var(--border); }
+.eh-filtros select, .eh-filtros input[type="search"] { max-width: 100%; }
+.eh-filtros input[type="search"] { flex: 1 1 160px; }
+.eh-chips { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--seg); }
+.eh-chips button { all: unset; cursor: pointer; padding: 5px 11px; border-radius: 999px; font-size: 12.5px; color: var(--muted); }
+.eh-chips button.on { background: var(--panel); color: var(--strong); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+.eh-casa { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.eh-dia { margin: 0 0 18px; }
+.eh-dia h3 { margin: 0 0 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.eh-dia h3 span { font-weight: 500; letter-spacing: 0; text-transform: none; margin-left: 6px; }
+.eh-dia ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.eh-item { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+.eh-hora { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--strong); }
+.eh-texto { display: grid; gap: 2px; min-width: 0; }
+.eh-linha1 small { color: var(--muted); font-size: 12px; }
+.eh-linha2 { color: var(--text); }
+.eh-linha2 s { color: var(--muted); }
+.eh-linha2 small { color: var(--muted); }
+.eh-quem { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: color-mix(in srgb, var(--gold) 22%, var(--seg)); color: var(--strong); }
+.eh-quem.socio { background: var(--seg); }
+.eh-tipo { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.eh-item.t-compensa .eh-tipo { color: #0e8a7c; }
+@media (max-width: 640px) { .eh-filtros { padding: 0 16px 12px; } }
 .ct-busca { width: 100%; margin: 0 0 12px; }
 .ct-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ct-pessoa { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }

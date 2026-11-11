@@ -12,6 +12,7 @@ import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, t
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
+import EscalaHistorico from "./EscalaHistorico";
 import EscalaCompensas, { prazo, type CompDados, type Compensa, type PessoaComp } from "./EscalaCompensas";
 import { ChipsLideres, EditorLideres, useLideranca } from "./EscalaLideres";
 import { createPortal } from "react-dom";
@@ -542,6 +543,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
               <EscalaCompensas supabase={supabase} dados={comp} local={grupo} onMudou={lerComp}
                 nomeDe={(c, id, nome) => pessoas.find((p) => p.chave === chaveDe(c, id))?.nome ?? nomeProprio(nome)} />
             )}
+            {dados?.socio && <EscalaHistorico supabase={supabase} local={grupo} />}
             <button className={`ep-avisos-botao${erros.length ? " erro" : atencoes.length ? " aviso" : " ok"}`} onClick={() => setVerAvisos((v) => !v)} aria-expanded={verAvisos}>
               {erros.length + atencoes.length ? <><b>{erros.length}</b> fora da lei · <b>{atencoes.length}</b> atenção</> : "✓ Dentro da lei"}
             </button>
