@@ -609,4 +609,19 @@
 .doc .tab-editavel td.ed[contenteditable]:hover { background: color-mix(in srgb, var(--doc-gold) 14%, transparent); }
 .doc .tab-editavel td.ed[contenteditable]:focus { outline: none; background: var(--doc-paper); box-shadow: inset 0 0 0 2px var(--doc-gold); }
 .doc .tab-editavel td.ed[contenteditable]:empty::before { content: attr(data-vazio); color: var(--doc-muted); font-style: italic; opacity: .7; }
-@media print { .doc .tab-editavel td.ed { background: none !important; border-bottom: 0 !important; } .doc .tab-editavel th.ed-col::after { content: ""; } }
+/* Caixinha de marcar (marcar: no :::editavel) */
+.doc .tab-editavel th.marca-col, .doc .tab-editavel td.marca { width: 44px; text-align: center; padding-left: 6px; padding-right: 6px; }
+.doc .tab-editavel td.marca { color: var(--doc-gold); font-weight: 700; }
+.doc .tab-editavel .marca-btn {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0;
+  border: 1.5px solid color-mix(in srgb, var(--doc-muted) 70%, transparent); border-radius: 5px;
+  background: var(--doc-paper); color: #fff; font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer;
+  transition: background .12s, border-color .12s, transform .08s;
+}
+.doc .tab-editavel .marca-btn:hover { border-color: var(--doc-gold); }
+.doc .tab-editavel .marca-btn:active { transform: scale(.92); }
+.doc .tab-editavel .marca-btn:focus-visible { outline: 2px solid var(--doc-gold); outline-offset: 2px; }
+.doc .tab-editavel .marca-btn.on { background: #2f8a57; border-color: #2f8a57; }
+.doc .tab-editavel tr.marcada td { background: color-mix(in srgb, #2f8a57 7%, transparent); }
+.doc .tab-editavel tr.total td.marca { color: var(--doc-ink); font-size: .9em; white-space: nowrap; }
+@media print { .doc .tab-editavel td.ed { background: none !important; border-bottom: 0 !important; } .doc .tab-editavel th.ed-col::after { content: ""; }  .doc .tab-editavel .marca-btn { border-color: #999; } .doc .tab-editavel .marca-btn.on { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FocusEvent, type KeyboardEvent as KeyboardEventReact } from "react";
+import { useEffect, useMemo, useState, type FocusEvent, type KeyboardEvent as KeyboardEventReact, type MouseEvent as MouseEventReact } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useTable } from "@/lib/useTable";
 import { haQuanto } from "@/lib/tempo";
@@ -134,6 +134,27 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
     }
     td.dataset.atual = valor;
     setCelulas((c) => ({ ...c, [chaveCelula(bloco, linha, coluna)]: valor }));
+  }
+  // Caixinha de marcar (coluna "marcar:" do :::editavel): um clique marca ou desmarca e já grava
+  async function marcarCelula(e: MouseEventReact<HTMLElement>) {
+    const btn = (e.target as HTMLElement)?.closest?.<HTMLElement>("[data-marca]");
+    const bloco = btn?.closest<HTMLElement>("[data-editavel]")?.dataset.editavel;
+    if (!btn || !bloco || btn.dataset.gravando) return;
+    const [linha, coluna] = (btn.dataset.marca ?? "").split(":").map(Number);
+    const antes = btn.dataset.atual ?? "";
+    const valor = antes === "sim" ? "" : "sim";
+    const chave = chaveCelula(bloco, linha, coluna);
+    btn.dataset.gravando = "1";
+    setCelulas((c) => ({ ...c, [chave]: valor }));
+    const { error } = await supabase.from("celulas_editaveis").upsert(
+      { workspace_id: projectId, bloco, linha, coluna, valor, atualizado_por: userId },
+      { onConflict: "workspace_id,bloco,linha,coluna" }
+    );
+    delete btn.dataset.gravando;
+    if (error) {
+      alert("Não foi possível salvar: " + error.message);
+      setCelulas((c) => ({ ...c, [chave]: antes }));
+    }
   }
   function teclaCelula(e: KeyboardEventReact<HTMLElement>) {
     const td = e.target as HTMLElement;
@@ -421,7 +442,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
       {info.doc_css && (
         <style dangerouslySetInnerHTML={{ __html: cssDoProjeto(info.doc_css, ".doc-escopo") }} />
       )}
-      <main className="proj-doc doc-escopo" onBlur={salvarCelula} onKeyDown={teclaCelula}>
+      <main className="proj-doc doc-escopo" onBlur={salvarCelula} onKeyDown={teclaCelula} onClick={marcarCelula}>
         {loading ? (
           <p className="muted">Carregando…</p>
         ) : capitulos.length === 0 ? (

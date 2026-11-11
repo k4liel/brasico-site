@@ -23,6 +23,7 @@
 //                | Pessoa | Tamanho | Bordado |    (tabela Markdown normal: os valores são o ponto de partida)
 //                conta: 7 = 5 * 6                  (opcional: coluna 7 = coluna 5 × coluna 6, refeita ao editar)
 //                soma: 5, 7 · moeda: 6, 7          (opcional: soma na linha de total; contas e somas em R$)
+//                marcar: 1                         (opcional: coluna 1 vira caixinha de marcar ✓; o total conta as marcadas)
 //                O que é digitado no site fica em celulas_editaveis (por linha e coluna):
 //                não reordene nem insira linhas no meio; acrescente no fim.
 //   :::          fecha o bloco
@@ -339,17 +340,19 @@ function renderEditavel(body: string[], opts: Opts) {
   let editaveis = new Set<number>();
   let somas = new Set<number>();
   let moedas = new Set<number>();
+  let marcar = new Set<number>();
   const contas: { col: number; fatores: number[] }[] = [];
   const linhas: string[] = [];
   for (const l of body) {
     const t = l.trim();
     if (!t) continue;
-    const kv = t.match(/^(id|editaveis|conta|soma|moeda)\s*:\s*(.*)$/i);
+    const kv = t.match(/^(id|editaveis|conta|soma|moeda|marcar)\s*:\s*(.*)$/i);
     const chave = kv?.[1].toLowerCase();
     if (kv && chave === "id") { id = kv[2].trim().toLowerCase(); continue; }
     if (kv && chave === "editaveis") { editaveis = colunas(kv[2]); continue; }
     if (kv && chave === "soma") { somas = colunas(kv[2]); continue; }
     if (kv && chave === "moeda") { moedas = colunas(kv[2]); continue; }
+    if (kv && chave === "marcar") { marcar = colunas(kv[2]); continue; }
     if (kv && chave === "conta") {
       // conta: 7 = 5 * 6  → coluna 7 = coluna 5 × coluna 6
       const m = kv[2].match(/^(\d+)\s*=\s*(.+)$/);
@@ -362,13 +365,15 @@ function renderEditavel(body: string[], opts: Opts) {
   const head = cells(linhas[0]);
   const corpo = linhas.slice(2).map(cells);
   const vazio = opts.editavel ? TEXTOS[opts.idioma ?? "pt"].escrever : "";
-  const ehTotal = (r: string[]) => /^\*\*.+\*\*$/.test(r[0] ?? "");
+  // Linha de total: a 1ª célula que não é caixinha de marcar está em negrito
+  const primeiraTexto = head.findIndex((_, k) => !marcar.has(k));
+  const ehTotal = (r: string[]) => /^\*\*.+\*\*$/.test(r[Math.max(primeiraTexto, 0)] ?? "");
 
   // Valores atuais (o digitado no site no lugar do Markdown) e as contas de cada linha
   const valores = corpo.map((r, linha) =>
     head.map((_, k) => {
       const original = r[k] ?? "";
-      if (!ehTotal(r) && editaveis.has(k)) return opts.celulas?.[chaveCelula(id, linha, k)] ?? original.replace(/\*/g, "");
+      if (!ehTotal(r) && (editaveis.has(k) || marcar.has(k))) return opts.celulas?.[chaveCelula(id, linha, k)] ?? original.replace(/\*/g, "");
       return original;
     })
   );
@@ -383,14 +388,30 @@ function renderEditavel(body: string[], opts: Opts) {
   });
   const numeroDe = (linha: number, k: number) => calculado.get(`${linha}|${k}`) ?? lerNumero(valores[linha][k]);
 
+  const marcado = (linha: number, k: number) => /^(sim|x|ok|1|✓)$/i.test((valores[linha][k] ?? "").trim());
+  const dados = corpo.map((r, l) => (ehTotal(r) ? -1 : l)).filter((l) => l >= 0);
+
   let html = `<div class="table-wrap"><table class="tab-editavel" data-editavel="${esc(id)}"><thead><tr>`;
-  html += head.map((c, k) => `<th${editaveis.has(k) ? ' class="ed-col"' : ""}>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
+  html += head
+    .map((c, k) => `<th${marcar.has(k) ? ' class="marca-col"' : editaveis.has(k) ? ' class="ed-col"' : ""}>${inline(c)}</th>`)
+    .join("") + "</tr></thead><tbody>";
   corpo.forEach((r, linha) => {
     const total = ehTotal(r);
-    html += `<tr${total ? ' class="total"' : ""}>`;
+    const classes = [total ? "total" : "", !total && [...marcar].some((k) => marcado(linha, k)) ? "marcada" : ""].filter(Boolean);
+    html += `<tr${classes.length ? ` class="${classes.join(" ")}"` : ""}>`;
     head.forEach((_, k) => {
       const original = r[k] ?? "";
-      if (total && somas.has(k)) {
+      if (marcar.has(k)) {
+        // Caixinha de marcar: na linha de total, quantas já foram marcadas
+        if (total) {
+          html += `<td class="marca num">${dados.filter((l) => marcado(l, k)).length}/${dados.length}</td>`;
+        } else if (opts.editavel) {
+          const on = marcado(linha, k);
+          html += `<td class="marca"><button type="button" class="marca-btn${on ? " on" : ""}" data-marca="${linha}:${k}" data-atual="${on ? "sim" : ""}" aria-pressed="${on}" aria-label="${on ? "Desmarcar" : "Marcar"}">${on ? "✓" : ""}</button></td>`;
+        } else {
+          html += `<td class="marca">${marcado(linha, k) ? "✓" : ""}</td>`;
+        }
+      } else if (total && somas.has(k)) {
         let soma = 0;
         corpo.forEach((rr, l) => { if (!ehTotal(rr)) soma += numeroDe(l, k) ?? 0; });
         html += `<td class="num"><strong>${esc(formatarNumero(soma, moedas.has(k), opts.idioma))}</strong></td>`;
