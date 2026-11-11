@@ -21,6 +21,8 @@
 //                id: bragard-sempre-vivo          (único no projeto; o mesmo nos 4 idiomas)
 //                editaveis: 1, 5                   (colunas editáveis, contando da 1ª)
 //                | Pessoa | Tamanho | Bordado |    (tabela Markdown normal: os valores são o ponto de partida)
+//                conta: 7 = 5 * 6                  (opcional: coluna 7 = coluna 5 × coluna 6, refeita ao editar)
+//                soma: 5, 7 · moeda: 6, 7          (opcional: soma na linha de total; contas e somas em R$)
 //                O que é digitado no site fica em celulas_editaveis (por linha e coluna):
 //                não reordene nem insira linhas no meio; acrescente no fim.
 //   :::          fecha o bloco
@@ -314,31 +316,88 @@ function renderArquivos(body: string[], idioma: Idioma = "pt") {
 // ---------------------------------------------------------------------
 export const chaveCelula = (bloco: string, linha: number, coluna: number) => `${bloco}|${linha}|${coluna}`;
 
+// Lê um número digitado: "1.234,56", "R$ 22,90", "11.45", "3" (vazio = null)
+function lerNumero(s: string): number | null {
+  let t = (s ?? "").replace(/\*/g, "").replace(/R\$|\s/g, "");
+  if (!t) return null;
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+const LOCAL_NUM: Record<string, string> = { pt: "pt-BR", en: "en-US", pl: "pl-PL", fr: "fr-FR", de: "de-DE" };
+function formatarNumero(n: number, moeda: boolean, idioma: Idioma = "pt") {
+  const local = LOCAL_NUM[idioma] ?? "pt-BR";
+  return moeda
+    ? n.toLocaleString(local, { style: "currency", currency: "BRL" })
+    : n.toLocaleString(local, { maximumFractionDigits: 2 });
+}
+const colunas = (s: string) => new Set(s.split(/[,\s]+/).map((n) => parseInt(n, 10) - 1).filter((n) => n >= 0));
+
 function renderEditavel(body: string[], opts: Opts) {
   let id = "";
   let editaveis = new Set<number>();
+  let somas = new Set<number>();
+  let moedas = new Set<number>();
+  const contas: { col: number; fatores: number[] }[] = [];
   const linhas: string[] = [];
   for (const l of body) {
     const t = l.trim();
     if (!t) continue;
-    const kv = t.match(/^(id|editaveis)\s*:\s*(.*)$/i);
-    if (kv && kv[1].toLowerCase() === "id") { id = kv[2].trim().toLowerCase(); continue; }
-    if (kv) { editaveis = new Set(kv[2].split(/[,\s]+/).map((n) => parseInt(n, 10) - 1).filter((n) => n >= 0)); continue; }
+    const kv = t.match(/^(id|editaveis|conta|soma|moeda)\s*:\s*(.*)$/i);
+    const chave = kv?.[1].toLowerCase();
+    if (kv && chave === "id") { id = kv[2].trim().toLowerCase(); continue; }
+    if (kv && chave === "editaveis") { editaveis = colunas(kv[2]); continue; }
+    if (kv && chave === "soma") { somas = colunas(kv[2]); continue; }
+    if (kv && chave === "moeda") { moedas = colunas(kv[2]); continue; }
+    if (kv && chave === "conta") {
+      // conta: 7 = 5 * 6  → coluna 7 = coluna 5 × coluna 6
+      const m = kv[2].match(/^(\d+)\s*=\s*(.+)$/);
+      if (m) contas.push({ col: parseInt(m[1], 10) - 1, fatores: m[2].split(/[*x×]/i).map((n) => parseInt(n, 10) - 1).filter((n) => n >= 0) });
+      continue;
+    }
     if (isTable(t)) linhas.push(t);
   }
   if (!/^[a-z0-9-]{1,60}$/.test(id) || linhas.length < 2 || !isSep(linhas[1])) return renderMarkdown(linhas.join("\n"), opts);
   const head = cells(linhas[0]);
   const corpo = linhas.slice(2).map(cells);
   const vazio = opts.editavel ? TEXTOS[opts.idioma ?? "pt"].escrever : "";
+  const ehTotal = (r: string[]) => /^\*\*.+\*\*$/.test(r[0] ?? "");
+
+  // Valores atuais (o digitado no site no lugar do Markdown) e as contas de cada linha
+  const valores = corpo.map((r, linha) =>
+    head.map((_, k) => {
+      const original = r[k] ?? "";
+      if (!ehTotal(r) && editaveis.has(k)) return opts.celulas?.[chaveCelula(id, linha, k)] ?? original.replace(/\*/g, "");
+      return original;
+    })
+  );
+  const calculado = new Map<string, number>();
+  corpo.forEach((r, linha) => {
+    if (ehTotal(r)) return;
+    for (const c of contas) {
+      const nums = c.fatores.map((k) => lerNumero(valores[linha][k]));
+      if (nums.some((n) => n === null)) continue;
+      calculado.set(`${linha}|${c.col}`, nums.reduce((a, b) => (a as number) * (b as number), 1) as number);
+    }
+  });
+  const numeroDe = (linha: number, k: number) => calculado.get(`${linha}|${k}`) ?? lerNumero(valores[linha][k]);
+
   let html = `<div class="table-wrap"><table class="tab-editavel" data-editavel="${esc(id)}"><thead><tr>`;
   html += head.map((c, k) => `<th${editaveis.has(k) ? ' class="ed-col"' : ""}>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
   corpo.forEach((r, linha) => {
-    const total = /^\*\*.+\*\*$/.test(r[0] ?? "");
+    const total = ehTotal(r);
     html += `<tr${total ? ' class="total"' : ""}>`;
     head.forEach((_, k) => {
       const original = r[k] ?? "";
-      if (!total && editaveis.has(k)) {
-        const valor = opts.celulas?.[chaveCelula(id, linha, k)] ?? original.replace(/\*/g, "");
+      if (total && somas.has(k)) {
+        let soma = 0;
+        corpo.forEach((rr, l) => { if (!ehTotal(rr)) soma += numeroDe(l, k) ?? 0; });
+        html += `<td class="num"><strong>${esc(formatarNumero(soma, moedas.has(k), opts.idioma))}</strong></td>`;
+      } else if (!total && calculado.has(`${linha}|${k}`)) {
+        html += `<td class="num">${esc(formatarNumero(calculado.get(`${linha}|${k}`) as number, moedas.has(k), opts.idioma))}</td>`;
+      } else if (!total && editaveis.has(k)) {
+        const valor = valores[linha][k];
         const ed = opts.editavel ? ` contenteditable="plaintext-only" spellcheck="false" data-vazio="${esc(vazio)}"` : "";
         html += `<td class="ed" data-ed="${linha}:${k}" data-atual="${esc(valor)}"${ed}>${esc(valor)}</td>`;
       } else {
