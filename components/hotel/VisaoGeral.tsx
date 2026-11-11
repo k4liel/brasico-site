@@ -7,7 +7,8 @@ import { COR, GraficoCombinado, Kpi, Lista, Painel, Resumo, Segmentos, Vazio, co
 
 // Visão geral do hotel (aba 1 da página /hoteis/<hotel>): indicadores do período com minigráficos e comparação com o
 // ano anterior até a mesma data, dia a dia, tipos de UH, canais, evolução de 24 meses, o que já está vendido e recebimentos.
-// Fonte: PMS (robô da VPS) — pms_kpi_dia_ajustado (pms_kpi_dia com o nº real de UHs por tipo; realizado: só o que já aconteceu), pms_previsao (o que já está vendido),
+// Fonte: PMS (robô da VPS) — pms_kpi_dia_ajustado (pms_kpi_dia com o nº real de UHs por tipo e a ocupação oficial do relatório 2491,
+// UHs na noite, em ocupadas_noite: supabase/pms_ocupacao_oficial.sql; realizado: só o que já aconteceu), pms_previsao (o que já está vendido),
 // pms_reservas (canais), pms_recebimentos. Contas como no PMS: ocupação = ocupadas ÷ total de UHs;
 // diária média = receita ÷ ocupadas; RevPAR = receita ÷ UHs disponíveis.
 
