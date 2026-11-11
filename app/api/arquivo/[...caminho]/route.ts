@@ -40,7 +40,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ caminho:
     headers: {
       "Content-Type": TIPOS[ext],
       "Content-Disposition": `${baixar ? "attachment" : "inline"}; filename="${nome}"`,
-      "Cache-Control": "private, max-age=3600",
+      // sem guardar cópia no navegador: quando o arquivo é trocado (ex.: caderno da Produção), a versão nova aparece na hora
+      "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },
   });
