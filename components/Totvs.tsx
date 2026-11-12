@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
+import VendasHoteis, { type HotelDia, type HotelInfo, nomeHotel, somarHotel } from "./VendasHoteis";
 import {
   type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, dataLonga, diaSemana, diasNoMes,
   escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses,
@@ -38,6 +39,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   // Unidades encerradas: ficam só como arquivo (sem extração), com o resumo de toda a operação
   const [encerradas, setEncerradas] = useState<Unidade[]>([]);
   const [arquivo, setArquivo] = useState<Record<string, Ponto[]>>({});
+  // Hotéis (PMS): só aparecem para quem vê os dados dos hotéis (os sócios)
+  const [hoteis, setHoteis] = useState<HotelInfo[]>([]);
+  const [hoteisDias, setHoteisDias] = useState<HotelDia[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -58,6 +62,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
         arq[f.id] = (pts ?? []) as Ponto[];
       }
       setArquivo(arq);
+      const { data: hs } = await supabase.from("pms_hoteis").select("id,nome,totvs_unidade").eq("ativa", true).order("id");
+      setHoteis((hs ?? []) as HotelInfo[]);
     })();
   }, [supabase, userId]);
 
@@ -92,9 +98,20 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     setSerie((data ?? []) as Ponto[]);
   }, [supabase, acesso, unidade, mes]);
 
+  // Faturamento dos hotéis no mês escolhido e no anterior (função vendas_hoteis_dia)
+  const carregarHoteis = useCallback(async () => {
+    if (!acesso || !hoteis.length) return;
+    const { data } = await supabase.rpc("vendas_hoteis_dia", { p_de: `${mesAnterior(mes)}-01`, p_ate: `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}` });
+    setHoteisDias((data ?? []) as HotelDia[]);
+  }, [supabase, acesso, hoteis.length, mes]);
+
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  useEffect(() => {
+    carregarHoteis();
+  }, [carregarHoteis]);
 
   useEffect(() => {
     carregarSerie();
@@ -218,6 +235,15 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   }
 
   const totalGeral = resumoUnidades.reduce((a, x) => a + x.s.total, 0);
+  // Todas as operações: restaurantes da TOTVS + hotéis inteiros. O restaurante com caixa na TOTVS que pertence
+  // a um hotel (Filha da Lua) entra só uma vez, dentro do hotel.
+  const ligadas = new Set(hoteis.map((h) => h.totvs_unidade).filter(Boolean));
+  const hoteisMes = hoteisDias.filter((d) => d.dia.startsWith(mes) && d.dia <= hoje);
+  const operacoes = hoteisMes.length ? [
+    ...resumoUnidades.filter((x) => !ligadas.has(x.u.id)).map((x) => ({ id: x.u.id, nome: x.u.nome, nota: "restaurante · TOTVS", total: x.s.total })),
+    ...hoteis.map((h) => ({ id: h.id, nome: nomeHotel(h), nota: h.totvs_unidade ? "hotel + restaurante" : "hotel · PMS", total: somarHotel(hoteisMes.filter((d) => d.hotel_id === h.id)).total })),
+  ] : [];
+  const totalOperacoes = operacoes.reduce((a, o) => a + o.total, 0);
   const pessoasGeral = resumoUnidades.reduce((a, x) => a + x.s.pessoas, 0);
   const escala = escalaBonita(maxDia);
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
@@ -293,6 +319,24 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           </p>
         )}
 
+        {operacoes.length > 0 && (
+          <section className="tp-painel tp-operacoes" aria-label="Todas as operações">
+            <div className="tp-operacoes-total">
+              <span className="tp-rotulo">Todas as operações no mês</span>
+              <b className="tp-numero">{reais(totalOperacoes)}</b>
+            </div>
+            <ul className="tp-operacoes-lista">
+              {operacoes.map((o) => (
+                <li key={o.id}>
+                  <span>{o.nome} <small>{o.nota}</small></span>
+                  <b>{reais(o.total)}</b>
+                  <em>{totalOperacoes ? pct(o.total / totalOperacoes) : ""}</em>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* Resumo de todas as unidades */}
         <section className="tp-painel tp-geral" aria-label="Resumo das unidades">
           <div className="tp-geral-total">
@@ -316,6 +360,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
             ))}
           </div>
         </section>
+
+        <VendasHoteis hoteis={hoteis} dados={hoteisDias} mes={mes} anterior={mesAnterior(mes)} hoje={hoje} />
 
         {resumoArquivo.length > 0 && (
           <section className="tp-arquivo" aria-label="Unidades encerradas">
