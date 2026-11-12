@@ -48,6 +48,11 @@ const CODIGO: Record<string, { cor: string; linhas: string[]; legenda: string }>
   FE: { cor: "#2f5bd3", linhas: ["FÉRIAS"], legenda: "Férias" },
   AT: { cor: "#c62839", linhas: ["ATESTADO"], legenda: "Atestado" },
   LIC: { cor: "#5b6273", linhas: ["LICENÇA"], legenda: "Licença" },
+  FA: { cor: "#8f1d1d", linhas: ["FALTA"], legenda: "Falta" },
+  VN: { cor: "#0f6e8c", linhas: ["VIAGEM DE", "NEGÓCIOS"], legenda: "Viagem de negócios" },
+  HO: { cor: "#3d7d3a", linhas: ["HOME", "OFFICE"], legenda: "Home office" },
+  CC: { cor: "#a8461e", linhas: ["CICCHETTI", "CENTRO"], legenda: "Cicchetti Centro" },
+  FL: { cor: "#7a3f8f", linhas: ["FILHA", "DA LUA"], legenda: "Filha da Lua" },
 };
 // Turnos de trabalho: tom claro com o horário na cor escura
 const TURNOS = [

@@ -9,13 +9,14 @@
 //   feriado ou folga · 12x36 só com acordo escrito.
 // Tudo é calculado na tela, na hora em que a escala é montada; nada é gravado.
 
-export type Codigo = "" | "T" | "F" | "DM" | "FC" | "FE" | "AT" | "BH" | "LIC";
+export type Codigo = "" | "T" | "F" | "DM" | "FC" | "FE" | "AT" | "BH" | "LIC" | "FA" | "VN" | "HO" | "CC" | "FL";
 // posto: onde a pessoa fica no dia, nos grupos que revezam (ex.: Cozinha ou Produção na Cozinha do Sempre Vivo)
 export type DiaPlano = { codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; obs?: string; posto?: string | null };
 export type Nivel = "erro" | "aviso" | "info";
 export type Aviso = { chave: string; nome: string; nivel: Nivel; titulo: string; texto: string; lei: string; dias: string[]; regra: string };
 
-export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: string; descanso: boolean }[] = [
+// trabalha: dia de trabalho fora do lugar de sempre, sem horário (viagem, home office, outra casa); conta como dia trabalhado nas regras
+export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: string; descanso: boolean; trabalha?: boolean }[] = [
   { codigo: "F", nome: "Folga", curto: "F", descanso: true },
   // O domingo de folga do mês (diferente da folga normal; só em domingo)
   { codigo: "DM", nome: "Domingo do mês", curto: "DOM", descanso: true },
@@ -24,7 +25,15 @@ export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: 
   { codigo: "FE", nome: "Férias", curto: "FÉR", descanso: false },
   { codigo: "AT", nome: "Atestado", curto: "AT", descanso: false },
   { codigo: "LIC", nome: "Licença", curto: "LIC", descanso: false },
+  // 11/11/2026, pedido do dono
+  { codigo: "FA", nome: "Falta", curto: "FALTA", descanso: false },
+  { codigo: "VN", nome: "Viagem de negócios", curto: "VIAG", descanso: false, trabalha: true },
+  { codigo: "HO", nome: "Home office", curto: "HOME", descanso: false, trabalha: true },
+  { codigo: "CC", nome: "Cicchetti Centro", curto: "CICC", descanso: false, trabalha: true },
+  { codigo: "FL", nome: "Filha da Lua", curto: "FDL", descanso: false, trabalha: true },
 ];
+
+const TRABALHA_FORA = new Set<string>(CODIGOS.filter((c) => c.trabalha).map((c) => c.codigo));
 
 const DIA = 86400000;
 const somar = (d: string, n: number) => new Date(Date.parse(d) + n * DIA).toISOString().slice(0, 10);
@@ -71,7 +80,7 @@ export function avaliar(chave: string, nome: string, plano: Map<string, DiaPlano
     avisos.push({ chave, nome, nivel, regra, titulo, texto, lei, dias });
   const dias = [...plano.keys()].filter((d) => plano.get(d)!.codigo !== "").sort();
   if (!dias.length) return avisos;
-  const trab = (d: string) => plano.get(d)?.codigo === "T";
+  const trab = (d: string) => { const c = plano.get(d)?.codigo; return c === "T" || TRABALHA_FORA.has(c ?? ""); };
   const temPlano = (d: string) => (plano.get(d)?.codigo ?? "") !== "";
 
   for (const d of dias) {

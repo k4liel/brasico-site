@@ -838,9 +838,19 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
         </div>
       </div>
       <div className="ep-editor-grupo">
+        <span>Trabalha em outro lugar</span>
+        <div className="ep-editor-opcoes">
+          {CODIGOS.filter((c) => c.trabalha).map((c) => (
+            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })} title={c.nome}>
+              <b>{c.curto}</b><span>{c.nome}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="ep-editor-grupo">
         <span>Não trabalha</span>
         <div className="ep-editor-opcoes">
-          {CODIGOS.map((c) => (
+          {CODIGOS.filter((c) => !c.trabalha).map((c) => (
             <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => (c.codigo === "FC" && compensas?.length ? setEscolherFC(true) : onEscolher({ codigo: c.codigo, rotulo: c.nome }))}
               disabled={(c.codigo === "FC" && fcSemSaldo.length > 0) || (c.codigo === "DM" && !soDomingos)}
               title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.`
