@@ -18,6 +18,8 @@ const NOME_CURTO: Record<string, string> = { "filha-da-lua": "Filha da Lua", "se
 export const nomeHotel = (h: HotelInfo) => NOME_CURTO[h.id] ?? h.nome;
 
 const n = (v: unknown) => Number(v ?? 0);
+// Na tabela do dia a dia, sem centavos (cabe no cartão)
+const r0 = (v: number) => Math.round(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 export function somarHotel(ds: HotelDia[]) {
   const s = { hospedagem: 0, restaurante: 0, restauranteTotvs: 0, migrado: 0, spa: 0, taxas: 0, total: 0 };
   for (const d of ds) {
@@ -106,11 +108,11 @@ function CartaoHotel({ h, mes, ds, anterior, hoje }: { h: HotelInfo; mes: string
                   {comValor.map((d) => (
                     <tr key={d.dia}>
                       <td>{dataBr(d.dia)} <small>{SEMANA[diaSemana(d.dia)].slice(0, 3)}</small></td>
-                      <td>{reais(n(d.hospedagem))}</td>
-                      <td>{reais(n(d.restaurante_pms) + n(d.restaurante_totvs))}</td>
-                      <td>{reais(n(d.spa) + n(d.outros))}</td>
-                      <td>{reais(n(d.taxas))}</td>
-                      <td>{reais(totalDia(d))}</td>
+                      <td>{r0(n(d.hospedagem))}</td>
+                      <td>{r0(n(d.restaurante_pms) + n(d.restaurante_totvs))}</td>
+                      <td>{r0(n(d.spa) + n(d.outros))}</td>
+                      <td>{r0(n(d.taxas))}</td>
+                      <td>{r0(totalDia(d))}</td>
                     </tr>
                   ))}
                 </tbody>
