@@ -370,6 +370,53 @@ function conflito(pedido: string, nota: string): string | null {
 const fmt = (n: number) => (Math.round(n * 100) / 100).toLocaleString("pt-BR");
 const curto = (f: string) => f.replace(/\b(LTDA|ME|EIRELI|EPP|S\/?A|COMERCIO|COMERCIAL|DISTRIBUIDORA|DE|DO|DA)\b\.?/gi, "").replace(/\s+/g, " ").trim().split(" ").slice(0, 3).join(" ");
 
+// Conversão da quantidade pedida para a unidade da nota, por conta (sem IA; 11/11/2026): o pedido diz a medida
+// ("Oleo 20L", "Farinha de arroz 5k", "500g") e a nota diz o tamanho da embalagem na descrição ("900ML", "1KG", "5 L").
+// Ex.: 20 L de óleo e a nota é a garrafa de 900 ml → 23 garrafas; 5 L de azeite e o galão tem 5 L → 1.
+// Pedido em contagem (12u, 3 cx, 2 fardos) não é convertido.
+const num = (t: string) => Number(t.replace(",", "."));
+const MEDIDA = /(\d+(?:[.,]\d+)?)\s*(kg|k|kilos?|quilos?|g|gr|gramas?|ml|l|lt|lts|litros?)(?![a-z])/i;
+function medidaDoPedido(texto: string): { qtd: number; escrito: number; tipo: "massa" | "volume" } | null {
+  const t = normal(texto);
+  if (/\d+\s*(u|un|und|uns|unid|unidades?|cx|caixas?|fardos?|pct|pacotes?|garrafas?|latas?|bdj|bandejas?|rolos?|duzias?)(?![a-z])/.test(t)) return null;
+  const m = t.match(MEDIDA);
+  if (!m) return null;
+  const v = num(m[1]), u = m[2];
+  if (!(v > 0)) return null;
+  if (/^(kg|k|kilo|kilos|quilo|quilos)$/.test(u)) return { qtd: v, escrito: v, tipo: "massa" };
+  if (/^(g|gr|grama|gramas)$/.test(u)) return { qtd: v / 1000, escrito: v, tipo: "massa" };
+  if (u === "ml") return { qtd: v / 1000, escrito: v, tipo: "volume" };
+  return { qtd: v, escrito: v, tipo: "volume" };
+}
+function tamanhoNaNota(desc: string): { qtd: number; tipo: "massa" | "volume" } | null {
+  const achados = [...normal(desc).matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|g|gr|ml|l|lt)(?![a-z])/g)];
+  const m = achados[achados.length - 1];
+  if (!m) return null;
+  const v = num(m[1]), u = m[2];
+  if (!(v > 0)) return null;
+  if (u === "kg") return { qtd: v, tipo: "massa" };
+  if (u === "g" || u === "gr") return { qtd: v / 1000, tipo: "massa" };
+  if (u === "ml") return { qtd: v / 1000, tipo: "volume" };
+  return { qtd: v, tipo: "volume" };
+}
+const fmtMedida = (q: number, tipo: string) => tipo === "massa" ? (q < 1 ? `${fmt(q * 1000)} g` : `${fmt(q)} kg`) : (q < 1 ? `${fmt(q * 1000)} ml` : `${fmt(q)} L`);
+function converter(pedidoTxt: string, descNota: string, unNota: string): { qtd: number; motivo: string } | null {
+  const ped = medidaDoPedido(pedidoTxt);
+  if (!ped) return null;
+  const u = unNota.toUpperCase();
+  // nota vendida a peso/volume: a quantidade é a própria medida, em kg ou L (500 g = 0,5 kg)
+  if ((u === "KG" && ped.tipo === "massa") || ((u === "L" || u === "LT") && ped.tipo === "volume")) {
+    if (ped.qtd === ped.escrito) return null;
+    const qtd = Math.round(ped.qtd * 1000) / 1000;
+    return { qtd, motivo: `Pediu ${fmtMedida(ped.qtd, ped.tipo)} = ${fmt(qtd)} ${u.toLowerCase()}.` };
+  }
+  if (u === "G" || u === "GR" || u === "ML") return null;
+  const emb = tamanhoNaNota(descNota);
+  if (!emb || emb.tipo !== ped.tipo) return null;
+  const qtd = Math.max(1, Math.ceil(ped.qtd / emb.qtd - 0.03));
+  return { qtd, motivo: `Pediu ${fmtMedida(ped.qtd, ped.tipo)}; a embalagem da nota tem ${fmtMedida(emb.qtd, emb.tipo)}: ${qtd} ${u.toLowerCase() || "un"}.` };
+}
+
 // Recalcula o item a partir do candidato escolhido: fornecedor, unidade, preço, média, projeção, sugestão e confiança
 function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento: number): Item {
   const entrada = porItem.get(normal(String(i.item_pedido ?? ""))) ?? null;
@@ -394,12 +441,16 @@ function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento
   const un = String(c.unidade ?? "").toUpperCase();
   const fracionado = ["KG", "L", "LT", "G", "ML"].includes(un);
   const projecao = media && media > 0 ? (fracionado ? Math.ceil(media * (1 + aumento / 100) * 2) / 2 : Math.ceil(media * (1 + aumento / 100))) : null;
+  // quantidade pedida já convertida para a unidade da nota (quando o pedido diz kg/L e a nota é embalagem)
+  const conv = pedida != null ? converter(pedidoTxt, c.descricao_na_nota, un) : null;
+  const pedidaNota = conv ? conv.qtd : pedida;
+  if (conv && conv.qtd !== pedida) motivos.push(conv.motivo);
   const base = media ? `${compras} ${compras === 1 ? "compra" : "compras"} em 4 semanas · ${curto(c.fornecedor ?? "")} · ${fmt(media)} ${un.toLowerCase()}/semana ${daCasa ? "na casa" : "no grupo"}` : null;
-  let sugerida = pedida;
+  let sugerida = pedidaNota;
   if (projecao && pedida == null) { sugerida = projecao; motivos.push(`O pedido não traz quantidade; sugeri a média (${fmt(media!)} ${un.toLowerCase()}/semana).`); }
-  else if (projecao && pedida != null && compras >= 2 && (pedida > projecao * 1.5 || pedida < projecao * 0.5)) {
+  else if (projecao && pedidaNota != null && compras >= 2 && (pedidaNota > projecao * 1.5 || pedidaNota < projecao * 0.5)) {
     sugerida = projecao;
-    motivos.push(`Pediu ${fmt(pedida)}; a média é ${fmt(media!)} ${un.toLowerCase()}/semana (${compras} compras em 4 semanas). Confira se a unidade do pedido é a mesma da nota (${un.toLowerCase()}).`);
+    motivos.push(`Pediu ${fmt(pedidaNota)}; a média é ${fmt(media!)} ${un.toLowerCase()}/semana (${compras} compras em 4 semanas). Confira se a unidade do pedido é a mesma da nota (${un.toLowerCase()}).`);
   }
   const sem = Number(c.semelhanca ?? 0);
   const recente = c.ultima ? (Date.now() - new Date(c.ultima).getTime()) / 86400000 <= 60 : false;
