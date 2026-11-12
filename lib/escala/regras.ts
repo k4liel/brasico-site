@@ -26,11 +26,11 @@ export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: 
   { codigo: "AT", nome: "Atestado", curto: "AT", descanso: false },
   { codigo: "LIC", nome: "Licença", curto: "LIC", descanso: false },
   // 11/11/2026, pedido do dono
-  { codigo: "FA", nome: "Falta", curto: "FALTA", descanso: false },
-  { codigo: "VN", nome: "Viagem de negócios", curto: "VIAG", descanso: false, trabalha: true },
-  { codigo: "HO", nome: "Home office", curto: "HOME", descanso: false, trabalha: true },
-  { codigo: "CC", nome: "Cicchetti Centro", curto: "CICC", descanso: false, trabalha: true },
-  { codigo: "FL", nome: "Filha da Lua", curto: "FDL", descanso: false, trabalha: true },
+  { codigo: "FA", nome: "Falta", curto: "FA", descanso: false },
+  { codigo: "VN", nome: "Viagem de negócios", curto: "VN", descanso: false, trabalha: true },
+  { codigo: "HO", nome: "Home office", curto: "HO", descanso: false, trabalha: true },
+  { codigo: "CC", nome: "Cicchetti Centro", curto: "CC", descanso: false, trabalha: true },
+  { codigo: "FL", nome: "Filha da Lua", curto: "FL", descanso: false, trabalha: true },
 ];
 
 const TRABALHA_FORA = new Set<string>(CODIGOS.filter((c) => c.trabalha).map((c) => c.codigo));
