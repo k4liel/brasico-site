@@ -19,12 +19,12 @@ export type Aviso = { chave: string; nome: string; nivel: Nivel; titulo: string;
 export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: string; descanso: boolean; trabalha?: boolean }[] = [
   { codigo: "F", nome: "Folga", curto: "F", descanso: true },
   // O domingo de folga do mês (diferente da folga normal; só em domingo)
-  { codigo: "DM", nome: "Domingo do mês", curto: "DOM", descanso: true },
+  { codigo: "DM", nome: "Domingo do mês", curto: "DM", descanso: true },
   { codigo: "FC", nome: "Folga compensada (feriado)", curto: "FC", descanso: true },
   { codigo: "BH", nome: "Folga do banco de horas", curto: "BH", descanso: true },
-  { codigo: "FE", nome: "Férias", curto: "FÉR", descanso: false },
+  { codigo: "FE", nome: "Férias", curto: "FE", descanso: false },
   { codigo: "AT", nome: "Atestado", curto: "AT", descanso: false },
-  { codigo: "LIC", nome: "Licença", curto: "LIC", descanso: false },
+  { codigo: "LIC", nome: "Licença", curto: "LI", descanso: false },
   // 11/11/2026, pedido do dono
   { codigo: "FA", nome: "Falta", curto: "FA", descanso: false },
   { codigo: "VN", nome: "Viagem de negócios", curto: "VN", descanso: false, trabalha: true },
