@@ -475,11 +475,16 @@ function montar(entrega: { listas: Lista[] }, porItem: Map<string, ItemCand>, to
           : a?.veredito === "sem_nota" ? { ...i, produto_nota: null } : i;
         const x = ajustar(base, porItem, todos, aumento);
         if (!a) return x;
-        // quantidade convertida para a unidade da nota (ex.: 5 L de azeite = 1 galão de 5 L): vira a sugestão
-        const q = typeof a.qtd_nota === "number" && a.qtd_nota > 0 && x.produto_nota ? Math.round(a.qtd_nota * 1000) / 1000 : null;
+        // quantidade convertida pelo revisor para a unidade da nota: só vale quando o sistema não converteu por conta
+        // (converter) e o número muda de verdade; embalagem não se compra quebrada (arredonda para cima)
+        const entrada = porItem.get(normal(String(i.item_pedido ?? ""))) ?? null;
+        const unX = String(x.unidade ?? "").toUpperCase();
+        const contaFeita = x.produto_nota ? converter(entrada?.item ?? String(i.item_pedido ?? ""), String(x.produto_nota), unX) : null;
+        let q = typeof a.qtd_nota === "number" && a.qtd_nota > 0 && x.produto_nota && !contaFeita && a.qtd_nota !== x.qtd_pedida ? a.qtd_nota : null;
+        if (q != null) q = ["KG", "L", "LT", "G", "ML"].includes(unX) ? Math.round(q * 1000) / 1000 : Math.ceil(q - 0.03);
         const mudaQtd = q != null && q !== x.qtd_sugerida;
         if (a.veredito === "ok" && !mudaQtd) return x;
-        const nota = a.motivo?.trim() ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota."
+        const nota = a.motivo?.trim() && !(contaFeita && a.veredito === "ok") ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota."
           : mudaQtd ? `Revisor: na unidade da nota são ${String(q).replace(".", ",")}.` : "";
         return { ...x, ...(mudaQtd ? { qtd_sugerida: q } : {}), motivo: [nota, x.motivo].filter(Boolean).join(" ") || null,
           ...(a.veredito === "conferir" && x.confianca === "alta" ? { confianca: "media" } : {}) };
