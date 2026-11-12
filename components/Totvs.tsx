@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
-import VendasHoteis, { type HotelDia, type HotelInfo, nomeHotel, somarHotel } from "./VendasHoteis";
+import { DetalheHotel, type HotelDia, type HotelInfo, nomeHotel, somarHotel, ultimoDiaHotel } from "./VendasHoteis";
 import {
   type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, dataLonga, diaSemana, diasNoMes,
   escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses,
@@ -41,7 +41,9 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const [arquivo, setArquivo] = useState<Record<string, Ponto[]>>({});
   // Hotéis (PMS): só aparecem para quem vê os dados dos hotéis (os sócios)
   const [hoteis, setHoteis] = useState<HotelInfo[]>([]);
-  const [hoteisDias, setHoteisDias] = useState<HotelDia[]>([]);
+  const [hoteisDias, setHoteisDias] = useState<HotelDia[] | null>(null);
+  // Hotel escolhido nos cartões do topo (null = uma unidade da TOTVS)
+  const [hotelSel, setHotelSel] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -101,6 +103,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   // Faturamento dos hotéis no mês escolhido e no anterior (função vendas_hoteis_dia)
   const carregarHoteis = useCallback(async () => {
     if (!acesso || !hoteis.length) return;
+    setHoteisDias(null);
     const { data } = await supabase.rpc("vendas_hoteis_dia", { p_de: `${mesAnterior(mes)}-01`, p_ate: `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}` });
     setHoteisDias((data ?? []) as HotelDia[]);
   }, [supabase, acesso, hoteis.length, mes]);
@@ -234,17 +237,22 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     URL.revokeObjectURL(a.href);
   }
 
-  const totalGeral = resumoUnidades.reduce((a, x) => a + x.s.total, 0);
-  // Todas as operações: restaurantes da TOTVS + hotéis inteiros. O restaurante com caixa na TOTVS que pertence
-  // a um hotel (Filha da Lua) entra só uma vez, dentro do hotel.
-  const ligadas = new Set(hoteis.map((h) => h.totvs_unidade).filter(Boolean));
-  const hoteisMes = hoteisDias.filter((d) => d.dia.startsWith(mes) && d.dia <= hoje);
-  const operacoes = hoteisMes.length ? [
-    ...resumoUnidades.filter((x) => !ligadas.has(x.u.id)).map((x) => ({ id: x.u.id, nome: x.u.nome, nota: "restaurante · TOTVS", total: x.s.total })),
-    ...hoteis.map((h) => ({ id: h.id, nome: nomeHotel(h), nota: h.totvs_unidade ? "hotel + restaurante" : "hotel · PMS", total: somarHotel(hoteisMes.filter((d) => d.hotel_id === h.id)).total })),
-  ] : [];
-  const totalOperacoes = operacoes.reduce((a, o) => a + o.total, 0);
-  const pessoasGeral = resumoUnidades.reduce((a, x) => a + x.s.pessoas, 0);
+  // Cartões do topo: restaurantes da TOTVS e hotéis inteiros (PMS). O restaurante com caixa na TOTVS que pertence
+  // a um hotel (Filha da Lua) entra só uma vez, dentro do hotel, separado em hospedagem e restaurante.
+  const hoteisMes = (hoteisDias ?? []).filter((d) => d.dia.startsWith(mes) && d.dia <= hoje);
+  const hoteisNoMes = hoteis.filter((h) => hoteisDias === null || hoteisMes.some((d) => d.hotel_id === h.id));
+  const ligadas = new Set(hoteisNoMes.map((h) => h.totvs_unidade).filter(Boolean));
+  const unidadesCartao = resumoUnidades.filter((x) => !ligadas.has(x.u.id));
+  const hoteisCartao = hoteisNoMes.map((h) => {
+    const dh = hoteisMes.filter((d) => d.hotel_id === h.id);
+    return { h, s: somarHotel(dh), ultimo: ultimoDiaHotel(dh) };
+  });
+  const totalGeral = unidadesCartao.reduce((a, x) => a + x.s.total, 0) + hoteisCartao.reduce((a, x) => a + x.s.total, 0);
+  const hotelAtivo = hoteisNoMes.find((h) => h.id === hotelSel) ?? null;
+  // Restaurante do hotel escolhido com caixa na TOTVS: o detalhe da TOTVS aparece embaixo do hotel
+  const mostrarTotvs = !hotelAtivo || (!!hotelAtivo.totvs_unidade && hotelAtivo.totvs_unidade === unidade);
+  function escolherUnidade(id: string) { setHotelSel(null); setUnidade(id); }
+  function escolherHotel(h: HotelInfo) { setHotelSel(h.id); if (h.totvs_unidade) setUnidade(h.totvs_unidade); }
   const escala = escalaBonita(maxDia);
   const diaFoco = foco ? ds.find((d) => d.dia === foco) : undefined;
   const diaPadrao = (ativos[ativos.length - 1] ?? ds[ds.length - 1])?.dia ?? null;
@@ -270,7 +278,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   });
 
   function abrirArquivo(u: Unidade) {
-    setUnidade(u.id);
+    escolherUnidade(u.id);
     const ultimoMes = (u.encerrada_em as string).slice(0, 7);
     if (mes > ultimoMes) setMes(ultimoMes);
     requestAnimationFrame(() => document.getElementById("tp-unidade")?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -289,8 +297,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
       <main className="miolo tp">
         <header className="tp-cabeca">
           <div>
-            <span className="tp-sobre">TOTVS · Chef Web</span>
-            <h1>Vendas das unidades</h1>
+            <span className="tp-sobre">Restaurantes e hotéis</span>
+            <h1>Faturamento das operações</h1>
           </div>
         </header>
 
@@ -319,49 +327,50 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
           </p>
         )}
 
-        {operacoes.length > 0 && (
-          <section className="tp-painel tp-operacoes" aria-label="Todas as operações">
-            <div className="tp-operacoes-total">
-              <span className="tp-rotulo">Todas as operações no mês</span>
-              <b className="tp-numero">{reais(totalOperacoes)}</b>
-            </div>
-            <ul className="tp-operacoes-lista">
-              {operacoes.map((o) => (
-                <li key={o.id}>
-                  <span>{o.nome} <small>{o.nota}</small></span>
-                  <b>{reais(o.total)}</b>
-                  <em>{totalOperacoes ? pct(o.total / totalOperacoes) : ""}</em>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {/* Resumo de todas as unidades */}
-        <section className="tp-painel tp-geral" aria-label="Resumo das unidades">
+        {/* Um cartão por operação: restaurante (TOTVS) ou hotel inteiro (PMS) */}
+        <section className="tp-painel tp-geral" aria-label="Faturamento das operações">
           <div className="tp-geral-total">
-            <span className="tp-rotulo">{noMes.length > unidades.length ? "Todas as unidades no mês" : "Unidades em operação"}</span>
+            <span className="tp-rotulo">Faturamento no mês</span>
             <b className="tp-numero tp-numero-xl">{dias === null ? "—" : reais(totalGeral)}</b>
-            <span className="tp-nota">{maiuscula(nomeMes(mes))}{pessoasGeral ? ` · ${inteiro(pessoasGeral)} pessoas · ${reais(totalGeral / pessoasGeral)} por pessoa` : ""}</span>
+            <span className="tp-nota">{maiuscula(nomeMes(mes))} · {plural(unidadesCartao.length + hoteisCartao.length, "operação", "operações")}</span>
           </div>
           <div className="tp-geral-unidades">
-            {resumoUnidades.map(({ u, s: su, ds: dsu, ultimo, diasEsperados, revisar }) => (
-              <button key={u.id} className={u.id === unidade ? "tp-unidade on" : "tp-unidade"} onClick={() => setUnidade(u.id)} aria-pressed={u.id === unidade}>
-                <span className="tp-unidade-nome">{u.nome}</span>
-                {u.encerrada_em && <span className="tp-encerrada">Encerrada em {dataLonga(u.encerrada_em)}</span>}
-                <b className="tp-numero">{dias === null ? "—" : reais(su.total)}</b>
-                <span className="tp-participa" aria-hidden="true"><i style={{ width: `${totalGeral ? (su.total / totalGeral) * 100 : 0}%` }} /></span>
-                <span className="tp-nota">
-                  {totalGeral ? `${pct(su.total / totalGeral)} do total · ` : ""}{dsu.length}/{diasEsperados} dias
-                  {ultimo ? ` · até ${dataBr(ultimo.dia)}` : ""}
-                </span>
-                {revisar > 0 && <span className="tp-selo">{revisar} para revisar</span>}
-              </button>
-            ))}
+            {unidadesCartao.map(({ u, s: su, ds: dsu, ultimo, diasEsperados, revisar }) => {
+              const on = !hotelAtivo && u.id === unidade;
+              return (
+                <button key={u.id} className={on ? "tp-unidade on" : "tp-unidade"} onClick={() => escolherUnidade(u.id)} aria-pressed={on}>
+                  <span className="tp-unidade-nome">{u.nome}</span>
+                  {u.encerrada_em && <span className="tp-encerrada">Encerrada em {dataLonga(u.encerrada_em)}</span>}
+                  <b className="tp-numero">{dias === null ? "—" : reais(su.total)}</b>
+                  <span className="tp-participa" aria-hidden="true"><i style={{ width: `${totalGeral ? (su.total / totalGeral) * 100 : 0}%` }} /></span>
+                  <span className="tp-nota">
+                    Restaurante · {totalGeral ? `${pct(su.total / totalGeral)} do total · ` : ""}{dsu.length}/{diasEsperados} dias
+                    {ultimo ? ` · até ${dataBr(ultimo.dia)}` : ""}
+                  </span>
+                  {revisar > 0 && <span className="tp-selo">{revisar} para revisar</span>}
+                </button>
+              );
+            })}
+            {hoteisCartao.map(({ h, s: sh, ultimo }) => {
+              const on = hotelAtivo?.id === h.id;
+              const carregando = hoteisDias === null || dias === null;
+              return (
+                <button key={h.id} className={on ? "tp-unidade on" : "tp-unidade"} onClick={() => escolherHotel(h)} aria-pressed={on}>
+                  <span className="tp-unidade-nome">{nomeHotel(h)}</span>
+                  <b className="tp-numero">{carregando ? "—" : reais(sh.total)}</b>
+                  <span className="tp-participa" aria-hidden="true"><i style={{ width: `${totalGeral ? (sh.total / totalGeral) * 100 : 0}%` }} /></span>
+                  <ul className="tp-unidade-partes">
+                    <li><i className="tp-cor-hosp" aria-hidden="true" /><span>Hospedagem</span><b>{carregando ? "—" : reais(sh.hospedagem)}</b></li>
+                    <li><i className="tp-cor-comida" aria-hidden="true" /><span>Restaurante</span><b>{carregando ? "—" : reais(sh.restaurante)}</b></li>
+                  </ul>
+                  <span className="tp-nota">
+                    {totalGeral && !carregando ? `${pct(sh.total / totalGeral)} do total` : ""}{ultimo ? ` · até ${dataBr(ultimo)}` : ""}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
-
-        <VendasHoteis hoteis={hoteis} dados={hoteisDias} mes={mes} anterior={mesAnterior(mes)} hoje={hoje} />
 
         {resumoArquivo.length > 0 && (
           <section className="tp-arquivo" aria-label="Unidades encerradas">
@@ -387,11 +396,17 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
 
         {dias === null && <div className="tp-carregando" aria-label="Carregando"><i /><i /><i /></div>}
 
-        {sel && dias !== null && (
+        {hotelAtivo && hoteisDias !== null && (
+          <DetalheHotel key={`${hotelAtivo.id}-${mes}`} h={hotelAtivo} mes={mes} hoje={hoje}
+            ds={hoteisMes.filter((d) => d.hotel_id === hotelAtivo.id)}
+            anterior={hoteisDias.filter((d) => d.hotel_id === hotelAtivo.id && d.dia.startsWith(mesAnterior(mes)))} />
+        )}
+
+        {sel && dias !== null && mostrarTotvs && (
           <>
-            <div className="tp-titulo" id="tp-unidade">
+            <div className="tp-titulo" id={hotelAtivo ? "tp-restaurante" : "tp-unidade"}>
               <div>
-                <h2>{sel.u.nome}{encerradaSel && <span className="tp-encerrada tp-encerrada-titulo">Arquivo · encerrada em {dataLonga(encerradaSel)}</span>}</h2>
+                <h2>{hotelAtivo ? `Restaurante do ${nomeHotel(hotelAtivo)} · caixa TOTVS` : sel.u.nome}{encerradaSel && <span className="tp-encerrada tp-encerrada-titulo">Arquivo · encerrada em {dataLonga(encerradaSel)}</span>}</h2>
                 <span className="tp-nota">
                   {encerradaSel
                     ? `${maiuscula(nomeMes(mes))} · dados guardados até o último dia de operação, sem atualização`
