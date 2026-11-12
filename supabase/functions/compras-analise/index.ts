@@ -449,8 +449,9 @@ function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento
   let sugerida = pedidaNota;
   if (projecao && pedida == null) { sugerida = projecao; motivos.push(`O pedido não traz quantidade; sugeri a média (${fmt(media!)} ${un.toLowerCase()}/semana).`); }
   else if (projecao && pedidaNota != null && compras >= 2 && (pedidaNota > projecao * 1.5 || pedidaNota < projecao * 0.5)) {
-    sugerida = projecao;
-    motivos.push(`Pediu ${fmt(pedidaNota)}; a média é ${fmt(media!)} ${un.toLowerCase()}/semana (${compras} compras em 4 semanas). Confira se a unidade do pedido é a mesma da nota (${un.toLowerCase()}).`);
+    // a média é da casa inteira (todos os setores compram o mesmo produto), não só da pessoa: o pedido fica e vira aviso
+    // (11/11/2026: a confeitaria pediu 10 L de leite e a sugestão virava 39, a média da casa toda)
+    motivos.push(`Pediu ${fmt(pedidaNota)}; a casa toda compra em média ${fmt(media!)} ${un.toLowerCase()}/semana (${compras} compras em 4 semanas, todos os setores). Confira a quantidade e a unidade (${un.toLowerCase()}).`);
   }
   const sem = Number(c.semelhanca ?? 0);
   const recente = c.ultima ? (Date.now() - new Date(c.ultima).getTime()) / 86400000 <= 60 : false;
@@ -484,7 +485,9 @@ function montar(entrega: { listas: Lista[] }, porItem: Map<string, ItemCand>, to
         if (q != null) q = ["KG", "L", "LT", "G", "ML"].includes(unX) ? Math.round(q * 1000) / 1000 : Math.ceil(q - 0.03);
         const mudaQtd = q != null && q !== x.qtd_sugerida;
         if (a.veredito === "ok" && !mudaQtd) return x;
-        const nota = a.motivo?.trim() && !(contaFeita && a.veredito === "ok") ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota."
+        // com a conta da embalagem já feita, o comentário do revisor sobre unidade/litros repete (ou contradiz) a conta
+        const sobreQtd = /(\d+\s*(ml|l|lt|kg|g|gr)\b|litro|unidade|embalage)/i.test(a.motivo ?? "");
+        const nota = a.motivo?.trim() && !(contaFeita && (a.veredito === "ok" || (a.veredito === "conferir" && sobreQtd))) ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota."
           : mudaQtd ? `Revisor: na unidade da nota são ${String(q).replace(".", ",")}.` : "";
         return { ...x, ...(mudaQtd ? { qtd_sugerida: q } : {}), motivo: [nota, x.motivo].filter(Boolean).join(" ") || null,
           ...(a.veredito === "conferir" && x.confianca === "alta" ? { confianca: "media" } : {}) };
