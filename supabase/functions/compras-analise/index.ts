@@ -87,13 +87,17 @@ ${AVISO_DADOS}
 
 Para cada item (campo k), confira:
 1. PRODUTO: produto_nota é o MESMO produto pedido? Mesmo tipo e forma (fresco × congelado × seco, com × sem sal, inteiro × ralado × fatiado, zero × normal, integral × desnatado), mesmo tamanho/medida quando o pedido diz (saco de lixo 100 L não é 200 L), mesma marca quando o pedido cita marca. Nome parecido não basta ("ventilador" não é "pilha de ventilador"; "limão" não é "tempero lemon pepper").
+   Se o pedido NÃO diz "zero", "diet", "light", "sem lactose", "sem glúten" ou uma marca, o certo é o produto COMUM: se a escolha é a versão especial e há a comum nas alternativas, "trocar" para a comum.
 2. FORNECEDOR: o fornecedor é o da nota escolhida, então ele já vendeu aquilo. Se nas alternativas houver o MESMO produto comprado pela casa da pessoa mais recentemente (ou com mais compras nas últimas 4 semanas) de outro fornecedor, prefira esse (veredito trocar).
-3. PREÇO E UNIDADE: o preço e a unidade fazem sentido para o que foi pedido? Ex.: pilha a R$ 100 a unidade é preço de caixa; ventilador a R$ 27 não é ventilador; 24 unidades de vinagre quando a nota é caixa com 12. Se não fizerem, explique em motivo.
+3. QUANTIDADE NA UNIDADE DA NOTA: a lista compra na unidade da nota (campo unidade e o tamanho escrito na descrição: "1KG", "5L", "CX C/24", "FD 10", "900ML"). Converta o que foi pedido para essa unidade e devolva em qtd_nota quando o número muda. Exemplos: pediu "5 litros de azeite" e a nota é galão de 5,05 L → qtd_nota 1; pediu "2 caixas de cerveja" e a nota é a caixa com 24 → qtd_nota 2 (não muda, deixe null); pediu "48 long necks" e a nota é a caixa com 24 → qtd_nota 2; pediu "5 kg de farinha" e a nota é o pacote de 1 kg → qtd_nota 5 (não muda, deixe null). Se o pedido não diz a unidade e o número já é razoável na unidade da nota, deixe null. Só converta quando tiver certeza; na dúvida, veredito "conferir" com o motivo.
+4. PREÇO: o preço faz sentido para o produto? Ex.: pilha a R$ 100 a unidade é preço de caixa; ventilador a R$ 27 não é ventilador. Se não fizer, "conferir" com o motivo.
+NÃO peça para conferir o que está certo: pacote de 1 kg para um pedido em kg, garrafa de 1 L para um pedido em litros, unidade para um pedido em unidades — isso não é dúvida. Use "conferir" só quando o setor de compras realmente precisa olhar.
 
 Veredito de cada item:
 - "ok": está certo.
 - "trocar": uma das alternativas é o produto certo (ou o mesmo produto num fornecedor melhor); produto_nota = a descricao_na_nota EXATA dessa alternativa, letra por letra.
-- "conferir": o produto até pode ser esse, mas há dúvida de preço, unidade, tamanho ou quantidade; motivo = uma frase curta e prática para o setor de compras.
+- "conferir": o produto até pode ser esse, mas há dúvida real de preço, tamanho ou quantidade que você não conseguiu resolver; motivo = uma frase curta e prática para o setor de compras.
+Em qualquer veredito, qtd_nota = a quantidade convertida para a unidade da nota (só quando muda; senão null) e motivo explica a conversão (ex.: "pediu 5 L; o galão da nota tem 5,05 L").
 - "sem_nota": o produto escolhido NÃO é o pedido e nenhuma alternativa serve (o item fica sem produto da nota, para o setor de compras pesquisar).
 Itens sem produto_nota: se uma alternativa for o produto certo, "trocar"; senão "ok".
 Responda só com o JSON pedido, um objeto por item, em português.`;
@@ -135,7 +139,7 @@ const SCHEMA_REVISOR = T("OBJECT", {
   properties: {
     itens: T("ARRAY", { items: T("OBJECT", {
       properties: { k: T("INTEGER"), veredito: T("STRING", { enum: ["ok", "trocar", "conferir", "sem_nota"] }),
-        produto_nota: T("STRING", NULO), motivo: T("STRING", NULO) },
+        produto_nota: T("STRING", NULO), qtd_nota: T("NUMBER", NULO), motivo: T("STRING", NULO) },
       required: ["k", "veredito"] }) }),
   },
   required: ["itens"],
@@ -408,7 +412,7 @@ function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento
 
 // Monta as listas a partir da resposta da etapa 2 (k = posição do item, na mesma ordem que o revisor vê), aplicando as
 // correções do revisor quando houver
-type Ajuste = { veredito: string; produto_nota?: string | null; motivo?: string | null };
+type Ajuste = { veredito: string; produto_nota?: string | null; qtd_nota?: number | null; motivo?: string | null };
 const valido = (i: Item) => i && String(i.nome ?? "").trim();
 function montar(entrega: { listas: Lista[] }, porItem: Map<string, ItemCand>, todos: Cand[], aumento: number, ajustes?: Map<number, Ajuste>) {
   let k = 0;
@@ -419,9 +423,14 @@ function montar(entrega: { listas: Lista[] }, porItem: Map<string, ItemCand>, to
         const base = a?.veredito === "trocar" && a.produto_nota ? { ...i, produto_nota: a.produto_nota }
           : a?.veredito === "sem_nota" ? { ...i, produto_nota: null } : i;
         const x = ajustar(base, porItem, todos, aumento);
-        if (!a || a.veredito === "ok") return x;
-        const nota = a.motivo?.trim() ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota." : "";
-        return { ...x, motivo: [nota, x.motivo].filter(Boolean).join(" ") || null,
+        if (!a) return x;
+        // quantidade convertida para a unidade da nota (ex.: 5 L de azeite = 1 galão de 5 L): vira a sugestão
+        const q = typeof a.qtd_nota === "number" && a.qtd_nota > 0 && x.produto_nota ? Math.round(a.qtd_nota * 1000) / 1000 : null;
+        const mudaQtd = q != null && q !== x.qtd_sugerida;
+        if (a.veredito === "ok" && !mudaQtd) return x;
+        const nota = a.motivo?.trim() ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota."
+          : mudaQtd ? `Revisor: na unidade da nota são ${String(q).replace(".", ",")}.` : "";
+        return { ...x, ...(mudaQtd ? { qtd_sugerida: q } : {}), motivo: [nota, x.motivo].filter(Boolean).join(" ") || null,
           ...(a.veredito === "conferir" && x.confianca === "alta" ? { confianca: "media" } : {}) };
       }) }))
     .filter((l) => l.itens.length);
@@ -445,10 +454,11 @@ async function revisar(entrega: { listas: Lista[] }, d: Dados, porItem: Map<stri
   const r = await gemini(INSTRUCOES_REVISOR, [{ text: texto }], SCHEMA_REVISOR, prazoMs, 1024, 30_000);
   const ajustes = new Map<number, Ajuste>();
   for (const a of ((r.json as { itens?: (Ajuste & { k: number })[] }).itens ?? [])) {
-    if (typeof a.k === "number" && a.k >= 0 && a.k < itens.length && a.veredito && a.veredito !== "ok") ajustes.set(a.k, a);
+    if (typeof a.k === "number" && a.k >= 0 && a.k < itens.length && a.veredito && (a.veredito !== "ok" || (typeof a.qtd_nota === "number" && a.qtd_nota > 0))) ajustes.set(a.k, a);
   }
   const conta = (v: string) => [...ajustes.values()].filter((a) => a.veredito === v).length;
-  return { ajustes, uso: { modelo: r.modelo, ...r.uso, itens: itens.length, trocados: conta("trocar"), conferir: conta("conferir"), sem_nota: conta("sem_nota") } };
+  const convertidos = [...ajustes.values()].filter((a) => typeof a.qtd_nota === "number" && a.qtd_nota > 0).length;
+  return { ajustes, uso: { modelo: r.modelo, ...r.uso, itens: itens.length, trocados: conta("trocar"), conferir: conta("conferir"), sem_nota: conta("sem_nota"), convertidos } };
 }
 
 // Etapa 2: liga os itens, faz as contas, passa pelo revisor e grava as listas
