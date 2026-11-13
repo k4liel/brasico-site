@@ -35,9 +35,12 @@ returns text language sql immutable as $$
 $$;
 
 -- Função (e não visão): a visão classificava todo o histórico a cada leitura (16 s); assim lê só o período.
+-- 13/11/2026: + iss, frigobar e restaurante_lancamentos (detalhe do hotel na página de vendas).
+drop function if exists public.vendas_hoteis_dia(date, date);
 create or replace function public.vendas_hoteis_dia(p_de date, p_ate date)
 returns table (hotel_id text, dia date, hospedagem numeric, restaurante_pms numeric, restaurante_totvs numeric,
-               restaurante_migrado numeric, spa numeric, outros numeric, taxas numeric)
+               restaurante_migrado numeric, spa numeric, outros numeric, taxas numeric, iss numeric, frigobar numeric,
+               restaurante_lancamentos integer)
 language sql stable security invoker set search_path = public as $$
   with h as (
     select ph.id as hotel_id, ph.totvs_unidade,
@@ -46,7 +49,7 @@ language sql stable security invoker set search_path = public as $$
     where ph.ativa
   ),
   l as (
-    select t.hotel_id, t.dia, -t.valor as valor,
+    select t.hotel_id, t.dia, -t.valor as valor, t.descricao,
            public.vendas_hotel_categoria(t.grupo, t.item_tipo, t.descricao) as cat,
            (h.totvs_desde is not null and t.dia >= h.totvs_desde and lower(coalesce(t.item_tipo, '')) not like 'point of sale%'
             and t.descricao ilike '%restaurante%') as migrado
@@ -60,7 +63,10 @@ language sql stable security invoker set search_path = public as $$
            coalesce(sum(valor) filter (where cat = 'restaurante' and migrado), 0) as restaurante_migrado,
            coalesce(sum(valor) filter (where cat = 'spa'), 0) as spa,
            coalesce(sum(valor) filter (where cat = 'outros'), 0) as outros,
-           coalesce(sum(valor) filter (where cat = 'taxas'), 0) as taxas
+           coalesce(sum(valor) filter (where cat = 'taxas'), 0) as taxas,
+           coalesce(sum(valor) filter (where cat = 'taxas' and descricao ~* '(^|[^a-z])iss([^a-z]|$)'), 0) as iss,
+           coalesce(sum(valor) filter (where cat = 'restaurante' and not migrado and descricao ~* 'frigobar'), 0) as frigobar,
+           (count(*) filter (where cat = 'restaurante' and not migrado and descricao !~* 'frigobar' and valor > 0))::int as restaurante_lancamentos
     from l where cat is not null
     group by l.hotel_id, l.dia
   ),
@@ -71,7 +77,8 @@ language sql stable security invoker set search_path = public as $$
   )
   select coalesce(p.hotel_id, tv.hotel_id), coalesce(p.dia, tv.dia),
          coalesce(p.hospedagem, 0), coalesce(p.restaurante_pms, 0), coalesce(tv.restaurante_totvs, 0),
-         coalesce(p.restaurante_migrado, 0), coalesce(p.spa, 0), coalesce(p.outros, 0), coalesce(p.taxas, 0)
+         coalesce(p.restaurante_migrado, 0), coalesce(p.spa, 0), coalesce(p.outros, 0), coalesce(p.taxas, 0),
+         coalesce(p.iss, 0), coalesce(p.frigobar, 0), coalesce(p.restaurante_lancamentos, 0)
   from p full join tv on tv.hotel_id = p.hotel_id and tv.dia = p.dia
   order by 1, 2
 $$;
@@ -81,3 +88,17 @@ grant execute on function public.vendas_hoteis_dia(date, date) to authenticated;
 
 -- Nome da unidade na página de vendas (pedido do dono, 12/11/2026)
 update public.totvs_unidades set nome = 'Cicchetti Pipa' where id = 'pipa_centro';
+
+-- Teste (13/11/2026): relatórios do PMS que podem trazer os itens do PDV do restaurante do Sempre Vivo.
+-- (304 "POS Itens por Ponto de Venda e Data" vem vazio e 212 "Lançamentos de POS" dá erro.) Resultado em pms_relatorio_dados.
+insert into public.pms_relatorios_config (chave, nome, area, modo, intervalo_min, meses_historico, descricao, ativo, ordem) values
+ (6710, 'Lançamentos de PDV de Serviços Analítico', 'consumo', 'mensal', 180, 1, 'Teste (13/11/2026): itens do PDV do restaurante', true, 52),
+ (11850, 'Receitas Produtos por Usuário x Mês', 'consumo', 'mensal', 360, 1, 'Teste (13/11/2026): receita de produtos', true, 53),
+ (11651, 'Receitas Extras por Usuário x Mês', 'consumo', 'mensal', 360, 1, 'Teste (13/11/2026): receitas extras', true, 54),
+ (6751, 'Analítico de Lançamentos de Serviços por Nota', 'consumo', 'mensal', 360, 1, 'Teste (13/11/2026): serviços por nota', true, 55),
+ (305, 'Pensão por Tipo e Data', 'consumo', 'mensal', 360, 1, 'Teste (13/11/2026): pensão (café, meia, completa)', true, 56),
+ (1, 'Diferença de Data entre PMS X POS', 'consumo', 'mensal', 360, 1, 'Teste (13/11/2026): lançamentos do POS no PMS', true, 57),
+ (7167, 'Relatório de Serviços e Receitas - Conferência', 'contas', 'mensal', 360, 1, 'Teste (13/11/2026): serviços e receitas', true, 15),
+ (0, 'Fechamento de Caixa', 'contas', 'mensal', 360, 1, 'Teste (13/11/2026): fechamento de caixa', true, 16),
+ (3740, 'Brasico Produção por Hotel', 'producao', 'mensal', 360, 1, 'Teste (13/11/2026): relatório Brasico do PMS', true, 61)
+on conflict (chave) do nothing;

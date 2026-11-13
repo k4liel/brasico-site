@@ -397,7 +397,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
         {dias === null && <div className="tp-carregando" aria-label="Carregando"><i /><i /><i /></div>}
 
         {hotelAtivo && hoteisDias !== null && (
-          <DetalheHotel key={`${hotelAtivo.id}-${mes}`} h={hotelAtivo} mes={mes} hoje={hoje}
+          <DetalheHotel key={`${hotelAtivo.id}-${mes}`} supabase={supabase} h={hotelAtivo} mes={mes} hoje={hoje}
             ds={hoteisMes.filter((d) => d.hotel_id === hotelAtivo.id)}
             anterior={hoteisDias.filter((d) => d.hotel_id === hotelAtivo.id && d.dia.startsWith(mesAnterior(mes)))} />
         )}

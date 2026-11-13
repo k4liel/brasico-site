@@ -4027,19 +4027,6 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
 .tp-unidade-partes li > i { width: 8px; height: 8px; border-radius: 2px; }
 .tp-unidade-partes span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-unidade-partes b { font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; }
-.tp-hotel { display: grid; grid-template-columns: minmax(220px, .8fr) 1.6fr; gap: 18px 36px; align-items: start; }
-.tp-hotel-topo { display: grid; gap: 4px; container-type: inline-size; }
-.tp-hotel-topo .tp-numero-xl { font-size: min(34px, 11.5cqi); }
-.tp-hotel-lado { display: grid; gap: 14px; padding-left: 32px; border-left: 1px solid var(--border); }
-.tp-var-inline { display: inline; font-weight: 600; }
-.tp-hotel-partes { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.tp-hotel-partes li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 52px; align-items: center; gap: 10px; font-size: 14px; }
-.tp-hotel-partes li > i { width: 10px; height: 10px; border-radius: 3px; }
-.tp-hotel-partes span { color: var(--strong); font-weight: 500; min-width: 0; }
-.tp-hotel-partes span small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
-.tp-hotel-partes b { color: var(--strong); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
-.tp-hotel-partes em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-.tp-hotel-rodape { grid-column: 1 / -1; display: grid; gap: 12px; justify-items: start; padding-top: 14px; border-top: 1px solid var(--border); }
 .tp-hotel-tabela-caixa { width: 100%; max-width: 560px; overflow-x: auto; max-height: 420px; overflow-y: auto; }
 .tp-hotel-tabela { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .tp-hotel-tabela th { position: sticky; top: 0; background: var(--panel); text-align: right; font-size: 11px; font-weight: 500; color: var(--muted); padding: 0 0 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -4047,9 +4034,17 @@ span.pd-mini b { white-space: nowrap; color: var(--strong); font-weight: 600; }
 .tp-hotel-tabela th:first-child, .tp-hotel-tabela td:first-child { text-align: left; padding-left: 0; color: var(--strong); }
 .tp-hotel-tabela td small { display: inline; font-size: 11px; color: var(--muted); }
 .tp-hotel-tabela td:last-child { color: var(--strong); font-weight: 600; }
+/* Gráfico do hotel: barras empilhadas (hospedagem embaixo, restaurante em cima) */
+.tp-pilha { position: relative; display: flex; flex-direction: column-reverse; width: 70%; max-width: 18px; border-radius: 3px 3px 0 0; overflow: hidden; transition: opacity .15s; }
+.tp-coluna .tp-pilha i { display: block; width: 100%; max-width: none; flex-basis: 0; min-height: 1px; border-radius: 0; }
+.tp-coluna .tp-pilha i.h { background: var(--tp-hosp); }
+.tp-coluna .tp-pilha i.r { background: var(--tp-ouro); }
+.tp-barras:hover .tp-coluna:not(.on) .tp-pilha { opacity: .45; }
+.tp-lista li > b small { display: block; margin: 0; font-weight: 400; }
+.tp-lista-dados li { grid-template-columns: minmax(0, 1fr) auto; }
+.tp-obs { margin: 14px 0 0; }
 @media (max-width: 760px) {
-  .tp-hotel { grid-template-columns: 1fr; }
-  .tp-hotel-lado { padding-left: 0; border-left: 0; padding-top: 16px; border-top: 1px solid var(--border); }
+  .tp-pilha { width: 80%; }
 }
 
 /* Fiscal do grupo: empresas desligadas do grupo (só histórico), num bloco recolhido no fim */
