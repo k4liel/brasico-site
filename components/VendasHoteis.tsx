@@ -312,7 +312,7 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
                   {s.migrado > 0 ? ` Desse valor, ${reais(s.migrado)} foram para a conta do quarto e não foram somados de novo.` : ""}</p>
               ) : (
                 <ul className="tp-lista tp-lista-dados">
-                  <li><span>Vendido no PDV do hotel</span><b>{reais(s.restaurante - s.frigobar)}</b></li>
+                  <li><span>Vendido no PDV do hotel</span><b>{s.diasPdv > 0 ? reais(s.restaurante - s.frigobar) : produtos?.[0]?.fonte === "mes" ? reais(totalProdutos) : "—"}{s.diasPdv === 0 && produtos?.[0]?.fonte === "mes" && <small>leitura do mês</small>}</b></li>
                   <li><span>Foi para a conta dos quartos</span><b>{reais(s.restauranteContas)}<small>{inteiro(s.lancamentos)} lançamentos</small></b></li>
                   {s.frigobar > 0 && <li><span>Frigobar</span><b>{reais(s.frigobar)}</b></li>}
                   {cafes && <li><span>Cafés da manhã servidos</span><b>{inteiro(cafes.total)}<small>{cafes.gratuidades ? `${inteiro(cafes.gratuidades)} cortesias` : "incluídos na diária"}</small></b></li>}
