@@ -8,31 +8,37 @@
 
 alter table public.pms_relatorios_config add column if not exists diario_dias integer not null default 0;
 
+-- O PMS só abre o mesmo relatório a cada ~30 s (a segunda abertura seguida estoura o tempo): no máximo 8 dias antigos
+-- por rodada e relatório (hoje e ontem sempre entram); o robô espera 35 s entre duas aberturas do mesmo relatório.
 create or replace function public.pms_robo_relatorios_fila(p_segredo text, p_hotel text, p_limite integer default 30)
 returns jsonb language plpgsql security definer set search_path to 'public' as $function$
 declare v_hoje date := (now() at time zone 'America/Fortaleza')::date; v_mes date := date_trunc('month', v_hoje)::date; r jsonb;
 begin
   if not public.pms_robo_ok(p_segredo) then raise exception 'sem permissão' using errcode = '42501'; end if;
   with alvo as (
-    select c.chave, c.ordem, 1 as prioridade, v_hoje as ini, v_hoje as fim, c.intervalo_min
+    select c.chave, c.ordem, 1 as prioridade, v_hoje as ini, v_hoje as fim, c.intervalo_min, false as diario
     from public.pms_relatorios_config c where c.ativo and c.modo = 'foto'
     union all
     select c.chave, c.ordem, case when g.n = 0 then 2 when g.n = 1 then 3 else 4 end, (v_mes - make_interval(months => g.n))::date,
-           ((v_mes - make_interval(months => g.n - 1))::date - 1), c.intervalo_min
+           ((v_mes - make_interval(months => g.n - 1))::date - 1), c.intervalo_min, false
     from public.pms_relatorios_config c cross join lateral generate_series(0, c.meses_historico) g(n)
     where c.ativo and c.modo = 'mensal'
     union all
     -- Dia a dia (13/11/2026): hoje e ontem a cada intervalo, a última semana uma vez por dia, o resto uma vez só
-    select c.chave, c.ordem, case when g.n <= 1 then 2 when g.n <= 7 then 3 else 4 end, v_hoje - g.n, v_hoje - g.n, c.intervalo_min
+    select c.chave, c.ordem, case when g.n <= 1 then 2 when g.n <= 7 then 3 else 4 end, v_hoje - g.n, v_hoje - g.n, c.intervalo_min, true
     from public.pms_relatorios_config c cross join lateral generate_series(0, c.diario_dias) g(n)
     where c.ativo and c.diario_dias > 0
-  ), devidos as (
+  ), vencidos as (
     select a.*, d.lido_em, d.erro from alvo a
     left join public.pms_relatorio_dados d on d.hotel_id = p_hotel and d.chave = a.chave and d.ini = a.ini and d.fim = a.fim
     where d.lido_em is null
        or (a.prioridade in (1, 2) and d.lido_em < now() - make_interval(mins => a.intervalo_min))
        or (a.prioridade = 3 and d.lido_em < now() - interval '24 hours')
        or (a.prioridade = 4 and d.erro is not null and d.lido_em < now() - interval '24 hours')
+  ), devidos as (
+    select * from (
+      select v.*, row_number() over (partition by v.chave, (v.diario and v.prioridade > 2) order by v.ini desc) as rn from vencidos v
+    ) x where not (x.diario and x.prioridade > 2 and x.rn > 8)
   )
   select coalesce(jsonb_agg(jsonb_build_object('chave', chave, 'ini', ini, 'fim', fim) order by prioridade, ini desc, ordem), '[]') into r
   from (select * from devidos order by prioridade, ini desc, ordem limit greatest(1, least(coalesce(p_limite, 30), 100))) x;

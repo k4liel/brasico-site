@@ -639,6 +639,10 @@ async function relatoriosExtras(page, ctx, h, token) {
   const gravar = (item, colunas, linhas, erro) => rpc("pms_robo_gravar_relatorio", { p_segredo: SEGREDO, p_hotel: h.id, p_chave: item.chave,
     p_ini: item.ini, p_fim: item.fim, p_colunas: colunas, p_linhas: linhas, p_erro: erro });
   const usadas = new Map();
+  // O PMS não abre o mesmo relatório duas vezes em menos de ~30 s (a segunda fica parada e estoura o tempo;
+  // visto em 13/11/2026 lendo o 11850 dia a dia): entre duas aberturas do mesmo relatório, 35 s, passando outros na frente
+  const abertoEm = new Map();
+  const INTERVALO_MESMO = 35000;
   const pendentes = [...fila];
   let tentativas = 0;
   while (pendentes.length && tentativas < LIMITE_RELATORIOS * 8) {
@@ -646,6 +650,14 @@ async function relatoriosExtras(page, ctx, h, token) {
     const item = pendentes.shift();
     const id = idDe.get(Number(item.chave));
     if (!id) { soma.erros++; await gravar(item, null, null, "relatório não está no menu deste hotel").catch(() => {}); continue; }
+    const desde = Date.now() - (abertoEm.get(id) ?? 0);
+    if (desde < INTERVALO_MESMO) {
+      if (pendentes.some((p) => idDe.get(Number(p.chave)) !== id && Date.now() - (abertoEm.get(idDe.get(Number(p.chave))) ?? 0) >= INTERVALO_MESMO)) {
+        pendentes.push(item); tentativas--; continue;
+      }
+      await espera(INTERVALO_MESMO - desde);
+    }
+    abertoEm.set(id, Date.now());
     const u = usadas.get(id) ?? new Set(); usadas.set(id, u);
     const perm = await pedirPermissao(id).catch(() => null);
     if (!perm || u.has(perm)) { pendentes.push(item); await espera(1200 + Math.random() * 800); continue; }
