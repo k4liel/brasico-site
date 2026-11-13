@@ -62,7 +62,8 @@ export default function Relatorios({ hotel, nome }: { hotel: string; nome: strin
   }, [supabase, hotel]);
 
   const atual = config?.find((c) => c.chave === sel) ?? null;
-  const periodos = useMemo(() => indice.filter((x) => x.chave === sel).sort((a, b) => b.ini.localeCompare(a.ini)), [indice, sel]);
+  // Relatório mensal que também é lido dia a dia (diario_dias): aqui só os meses
+  const periodos = useMemo(() => indice.filter((x) => x.chave === sel && (atual?.modo !== "mensal" || x.ini !== x.fim)).sort((a, b) => b.ini.localeCompare(a.ini)), [indice, sel, atual]);
   useEffect(() => { setPeriodo(periodos.find((p) => !p.erro || p.n != null)?.ini ?? periodos[0]?.ini ?? null); setBusca(""); setOrdem(null); setPagina(0); }, [sel, periodos]);
 
   useEffect(() => {

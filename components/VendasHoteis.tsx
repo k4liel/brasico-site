@@ -4,7 +4,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Indicador, Variacao } from "./TotvsPartes";
 import {
-  MESES, SEMANA, dataBr, diaSemana, diasNoMes, escalaBonita, inteiro, maiuscula, mesAnterior, nomeMes, pct, reais, reaisCurto, somarMeses,
+  MESES, SEMANA, dataBr, diaSemana, diasNoMes, escalaBonita, inteiro, maiuscula, mesAnterior, nomeMes, pct, reais, reaisCurto, somarMeses, titulo,
 } from "@/lib/totvs-painel";
 
 // Faturamento dos hotéis na página de vendas, a partir dos lançamentos do PMS (função vendas_hoteis_dia,
@@ -18,7 +18,7 @@ import {
 export type HotelDia = {
   hotel_id: string; dia: string; hospedagem: number; restaurante_pms: number; restaurante_totvs: number;
   restaurante_migrado: number; spa: number; outros: number; taxas: number; iss: number; frigobar: number;
-  restaurante_lancamentos: number;
+  restaurante_lancamentos: number; restaurante_contas: number; restaurante_pdv: boolean;
 };
 export type HotelInfo = { id: string; nome: string; totvs_unidade: string | null };
 type MesHotel = { mes: string; dias: number; uh_disponiveis: number; uh_total: number; diarias_vendidas: number; receita: number; ocupacao: number; diaria_media: number; revpar: number };
@@ -37,7 +37,8 @@ const NOME_CANAL: Record<string, string> = { booking: "Booking", expedia: "Exped
 
 export function somarHotel(ds: HotelDia[]) {
   const s = { hospedagem: 0, restaurante: 0, restauranteTotvs: 0, migrado: 0, total: 0,
-    diarias: 0, taxaServico: 0, iss: 0, spa: 0, outros: 0, restauranteContas: 0, frigobar: 0, lancamentos: 0, diasRestaurante: 0 };
+    diarias: 0, taxaServico: 0, iss: 0, spa: 0, outros: 0, restauranteContas: 0, frigobar: 0, lancamentos: 0, diasRestaurante: 0,
+    diasPdv: 0, restaurantePdv: 0 };
   for (const d of ds) {
     s.hospedagem += hospDia(d);
     s.restaurante += restDia(d);
@@ -49,9 +50,10 @@ export function somarHotel(ds: HotelDia[]) {
     s.spa += n(d.spa);
     s.outros += n(d.outros);
     s.frigobar += n(d.frigobar);
-    s.restauranteContas += n(d.restaurante_pms) - n(d.frigobar);
+    s.restauranteContas += n(d.restaurante_contas);
     s.lancamentos += n(d.restaurante_lancamentos);
     if (n(d.restaurante_pms) - n(d.frigobar) > 0) s.diasRestaurante++;
+    if (d.restaurante_pdv) { s.diasPdv++; s.restaurantePdv += n(d.restaurante_pms); }
   }
   s.total = s.hospedagem + s.restaurante;
   return s;
@@ -83,12 +85,15 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
   const [anoAntes, setAnoAntes] = useState<HotelDia[] | null>(null);
   const [pagamentos, setPagamentos] = useState<{ forma: string; valor: number; vezes: number }[] | null>(null);
   const [canais, setCanais] = useState<Canal[] | null>(null);
+  const [produtos, setProdutos] = useState<{ item: string; valor: number; fonte: string }[] | null>(null);
+  const [pensao, setPensao] = useState<{ dia: string; pensao: string; pagantes: number; gratuidades: number; total: number }[] | null>(null);
+  const [todosProdutos, setTodosProdutos] = useState(false);
   const mesAno = somarMeses(mes, -12);
 
   useEffect(() => {
     let vivo = true;
     (async () => {
-      const [m, a, p, c] = await Promise.all([
+      const [m, a, p, c, pr, pe] = await Promise.all([
         supabase.from("pms_mes_hotel").select("mes,dias,uh_disponiveis,uh_total,diarias_vendidas,receita,ocupacao,diaria_media,revpar")
           .eq("hotel_id", h.id).in("mes", [`${mes}-01`, `${mesAnterior(mes)}-01`, `${mesAno}-01`]),
         supabase.rpc("vendas_hoteis_dia", { p_de: `${mesAno}-01`, p_ate: fimDoMes(mesAno) }),
@@ -96,6 +101,8 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
           .gte("dia", `${mes}-01`).lte("dia", fimDoMes(mes)).limit(5000),
         supabase.from("pms_estadias_canal").select("canal,noites,valor_diarias,status_id").eq("hotel_id", h.id)
           .gte("checkin", `${mes}-01`).lte("checkin", fimDoMes(mes)).limit(5000),
+        supabase.rpc("vendas_hoteis_produtos", { p_hotel: h.id, p_de: `${mes}-01`, p_ate: fimDoMes(mes) }),
+        supabase.rpc("vendas_hoteis_pensao", { p_hotel: h.id, p_de: `${mes}-01`, p_ate: fimDoMes(mes) }),
       ]);
       if (!vivo) return;
       setMesesHotel((m.data ?? []) as MesHotel[]);
@@ -117,6 +124,8 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
         cs.set(nome, atual);
       }
       setCanais([...cs.values()].sort((x, y) => y.noites - x.noites));
+      setProdutos(((pr.data ?? []) as { item: string; valor: number; fonte: string }[]).filter((x) => n(x.valor) !== 0));
+      setPensao((pe.data ?? []) as { dia: string; pensao: string; pagantes: number; gratuidades: number; total: number }[]);
     })();
     return () => { vivo = false; };
   }, [supabase, h.id, mes, mesAno]);
@@ -141,10 +150,14 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
     { nome: "ISS", valor: s.iss },
     { nome: "Spa", valor: s.spa },
     { nome: "Outros serviços", valor: s.outros, nota: "lavanderia, terceirizados…" },
-    { nome: "Restaurante", valor: temTotvs ? s.restauranteTotvs : s.restauranteContas, nota: temTotvs ? "caixa da TOTVS" : "consumo nas contas" },
+    { nome: "Restaurante e bar", valor: s.restaurante - s.frigobar, nota: temTotvs ? "caixa da TOTVS" : s.diasPdv ? "PDV do hotel" : "consumo nas contas" },
     { nome: "Frigobar", valor: s.frigobar },
   ].filter((x) => Math.abs(x.valor) >= 0.5);
   const recebido = (pagamentos ?? []).reduce((a, x) => a + x.valor, 0);
+  const totalProdutos = (produtos ?? []).reduce((a, x) => a + n(x.valor), 0);
+  const cafes = pensao && pensao.length
+    ? pensao.filter((x) => /caf/i.test(x.pensao)).reduce((a, x) => ({ total: a.total + n(x.total), gratuidades: a.gratuidades + n(x.gratuidades) }), { total: 0, gratuidades: 0 })
+    : null;
 
   // Gráfico: barras empilhadas (hospedagem embaixo, restaurante em cima), sem os dias negativos (estornos)
   const maxDia = Math.max(...ds.map((d) => Math.max(0, hospDia(d)) + Math.max(0, restDia(d))), 1);
@@ -209,7 +222,7 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
                   <li key={p.nome}><i className={p.cor} />{p.nome} <b>{s.total ? pct(p.valor / s.total) : ""}</b> <span>{reais(p.valor)}</span></li>
                 ))}
               </ul>
-              <span className="tp-nota">Hospedagem = diárias, taxas de serviço e ISS, spa e serviços. Restaurante = {temTotvs ? "caixa da TOTVS (com o que foi para a conta do quarto) e frigobar" : "consumo lançado nas contas do PMS e frigobar"}.</span>
+              <span className="tp-nota">Hospedagem = diárias, taxas de serviço e ISS, spa e serviços. Restaurante = {temTotvs ? "caixa da TOTVS (com o que foi para a conta do quarto) e frigobar" : "tudo o que o PDV do hotel vendeu (com o que foi para a conta do quarto): restaurante, bar e frigobar"}.</span>
             </div>
           </section>
 
@@ -299,16 +312,43 @@ export function DetalheHotel({ supabase, h, mes, ds, anterior, hoje }: {
                   {s.migrado > 0 ? ` Desse valor, ${reais(s.migrado)} foram para a conta do quarto e não foram somados de novo.` : ""}</p>
               ) : (
                 <ul className="tp-lista tp-lista-dados">
-                  <li><span>Consumo lançado nas contas</span><b>{reais(s.restauranteContas)}</b></li>
-                  <li><span>Lançamentos</span><b>{inteiro(s.lancamentos)}</b></li>
-                  <li><span>Valor médio por lançamento</span><b>{s.lancamentos ? reais(s.restauranteContas / s.lancamentos) : "—"}</b></li>
-                  <li><span>Dias com consumo</span><b>{inteiro(s.diasRestaurante)}</b></li>
+                  <li><span>Vendido no PDV do hotel</span><b>{reais(s.restaurante - s.frigobar)}</b></li>
+                  <li><span>Foi para a conta dos quartos</span><b>{reais(s.restauranteContas)}<small>{inteiro(s.lancamentos)} lançamentos</small></b></li>
                   {s.frigobar > 0 && <li><span>Frigobar</span><b>{reais(s.frigobar)}</b></li>}
+                  {cafes && <li><span>Cafés da manhã servidos</span><b>{inteiro(cafes.total)}<small>{cafes.gratuidades ? `${inteiro(cafes.gratuidades)} cortesias` : "incluídos na diária"}</small></b></li>}
                 </ul>
               )}
-              {!temTotvs && <p className="tp-nota tp-obs">O PMS recebe do restaurante só o total de cada conta (com os 10%). Os itens vendidos ficam no PDV do hotel: estamos testando os relatórios do PMS que trazem esse detalhe.</p>}
+              {temTotvs && cafes && (
+                <ul className="tp-lista tp-lista-dados tp-obs">
+                  <li><span>Cafés da manhã servidos</span><b>{inteiro(cafes.total)}<small>{cafes.gratuidades ? `${inteiro(cafes.gratuidades)} cortesias` : "incluídos na diária"}</small></b></li>
+                </ul>
+              )}
+              {!temTotvs && (
+                <p className="tp-nota tp-obs">
+                  {s.diasPdv >= comValor.length
+                    ? "Tudo pelo PDV do hotel: inclui quem comeu e pagou direto no restaurante, não só os hóspedes."
+                    : s.diasPdv > 0
+                      ? `PDV dia a dia em ${s.diasPdv} de ${comValor.length} dias; nos outros, só o que foi para a conta dos quartos (o robô está completando a leitura).`
+                      : "Ainda sem a leitura do PDV dia a dia: por enquanto, só o que foi para a conta dos quartos (o robô está completando a leitura)."}
+                </p>
+              )}
             </section>
           </div>
+
+          {!temTotvs && produtos && produtos.length > 0 && (
+            <section className="tp-painel">
+              <div className="tp-painel-topo">
+                <h3>Produtos vendidos no PDV</h3>
+                <span className="tp-nota">{inteiro(produtos.length)} produtos · {reais(totalProdutos)} · com os 10%{produtos[0]?.fonte === "mes" ? " · leitura do mês" : ""}</span>
+              </div>
+              <ListaBarras itens={(todosProdutos ? produtos : produtos.slice(0, 15)).map((x) => ({ nome: titulo(x.item), valor: n(x.valor) }))} total={totalProdutos} />
+              {produtos.length > 15 && (
+                <button type="button" className="ghost small tp-obs" onClick={() => setTodosProdutos((v) => !v)}>
+                  {todosProdutos ? "Mostrar só os 15 primeiros" : `Ver todos os ${produtos.length}`}
+                </button>
+              )}
+            </section>
+          )}
 
           <section className="tp-painel">
             <div className="tp-painel-topo">
