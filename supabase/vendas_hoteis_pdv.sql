@@ -28,6 +28,8 @@ begin
     select c.chave, c.ordem, case when g.n <= 1 then 2 when g.n <= 7 then 3 else 4 end, v_hoje - g.n, v_hoje - g.n, c.intervalo_min, true
     from public.pms_relatorios_config c cross join lateral generate_series(0, c.diario_dias) g(n)
     where c.ativo and c.diario_dias > 0
+      -- Hotel com restaurante na TOTVS (Filha da Lua) não precisa do PDV dia a dia: o restaurante vem do caixa da TOTVS
+      and not exists (select 1 from public.pms_hoteis h where h.id = p_hotel and h.totvs_unidade is not null)
   ), vencidos as (
     select a.*, d.lido_em, d.erro from alvo a
     left join public.pms_relatorio_dados d on d.hotel_id = p_hotel and d.chave = a.chave and d.ini = a.ini and d.fim = a.fim
