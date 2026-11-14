@@ -87,6 +87,8 @@ type Leitura = {
   atrasos: { sistema: string; numero: string; parcelas: number; valor: number | null }[];
   transacoesPendentes: string[];
   ultimaParcelaPaga: { mes: string; em: string | null } | null;
+  // Parcelas do parcelamento do Simples que ainda podem ser emitidas = as que faltam pagar (PARCSN 162)
+  parcelasAbertas: { mes: string; valor: number }[];
   naoLidas: Mensagem[]; importantes: Mensagem[];
   pagamentos: Pagamento[]; pago12m: number; ultimoPagamento: string | null;
   dctf: { mes: string; entregue: boolean; resposta: Resposta }[];
@@ -280,15 +282,20 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       // Última parcela paga do parcelamento do Simples (demonstrativo de pagamentos)
       const pagas = (det?.demonstrativoPagamentos ?? []).slice().sort((a, b) => String(b.mesDaParcela).localeCompare(String(a.mesDaParcela)));
       const ultimaParcelaPaga = pagas[0] ? { mes: competencia(pagas[0].mesDaParcela), em: yyyymmdd(pagas[0].dataDeArrecadacao) } : null;
+      const parcelasAbertas = (((resp.find((r) => r.servico === "PARCSN/PARCELASPARAGERAR162")?.dados?.listaParcelas) as { parcela: number; valor: number }[] | undefined) ?? [])
+        .slice().sort((a, b) => a.parcela - b.parcela).map((x) => ({ mes: competencia(x.parcela), valor: Number(x.valor ?? 0) }));
+      const abertasTexto = parcelasAbertas.length
+        ? ` · ${plural(parcelasAbertas.length, "parcela", "parcelas")} em aberto (${parcelasAbertas[0].mes} a ${parcelasAbertas[parcelasAbertas.length - 1].mes}), ${reais(parcelasAbertas.reduce((x, a) => x + a.valor, 0))}`
+        : "";
       if (det?.numero) {
         const p = parcelamentos.find((x) => x.sistema === "PARCSN" && x.numero === String(det.numero));
-        if (p && det.consolidacaoOriginal) p.detalhe = `${det.consolidacaoOriginal.quantidadeParcelas} parcelas de cerca de ${reais(det.consolidacaoOriginal.parcelaBasica)}${ultimaParcelaPaga ? ` · última parcela paga: ${ultimaParcelaPaga.mes}${ultimaParcelaPaga.em ? ` (em ${dia(ultimaParcelaPaga.em)})` : ""}` : ""}`;
+        if (p && det.consolidacaoOriginal) p.detalhe = `${det.consolidacaoOriginal.quantidadeParcelas} parcelas de cerca de ${reais(det.consolidacaoOriginal.parcelaBasica)}${ultimaParcelaPaga ? ` · última parcela paga: ${ultimaParcelaPaga.mes}${ultimaParcelaPaga.em ? ` (em ${dia(ultimaParcelaPaga.em)})` : ""}` : ""}${abertasTexto}`;
       }
       const dte = (resp.find((r) => r.servico === "DTE/CONSULTASITUACAODTE111")?.dados?.statusEnquadramento as string) ?? null;
       const pags12 = pags.filter((p) => (p.data_arrecadacao ?? "") >= um);
       out.set(raiz, {
         sit, sitEm: ultSit?.created_at ?? null, relatorio: relatorios.find((r) => r.empresa_id === raiz) ?? null,
-        parcelasAtraso, valorAtraso, atrasos, transacoesPendentes, ultimaParcelaPaga,
+        parcelasAtraso, valorAtraso, atrasos, transacoesPendentes, ultimaParcelaPaga, parcelasAbertas,
         naoLidas: msgs.filter((m) => !m.lida_na_receita),
         importantes: msgs.filter((m) => temas(m.assunto).some((t) => t.nivel === "erro")),
         pagamentos: pags, pago12m: pags12.reduce((s, p) => s + Number(p.valor_total ?? 0), 0), ultimoPagamento: pags[0]?.data_arrecadacao ?? null,
@@ -312,7 +319,9 @@ export default function Receita({ userId, userEmail }: { userId: string; userEma
       // Risco de rescisão: a lei rescinde o parcelamento com 3 parcelas em atraso, seguidas ou não
       // (Lei 10.522/2002, art. 14-B, no simplificado; Resolução CGSN 140/2018, art. 55, no do Simples)
       for (const p of l.atrasos) {
-        const ultima = p.sistema === "Parcelamento do Simples" && l.ultimaParcelaPaga ? ` · última parcela paga: ${l.ultimaParcelaPaga.mes}${l.ultimaParcelaPaga.em ? ` (em ${dia(l.ultimaParcelaPaga.em)})` : ""}` : "";
+        const abertas = p.sistema === "Parcelamento do Simples" && l.parcelasAbertas.length
+          ? ` · em aberto: ${l.parcelasAbertas.map((x) => x.mes).join(", ")} (${reais(l.parcelasAbertas.reduce((x, a) => x + a.valor, 0))})` : "";
+        const ultima = (p.sistema === "Parcelamento do Simples" && l.ultimaParcelaPaga ? ` · última parcela paga: ${l.ultimaParcelaPaga.mes}${l.ultimaParcelaPaga.em ? ` (em ${dia(l.ultimaParcelaPaga.em)})` : ""}` : "") + abertas;
         const quem = `${nomeR} · ${p.sistema}${p.numero ? ` nº ${p.numero}` : ""}${p.valor ? ` · ${reais(p.valor)} em atraso` : ""}${ultima}`;
         a.push(p.parcelas >= 3
           ? { nivel: "erro", empresa: raiz, titulo: `Parcelamento pode ser rescindido: ${plural(p.parcelas, "parcela", "parcelas")} em atraso`, detalhe: `${quem} · a lei rescinde com 3 em atraso; pagar as atrasadas evita perder o parcelamento` }
