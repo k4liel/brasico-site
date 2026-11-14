@@ -8,7 +8,7 @@
 // Os dados vêm de escala_dados (só os grupos de quem está vendo); a escala se monta só pela janelinha (o "Copiar do RHiD" saiu, pedido do dono).
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, type ColunaExtra, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
+import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, type ColunaExtra, type Detalhe, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
 import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
@@ -432,8 +432,13 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         const ab = c?.compensas.filter((x) => x.situacao === "aberta") ?? [];
         if (!ab.length) return <span className="muted">0</span>;
         const pior = ab.some((x) => prazo(x, comp!.hoje) === "vencida") ? " vencida" : ab.some((x) => prazo(x, comp!.hoje) === "vencendo") ? " vencendo" : "";
-        return <span className={`ep-comp deve${pior}`} title={ab.map((x) => (x.feriado ? `Feriado ${dataBR(x.feriado)}` : `Saldo: ${x.motivo}`) + (x.vence_em ? ` · até ${dataBR(x.vence_em)}` : "")).join("\n")}>{ab.length}</span>;
+        return <span className={`ep-comp deve${pior}`}>{ab.length}</span>;
       },
+      // Ao passar o mouse: cada compensa em aberto, de qual feriado (ou saldo lançado) e até quando vale
+      detalhe: (p) => (compDe.get(p.chave)?.compensas.filter((x) => x.situacao === "aberta") ?? []).map((x) => ({
+        rotulo: x.feriado ? "Feriado" : "Saldo",
+        texto: `${descreverCompensa(x)}${x.vence_em ? ` · ${prazo(x, comp!.hoje) === "vencida" ? "venceu em" : "vale até"} ${dataBR(x.vence_em)}` : ""}`,
+      })),
     },
     ...(dados?.socio ? [{
       titulo: "Banco", dica: "Saldo do banco de horas no RHiD",
@@ -443,6 +448,27 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       },
     }] : []),
   ];
+
+  // De onde vem uma compensa: o feriado (com o nome) ou o saldo lançado à mão (com o motivo)
+  const nomeDoFeriado = (d: string) => comp?.feriados.find((f) => f.dia === d)?.nome ?? "feriado";
+  const descreverCompensa = (x: Compensa) => (x.feriado ? `${nomeDoFeriado(x.feriado)} (${dataBR(x.feriado)})` : `lançado à mão${x.motivo ? `: ${x.motivo}` : ""}`);
+  // Linhas a mais no balão de cada dia: o feriado e o que foi marcado nele, e de qual compensa é a folga FC
+  const detalheDia = (k: string, dia: string): Detalhe[] => {
+    const out: Detalhe[] = [];
+    const c = compDe.get(k);
+    if (feriados.has(dia)) {
+      const doFeriado = c?.compensas.find((x) => x.origem === "feriado" && x.feriado === dia);
+      out.push({ rotulo: "Feriado", texto: nomeDoFeriado(dia) });
+      if (doFeriado) out.push({ rotulo: "Compensa", texto: doFeriado.situacao === "aberta" ? `trabalhou · compensa em aberto${doFeriado.vence_em ? ` até ${dataBR(doFeriado.vence_em)}` : ""}`
+        : doFeriado.situacao === "usada" ? `trabalhou · folga compensada dada em ${doFeriado.usada_dia ? dataBR(doFeriado.usada_dia) : "—"}` : "compensa cancelada" });
+      else if (c?.a_confirmar.some((a) => a.dia === dia)) out.push({ rotulo: "Compensa", texto: "falta marcar se trabalhou (clique no dia)" });
+    }
+    if (plano.get(k)?.get(dia)?.codigo === "FC") {
+      const usada = c?.compensas.find((x) => x.situacao === "usada" && x.usada_dia === dia);
+      out.push({ rotulo: "Compensa", texto: usada ? `folga do ${usada.feriado ? "feriado " : ""}${descreverCompensa(usada)}` : "folga compensada" });
+    }
+    return out;
+  };
 
   const horasPlanejadas = (k: string) => periodo.reduce((t, d) => t + (jornada(plano.get(k)?.get(d))?.liquido ?? 0), 0);
   if (modo !== "real") colunas.unshift({
@@ -565,7 +591,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
         <p className="muted tv-nada">{dados.socio ? "Ninguém desta casa nos grupos da escala ainda. Os grupos seguem a escala do RH (local e setor de cada pessoa): abra RH › Escala uma vez para montá-los." : "Nenhuma pessoa no seu grupo."}</p>
       ) : null}
       {dados && pessoas.length > 0 && (
-        <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir}
+        <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir} detalheDia={modo === "real" ? undefined : detalheDia}
           onPeriodo={mudarPeriodo} pintar={podeEditar ? pintar : undefined} colunasExtras={colunas}
           gruposVazios={gruposVazios} ordemSetores={ordemSetores}
           extraLocal={lid.dados ? (local) => (

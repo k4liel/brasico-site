@@ -33,12 +33,15 @@ export type PessoaEscala = {
 };
 export type ModoEscala = "real" | "planejada" | "comparar";
 export type Celula = { chave: string; dia: string };
-export type ColunaExtra = { titulo: string; dica: string; valor: (p: PessoaEscala) => ReactNode };
+export type ColunaExtra = { titulo: string; dica: string; valor: (p: PessoaEscala) => ReactNode; detalhe?: (p: PessoaEscala) => Detalhe[] };
+// Linha a mais no balão (ex.: de qual feriado é a compensa)
+export type Detalhe = { rotulo: string; texto: string };
 
 type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean; codigo?: string; vazio?: boolean; posto?: string };
 type Dica = {
   x: number; y: number; acima: boolean; quem: string; dia: string; previsto: string; intervalo: string; turno: string; rotulo: string;
   batidas: BatidaEscala[]; situacao: string; classe: string; alerta: string; futuro: boolean; avisos: Aviso[]; obs: string;
+  detalhes: Detalhe[];
 };
 export type Visao = "semana" | "quinzena" | "mes";
 // Onde soltar uma pessoa arrastada: antes ou depois de outra, ou no começo de um grupo (setor/local)
@@ -208,7 +211,10 @@ function gravarLocal(k: string, v: string) {
 export default function PontoEscala({
   pessoas, onAbrir, garantir, extra, organizar = false, onMover, onSoltar,
   modo = "real", plano, avisos, pintar, colunasExtras = [], feriados, onPeriodo, gruposVazios = [], extraLocal, extraSetor, ordemSetores, onMoverSetor,
+  detalheDia,
 }: {
+  // Linhas a mais no balão de um dia (compensa usada, feriado trabalhado…)
+  detalheDia?: (chave: string, dia: string) => Detalhe[];
   // Ordem dos setores de cada casa e, no Organizar, subir/descer um setor
   ordemSetores?: OrdemSetores; onMoverSetor?: (local: string, setor: string, direcao: -1 | 1) => void;
   // Algo a mais no cabeçalho da casa e do setor (ex.: os líderes que montam a escala)
@@ -469,7 +475,27 @@ export default function PontoEscala({
       batidas: d?.batidas ?? [], situacao: sit.texto, classe: sit.classe,
       alerta: modo !== "real" || (dia === agora && d?.batidas.length) ? "" : d?.alerta ?? "", futuro: dia > agora || modo === "planejada",
       avisos: avisoDia.get(`${p.chave}|${dia}`)?.lista ?? [], obs: plano?.get(p.chave)?.get(dia)?.obs ?? "",
+      detalhes: detalheDia?.(p.chave, dia) ?? [],
     });
+  }
+  // Balão de uma coluna extra (ex.: Comp. = as compensas em aberto da pessoa)
+  function mostrarColuna(td: HTMLElement, p: PessoaEscala, c: ColunaExtra) {
+    if (selRef.current || !c.detalhe) return;
+    const detalhes = c.detalhe(p);
+    if (!detalhes.length) return esconder();
+    ativo.current?.classList.remove("esc-ativo");
+    ativo.current = td;
+    const r = td.getBoundingClientRect();
+    const acima = r.top > 260;
+    setDica({
+      x: Math.min(Math.max(r.left + r.width / 2, 180), window.innerWidth - 180), y: acima ? r.top - 10 : r.bottom + 10, acima,
+      quem: p.nome, dia: c.dica.split(":")[0].toLowerCase(), rotulo: "", previsto: "", intervalo: "", turno: "", batidas: [], situacao: "", classe: "", alerta: "",
+      futuro: true, avisos: [], obs: "", detalhes,
+    });
+  }
+  // Tirou o mouse do quadradinho: o balão some na hora (antes só sumia ao sair da grade inteira)
+  function sair(td: HTMLElement) {
+    if (ativo.current === td) esconder();
   }
   function esconder() {
     ativo.current?.classList.remove("esc-ativo");
@@ -550,7 +576,7 @@ export default function PontoEscala({
                     <SetorLinhas key={setor || "_"} setor={setor || "Sem setor"} mostrarSetor={setoresDe(doLocal, ordemSetores).length > 1 || !!setor}
                       fechado={!organizar && setoresFechados.has(`${doLocal[0].local}|${setor}`)} onAlternar={() => alternarSetor(`${doLocal[0].local}|${setor}`)}
                       onMoverSetor={organizar && onMoverSetor && setor !== AFASTADOS ? (d) => onMoverSetor(doLocal[0].local, setor, d) : undefined}
-                      pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar}
+                      pessoas={ps} dias={dias} agora={agora} visao={visao} turnosDe={turnosDe} onAbrir={onAbrir} colunas={colunas} mostrar={mostrar} sair={sair} mostrarColuna={mostrarColuna}
                       organizar={organizar} onMover={onMover} pegar={pegar} soltarEm={soltarEm} levando={fantasma?.chave}
                       modo={modo} avisoDia={avisoDia} avisos={avisos} pintando={!!pintar} comecarPintura={comecarPintura}
                       selecionada={selecionada} colunasExtras={colunasExtras} feriados={feriados}
@@ -628,10 +654,11 @@ export default function PontoEscala({
       {dica && (
         <div className="esc-dica pt-dica on" role="tooltip" style={{ left: dica.x, top: dica.y, transform: `translate(-50%, ${dica.acima ? "-100%" : "0"})` }}>
           <div className="esc-dica-top">{dica.quem} · {dica.dia}</div>
-          <div className="pt-dica-linha">
+          {dica.rotulo && <div className="pt-dica-linha">
             <span>{dica.rotulo}</span>
             <b>{dica.previsto}{dica.turno ? <small> · {dica.turno}</small> : null}{dica.intervalo ? <small> · intervalo {dica.intervalo}</small> : null}</b>
-          </div>
+          </div>}
+          {dica.detalhes.map((x, i) => <div key={`d${i}`} className="pt-dica-linha"><span>{x.rotulo}</span><b><small className="pt-dica-detalhe">{x.texto}</small></b></div>)}
           {!dica.futuro && (
             <div className="pt-dica-linha">
               <span>Batido</span>
@@ -657,10 +684,11 @@ export default function PontoEscala({
 }
 
 function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosDe, onAbrir, colunas, mostrar, organizar, onMover, pegar, soltarEm, levando,
-  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados, extra, fechado = false, onAlternar, onMoverSetor }: {
+  modo, avisoDia, avisos, pintando, comecarPintura, selecionada, colunasExtras, feriados, extra, fechado = false, onAlternar, onMoverSetor, sair, mostrarColuna }: {
   extra?: ReactNode; fechado?: boolean; onAlternar?: () => void; onMoverSetor?: (direcao: -1 | 1) => void;
   setor: string; mostrarSetor: boolean; pessoas: PessoaEscala[]; dias: string[]; agora: string; visao: Visao; turnosDe: Map<string, Turno[]>;
   onAbrir?: (chave: string) => void; colunas: number; mostrar: (td: HTMLElement, p: PessoaEscala, dia: string, t: Turno) => void;
+  sair: (td: HTMLElement) => void; mostrarColuna: (td: HTMLElement, p: PessoaEscala, c: ColunaExtra) => void;
   organizar: boolean; onMover?: (chave: string, direcao: -1 | 1) => void; pegar: (e: React.PointerEvent, p: PessoaEscala) => void;
   soltarEm: Alvo | null; levando?: string;
   modo: ModoEscala; avisoDia: Map<string, { nivel: keyof typeof NIVEL; lista: Aviso[] }>; avisos?: Map<string, Aviso[]>;
@@ -735,7 +763,8 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
               return (
                 <td key={d} data-i={i}
                   className={`esc-c t-${t.tipo}${t.codigo && t.codigo !== "T" && t.codigo !== "F" ? ` c-${t.codigo}` : ""}${t.vazio ? " vazio" : ""}${dow === 0 ? " dom" : ""}${dow === 1 ? " seg" : ""}${d === agora ? " hoje" : ""}${d < agora ? " passado" : ""}${feriados?.has(d) ? " feriado" : ""}${m.classe ? ` ${m.classe}` : ""}${temAjuste ? " ajuste" : ""}${pintando && selecionada(p.chave, i) ? " selecionada" : ""}`}
-                  onMouseEnter={(e) => mostrar(e.currentTarget, p, d, t)} onClick={pintando ? undefined : (e) => mostrar(e.currentTarget, p, d, t)}
+                  onMouseEnter={(e) => mostrar(e.currentTarget, p, d, t)} onMouseLeave={(e) => sair(e.currentTarget)}
+                  onClick={pintando ? undefined : (e) => mostrar(e.currentTarget, p, d, t)}
                   onPointerDown={pintando ? (e) => comecarPintura(e, p.chave, i) : undefined}
                   aria-label={`${dataBR(d)}: ${t.horario}${t.intervalo ? `, intervalo ${t.intervalo}` : ""}${m.texto ? `, ${m.texto}` : ""}${av ? `, ${av.lista.map((a) => a.titulo).join(", ")}` : ""}`}>
                   {linhas.map((x, k) => <span key={k} className={k ? "pe-sub" : ""}>{x}</span>)}
@@ -746,7 +775,11 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
               );
             })}
             <td className="pe-tot">{trab}</td><td className="pe-tot">{folgas}</td>
-            {colunasExtras.map((c) => <td key={c.titulo} className="pe-tot">{c.valor(p)}</td>)}
+            {colunasExtras.map((c) => (
+              <td key={c.titulo} className={`pe-tot${c.detalhe ? " pe-tot-dica" : ""}`}
+                onMouseEnter={c.detalhe ? (e) => mostrarColuna(e.currentTarget, p, c) : undefined}
+                onMouseLeave={c.detalhe ? (e) => sair(e.currentTarget) : undefined}>{c.valor(p)}</td>
+            ))}
           </tr>
         );
       })}

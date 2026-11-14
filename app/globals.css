@@ -2824,6 +2824,9 @@ tr.ep-piscar > * { animation: ep-piscar 1.6s ease; }
 .pt-dica-aviso.erro { border-left-color: #f49a76; background: rgba(244, 154, 118, .14); }
 .pt-dica-aviso small { display: block; margin-top: 2px; font-size: 10.5px; color: rgba(244, 239, 230, .62); }
 .pt-dica { max-width: 340px; }
+.pt-dica-detalhe { color: #f4efe6 !important; font-size: 12.5px !important; }
+.pe-grade td.pe-tot-dica { cursor: default; }
+.pe-grade td.pe-tot-dica:hover .ep-comp { outline: 1.5px solid currentColor; outline-offset: 1px; }
 
 /* Avisos que aparecem no canto (depois de cada mudança) */
 .ep-toasts { position: fixed; right: 20px; bottom: 20px; z-index: 70; display: grid; gap: 8px; width: min(420px, calc(100vw - 32px)); }
