@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import PontoEscala, { AFASTADOS, ordemDaGrade, type OrdemSetores, type Celula, type ColunaExtra, type Detalhe, type DiaEscala, type ModoEscala, type PessoaEscala } from "./PontoEscala";
-import { ANTECEDENCIA, CODIGOS, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
+import { ANTECEDENCIA, CODIGOS, SPLIT_PADRAO, partesSplit, rotuloSplit, type Split, avaliar, horasTxt, jornada, type Aviso, type Codigo, type DiaPlano } from "@/lib/escala/regras";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { casaDoLocal, casaPorId } from "@/lib/escala/casas";
 import EscalaHistorico from "./EscalaHistorico";
@@ -339,6 +339,11 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
   }
 
   // Onde a pessoa fica no dia, nos grupos que revezam (escala_grupos.postos): só quando todos os escolhidos têm postos
+  // Split só no Cicchetti Centro (pedido do dono): todos os escolhidos precisam ser de lá
+  function splitDe(celulas: Celula[]) {
+    const ks = [...new Set(celulas.map((c) => c.chave))];
+    return ks.length > 0 && ks.every((k) => casaDoLocal(grupoDe.get(pessoaDe.get(k)?.grupo_id ?? "")?.local ?? "") === "cicchetti-centro");
+  }
   function postosDe(celulas: Celula[]) {
     const listas = [...new Set(celulas.map((c) => c.chave))].map((k) => grupoDe.get(pessoaDe.get(k)?.grupo_id ?? "")?.postos ?? []);
     if (!listas.length || listas.some((l) => !l.length)) return [];
@@ -641,7 +646,7 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
 
       {editor && (
         <EditorDia celulas={editor.celulas} x={editor.x} y={editor.y} horarios={pinceisHorario} outro={outro} setOutro={setOutro}
-          postos={postosDe(editor.celulas)} fcSemSaldo={fcSemSaldo(editor.celulas)} feriadosDia={feriadosDe(editor.celulas)}
+          postos={postosDe(editor.celulas)} split={splitDe(editor.celulas)} fcSemSaldo={fcSemSaldo(editor.celulas)} feriadosDia={feriadosDe(editor.celulas)}
           nomeFeriado={(d) => comp?.feriados.find((f) => f.dia === d)?.nome ?? "Feriado"} onFeriado={(cs, t) => marcarFeriado(cs, t)}
           atual={editor.celulas.length === 1 ? plano.get(editor.celulas[0].chave)?.get(editor.celulas[0].dia) : undefined}
           compensas={editor.celulas.length === 1 ? abertasNoDia(editor.celulas[0].chave, editor.celulas[0].dia) : undefined}
@@ -720,9 +725,9 @@ function textoCompensa(c: Compensa, nomeFeriado?: (d: string) => string) {
   return { titulo, motivo, prazo: c.vence_em ? `vale até ${br(c.vence_em)}` : "sem prazo" };
 }
 
-function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [], fcSemSaldo = [], feriadosDia = [], nomeFeriado, onFeriado,
+function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEscolher, onFechar, postos = [], split = false, fcSemSaldo = [], feriadosDia = [], nomeFeriado, onFeriado,
   compensas, compensaUsada = null, hojeComp }: {
-  celulas: Celula[]; x: number; y: number; horarios: Pincel[]; postos?: string[];
+  celulas: Celula[]; x: number; y: number; horarios: Pincel[]; split?: boolean; postos?: string[];
   compensas?: Compensa[]; compensaUsada?: Compensa | null; hojeComp?: string;
   fcSemSaldo?: string[]; feriadosDia?: FeriadoDia[]; nomeFeriado?: (d: string) => string; onFeriado?: (cs: Celula[], trabalhou: boolean) => void;
   outro: { entrada: string; saida: string; intervalo: string }; setOutro: (o: { entrada: string; saida: string; intervalo: string }) => void;
@@ -760,6 +765,10 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   const titulo = celulas.length === 1
     ? `${nome.split(" ")[0]} · ${SEMANA[new Date(`${dias[0]}T12:00:00Z`).getUTCDay()]} ${br(dias[0])}`
     : `${celulas.length} dias · ${pessoasN} ${pessoasN === 1 ? "pessoa" : "pessoas"} · ${br(dias[0])}${dias.length > 1 ? ` a ${br(dias[dias.length - 1])}` : ""}`;
+  // Split: começa com o do dia (se já for split) ou com o padrão
+  const atualSplit = partesSplit(atual);
+  const [sp, setSp] = useState<Split>(atualSplit ?? SPLIT_PADRAO);
+  const pincelSplit = (s: Split): Pincel => ({ codigo: "T", entrada: s.e1, saida: s.s2, intervalo: `${s.s1}-${s.e2}`, rotulo: `Split ${rotuloSplit(s)}`, posto: posto || undefined });
   const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo && (atual.posto ?? "") === posto;
 
   return (
@@ -831,11 +840,31 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
           </div>
         </div>
       )}
-      {horarios.length > 0 && (
+      {split && (
+        <div className="ep-editor-grupo ep-editor-split">
+          <span>Split · duas jornadas</span>
+          <div className="ep-editor-opcoes">
+            <button className={`ep-pincel t${atualSplit && rotuloSplit(atualSplit) === rotuloSplit(SPLIT_PADRAO) ? " on" : ""}`}
+              onClick={() => onEscolher(pincelSplit(SPLIT_PADRAO))} title="Duas jornadas no mesmo dia">
+              {SPLIT_PADRAO.e1}–{SPLIT_PADRAO.s1}<small className="ep-desc">e {SPLIT_PADRAO.e2}–{SPLIT_PADRAO.s2}</small>
+            </button>
+          </div>
+          <div className="ep-horario ep-split">
+            <label>1ª entra<input type="time" value={sp.e1} onChange={(e) => setSp({ ...sp, e1: e.target.value })} /></label>
+            <label>1ª sai<input type="time" value={sp.s1} onChange={(e) => setSp({ ...sp, s1: e.target.value })} /></label>
+            <label>2ª entra<input type="time" value={sp.e2} onChange={(e) => setSp({ ...sp, e2: e.target.value })} /></label>
+            <label>2ª sai<input type="time" value={sp.s2} onChange={(e) => setSp({ ...sp, s2: e.target.value })} /></label>
+            <button className="small" disabled={!sp.e1 || !sp.s1 || !sp.e2 || !sp.s2 || !partesSplit(pincelSplit(sp))}
+              title={!partesSplit(pincelSplit(sp)) ? "A pausa entre as jornadas precisa passar de 2 h" : "Salvar este split"}
+              onClick={() => onEscolher(pincelSplit(sp))}>Salvar split</button>
+          </div>
+        </div>
+      )}
+      {horarios.filter((h) => !partesSplit(h)).length > 0 && (
         <div className="ep-editor-grupo">
           <span>Trabalha</span>
           <div className="ep-editor-opcoes">
-            {horarios.map((h) => (
+            {horarios.filter((h) => !partesSplit(h)).map((h) => (
               <button key={`${h.entrada}${h.saida}${h.intervalo}`} className={`ep-pincel t${igual(h) ? " on" : ""}`} onClick={() => onEscolher({ ...h, posto: posto || undefined })}
                 title={h.intervalo ? `Descanso ${h.intervalo.replace("-", "–")}` : "Sem descanso"}>
                 {h.rotulo}<small className="ep-desc">{h.intervalo ? `desc. ${h.intervalo.replace("-", "–")}` : "sem descanso"}</small>

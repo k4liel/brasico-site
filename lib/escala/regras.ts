@@ -9,10 +9,26 @@
 //   feriado ou folga · 12x36 só com acordo escrito.
 // Tudo é calculado na tela, na hora em que a escala é montada; nada é gravado.
 
-export type Codigo = "" | "T" | "F" | "DM" | "FC" | "FE" | "AT" | "BH" | "LIC" | "FA" | "VN" | "HO" | "CC" | "FL";
+export type Codigo = "" | "T" | "F" | "DM" | "FC" | "FE" | "AT" | "BH" | "LIC" | "FA" | "VN" | "HO" | "CC" | "FL" | "SV";
 // posto: onde a pessoa fica no dia, nos grupos que revezam (ex.: Cozinha ou Produção na Cozinha do Sempre Vivo)
 export type DiaPlano = { codigo: Codigo; entrada?: string | null; saida?: string | null; intervalo?: string | null; obs?: string; posto?: string | null };
 export type Nivel = "erro" | "aviso" | "info";
+
+// Split (14/11/2026, pedido do dono; só no Cicchetti Centro): duas jornadas no mesmo dia, guardadas como um dia de
+// trabalho (T) com um descanso longo — entra na 1ª, sai da 2ª, e o descanso é o tempo entre as duas. Assim as horas
+// e as regras continuam contando certo. Padrão: 11:00–15:00 e 17:45–23:20.
+export const SPLIT_PADRAO = { e1: "11:00", s1: "15:00", e2: "17:45", s2: "23:20" };
+export type Split = typeof SPLIT_PADRAO;
+const minDe = (h: string) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3, 5));
+// Descanso de mais de 2 h = split
+export function partesSplit(d: Pick<DiaPlano, "codigo" | "entrada" | "saida" | "intervalo"> | undefined | null): Split | null {
+  if (!d || d.codigo !== "T" || !d.entrada || !d.saida) return null;
+  const m = d.intervalo?.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+  if (!m) return null;
+  const dur = (minDe(m[2]) - minDe(m[1]) + 1440) % 1440;
+  return dur > 120 ? { e1: d.entrada, s1: m[1], e2: m[2], s2: d.saida } : null;
+}
+export const rotuloSplit = (s: Split) => `${s.e1}–${s.s1} · ${s.e2}–${s.s2}`;
 export type Aviso = { chave: string; nome: string; nivel: Nivel; titulo: string; texto: string; lei: string; dias: string[]; regra: string };
 
 // trabalha: dia de trabalho fora do lugar de sempre, sem horário (viagem, home office, outra casa); conta como dia trabalhado nas regras
@@ -31,6 +47,8 @@ export const CODIGOS: { codigo: Exclude<Codigo, "" | "T">; nome: string; curto: 
   { codigo: "HO", nome: "Home office", curto: "HO", descanso: false, trabalha: true },
   { codigo: "CC", nome: "Cicchetti Centro", curto: "CC", descanso: false, trabalha: true },
   { codigo: "FL", nome: "Filha da Lua", curto: "FL", descanso: false, trabalha: true },
+  // Trabalha no Sempre Vivo (14/11/2026, pedido do dono)
+  { codigo: "SV", nome: "Sempre Vivo", curto: "SV", descanso: false, trabalha: true },
 ];
 
 const TRABALHA_FORA = new Set<string>(CODIGOS.filter((c) => c.trabalha).map((c) => c.codigo));

@@ -6,7 +6,7 @@
 // coluna de horas e folgas da semana; legenda e "página x de y" no rodapé.
 // Usa só a Helvetica padrão do PDF, então o texto é limpo para o alfabeto WinAnsi.
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage, type RGB } from "pdf-lib";
-import type { DiaPlano } from "./regras";
+import { partesSplit, type DiaPlano } from "./regras";
 
 export type LinhaPdf = { nome: string; cargo?: string; local: string; setor: string; dias: Record<string, DiaPlano | undefined>; minutos: number };
 // logo(arquivo) devolve o PNG da logo da casa (public/escala/logos/<arquivo>.png); sem logo, só o nome
@@ -53,6 +53,7 @@ const CODIGO: Record<string, { cor: string; linhas: string[]; legenda: string }>
   HO: { cor: "#3d7d3a", linhas: ["HOME", "OFFICE"], legenda: "Home office" },
   CC: { cor: "#a8461e", linhas: ["CICCHETTI", "CENTRO"], legenda: "Cicchetti Centro" },
   FL: { cor: "#7a3f8f", linhas: ["FILHA", "DA LUA"], legenda: "Filha da Lua" },
+  SV: { cor: "#8a6a2c", linhas: ["SEMPRE", "VIVO"], legenda: "Sempre Vivo" },
 };
 // Turnos de trabalho: tom claro com o horário na cor escura
 const TURNOS = [
@@ -137,7 +138,7 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
     // Setor sem nada planejado na semana fica de fora
     const setores = [...new Set(doLocal.map((l) => l.setor))].filter((s) => doLocal.some((l) => l.setor === s && dias.some((d) => l.dias[d]?.codigo)));
     const linhas = doLocal.filter((l) => setores.includes(l.setor));
-    const altLinha = linhas.some((l) => dias.some((d) => l.dias[d]?.codigo === "T" && l.dias[d]?.posto)) ? 38 : 30;
+    const altLinha = linhas.some((l) => dias.some((d) => l.dias[d]?.codigo === "T" && (l.dias[d]?.posto || partesSplit(l.dias[d])))) ? 38 : 30;
     const ALT_SETOR = 20, ALT_CAB = 32, RODAPE = 40;
     let p!: PDFPage, y = 0, cont = false;
 
@@ -225,10 +226,15 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
             usados.add(t.nome);
             caixa(p, x, yy, w, h, 4, hex(t.fundo));
             p.drawRectangle({ x, y: yy + 3, width: 3, height: h - 6, color: hex(t.barra) });
-            const linhasT: { s: string; tam: number; f: PDFFont; cor: RGB; esp?: number }[] = [
+            const sp = partesSplit(dd);
+            const linhasT: { s: string; tam: number; f: PDFFont; cor: RGB; esp?: number }[] = sp ? [
+              { s: `${sp.e1} – ${sp.s1}`, tam: 8.5, f: f.negrito, cor: hex(t.tinta) },
+              { s: `${sp.e2} – ${sp.s2}`, tam: 8.5, f: f.negrito, cor: hex(t.tinta) },
+              { s: "SPLIT", tam: 6.5, f: f.negrito, cor: hex(t.barra), esp: 0.5 },
+            ] : [
               { s: dd.entrada && dd.saida ? `${dd.entrada} – ${dd.saida}` : "Trabalho", tam: 9.5, f: f.negrito, cor: hex(t.tinta) },
             ];
-            if (dd.intervalo) linhasT.push({ s: `desc. ${dd.intervalo.replace("-", "–")}`, tam: 7, f: f.normal, cor: hex(t.tinta) });
+            if (dd.intervalo && !sp) linhasT.push({ s: `desc. ${dd.intervalo.replace("-", "–")}`, tam: 7, f: f.normal, cor: hex(t.tinta) });
             if (dd.posto) linhasT.push({ s: dd.posto.toUpperCase(), tam: 6.5, f: f.negrito, cor: hex(t.barra), esp: 0.5 });
             const total = linhasT.reduce((s, x) => s + x.tam + 2, -2);
             let ty = yy + h / 2 + total / 2 - linhasT[0].tam * 0.78;

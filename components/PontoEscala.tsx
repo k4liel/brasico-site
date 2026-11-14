@@ -13,7 +13,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { tipoPorEntrada, type TipoTurno } from "@/lib/markdown";
 import { TEXTOS } from "@/lib/idioma";
 import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
-import { CODIGOS, minutos, type Aviso, type DiaPlano } from "@/lib/escala/regras";
+import { CODIGOS, minutos, partesSplit, type Aviso, type DiaPlano } from "@/lib/escala/regras";
 
 export type BatidaEscala = { hora: string; tipo?: string; origem?: string; classificacao?: string; justificada?: boolean };
 export type DiaEscala = {
@@ -37,7 +37,7 @@ export type ColunaExtra = { titulo: string; dica: string; valor: (p: PessoaEscal
 // Linha a mais no balão (ex.: de qual feriado é a compensa)
 export type Detalhe = { rotulo: string; texto: string };
 
-type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean; codigo?: string; vazio?: boolean; posto?: string };
+type Turno = { tipo: TipoTurno; linhas: string[]; horario: string; intervalo: string; trabalha: boolean; codigo?: string; vazio?: boolean; posto?: string; split?: boolean };
 type Dica = {
   x: number; y: number; acima: boolean; quem: string; dia: string; previsto: string; intervalo: string; turno: string; rotulo: string;
   batidas: BatidaEscala[]; situacao: string; classe: string; alerta: string; futuro: boolean; avisos: Aviso[]; obs: string;
@@ -85,6 +85,15 @@ function lerHorario(d: DiaEscala | undefined): Turno {
 function lerPlano(pd: DiaPlano | undefined): Turno {
   const vazio = { horario: "", intervalo: "", trabalha: false };
   if (!pd || !pd.codigo) return { tipo: "descanso", linhas: ["+"], ...vazio, horario: "Sem escala", vazio: true };
+  const sp = partesSplit(pd);
+  if (sp) {
+    const a = minutos(pd.entrada) ?? 0, b = minutos(pd.saida) ?? 0;
+    return {
+      tipo: tipoPorEntrada(Math.floor(a / 60), Math.floor(b / 60)), trabalha: true, codigo: "T", split: true,
+      intervalo: "", linhas: [`${sp.e1}–${sp.s1}`, `${sp.e2}–${sp.s2}`],
+      horario: `Split · ${sp.e1}–${sp.s1} e ${sp.e2}–${sp.s2}`, posto: pd.posto || undefined,
+    };
+  }
   if (pd.codigo === "T") {
     const a = minutos(pd.entrada) ?? 0, b = minutos(pd.saida) ?? 0;
     return {
@@ -756,6 +765,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
               const avNivel = av && av.nivel !== "info" ? av.nivel : "";
               // Semana: horário numa linha e, embaixo, o que foi batido (ou o nome do turno, se ainda não chegou)
               const linhas = !t.trabalha ? t.linhas
+                : t.split ? (visao === "mes" ? ["Split"] : t.linhas)
                 : visao === "mes" ? [t.linhas[0].replace(/^0?(\d{1,2}):00$/, "$1h").replace(/^0?(\d{1,2}):(\d{2})$/, "$1h$2")]
                 : visao === "semana" ? [t.posto ? `${t.linhas[0]}–${t.linhas[1]}` : t.horario, modo !== "planejada" && d <= agora && dd?.batidas.length ? dd.batidas.map((b) => b.hora).join(" · ")
                   : modo === "planejada" && t.intervalo ? `desc. ${t.intervalo}` : TEXTOS.pt.turnos[t.tipo]]
@@ -769,6 +779,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
                   aria-label={`${dataBR(d)}: ${t.horario}${t.intervalo ? `, intervalo ${t.intervalo}` : ""}${m.texto ? `, ${m.texto}` : ""}${av ? `, ${av.lista.map((a) => a.titulo).join(", ")}` : ""}`}>
                   {linhas.map((x, k) => <span key={k} className={k ? "pe-sub" : ""}>{x}</span>)}
                   {t.posto && <i className="pe-posto" aria-hidden="true">{t.posto[0]}</i>}
+                  {t.split && visao !== "mes" && <i className="pe-split" aria-hidden="true">S</i>}
                   {m.classe && <i className={`pe-marca ${m.classe}`} aria-hidden="true" />}
                   {avNivel && <i className={`pe-alerta ${avNivel}`} aria-hidden="true" />}
                 </td>
