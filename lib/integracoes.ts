@@ -18,8 +18,7 @@ export type Painel = {
     notas: Exec & { empresas: number; bloqueadas: number; notas_7d: number; ultima_nota: string | null };
     nfse: Exec & { empresas: number; bloqueadas: number; notas_7d: number };
     totvs: Exec & { unidades: { nome: string; ultimo_dia: string | null; ontem: string | null }[] };
-    cicchetti: { ultima: string | null; ultima_ok: string | null; ultima_falha: string | null; ok_24h: number; falha_24h: number;
-      ultimo_erro: string | null; ultima_coleta_itens: string | null; notas_sem_itens: number };
+    cicchetti: { ultima: string | null; ultima_ok: string | null; ultima_falha: string | null; ok_24h: number; falha_24h: number; ultimo_erro: string | null };
     pms: Exec & { intervalo_min: number | null; hoteis: { nome: string; ultima_leitura: string | null }[] };
     whatsapp: { ultima_mensagem: string | null; mensagens_24h: number; grupos_24h: number; envios_24h: number; envios_falha_24h: number };
     gemini: Exec;
@@ -208,24 +207,17 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     });
   }
 
-  // Cicchetti Management (API externa): lista de notas a cada 6 h, itens até 25 notas por minuto
+  // Cicchetti Management (API externa): só quando o Claude consulta pelo conector. As notas de compra não vêm
+  // mais daqui (vêm da SEFAZ; a agenda precos-coleta foi desligada em 13/11/2026), então não há frescor a cobrar.
   {
     const c = f.cicchetti;
-    let estado = frescor(c.ultima_ok, agora, 13 * 60, 48 * 60);
-    let frase = `última consulta ${quando(c.ultima_ok, agora)}`;
-    const itensParados = c.notas_sem_itens > 20 && minutos(c.ultima_coleta_itens, agora) > 3 * 24 * 60;
-    if (itensParados) { estado = pior(estado, "atencao"); frase = `itens das notas parados desde ${c.ultima_coleta_itens ? dataCurta(c.ultima_coleta_itens) : "o começo"}`; }
-    const erro = c.falha_24h && c.ultimo_erro ? { texto: c.ultimo_erro, quando: quando(c.ultima_falha, agora) } : null;
-    if (erro) estado = pior(estado, "atencao");
+    const ultimaFalhou = !!c.ultima_falha && (!c.ultima_ok || new Date(c.ultima_falha) > new Date(c.ultima_ok));
+    const erro = ultimaFalhou && c.ultimo_erro ? { texto: c.ultimo_erro, quando: quando(c.ultima_falha, agora) } : null;
     lista.push({
-      id: "cicchetti", nome: "Cicchetti Management", quem: "API externa (só leitura)", grupo: "casas", pagina: "/notas",
-      oQueFaz: "Notas de compra com os itens (índice de preços), vendas e colaboradores das unidades.",
-      estado, frase, erro,
-      numeros: [
-        { rotulo: "Consultas em 24 h", valor: `${c.ok_24h} ok · ${c.falha_24h} falha` },
-        { rotulo: "Notas esperando os itens", valor: String(c.notas_sem_itens) },
-        { rotulo: "Últimos itens lidos", valor: quando(c.ultima_coleta_itens, agora) },
-      ],
+      id: "cicchetti", nome: "Cicchetti Management", quem: "API externa (só leitura)", grupo: "casas", pagina: "/conectar",
+      oQueFaz: "Vendas, CMV e colaboradores das unidades, consultados pelo Claude quando alguém pede.",
+      estado: erro ? "atencao" : "ok", frase: `consulta quando o Claude pede · última ${quando(c.ultima, agora)}`, erro,
+      numeros: [{ rotulo: "Consultas em 24 h", valor: `${c.ok_24h} ok · ${c.falha_24h} falha` }],
     });
   }
 

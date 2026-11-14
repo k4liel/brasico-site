@@ -7,9 +7,19 @@
 // Nunca copia senha do funcionário, crachá (RFID), código de barras, digitais nem foto.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const API = "https://www.rhid.com.br/v2/api.svc";
 const TIMEOUT_MS = 60000;
+// A função só vive 150 s (plano do Supabase): passou disso, ela é derrubada no meio e a execução ficava
+// "rodando" para sempre (13/11/2026). Cada execução tem um prazo (PRAZO_MS a partir do começo); nenhuma
+// chamada ao RHiD espera além dele e o trabalho para quando faltam FOLGA_MS. O prazo vai junto da execução
+// (AsyncLocalStorage), porque várias execuções podem rodar ao mesmo tempo na mesma instância.
+const PRAZO_MS = 135_000;
+const FOLGA_MS = 25_000;
+const prazo = new AsyncLocalStorage<number>();
+const restante = () => { const p = prazo.getStore(); return p ? p - Date.now() : Infinity; };
+const semTempo = () => restante() < FOLGA_MS;
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -43,8 +53,10 @@ const dia = (v: unknown) => txt(v).match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? quando(v)
 const INTERNA = "https://www.rhid.com.br/v2/customerdb/";
 
 async function pedir(caminho: string, init: RequestInit) {
+  const resto = restante();
+  if (resto < 3000) throw new ErroRhid(`${caminho}: faltou tempo (a função só roda 150 s)`);
   const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  const t = setTimeout(() => ctl.abort(), Math.min(TIMEOUT_MS, resto - 2000));
   try {
     const r = await fetch(caminho.startsWith("http") ? caminho : `${API}${caminho}`, { ...init, signal: ctl.signal });
     const corpo = await r.text();
@@ -201,7 +213,7 @@ async function copiarCliente(cliente: number, token: string, inicio: number) {
   // Escala vigente: só na ficha completa, uma chamada por pessoa ativa (dentro do tempo da execução)
   const escalaDe = new Map<number, { escala_id: number | null; escala_desde: string | null }>();
   for (const p of pessoas.filter((x) => num(x?.status) === 1)) {
-    if (Date.now() - inicio > ORCAMENTO_MS) { erros.push("faltou tempo para a escala de todos"); break; }
+    if (Date.now() - inicio > ORCAMENTO_MS || semTempo()) { erros.push("faltou tempo para a escala de todos"); break; }
     const ficha = await lerUm(token, `${INTERNA}person.svc/a/${Number(p.id)}`, erros);
     if (ficha) escalaDe.set(Number(p.id), escalaVigente(ficha, hoje));
   }
@@ -369,7 +381,7 @@ async function copiarPonto(cliente: number, token: string, inicio: number, fase:
     }
   }
   for (const p of fase === "recentes" ? pessoas ?? [] : []) {
-    if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
+    if (Date.now() - inicio > ORCAMENTO_MS || semTempo()) { r.faltou_tempo = true; break; }
     if (p.apuracao_em && Date.now() - new Date(p.apuracao_em).getTime() < REFAZER_MS) continue;
     try {
       r.dias += await apurar(token, cliente, Number(p.id), somarDias(hoje, -(RECENTES - 1)), somarDias(hoje, FUTUROS));
@@ -378,7 +390,7 @@ async function copiarPonto(cliente: number, token: string, inicio: number, fase:
     } catch (e) { falhou(e); }
   }
   for (const p of fase === "historico" ? pessoas ?? [] : []) {
-    if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
+    if (Date.now() - inicio > ORCAMENTO_MS || semTempo()) { r.faltou_tempo = true; break; }
     if (p.historico_fim) continue;
     const limite = [somarDias(hoje, -HISTORICO_DIAS), p.admissao ?? ""].sort().at(-1)!;
     const fim = p.historico_ate ? somarDias(p.historico_ate, -1) : somarDias(hoje, -RECENTES);
@@ -447,7 +459,7 @@ async function copiarAgora(cliente: number, token: string, inicio: number) {
     if (!visto || Date.now() - new Date(visto).getTime() > 3600_000) alvo.set(id, hoje);
   }
   for (const [id, desde] of alvo) {
-    if (Date.now() - inicio > ORCAMENTO_MS) { r.faltou_tempo = true; break; }
+    if (Date.now() - inicio > ORCAMENTO_MS || semTempo()) { r.faltou_tempo = true; break; }
     try {
       r.dias += await apurar(token, cliente, id, desde, hoje);
       await supabase.from("rhid_pessoas").update({ hoje_em: new Date().toISOString() }).eq("cliente_id", cliente).eq("id", id);
@@ -458,6 +470,11 @@ async function copiarAgora(cliente: number, token: string, inicio: number) {
 }
 
 async function processar(execucaoId: string) {
+  const comeco = Date.now();
+  return prazo.run(comeco + PRAZO_MS, () => processarExecucao(execucaoId, comeco));
+}
+
+async function processarExecucao(execucaoId: string, comeco: number) {
   const { data: ex } = await supabase.from("rhid_execucoes").select("id,status,tipo").eq("id", execucaoId).maybeSingle();
   if (!ex || ex.status !== "na_fila") return;
   await supabase.from("rhid_execucoes").update({ status: "rodando", inicio: new Date().toISOString() }).eq("id", ex.id);
@@ -481,7 +498,8 @@ async function processar(execucaoId: string) {
     const { data: ativos } = await supabase.from("rhid_clientes").select("id").eq("ativo", true);
     const ligados = new Set((ativos ?? []).map((x: { id: number }) => Number(x.id)));
 
-    const inicio = Date.now();
+    // O orçamento conta desde o começo da execução (o login também gasta tempo)
+    const inicio = comeco;
     const falhas: string[] = [];
     const tokens = new Map<number, string>();
     const fases = ex.tipo === "batidas" ? ["recentes", "historico"] as const : ex.tipo === "agora" ? ["agora"] as const : ["cadastros"] as const;

@@ -22,7 +22,7 @@ function painel(mudar: (p: Painel) => void = () => {}, agora = AGORA): Painel {
       notas: { ...exec(500), empresas: 4, bloqueadas: 2, notas_7d: 100, ultima_nota: antes(500) },
       nfse: { ...exec(300), empresas: 5, bloqueadas: 0, notas_7d: 8 },
       totvs: { ...exec(200), unidades: [{ nome: "Cicchetti Pipa", ultimo_dia: "2026-11-12", ontem: "ok" }] },
-      cicchetti: { ultima: antes(60), ultima_ok: antes(60), ultima_falha: null, ok_24h: 10, falha_24h: 0, ultimo_erro: null, ultima_coleta_itens: antes(60), notas_sem_itens: 3 },
+      cicchetti: { ultima: antes(60), ultima_ok: antes(60), ultima_falha: null, ok_24h: 10, falha_24h: 0, ultimo_erro: null },
       pms: { ...exec(20), intervalo_min: 30, hoteis: [{ nome: "Filha da Lua - Eco Lodge", ultima_leitura: antes(20) }] },
       whatsapp: { ultima_mensagem: antes(15), mensagens_24h: 100, grupos_24h: 20, envios_24h: 0, envios_falha_24h: 0 },
       gemini: exec(600),
@@ -94,11 +94,11 @@ test("TOTVS: ontem que não chegou depois das 13h = parado; de manhã só atenç
   assert.equal(de(cedo, "totvs").estado, "atencao");
 });
 
-test("Cicchetti: itens das notas parados há dias pede atenção", () => {
-  const p = painel((x) => { x.fontes.cicchetti.notas_sem_itens = 842; x.fontes.cicchetti.ultima_coleta_itens = "2026-10-30T21:00:00Z"; });
-  const c = de(p, "cicchetti");
-  assert.equal(c.estado, "atencao");
-  assert.match(c.frase, /parados desde 30\/10/);
+test("Cicchetti: sem consulta há dias continua verde (só consulta quando o Claude pede); falha mais nova pede atenção", () => {
+  const parado = painel((x) => { x.fontes.cicchetti.ultima = antes(10 * 24 * 60); x.fontes.cicchetti.ultima_ok = antes(10 * 24 * 60); });
+  assert.equal(de(parado, "cicchetti").estado, "ok");
+  const falhou = painel((x) => { x.fontes.cicchetti.ultima_falha = antes(5); x.fontes.cicchetti.ultimo_erro = "HTTP 500"; });
+  assert.equal(de(falhou, "cicchetti").estado, "atencao");
 });
 
 test("horários das agendas saem em português no horário de Fortaleza", () => {

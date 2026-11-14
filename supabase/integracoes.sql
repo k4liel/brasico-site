@@ -79,9 +79,7 @@ begin
         'ok_24h', (select count(*) from public.cicchetti_consultas where created_at > now() - interval '24 hours' and http_status between 200 and 299),
         'falha_24h', (select count(*) from public.cicchetti_consultas where created_at > now() - interval '24 hours' and (http_status is null or http_status >= 400)),
         'ultimo_erro', (select left(coalesce(erro, 'HTTP ' || http_status), 300) from public.cicchetti_consultas
-          where (http_status is null or http_status >= 400) and created_at > now() - interval '7 days' order by created_at desc limit 1),
-        'ultima_coleta_itens', (select max(itens_coletados_em) from public.precos_notas),
-        'notas_sem_itens', (select count(*) from public.precos_notas where status = 'pendente' and unidade <> 'midway')),
+          where (http_status is null or http_status >= 400) and created_at > now() - interval '7 days' order by created_at desc limit 1)),
       'pms', public.integracoes_exec('pms_execucoes', 'origem = ''robo''') || jsonb_build_object(
         'intervalo_min', (select intervalo_min from public.pms_robo_ajustes limit 1),
         'hoteis', (select coalesce(jsonb_agg(jsonb_build_object('nome', h.nome,
@@ -131,5 +129,9 @@ begin
 end $$;
 revoke all on function public.integracoes_painel() from public, anon;
 grant execute on function public.integracoes_painel() to authenticated;
+
+-- 13/11/2026: as notas de compra não vêm mais do Cicchetti Management (o Índice de preços lê as da SEFAZ,
+-- precos_base). A agenda precos-coleta foi desligada (active = false, nada apagado) e o painel não cobra mais os itens.
+select cron.alter_job((select jobid from cron.job where jobname = 'precos-coleta'), active := false);
 
 -- Área do menu (usuario_areas): quem tem áreas definidas só vê o painel se tiver 'integracoes'. Sócios (sem linha) veem.
