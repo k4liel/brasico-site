@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import "@/app/entrada.css";
 
@@ -66,27 +66,36 @@ export function Icone({ n, tam = 20 }: { n: keyof typeof I; tam?: number }) {
   );
 }
 
-const CONTEUDO: Record<TipoEntrada, { selo: string; titulo: string; texto: string; itens: { i: keyof typeof I; t: string; d: string }[] }> = {
+const CONTEUDO: Record<TipoEntrada, { selo: string; titulo: string; texto: string }> = {
   socios: {
     selo: "Área dos sócios",
     titulo: "A gestão do grupo num lugar só.",
     texto: "Projetos, operação das casas, pessoas e fiscal, com os dados lidos direto das fontes.",
-    itens: [
-      { i: "doc", t: "Projetos", d: "Documentos, propostas e o brainstorm da equipe" },
-      { i: "caixa", t: "Operação", d: "Notas, compras, fichas técnicas e câmara fria" },
-      { i: "grafico", t: "Gestão", d: "Vendas, RH, ponto e situação fiscal" },
-    ],
   },
   colaboradores: {
     selo: "Área dos colaboradores",
     titulo: "Sua área de trabalho nas casas.",
     texto: "Entre com o usuário e a senha que você recebeu para abrir a sua área.",
-    itens: [
-      { i: "carrinho", t: "Compras", d: "Seus pedidos da semana, a lista sugerida e a aprovação" },
-      { i: "floco", t: "Câmara fria", d: "Entradas, saídas e contagens do estoque" },
-      { i: "panela", t: "Produção", d: "As tarefas do dia e o que já foi feito" },
-    ],
   },
+};
+
+// Logos das casas do grupo, com as cores originais, sobre cartões claros (public/marcas; das logos que o dono mandou em 13/11/2026:
+// "não tire as cores das logos, tem que mostrar original").
+// O Filho do Vento saiu do grupo em 10/11/2026 e não entra.
+const CASAS: { arq: string; nome: string; w: number; h: number }[] = [
+  { arq: "cicchetti", nome: "Cicchetti", w: 294, h: 260 },
+  { arq: "filha-da-lua", nome: "Filha da Lua Ecolodge", w: 577, h: 260 },
+  { arq: "sempre-vivo", nome: "Sempre Vivo", w: 166, h: 260 },
+  { arq: "hello-pipa", nome: "Hello Pipa", w: 558, h: 260 },
+  { arq: "hello-barra", nome: "Hello Barra", w: 569, h: 260 },
+  { arq: "fazenda-pachamama", nome: "Fazenda Pachamama", w: 261, h: 260 },
+  { arq: "fundacao-hello-pipa", nome: "Fundação Hello Pipa", w: 640, h: 184 },
+];
+
+// Altura de cada logo na tela: as largas ficam mais baixas, as redondas e altas mais altas (para pesarem igual)
+const altura = (c: { w: number; h: number }, base: number) => {
+  const r = c.w / c.h;
+  return `${Math.round(base * (r > 3 ? 0.62 : r > 1.8 ? 0.74 : r < 0.8 ? 1.15 : 1.05))}px`;
 };
 
 function saudacao() {
@@ -94,54 +103,105 @@ function saudacao() {
   return h < 5 ? "Boa noite" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 }
 
+/** Faixa das logos das casas, rolando devagar (para ao passar o mouse). */
+function FaixaCasas() {
+  const lista = [...CASAS, ...CASAS];
+  return (
+    <div className="ent-casas" aria-label="Casas do grupo">
+      <div className="ent-casas-trilho">
+        {lista.map((c, i) => (
+          <span className="ent-casa" key={i} aria-hidden={i >= CASAS.length} style={{ "--h": altura(c, 54) } as React.CSSProperties}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={`/marcas/${c.arq}.png`} alt={i < CASAS.length ? c.nome : ""} width={c.w} height={c.h}
+              draggable={false} />
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Grade das logos (área dos colaboradores): aparecem uma a uma. */
+function GradeCasas() {
+  return (
+    <ul className="ent-grade" aria-label="Casas do grupo">
+      {CASAS.map((c, i) => (
+        <li key={c.arq} style={{ "--i": i, "--h": altura(c, 48) } as React.CSSProperties}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/marcas/${c.arq}.png`} alt={c.nome} width={c.w} height={c.h} draggable={false} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Monograma do Brasico: o anel dourado se desenha ao abrir. */
+function Monograma() {
+  return (
+    <span className="ent-monograma" aria-hidden="true">
+      <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" /></svg>
+      <b>B</b>
+    </span>
+  );
+}
+
 /** Moldura das duas telas: o painel da marca à esquerda e o formulário à direita. */
 export function Entrada({ tipo, children }: { tipo: TipoEntrada; children: React.ReactNode }) {
   const c = CONTEUDO[tipo];
   const [ola, setOla] = useState("");
+  const painel = useRef<HTMLElement>(null);
   useEffect(() => { setOla(saudacao()); if (tipo === "colaboradores") document.title = "Área dos colaboradores"; }, [tipo]);
   const outra = tipo === "socios"
     ? { href: "/colaboradores", texto: "É da equipe das casas?", link: "Área dos colaboradores" }
     : { href: "/login", texto: "É sócio?", link: "Área dos sócios" };
 
+  // Luz suave que acompanha o mouse no painel escuro (só CSS vars, sem redesenhar)
+  function mover(e: React.PointerEvent<HTMLElement>) {
+    const el = painel.current; if (!el || e.pointerType !== "mouse") return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty("--mx", `${e.clientX - r.left}px`);
+    el.style.setProperty("--my", `${e.clientY - r.top}px`);
+    el.classList.add("com-luz");
+  }
+
   return (
     <main className={`ent ent-${tipo}`}>
       {tipo === "colaboradores" ? (
-        // Equipe: só o nome da área, sem marca nem informações (pedido do dono, 04/11/2026)
-        <aside className="ent-marca ent-marca-so-titulo">
-          <h1>Área dos{" "}<br />colaboradores</h1>
+        // Equipe: só o nome da área e as logos das casas, sem a marca Brasico nem informações (pedido do dono, 04/11/2026)
+        <aside className="ent-marca ent-marca-so-titulo" ref={painel} onPointerMove={mover} onPointerLeave={() => painel.current?.classList.remove("com-luz")}>
+          <span className="ent-luz" aria-hidden="true" />
+          <h1 className="ent-anima" style={{ "--d": "80ms" } as React.CSSProperties}>Área dos{" "}<br />colaboradores</h1>
+          <GradeCasas />
         </aside>
       ) : (
-      <aside className="ent-marca">
-        <div className="ent-logo">
-          <span className="ent-monograma" aria-hidden="true">B</span>
+      <aside className="ent-marca" ref={painel} onPointerMove={mover} onPointerLeave={() => painel.current?.classList.remove("com-luz")}>
+        <span className="ent-luz" aria-hidden="true" />
+        <div className="ent-logo ent-anima">
+          <Monograma />
           <span className="ent-nome">Brasico</span>
         </div>
 
         <div className="ent-chamada">
-          <span className="ent-selo">{c.selo}</span>
-          <h1>{c.titulo}</h1>
-          <p>{c.texto}</p>
+          <span className="ent-selo ent-anima" style={{ "--d": "120ms" } as React.CSSProperties}>{c.selo}</span>
+          <h1 className="ent-anima" style={{ "--d": "200ms" } as React.CSSProperties}>{c.titulo}</h1>
+          <p className="ent-anima" style={{ "--d": "300ms" } as React.CSSProperties}>{c.texto}</p>
         </div>
 
-        <ul className="ent-itens">
-          {c.itens.map((x) => (
-            <li key={x.t}>
-              <span className="ent-item-icone"><Icone n={x.i} /></span>
-              <span><b>{x.t}</b><small>{x.d}</small></span>
-            </li>
-          ))}
-        </ul>
+        <div className="ent-casas-bloco ent-anima" style={{ "--d": "420ms" } as React.CSSProperties}>
+          <span className="ent-casas-titulo">As casas do grupo</span>
+          <FaixaCasas />
+        </div>
 
-        <p className="ent-rodape"><Icone n="escudo" tam={14} /> Acesso restrito · conexão protegida</p>
+        <p className="ent-rodape ent-anima" style={{ "--d": "520ms" } as React.CSSProperties}><Icone n="escudo" tam={14} /> Acesso restrito · conexão protegida</p>
       </aside>
       )}
 
       <section className="ent-lado">
-        <div className="ent-form-area">
+        <div className="ent-form-area ent-anima" style={{ "--d": "160ms" } as React.CSSProperties}>
           <p className="ent-ola">{ola ? `${ola}!` : " "}</p>
           {children}
         </div>
-        {tipo === "socios" && <p className="ent-troca">{outra.texto} <a href={outra.href}>{outra.link} <Icone n="seta" tam={14} /></a></p>}
+        {tipo === "socios" && <p className="ent-troca ent-anima" style={{ "--d": "360ms" } as React.CSSProperties}>{outra.texto} <a href={outra.href}>{outra.link} <Icone n="seta" tam={14} /></a></p>}
       </section>
     </main>
   );
