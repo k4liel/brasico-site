@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 
 // Cabeçalho das páginas dos hotéis: nome, situação ao vivo (última leitura do PMS em pms_horas) e as abas.
 
-export type Vista = "gerencial" | "reservas" | "mapa" | "hospedes" | "transacoes" | "relatorios" | "documento";
+export type Vista = "gerencial" | "reservas" | "mapa" | "hospedes" | "transacoes" | "relatorios";
 type Hora = { lido_em: string; ocupacao: number | null; ocupadas: number | null; livres: number | null; bloqueadas: number | null;
   checkins: number | null; checkouts: number | null; checkins_previstos: number | null; checkouts_previstos: number | null };
 
@@ -16,9 +16,8 @@ const ICONES: Record<Vista, ReactNode> = {
   hospedes: <><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .7 3.2 2.5 3.6 5.2" /></>,
   transacoes: <><path d="M7 7h13l-3-3M17 17H4l3 3" /></>,
   relatorios: <><path d="M4 20V4h11l5 5v11z" /><path d="M8 13h3v4H8zM13 10h3v7h-3z" /></>,
-  documento: <><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" /><circle cx="12" cy="12" r="2.5" /></>,
 };
-const ABAS: [Vista, string][] = [["gerencial", "Visão geral"], ["reservas", "Reservas"], ["mapa", "Mapa de reservas"], ["hospedes", "Hóspedes"], ["transacoes", "Transações"], ["relatorios", "Relatórios"], ["documento", "Réveillon"]];
+const ABAS: [Vista, string][] = [["gerencial", "Visão geral"], ["reservas", "Reservas"], ["mapa", "Mapa de reservas"], ["hospedes", "Hóspedes"], ["transacoes", "Transações"], ["relatorios", "Relatórios"]];
 
 function ha(iso: string) {
   const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
