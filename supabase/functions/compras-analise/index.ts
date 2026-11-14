@@ -378,7 +378,7 @@ const num = (t: string) => Number(t.replace(",", "."));
 const MEDIDA = /(\d+(?:[.,]\d+)?)\s*(kg|k|kilos?|quilos?|g|gr|gramas?|ml|l|lt|lts|litros?)(?![a-z])/i;
 function medidaDoPedido(texto: string): { qtd: number; escrito: number; tipo: "massa" | "volume" } | null {
   const t = normal(texto);
-  if (/\d+\s*(u|un|und|uns|unid|unidades?|cx|caixas?|fardos?|pct|pacotes?|garrafas?|latas?|bdj|bandejas?|rolos?|duzias?)(?![a-z])/.test(t)) return null;
+  if (/\d+\s*(u|un|uni|und|uns|unid|unidades?|cx|caixas?|fardos?|pct|pacotes?|garrafas?|latas?|bdj|bandejas?|rolos?|duzias?)(?![a-z])/.test(t)) return null;
   const m = t.match(MEDIDA);
   if (!m) return null;
   const v = num(m[1]), u = m[2];
@@ -400,10 +400,34 @@ function tamanhoNaNota(desc: string): { qtd: number; tipo: "massa" | "volume" } 
   return { qtd: v, tipo: "volume" };
 }
 const fmtMedida = (q: number, tipo: string) => tipo === "massa" ? (q < 1 ? `${fmt(q * 1000)} g` : `${fmt(q)} kg`) : (q < 1 ? `${fmt(q * 1000)} ml` : `${fmt(q)} L`);
+// Hortifrúti pedido em unidades e vendido por kg (14/11/2026: "6 uni de pimentão" virava 6 kg × R$ 25): peso médio
+// de cada um, em kg. A ordem importa (o mais específico primeiro). Fora da tabela, não converte (o revisor avisa).
+const PESO_MEDIO: [string, number][] = [
+  ["mamao papaya", 0.45], ["mamao formosa", 1.5], ["mamao", 1.2], ["melancia baby", 2.5], ["melancia", 8], ["melao", 1.5],
+  ["abacaxi", 1.5], ["abacate", 0.6], ["pitaya", 0.4], ["manga", 0.5], ["coco", 1], ["repolho", 1.5], ["couve flor", 1],
+  ["brocolis", 0.5], ["alho poro", 0.3], ["berinjela", 0.3], ["abobrinha", 0.3], ["chuchu", 0.3], ["pepino", 0.3],
+  ["pimentao", 0.2], ["beterraba", 0.2], ["batata doce", 0.3], ["batata", 0.2], ["cebola roxa", 0.15], ["cebola", 0.15],
+  ["tomate", 0.15], ["cenoura", 0.15], ["maca", 0.18], ["pera", 0.18], ["laranja", 0.2], ["tangerina", 0.15], ["goiaba", 0.15],
+  ["maracuja", 0.15], ["banana", 0.15], ["limao", 0.1], ["kiwi", 0.08],
+];
+function contagemDoPedido(texto: string): number | null {
+  const m = normal(texto).match(/(\d+(?:[.,]\d+)?)\s*(u|un|uni|und|uns|unid|unidades?)(?![a-z])/);
+  const v = m ? num(m[1]) : NaN;
+  return v > 0 ? v : null;
+}
 function converter(pedidoTxt: string, descNota: string, unNota: string): { qtd: number; motivo: string } | null {
+  const u = unNota.toUpperCase();
+  if (u === "KG") {
+    const n = contagemDoPedido(pedidoTxt);
+    const d = normal(descNota).replace(/[^a-z ]+/g, " ");
+    const peso = n ? PESO_MEDIO.find(([k]) => new RegExp(`(^| )${k}( |$)`).test(d))?.[1] : undefined;
+    if (n && peso) {
+      const qtd = Math.max(0.5, Math.ceil(n * peso * 2) / 2);
+      return { qtd, motivo: `Pediu ${fmt(n)} un; a nota é por kg: ≈ ${fmt(qtd)} kg (peso médio de ${fmtMedida(peso, "massa")} cada). Confira com o fornecedor.` };
+    }
+  }
   const ped = medidaDoPedido(pedidoTxt);
   if (!ped) return null;
-  const u = unNota.toUpperCase();
   // nota vendida a peso/volume: a quantidade é a própria medida, em kg ou L (500 g = 0,5 kg)
   if ((u === "KG" && ped.tipo === "massa") || ((u === "L" || u === "LT") && ped.tipo === "volume")) {
     if (ped.qtd === ped.escrito) return null;
@@ -448,7 +472,7 @@ function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento
   const base = media ? `${compras} ${compras === 1 ? "compra" : "compras"} em 4 semanas · ${curto(c.fornecedor ?? "")} · ${fmt(media)} ${un.toLowerCase()}/semana ${daCasa ? "na casa" : "no grupo"}` : null;
   let sugerida = pedidaNota;
   if (projecao && pedida == null) { sugerida = projecao; motivos.push(`O pedido não traz quantidade; sugeri a média (${fmt(media!)} ${un.toLowerCase()}/semana).`); }
-  else if (projecao && pedidaNota != null && compras >= 2 && (pedidaNota > projecao * 1.5 || pedidaNota < projecao * 0.5)) {
+  else if (projecao && pedidaNota != null && compras >= 2 && (pedidaNota > projecao * 2.5 || pedidaNota < projecao * 0.4)) {
     // a média é da casa inteira (todos os setores compram o mesmo produto), não só da pessoa: o pedido fica e vira aviso
     // (11/11/2026: a confeitaria pediu 10 L de leite e a sugestão virava 39, a média da casa toda)
     motivos.push(`Pediu ${fmt(pedidaNota)}; a casa toda compra em média ${fmt(media!)} ${un.toLowerCase()}/semana (${compras} compras em 4 semanas, todos os setores). Confira a quantidade e a unidade (${un.toLowerCase()}).`);
@@ -486,7 +510,7 @@ function montar(entrega: { listas: Lista[] }, porItem: Map<string, ItemCand>, to
         const mudaQtd = q != null && q !== x.qtd_sugerida;
         if (a.veredito === "ok" && !mudaQtd) return x;
         // com a conta da embalagem já feita, o comentário do revisor sobre unidade/litros repete (ou contradiz) a conta
-        const sobreQtd = /(\d+\s*(ml|l|lt|kg|g|gr)\b|litro|unidade|embalage)/i.test(a.motivo ?? "");
+        const sobreQtd = /(\d+\s*(ml|l|lt|kg|g|gr)\b|litro|unidade|embalage|peso|uni|kg)/i.test(a.motivo ?? "");
         const nota = a.motivo?.trim() && !(contaFeita && (a.veredito === "ok" || (a.veredito === "conferir" && sobreQtd))) ? `Revisor: ${a.motivo.trim()}` : a.veredito === "trocar" ? "Revisor: trocou o produto da nota."
           : mudaQtd ? `Revisor: na unidade da nota são ${String(q).replace(".", ",")}.` : "";
         return { ...x, ...(mudaQtd ? { qtd_sugerida: q } : {}), motivo: [nota, x.motivo].filter(Boolean).join(" ") || null,
