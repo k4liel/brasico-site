@@ -7,7 +7,7 @@
 -- Resumo de uma tabela de execuções (privada: só a função do painel chama).
 create or replace function public.integracoes_exec(p_tabela text, p_filtro text default 'true', p_quando text default 'created_at')
 returns jsonb language plpgsql stable security definer set search_path = public as $$
-declare r jsonb; v_erro text; v_erro_em timestamptz;
+declare r jsonb; v_erro text; v_erro_em timestamptz; v_horas jsonb;
 begin
   execute format($q$
     select jsonb_build_object(
@@ -23,7 +23,15 @@ begin
   execute format($q$select left(coalesce(erro, ''), 300), %2$s from public.%1$I
     where status = 'falha' and %2$s > now() - interval '7 days' and (%3$s) order by %2$s desc limit 1$q$, p_tabela, p_quando, p_filtro)
   into v_erro, v_erro_em;
-  return r || jsonb_build_object('ultimo_erro', nullif(v_erro, ''), 'ultimo_erro_em', v_erro_em);
+  -- Atividade por hora nas últimas 24 h: [ok, falha] de cada hora, da mais antiga (posição 0) para a mais nova (23)
+  execute format($q$select coalesce(jsonb_agg(jsonb_build_array(coalesce(x.ok, 0), coalesce(x.f, 0)) order by g.h), '[]'::jsonb)
+    from generate_series(0, 23) g(h) left join (
+      select floor(extract(epoch from (now() - %2$s)) / 3600)::int as h,
+        count(*) filter (where status in ('ok','sem_dados','sem_movimento','parcial','pulada','sem_pedido')) as ok,
+        count(*) filter (where status = 'falha') as f
+      from public.%1$I where %2$s > now() - interval '24 hours' and (%3$s) group by 1) x on x.h = 23 - g.h$q$, p_tabela, p_quando, p_filtro)
+  into v_horas;
+  return r || jsonb_build_object('ultimo_erro', nullif(v_erro, ''), 'ultimo_erro_em', v_erro_em, 'horas', v_horas);
 end $$;
 revoke all on function public.integracoes_exec(text, text, text) from public, anon, authenticated;
 
@@ -79,7 +87,11 @@ begin
         'ok_24h', (select count(*) from public.cicchetti_consultas where created_at > now() - interval '24 hours' and http_status between 200 and 299),
         'falha_24h', (select count(*) from public.cicchetti_consultas where created_at > now() - interval '24 hours' and (http_status is null or http_status >= 400)),
         'ultimo_erro', (select left(coalesce(erro, 'HTTP ' || http_status), 300) from public.cicchetti_consultas
-          where (http_status is null or http_status >= 400) and created_at > now() - interval '7 days' order by created_at desc limit 1)),
+          where (http_status is null or http_status >= 400) and created_at > now() - interval '7 days' order by created_at desc limit 1),
+        'horas', (select coalesce(jsonb_agg(jsonb_build_array(coalesce(x.ok, 0), coalesce(x.f, 0)) order by g.h), '[]'::jsonb) from generate_series(0, 23) g(h)
+          left join (select floor(extract(epoch from (now() - created_at)) / 3600)::int h, count(*) filter (where http_status between 200 and 299) ok,
+            count(*) filter (where http_status is null or http_status >= 400) f from public.cicchetti_consultas
+            where created_at > now() - interval '24 hours' group by 1) x on x.h = 23 - g.h)),
       'pms', public.integracoes_exec('pms_execucoes', 'origem = ''robo''') || jsonb_build_object(
         'intervalo_min', (select intervalo_min from public.pms_robo_ajustes limit 1),
         'hoteis', (select coalesce(jsonb_agg(jsonb_build_object('nome', h.nome,
@@ -90,7 +102,10 @@ begin
         'mensagens_24h', (select count(*) from public.wa_mensagens where enviada_em > now() - interval '24 hours'),
         'grupos_24h', (select count(distinct grupo_id) from public.wa_mensagens where enviada_em > now() - interval '24 hours'),
         'envios_24h', (select count(*) from public.wa_envios where created_at > now() - interval '24 hours'),
-        'envios_falha_24h', (select count(*) from public.wa_envios where created_at > now() - interval '24 hours' and not ok)),
+        'envios_falha_24h', (select count(*) from public.wa_envios where created_at > now() - interval '24 hours' and not ok),
+        'horas', (select coalesce(jsonb_agg(jsonb_build_array(coalesce(x.n, 0), 0) order by g.h), '[]'::jsonb) from generate_series(0, 23) g(h)
+          left join (select floor(extract(epoch from (now() - enviada_em)) / 3600)::int h, count(*) n from public.wa_mensagens
+            where enviada_em > now() - interval '24 hours' group by 1) x on x.h = 23 - g.h)),
       'gemini', public.integracoes_exec('compras_analises', 'true', 'inicio'),
       'claude', jsonb_build_object(
         'ultimo_resumo', (select max(created_at) from public.wa_resumos_gerais where criado_por is null),

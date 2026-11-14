@@ -8,7 +8,10 @@ export type Exec = {
   ultima: string | null; ultima_ok: string | null; ultima_falha: string | null;
   ok_24h: number; falha_24h: number; rodando: number; presos: number;
   ultimo_erro: string | null; ultimo_erro_em: string | null;
+  horas?: Hora[];
 };
+// Atividade de uma hora: [leituras boas, falhas]; a lista vai da hora mais antiga (24 h atrás) para a mais nova
+export type Hora = [number, number];
 export type Painel = {
   agora: string;
   fontes: {
@@ -18,9 +21,9 @@ export type Painel = {
     notas: Exec & { empresas: number; bloqueadas: number; notas_7d: number; ultima_nota: string | null };
     nfse: Exec & { empresas: number; bloqueadas: number; notas_7d: number };
     totvs: Exec & { unidades: { nome: string; ultimo_dia: string | null; ontem: string | null }[] };
-    cicchetti: { ultima: string | null; ultima_ok: string | null; ultima_falha: string | null; ok_24h: number; falha_24h: number; ultimo_erro: string | null };
+    cicchetti: { ultima: string | null; ultima_ok: string | null; ultima_falha: string | null; ok_24h: number; falha_24h: number; ultimo_erro: string | null; horas?: Hora[] };
     pms: Exec & { intervalo_min: number | null; hoteis: { nome: string; ultima_leitura: string | null }[] };
-    whatsapp: { ultima_mensagem: string | null; mensagens_24h: number; grupos_24h: number; envios_24h: number; envios_falha_24h: number };
+    whatsapp: { ultima_mensagem: string | null; mensagens_24h: number; grupos_24h: number; envios_24h: number; envios_falha_24h: number; horas?: Hora[] };
     gemini: Exec;
     claude: { ultimo_resumo: string | null; resumo_ontem: boolean };
     conector: { links: number; ultimo_uso: string | null };
@@ -37,6 +40,8 @@ export type Integracao = {
   numeros: { rotulo: string; valor: string }[];
   linhas?: { nome: string; estado: Estado; texto: string }[];
   erro?: { texto: string; quando: string } | null;
+  horas?: Hora[]; // atividade das últimas 24 h (para as barras do cartão)
+  horasRotulo?: string; // o que as barras contam ("leituras", "mensagens", "consultas")
 };
 
 export const GRUPOS: { id: Grupo; titulo: string; explica: string }[] = [
@@ -313,7 +318,38 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     });
   }
 
+  // Atividade por hora de cada fonte (o painel desenha uma barra de 24 h em cada cartão)
+  const horas: Record<string, [Hora[] | undefined, string]> = {
+    rhid: [f.rhid.horas, "leituras"], esocial: [f.esocial.horas, "leituras"], receita: [f.receita.horas, "leituras"],
+    notas: [f.notas.horas, "leituras"], nfse: [f.nfse.horas, "leituras"], totvs: [f.totvs.horas, "leituras"],
+    cicchetti: [f.cicchetti.horas, "consultas"], pms: [f.pms.horas, "rodadas"], whatsapp: [f.whatsapp.horas, "mensagens"],
+    gemini: [f.gemini.horas, "análises"],
+  };
+  for (const i of lista) if (horas[i.id]?.[0]?.length) { i.horas = horas[i.id][0]; i.horasRotulo = horas[i.id][1]; }
   return lista;
+}
+
+// Soma das leituras de todas as fontes, hora a hora (o gráfico de atividade do topo). WhatsApp fica de fora:
+// mensagem recebida não é leitura.
+export function atividadeGeral(lista: Integracao[]): Hora[] {
+  const total: Hora[] = Array.from({ length: 24 }, () => [0, 0]);
+  for (const i of lista) {
+    if (!i.horas || i.id === "whatsapp") continue;
+    i.horas.forEach(([ok, f], k) => { if (total[k]) { total[k][0] += ok; total[k][1] += f; } });
+  }
+  return total;
+}
+
+// Situação de uma hora na barra de 24 h: falha sem nenhuma leitura boa = vermelho; com as duas = amarelo; nada = vazio
+export function estadoHora([ok, f]: Hora): Estado | "vazio" {
+  if (f && !ok) return "erro";
+  if (f) return "atencao";
+  return ok ? "ok" : "vazio";
+}
+
+// Hora (de Fortaleza) da posição k da lista de 24, contando a partir de agora
+export function horaDaPosicao(k: number, agora: string) {
+  return (horaFortaleza(agora) - (23 - k) + 48) % 24;
 }
 
 const nomeEmpresa = (s: string) =>

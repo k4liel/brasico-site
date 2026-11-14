@@ -115,3 +115,16 @@ test("quando: minutos, hoje e ontem", () => {
   assert.equal(quando(antes(120), AGORA), "hoje às 13:00");
   assert.equal(quando(antes(24 * 60), AGORA), "ontem às 15:00");
 });
+
+test("atividade: soma as horas de todas as fontes (sem o WhatsApp) e pinta cada hora", async () => {
+  const { atividadeGeral, estadoHora, horaDaPosicao } = await import("../lib/integracoes.ts");
+  const horas = (ok: number, f = 0) => Array.from({ length: 24 }, () => [ok, f] as [number, number]);
+  const p = painel((x) => { x.fontes.rhid.horas = horas(60); x.fontes.pms.horas = horas(2, 1); x.fontes.whatsapp.horas = horas(9); });
+  const total = atividadeGeral(montarIntegracoes(p));
+  assert.deepEqual(total[23], [62, 1]);
+  assert.equal(estadoHora([0, 2]), "erro");
+  assert.equal(estadoHora([5, 1]), "atencao");
+  assert.equal(estadoHora([0, 0]), "vazio");
+  assert.equal(horaDaPosicao(23, AGORA), 15); // a última posição é a hora de agora (15h em Fortaleza)
+  assert.equal(horaDaPosicao(0, AGORA), 16); // 23 horas antes = 16h de ontem
+});
