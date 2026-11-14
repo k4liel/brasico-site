@@ -28,6 +28,11 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - **Exclusões são bloqueadas no banco** (DELETE, TRUNCATE e DROP nas tabelas do Brasico). Nunca apague dados sem pedido explícito do dono. Só nesse caso use `set local brasico.permitir_exclusao = 'sim';` na mesma transação.
 - Toda mudança em capítulo ou no CSS do projeto guarda a versão anterior em `versoes`. Para desfazer, use as ferramentas `versoes_capitulo` / `ler_versao` / `restaurar_versao`.
 
+## Integrações (painel ao vivo)
+- Menu → **Integrações** (`/integracoes`, components/Integracoes.tsx; 13/11/2026, pedido do dono: "um painel para vermos em tempo real tudo que estamos conectados"). Só sócios (`notas_pode_ver`); área `integracoes` em `usuario_areas`.
+- Uma função só de leitura, `integracoes_painel()` (supabase/integracoes.sql, ~0,4 s), relida a cada 30 s e ao voltar para a aba: de cada integração a última leitura boa, a última falha e o erro, as de 24 h e as presas (helper privado `integracoes_exec` sobre as tabelas `*_execucoes`), mais certificados, as agendas do pg_cron (`cron.job` + `job_run_details`) e as últimas leituras de todas as fontes.
+- Regras de verde/amarelo/vermelho/pausa em lib/integracoes.ts (`montarIntegracoes`; testes em tests/integracoes.test.ts, `npm test`): eSocial pausa do dia 1 ao 7, ponto pausa de 0h às 6h, TOTVS cobra o dia de ontem depois das 13h, PMS parado depois de 2,5× o intervalo do robô, falha antiga já seguida de leitura boa não conta. Integração nova: some a fonte em `integracoes_painel` e a regra em `montarIntegracoes`. CSS num bloco só em globals.css ("Integrações", classes `ig-*`).
+
 ## Brainstorm (tarefas, ideias e checklists da equipe)
 - Área geral do site (Menu → Brainstorm), fora dos projetos: quadro no estilo do Trello (cada lista é uma coluna, cada item um card; arrasta entre colunas e reordena pela coluna `ordem`; no celular, segura o card antes de arrastar). Tabelas `listas` e `lista_itens` (supabase/listas.sql). As tabelas `ideias` do primeiro desenho ficaram sem uso.
 - Nada se apaga: itens e listas são arquivados.
