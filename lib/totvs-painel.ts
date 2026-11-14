@@ -12,7 +12,7 @@ export type Divergencia = { conferencia: string; diferenca?: number; valor?: num
 export type Dia = {
   unidade_id: string; dia: string; status: string; vendas: number; pessoas: number; total: number;
   resumo: Record<string, number>; produtos: Produto[]; pagamentos: Pagamento[]; garcons: Garcom[];
-  cancelados: Cancelado[]; sangrias: Sangria[]; divergencias: Divergencia[];
+  cancelados: Cancelado[]; sangrias: Sangria[]; divergencias: Divergencia[]; atualizado_em?: string;
 };
 // Série leve para a evolução mensal (um ponto por dia)
 export type Ponto = { dia: string; total: number; pessoas: number; status: string };
@@ -27,6 +27,7 @@ export const pct =(v: number) => `${(v * 100).toLocaleString("pt-BR", { maximumF
 export const hojeFortaleza = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 export const diaSemana = (d: string) => new Date(`${d}T12:00:00Z`).getUTCDay();
 export const dataBr = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+export const horaBr = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Fortaleza", hour: "2-digit", minute: "2-digit" });
 export const dataLonga = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 export const diasNoMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).getUTCDate();
 export const somarMeses = (mes: string, n: number) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7) - 1 + n, 1)).toISOString().slice(0, 7);

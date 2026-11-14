@@ -6,7 +6,7 @@ import Topo from "./Topo";
 import { Garcons, Indicador, PainelDia, Perdas, Produtos, Variacao } from "./TotvsPartes";
 import { DetalheHotel, type HotelDia, type HotelInfo, nomeHotel, somarHotel, ultimoDiaHotel } from "./VendasHoteis";
 import {
-  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, dataLonga, diaSemana, diasNoMes,
+  type Dia, type Historico, type Ponto, type Unidade, MESES, SEMANA, comMovimento, dataBr, dataLonga, horaBr, diaSemana, diasNoMes,
   escalaBonita, hojeFortaleza, inteiro, maiuscula, mesAnterior, nomeMes, pct, planilhaDoMes, plural, reais, reaisCurto, somar, somarMeses,
 } from "@/lib/totvs-painel";
 
@@ -87,7 +87,7 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
     const de = `${mesAnterior(mes)}-01`;
     const ate = `${mes}-${String(diasNoMes(mes)).padStart(2, "0")}`;
     const { data } = await supabase.from("totvs_dias")
-      .select("unidade_id,dia,status,vendas,pessoas,total,resumo,produtos,pagamentos,garcons,cancelados,sangrias,divergencias")
+      .select("unidade_id,dia,status,vendas,pessoas,total,resumo,produtos,pagamentos,garcons,cancelados,sangrias,divergencias,atualizado_em")
       .gte("dia", de).lte("dia", ate).order("dia");
     setDias((data ?? []) as Dia[]);
   }, [supabase, acesso, mes]);
@@ -185,8 +185,12 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
   const nDias = ativos.length;
   const ultimoDia = ds[ds.length - 1]?.dia;
   const limiteDia = ultimoDia ? +ultimoDia.slice(8, 10) : 0;
-  // Projeção pelos dias corridos do calendário (dias fechados também contam), não só pelos dias com venda
-  const projecao = !encerradaSel && mesAtual && limiteDia && limiteDia < diasNoMes(mes) ? (s.total / limiteDia) * diasNoMes(mes) : null;
+  // Projeção pelos dias corridos do calendário (dias fechados também contam), não só pelos dias com venda.
+  // Hoje entra ao vivo (leitura a cada minuto) e ainda está pela metade: a projeção usa só os dias já fechados.
+  const hojeAoVivo = mesAtual && ultimoDia === hoje;
+  const diasFechados = hojeAoVivo ? limiteDia - 1 : limiteDia;
+  const totalFechado = hojeAoVivo ? somar(ds.filter((d) => d.dia < hoje)).total : s.total;
+  const projecao = !encerradaSel && mesAtual && diasFechados > 0 && diasFechados < diasNoMes(mes) ? (totalFechado / diasFechados) * diasNoMes(mes) : null;
 
   // Comparações no mesmo trecho do mês: mês anterior e mesmo mês do ano anterior
   const anteriorAteDia = doAnterior.filter((d) => d.unidade_id === unidade && +d.dia.slice(8, 10) <= limiteDia);
@@ -410,8 +414,8 @@ export default function Totvs({ userId, userEmail }: { userId: string; userEmail
                 <span className="tp-nota">
                   {encerradaSel
                     ? `${maiuscula(nomeMes(mes))} · dados guardados até o último dia de operação, sem atualização`
-                    : <>{maiuscula(nomeMes(mes))}{ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}
-                      {mesAtual && antesDaAgenda && ultimoDia !== ontem ? ` · ${dataBr(ontem)} chega às 4h30` : ""}</>}
+                    : <>{maiuscula(nomeMes(mes))}
+                      {mesAtual && ultimoDia === hoje ? ` · hoje ao vivo, atualizado a cada minuto${sel.ultimo?.atualizado_em ? ` (última leitura ${horaBr(sel.ultimo.atualizado_em)})` : ""}` : ultimoDia ? ` · atualizado até ${dataBr(ultimoDia)}` : ""}</>}
                 </span>
               </div>
               {ds.length > 0 && (
