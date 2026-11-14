@@ -10,6 +10,7 @@ const PAGINAS_DA_AREA: Record<string, string[]> = {
   rh: ["/esocial", "/escala"],
   receita: ["/receita"],
   certificados: ["/certificados"],
+  integracoes: ["/integracoes"],
   usuarios: ["/usuarios"],
   conectar: ["/conectar"],
   hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua"],

@@ -12,7 +12,7 @@ const HOTEIS = [
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
 ];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -134,6 +134,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             </div></div>
           </>)}
 
+          {ve("integracoes") && <Item href="/integracoes" on={ativo === "integracoes"} vis={aberto} icone={I.integracoes}>Integrações</Item>}
           {ve("certificados") && <Item href="/certificados" on={ativo === "certificados"} vis={aberto} icone={I.certificados}>Certificados digitais</Item>}
           {ve("usuarios") && <Item href="/usuarios" on={ativo === "usuarios"} vis={aberto} icone={I.usuarios}>Usuários</Item>}
           {ve("conectar") && <Item href="/conectar" on={ativo === "conectar"} vis={aberto} icone={I.conectar}>Claude e equipe</Item>}
@@ -191,6 +192,7 @@ const I = {
   compras: <><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L20 8H6.2" /><circle cx="9" cy="20" r="1.3" /><circle cx="17" cy="20" r="1.3" /></>,
   fichas: <><path d="M6 3h12v18H6z" /><path d="M9 7h6M9 11h6M9 15h4" /></>,
   estoque: <path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" />,
+  integracoes: <><circle cx="12" cy="12" r="2.6" /><circle cx="4.5" cy="5.5" r="1.8" /><circle cx="19.5" cy="5.5" r="1.8" /><circle cx="4.5" cy="18.5" r="1.8" /><circle cx="19.5" cy="18.5" r="1.8" /><path d="M6 7l4 3.3M18 7l-4 3.3M6 17l4-3.3M18 17l-4-3.3" /></>,
   certificados: <><circle cx="12" cy="9" r="5" /><path d="M9 13.5 8 21l4-2 4 2-1-7.5" /></>,
   usuarios: <><rect x="3" y="11" width="18" height="10" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>,
   conectar: <><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0" /><path d="M16 4.5a3 3 0 0 1 0 6M17.5 14.2A5 5 0 0 1 20.5 19" /></>,
