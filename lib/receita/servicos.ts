@@ -36,6 +36,10 @@ export const LIBERADOS: Record<string, { endpoint: Endpoint; sistema: string; se
   "PGDASD/CONSEXTRATO16": { endpoint: "Consultar", sistema: "PGDASD", servico: "CONSEXTRATO16", versao: "1.0" },
   "PARCSN/PEDIDOSPARC163": { endpoint: "Consultar", sistema: "PARCSN", servico: "PEDIDOSPARC163", versao: "1.0" },
   "PARCSN/OBTERPARC164": { endpoint: "Consultar", sistema: "PARCSN", servico: "OBTERPARC164", versao: "1.0" },
+  // Parcelas que ainda podem ser emitidas (as em aberto, com valor) — mostra quais parcelas faltam pagar
+  "PARCSN/PARCELASPARAGERAR162": { endpoint: "Consultar", sistema: "PARCSN", servico: "PARCELASPARAGERAR162", versao: "1.0" },
+  // Todas as opções de regime (caixa ou competência) já feitas pela empresa
+  "REGIMEAPURACAO/CONSULTARANOSCALENDARIOS102": { endpoint: "Consultar", sistema: "REGIMEAPURACAO", servico: "CONSULTARANOSCALENDARIOS102", versao: "1.0" },
   "PARCSN-ESP/PEDIDOSPARC173": { endpoint: "Consultar", sistema: "PARCSN-ESP", servico: "PEDIDOSPARC173", versao: "1.0" },
   "PERTSN/PEDIDOSPARC183": { endpoint: "Consultar", sistema: "PERTSN", servico: "PEDIDOSPARC183", versao: "1.0" },
   "RELPSN/PEDIDOSPARC193": { endpoint: "Consultar", sistema: "RELPSN", servico: "PEDIDOSPARC193", versao: "1.0" },
