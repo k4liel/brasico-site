@@ -4707,3 +4707,58 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 /* Escala · split (duas jornadas no mesmo dia; só Cicchetti Centro) */
 .pe-split { position: absolute; top: 2px; right: 3px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 4px; font-style: normal; font-size: 9px; font-weight: 800; line-height: 13px; text-align: center; color: inherit; background: color-mix(in srgb, currentColor 18%, transparent); }
 .ep-split label { flex: 1 1 96px; }
+
+/* Janelinha do bloquinho reorganizada (14/11/2026): abas, cartões de horário e editor em linhas */
+.ep-ed-titulo { display: grid; gap: 2px; min-width: 0; }
+.ep-ed-titulo small { font-size: 12px; font-weight: 500; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-ed-abas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border-radius: 12px; background: var(--hover-bg); }
+.ep-ed-abas button { all: unset; box-sizing: border-box; cursor: pointer; padding: 8px 6px; border-radius: 9px; text-align: center; font-size: 13px; font-weight: 600; color: var(--muted); transition: background .12s ease, color .12s ease; }
+.ep-ed-abas button:hover { color: var(--strong); }
+.ep-ed-abas button.on { background: var(--panel); color: var(--strong); box-shadow: 0 1px 3px var(--shadow); }
+.ep-ed-painel { display: grid; gap: 10px; }
+.ep-ed-cartoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.ep-ed-cartao { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 2px; align-content: start; padding: 9px 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--gold) 6%, transparent); transition: border-color .12s ease, background .12s ease, transform .12s ease; }
+.ep-ed-cartao:hover { border-color: color-mix(in srgb, var(--gold) 55%, var(--border)); transform: translateY(-1px); }
+.ep-ed-cartao.on { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 22%, transparent); }
+.ep-ed-cartao b { font-size: 14px; font-weight: 700; color: var(--strong); font-variant-numeric: tabular-nums; }
+.ep-ed-cartao small { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ep-ed-cartao em { justify-self: start; margin-bottom: 2px; padding: 0 7px; border-radius: 999px; font-style: normal; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  background: color-mix(in srgb, var(--gold) 22%, transparent); color: var(--gold); }
+.ep-ed-cartao b { white-space: nowrap; }
+.ep-ed-cartao.split { grid-column: span 2; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 2px 12px; }
+.ep-ed-cartao.split em { grid-column: 1 / -1; }
+.ep-ed-cartao.split small { grid-column: 1 / -1; }
+.ep-ed-outro-botao { all: unset; cursor: pointer; justify-self: start; display: inline-flex; gap: 6px; align-items: center; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ep-ed-outro-botao:hover, .ep-ed-outro-botao.on { color: var(--strong); }
+.ep-ed-outro { display: grid; gap: 8px; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+.ep-ed-tipo { display: inline-flex; gap: 4px; justify-self: start; padding: 3px; border-radius: 10px; background: var(--hover-bg); }
+.ep-ed-tipo button { all: unset; cursor: pointer; padding: 5px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.ep-ed-tipo button.on { background: var(--panel); color: var(--strong); box-shadow: 0 1px 3px var(--shadow); }
+.ep-ed-linha { display: grid; grid-template-columns: 76px minmax(96px, 1fr) auto minmax(96px, 1fr) 36px; gap: 6px; align-items: center; }
+.ep-ed-linha > span, .ep-ed-check { font-size: 12.5px; font-weight: 600; color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+.ep-ed-linha i { font-style: normal; font-size: 12px; color: var(--muted); }
+.ep-ed-linha input[type="time"] { min-width: 0; width: 100%; padding: 6px 6px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.ep-ed-linha small { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ep-ed-linha.apagada input[type="time"] { opacity: .45; }
+.ep-ed-desc { padding: 6px 0; border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border); }
+.ep-ed-desc > span { color: var(--gold); }
+.ep-ed-salvar { justify-self: end; }
+.ep-ed-codigos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ep-ed-codigo { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 0 8px; padding: 8px 10px; border-radius: 10px;
+  border: 1px solid transparent; background: var(--hover-bg); color: var(--strong); transition: border-color .12s ease, transform .12s ease; }
+.ep-ed-codigo b { display: grid; place-items: center; height: 26px; border-radius: 7px; font-size: 11.5px; font-weight: 800; }
+.ep-ed-codigo span { font-size: 13px; font-weight: 600; }
+.ep-ed-codigo small { grid-column: 2; font-size: 11px; color: var(--muted); }
+.ep-ed-codigo:hover:not(:disabled) { border-color: var(--border); transform: translateY(-1px); }
+.ep-ed-codigo.on { border-color: var(--gold); box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 22%, transparent); }
+.ep-ed-codigo:disabled { opacity: .45; cursor: default; }
+.ep-ed-codigo.c-F b { background: var(--esc-folga); color: var(--esc-folga-ink); }
+.ep-ed-codigo.c-DM b { background: var(--c-dm); color: var(--c-dm-ink); } .ep-ed-codigo.c-FC b { background: var(--c-fc); color: var(--c-fc-ink); }
+.ep-ed-codigo.c-BH b { background: var(--c-bh); color: var(--c-bh-ink); } .ep-ed-codigo.c-FE b { background: var(--c-fe); color: var(--c-fe-ink); }
+.ep-ed-codigo.c-AT b { background: var(--c-at); color: var(--c-at-ink); } .ep-ed-codigo.c-LIC b { background: var(--c-lic); color: var(--c-lic-ink); }
+.ep-ed-codigo.c-FA b { background: var(--c-fa); color: var(--c-fa-ink); } .ep-ed-codigo.c-VN b { background: var(--c-vn); color: var(--c-vn-ink); }
+.ep-ed-codigo.c-HO b { background: var(--c-ho); color: var(--c-ho-ink); } .ep-ed-codigo.c-CC b { background: var(--c-cc); color: var(--c-cc-ink); }
+.ep-ed-codigo.c-FL b { background: var(--c-fl); color: var(--c-fl-ink); } .ep-ed-codigo.c-SV b { background: var(--c-sv); color: var(--c-sv-ink); }
+.ep-ed-nota { margin: 0; font-size: 12px; color: var(--muted); }
+@media (max-width: 420px) { .ep-ed-linha { grid-template-columns: 80px minmax(0, 1fr) auto minmax(0, 1fr); } .ep-ed-linha small { display: none; } .ep-ed-cartao.split { grid-column: auto; grid-template-columns: 1fr; } }

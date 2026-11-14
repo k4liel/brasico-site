@@ -770,10 +770,28 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   const [sp, setSp] = useState<Split>(atualSplit ?? SPLIT_PADRAO);
   const pincelSplit = (s: Split): Pincel => ({ codigo: "T", entrada: s.e1, saida: s.s2, intervalo: `${s.s1}-${s.e2}`, rotulo: `Split ${rotuloSplit(s)}`, posto: posto || undefined });
   const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo && (atual.posto ?? "") === posto;
+  // Abas da janelinha (14/11/2026, pedido do dono: "organizar, deixar mais fluido"): abre na do que o dia já é
+  const foraCodigos = new Set(CODIGOS.filter((c) => c.trabalha).map((c) => c.codigo as string));
+  const [aba, setAba] = useState<"trabalha" | "fora" | "nao">(
+    !atual?.codigo || atual.codigo === "T" ? "trabalha" : foraCodigos.has(atual.codigo) ? "fora" : "nao");
+  const normais = horarios.filter((x) => !partesSplit(x));
+  // O editor de horário abre sozinho quando o horário do dia não está entre os prontos
+  const mesmoHorario = (x: Pincel) => atual?.codigo === "T" && atual.entrada === x.entrada && atual.saida === x.saida && (atual.intervalo ?? undefined) === x.intervalo;
+  const naLista = !atual?.codigo || atual.codigo !== "T" || normais.some(mesmoHorario) || (!!atualSplit && rotuloSplit(atualSplit) === rotuloSplit(SPLIT_PADRAO));
+  const [editando, setEditando] = useState(!naLista);
+  const [tipo, setTipo] = useState<"normal" | "split">(split && atualSplit ? "split" : "normal");
+  const descSplit = `${sp.s1}–${sp.e2}`;
+  const minutos2 = (a: string, b: string) => { const m = (Number(b.slice(0, 2)) * 60 + Number(b.slice(3, 5)) - Number(a.slice(0, 2)) * 60 - Number(a.slice(3, 5)) + 1440) % 1440; return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`; };
+  const agoraTexto = !atual?.codigo ? "sem escala" : atualSplit ? `split ${rotuloSplit(atualSplit)} · desc. ${atualSplit.s1}–${atualSplit.e2}`
+    : atual.codigo === "T" ? `${atual.entrada}–${atual.saida}${atual.intervalo ? ` · desc. ${atual.intervalo.replace("-", "–")}` : ""}`
+    : CODIGOS.find((c) => c.codigo === atual.codigo)?.nome.replace(" (feriado)", "") ?? atual.codigo;
 
   return (
     <div ref={caixa} className="ep-editor" role="dialog" aria-label="Escolher o que o dia vira" style={{ left: pos.left, top: pos.top }}>
-      <div className="ep-editor-cabeca"><b>{titulo}</b><button onClick={onFechar} aria-label="Fechar">×</button></div>
+      <div className="ep-editor-cabeca">
+        <span className="ep-ed-titulo"><b>{titulo}</b>{celulas.length === 1 && <small>Agora: {agoraTexto}</small>}</span>
+        <button onClick={onFechar} aria-label="Fechar">×</button>
+      </div>
       {compensaUsada && atual?.codigo === "FC" && !escolherFC && (() => {
         const t = textoCompensa(compensaUsada, nomeFeriado);
         return (
@@ -840,81 +858,125 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
           </div>
         </div>
       )}
-      {split && (
-        <div className="ep-editor-grupo ep-editor-split">
-          <span>Split · duas jornadas</span>
-          <div className="ep-editor-opcoes">
-            <button className={`ep-pincel t${atualSplit && rotuloSplit(atualSplit) === rotuloSplit(SPLIT_PADRAO) ? " on" : ""}`}
-              onClick={() => onEscolher(pincelSplit(SPLIT_PADRAO))} title="Duas jornadas no mesmo dia">
-              {SPLIT_PADRAO.e1}–{SPLIT_PADRAO.s1}<small className="ep-desc">e {SPLIT_PADRAO.e2}–{SPLIT_PADRAO.s2}</small>
-            </button>
-          </div>
-          <div className="ep-horario ep-split">
-            <label>1ª entra<input type="time" value={sp.e1} onChange={(e) => setSp({ ...sp, e1: e.target.value })} /></label>
-            <label>1ª sai<input type="time" value={sp.s1} onChange={(e) => setSp({ ...sp, s1: e.target.value })} /></label>
-            <label>2ª entra<input type="time" value={sp.e2} onChange={(e) => setSp({ ...sp, e2: e.target.value })} /></label>
-            <label>2ª sai<input type="time" value={sp.s2} onChange={(e) => setSp({ ...sp, s2: e.target.value })} /></label>
-            <button className="small" disabled={!sp.e1 || !sp.s1 || !sp.e2 || !sp.s2 || !partesSplit(pincelSplit(sp))}
-              title={!partesSplit(pincelSplit(sp)) ? "A pausa entre as jornadas precisa passar de 2 h" : "Salvar este split"}
-              onClick={() => onEscolher(pincelSplit(sp))}>Salvar split</button>
-          </div>
-        </div>
-      )}
-      {horarios.filter((h) => !partesSplit(h)).length > 0 && (
-        <div className="ep-editor-grupo">
-          <span>Trabalha</span>
-          <div className="ep-editor-opcoes">
-            {horarios.filter((h) => !partesSplit(h)).map((h) => (
-              <button key={`${h.entrada}${h.saida}${h.intervalo}`} className={`ep-pincel t${igual(h) ? " on" : ""}`} onClick={() => onEscolher({ ...h, posto: posto || undefined })}
-                title={h.intervalo ? `Descanso ${h.intervalo.replace("-", "–")}` : "Sem descanso"}>
-                {h.rotulo}<small className="ep-desc">{h.intervalo ? `desc. ${h.intervalo.replace("-", "–")}` : "sem descanso"}</small>
+
+      <div className="ep-ed-abas" role="tablist" aria-label="O que o dia vira">
+        {([["trabalha", "Trabalha"], ["fora", "Outro lugar"], ["nao", "Não trabalha"]] as const).map(([id, rot]) => (
+          <button key={id} role="tab" aria-selected={aba === id} className={aba === id ? "on" : ""} onClick={() => setAba(id)}>{rot}</button>
+        ))}
+      </div>
+
+      {aba === "trabalha" && (
+        <div className="ep-ed-painel">
+          <div className="ep-ed-cartoes">
+            {split && (
+              <button className={`ep-ed-cartao split${atualSplit && rotuloSplit(atualSplit) === rotuloSplit(SPLIT_PADRAO) ? " on" : ""}`}
+                onClick={() => onEscolher(pincelSplit(SPLIT_PADRAO))} title="Duas jornadas no mesmo dia, com o descanso no meio">
+                <em>Split</em>
+                <b>{SPLIT_PADRAO.e1}–{SPLIT_PADRAO.s1}</b>
+                <b>{SPLIT_PADRAO.e2}–{SPLIT_PADRAO.s2}</b>
+                <small>desc. {SPLIT_PADRAO.s1}–{SPLIT_PADRAO.e2}</small>
+              </button>
+            )}
+            {normais.map((x) => (
+              <button key={`${x.entrada}${x.saida}${x.intervalo}`} className={`ep-ed-cartao${igual(x) ? " on" : ""}`} onClick={() => onEscolher({ ...x, posto: posto || undefined })}>
+                <b>{x.rotulo}</b>
+                <small>{x.intervalo ? `desc. ${x.intervalo.replace("-", "–")}` : "sem descanso"}</small>
               </button>
             ))}
           </div>
+
+          <button className={`ep-ed-outro-botao${editando ? " on" : ""}`} onClick={() => setEditando((v) => !v)} aria-expanded={editando}>
+            <span>{editando ? "▾" : "▸"}</span> Outro horário
+          </button>
+          {editando && (
+            <div className="ep-ed-outro">
+              {split && (
+                <div className="ep-ed-tipo" role="radiogroup" aria-label="Tipo de horário">
+                  <button role="radio" aria-checked={tipo === "normal"} className={tipo === "normal" ? "on" : ""} onClick={() => setTipo("normal")}>Normal</button>
+                  <button role="radio" aria-checked={tipo === "split"} className={tipo === "split" ? "on" : ""} onClick={() => setTipo("split")}>Split · duas jornadas</button>
+                </div>
+              )}
+              {tipo === "normal" || !split ? (
+                <>
+                  <div className="ep-ed-linha"><span>Trabalha</span>
+                    <input type="time" value={h.entrada} onChange={(e) => setH({ ...h, entrada: e.target.value })} aria-label="Entra" />
+                    <i>até</i>
+                    <input type="time" value={h.saida} onChange={(e) => setH({ ...h, saida: e.target.value })} aria-label="Sai" />
+                  </div>
+                  <div className={`ep-ed-linha${h.desc ? "" : " apagada"}`}>
+                    <label className="ep-ed-check"><input type="checkbox" checked={h.desc} onChange={(e) => setH({ ...h, desc: e.target.checked })} /> Descanso</label>
+                    <input type="time" value={h.di} disabled={!h.desc} onChange={(e) => setH({ ...h, di: e.target.value })} aria-label="Descanso começa" />
+                    <i>até</i>
+                    <input type="time" value={h.df} disabled={!h.desc} onChange={(e) => setH({ ...h, df: e.target.value })} aria-label="Descanso termina" />
+                  </div>
+                  <button className="small ep-ed-salvar" disabled={!h.entrada || !h.saida || (h.desc && (!h.di || !h.df))} onClick={() => {
+                    const intervalo = h.desc ? `${h.di}-${h.df}` : undefined;
+                    setOutro({ entrada: h.entrada, saida: h.saida, intervalo: intervalo ?? "" });
+                    onEscolher({ codigo: "T", entrada: h.entrada, saida: h.saida, intervalo, rotulo: `${h.entrada}–${h.saida}`, posto: posto || undefined });
+                  }}>Salvar horário</button>
+                </>
+              ) : (
+                <>
+                  <div className="ep-ed-linha"><span>1ª jornada</span>
+                    <input type="time" value={sp.e1} onChange={(e) => setSp({ ...sp, e1: e.target.value })} aria-label="1ª jornada entra" />
+                    <i>até</i>
+                    <input type="time" value={sp.s1} onChange={(e) => setSp({ ...sp, s1: e.target.value })} aria-label="1ª jornada sai" />
+                  </div>
+                  {/* O descanso é o tempo entre a 2ª e a 3ª batida: mexer aqui muda o fim da 1ª e o começo da 2ª jornada */}
+                  <div className="ep-ed-linha ep-ed-desc"><span>Descanso</span>
+                    <input type="time" value={sp.s1} onChange={(e) => setSp({ ...sp, s1: e.target.value })} aria-label="Descanso começa" />
+                    <i>até</i>
+                    <input type="time" value={sp.e2} onChange={(e) => setSp({ ...sp, e2: e.target.value })} aria-label="Descanso termina" />
+                    <small>{sp.s1 && sp.e2 ? minutos2(sp.s1, sp.e2) : ""}</small>
+                  </div>
+                  <div className="ep-ed-linha"><span>2ª jornada</span>
+                    <input type="time" value={sp.e2} onChange={(e) => setSp({ ...sp, e2: e.target.value })} aria-label="2ª jornada entra" />
+                    <i>até</i>
+                    <input type="time" value={sp.s2} onChange={(e) => setSp({ ...sp, s2: e.target.value })} aria-label="2ª jornada sai" />
+                  </div>
+                  <button className="small ep-ed-salvar" disabled={!sp.e1 || !sp.s1 || !sp.e2 || !sp.s2 || !partesSplit(pincelSplit(sp))}
+                    title={!partesSplit(pincelSplit(sp)) ? "O descanso entre as jornadas precisa passar de 2 h" : `Split com descanso ${descSplit}`}
+                    onClick={() => onEscolher(pincelSplit(sp))}>Salvar split</button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
-      <div className="ep-editor-grupo">
-        <span>Definir o horário e o descanso</span>
-        <div className="ep-horario">
-          <label>Entra<input type="time" value={h.entrada} onChange={(e) => setH({ ...h, entrada: e.target.value })} /></label>
-          <label>Sai<input type="time" value={h.saida} onChange={(e) => setH({ ...h, saida: e.target.value })} /></label>
-          <label className="ep-horario-desc"><span><input type="checkbox" checked={h.desc} onChange={(e) => setH({ ...h, desc: e.target.checked })} /> Descanso</span>
-            <span className="ep-horario-faixa">
-              <input type="time" value={h.di} disabled={!h.desc} onChange={(e) => setH({ ...h, di: e.target.value })} aria-label="Descanso começa" />
-              <span>até</span>
-              <input type="time" value={h.df} disabled={!h.desc} onChange={(e) => setH({ ...h, df: e.target.value })} aria-label="Descanso termina" />
-            </span>
-          </label>
-          <button className="small" disabled={!h.entrada || !h.saida || (h.desc && (!h.di || !h.df))} onClick={() => {
-            const intervalo = h.desc ? `${h.di}-${h.df}` : undefined;
-            setOutro({ entrada: h.entrada, saida: h.saida, intervalo: intervalo ?? "" });
-            onEscolher({ codigo: "T", entrada: h.entrada, saida: h.saida, intervalo, rotulo: `${h.entrada}–${h.saida}`, posto: posto || undefined });
-          }}>Salvar</button>
+
+      {aba === "fora" && (
+        <div className="ep-ed-painel">
+          <div className="ep-ed-codigos">
+            {CODIGOS.filter((c) => c.trabalha).map((c) => (
+              <button key={c.codigo} className={`ep-ed-codigo c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })}>
+                <b>{c.curto}</b><span>{c.nome}</span>
+              </button>
+            ))}
+          </div>
+          <p className="ep-ed-nota">Conta como dia trabalhado, sem horário.</p>
         </div>
-      </div>
-      <div className="ep-editor-grupo">
-        <span>Trabalha em outro lugar</span>
-        <div className="ep-editor-opcoes">
-          {CODIGOS.filter((c) => c.trabalha).map((c) => (
-            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })} title={c.nome}>
-              <b>{c.curto}</b><span>{c.nome}</span>
-            </button>
-          ))}
+      )}
+
+      {aba === "nao" && (
+        <div className="ep-ed-painel">
+          <div className="ep-ed-codigos">
+            {CODIGOS.filter((c) => !c.trabalha).map((c) => {
+              const bloqueado = (c.codigo === "FC" && fcSemSaldo.length > 0) || (c.codigo === "DM" && !soDomingos);
+              return (
+                <button key={c.codigo} className={`ep-ed-codigo c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`}
+                  onClick={() => (c.codigo === "FC" && compensas?.length ? setEscolherFC(true) : onEscolher({ codigo: c.codigo, rotulo: c.nome }))}
+                  disabled={bloqueado}
+                  title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.`
+                    : c.codigo === "DM" && !soDomingos ? "Domingo do mês só num domingo" : c.nome}>
+                  <b>{c.curto}</b><span>{c.nome.replace(" (feriado)", "")}</span>
+                  {bloqueado && <small>{c.codigo === "DM" ? "só em domingo" : "sem compensa"}</small>}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <div className="ep-editor-grupo">
-        <span>Não trabalha</span>
-        <div className="ep-editor-opcoes">
-          {CODIGOS.filter((c) => !c.trabalha).map((c) => (
-            <button key={c.codigo} className={`ep-pincel c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => (c.codigo === "FC" && compensas?.length ? setEscolherFC(true) : onEscolher({ codigo: c.codigo, rotulo: c.nome }))}
-              disabled={(c.codigo === "FC" && fcSemSaldo.length > 0) || (c.codigo === "DM" && !soDomingos)}
-              title={c.codigo === "FC" && fcSemSaldo.length ? `Sem compensa em aberto: ${fcSemSaldo.join(", ")}. Marque antes o feriado trabalhado.`
-                : c.codigo === "DM" && !soDomingos ? "Domingo do mês só num domingo" : c.nome}>
-              <b>{c.curto}</b><span>{c.nome.replace(" (feriado)", "")}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
+
       <div className="ep-editor-rodape">
         <button className="ghost small" onClick={() => onEscolher({ codigo: "", rotulo: "Limpar" })}>Deixar sem escala</button>
       </div>

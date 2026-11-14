@@ -230,7 +230,7 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
             const linhasT: { s: string; tam: number; f: PDFFont; cor: RGB; esp?: number }[] = sp ? [
               { s: `${sp.e1} – ${sp.s1}`, tam: 8.5, f: f.negrito, cor: hex(t.tinta) },
               { s: `${sp.e2} – ${sp.s2}`, tam: 8.5, f: f.negrito, cor: hex(t.tinta) },
-              { s: "SPLIT", tam: 6.5, f: f.negrito, cor: hex(t.barra), esp: 0.5 },
+              { s: `desc. ${sp.s1}–${sp.e2}`, tam: 7, f: f.normal, cor: hex(t.tinta) },
             ] : [
               { s: dd.entrada && dd.saida ? `${dd.entrada} – ${dd.saida}` : "Trabalho", tam: 9.5, f: f.negrito, cor: hex(t.tinta) },
             ];

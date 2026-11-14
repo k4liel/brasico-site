@@ -90,7 +90,7 @@ function lerPlano(pd: DiaPlano | undefined): Turno {
     const a = minutos(pd.entrada) ?? 0, b = minutos(pd.saida) ?? 0;
     return {
       tipo: tipoPorEntrada(Math.floor(a / 60), Math.floor(b / 60)), trabalha: true, codigo: "T", split: true,
-      intervalo: "", linhas: [`${sp.e1}–${sp.s1}`, `${sp.e2}–${sp.s2}`],
+      intervalo: `${sp.s1}–${sp.e2}`, linhas: [`${sp.e1}–${sp.s1}`, `${sp.e2}–${sp.s2}`],
       horario: `Split · ${sp.e1}–${sp.s1} e ${sp.e2}–${sp.s2}`, posto: pd.posto || undefined,
     };
   }
