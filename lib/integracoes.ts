@@ -242,14 +242,13 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     });
   }
 
-  // RHiD (ponto): a leitura "agora" roda a cada minuto das 6h à meia-noite
+  // RHiD (ponto): a leitura "agora" roda a cada minuto, 24 h (desde 14/11/2026; antes parava da meia-noite às 6h)
   {
     const r = f.rhid;
     let estado: Estado; let frase: string;
     const m = minutos(r.ultima_agora, agora);
-    if (h < 6) { estado = m < 8 * 60 ? "pausa" : "atencao"; frase = `parado à noite, volta às 6h · último ${quando(r.ultima_agora, agora)}`; }
-    else { estado = m <= 10 ? "ok" : m <= 60 ? "atencao" : "erro"; frase = `batidas lidas ${quando(r.ultima_agora, agora)}`; }
-    if (r.presos > 0 && estado !== "erro") { estado = pior(estado === "pausa" ? "ok" : estado, "atencao"); frase += ` · ${r.presos} leitura${r.presos === 1 ? "" : "s"} presa${r.presos === 1 ? "" : "s"}`; }
+    estado = m <= 10 ? "ok" : m <= 60 ? "atencao" : "erro"; frase = `batidas lidas ${quando(r.ultima_agora, agora)}`;
+    if (r.presos > 0 && estado !== "erro") { estado = pior(estado, "atencao"); frase += ` · ${r.presos} leitura${r.presos === 1 ? "" : "s"} presa${r.presos === 1 ? "" : "s"}`; }
     const erro = erroAberto(r, agora);
     lista.push({
       id: "rhid", nome: "RHiD", quem: "Control iD · relógios de ponto", grupo: "casas", pagina: "/escala",

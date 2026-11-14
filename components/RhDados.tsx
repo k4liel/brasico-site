@@ -34,11 +34,9 @@ export function quando(iso: string | null, agoraIso: string): string {
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")} às ${hm}`;
 }
 
-// Ponto: a leitura "agora" roda a cada minuto das 6h à meia-noite
+// Ponto: a leitura "agora" roda a cada minuto, 24 h (desde 14/11/2026)
 export function estadoPonto(s: SaudeRH): { estado: Estado; texto: string } {
-  const h = fort(s.agora).getUTCHours();
   const min = s.rhid.ultima_agora ? (new Date(s.agora).getTime() - new Date(s.rhid.ultima_agora).getTime()) / 60000 : Infinity;
-  if (h < 6) return { estado: min < 8 * 60 ? "ok" : "atencao", texto: `parado à noite, volta às 6h · último ${quando(s.rhid.ultima_agora, s.agora)}` };
   if (min <= 10) return { estado: "ok", texto: `atualizado ${quando(s.rhid.ultima_agora, s.agora)}` };
   if (min <= 60) return { estado: "atencao", texto: `atrasado: último ${quando(s.rhid.ultima_agora, s.agora)}` };
   return { estado: "erro", texto: `parado desde ${quando(s.rhid.ultima_agora, s.agora)}` };

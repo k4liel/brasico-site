@@ -66,10 +66,12 @@ test("robô do PMS parado há 4 h = parado", () => {
   assert.equal(de(p, "pms").estado, "erro");
 });
 
-test("ponto parado de madrugada é pausa, não erro", () => {
+test("ponto lê 24 h: parado de madrugada também é erro", () => {
   const agora = "2026-11-13T06:00:00.000Z"; // 3h em Fortaleza
   const p = painel((x) => { x.fontes.rhid.ultima_agora = antes(180, agora); }, agora);
-  assert.equal(de(p, "rhid").estado, "pausa");
+  assert.equal(de(p, "rhid").estado, "erro");
+  const q = painel((x) => { x.fontes.rhid.ultima_agora = antes(1, agora); }, agora);
+  assert.equal(de(q, "rhid").estado, "ok");
 });
 
 test("falha antiga já resolvida por uma leitura boa não aparece como erro", () => {
