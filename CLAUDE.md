@@ -4,6 +4,7 @@ Duas pessoas (Kaliel, GitHub `k4liel`, e o sócio) mexem neste projeto, cada uma
 
 ## O que é
 Central de projetos em https://brasico.vercel.app. Cada projeto é um documento de capítulos em Markdown, mostrado no visual de uma proposta comercial. O site é só para ver: quem cria e edita os projetos são os Claudes, pelo conector **Brasico** (MCP em `/api/mcp`). Veja o [README](README.md) e o [passo a passo](docs/PASSO_A_PASSO.md).
+- **Logo do Brasico** (15/11/2026, escolhida pelo dono entre 3 opções: "C · Selo"): selo de anéis dourados com o B em Lora e uma onda de Pipa; nome BRASICO em maiúsculas espaçadas. No site, componente `MarcaBrasico` (components/MarcaBrasico.tsx; formatos completa, compacta e ícone; o nome segue a cor do texto). Arquivos para usar fora do site (SVG e PNG, claro e escuro) em public/marca/ (abre em /marca/brasico-assinatura-clara.png etc.); ícone da aba = app/icon.svg, iPhone = app/apple-icon.png.
 
 ## Por onde mudar cada coisa
 - **Conteúdo, visual e estrutura de um projeto:** pelo conector Brasico. Não precisa de código.

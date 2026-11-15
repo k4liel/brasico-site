@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { MarcaBrasico } from "@/components/MarcaBrasico";
 import "@/app/entrada.css";
 
 // Telas de entrada do Brasico: uma para os sócios (/login) e outra para a equipe das casas (/colaboradores).
@@ -165,7 +166,7 @@ export function TelaEntrada({ tipo }: { tipo: TipoEntrada }) {
       <section className="ent-esq">
         <header className="ent-topo">
           {/* Equipe: sem a marca Brasico (pedido do dono, 04/11/2026); o nome da área fica no painel escuro */}
-          {tipo === "socios" && <span className="ent-marca"><i aria-hidden="true">B</i>Brasico</span>}
+          {tipo === "socios" && <MarcaBrasico altura={44} formato="compacta" className="ent-logo" />}
         </header>
 
         <div className="ent-form-area">
@@ -227,6 +228,7 @@ export function TelaEntrada({ tipo }: { tipo: TipoEntrada }) {
           {tipo === "socios" && <p className="ent-troca">{t.outra.texto} <a href={t.outra.href}>{t.outra.link}<Icone n="seta" tam={14} /></a></p>}
         </div>
 
+        <p className="ent-rodape"><Icone n="cadeado" tam={13} /> Acesso restrito · conexão protegida</p>
       </section>
 
       <Vitrine tipo={tipo} />
@@ -234,7 +236,7 @@ export function TelaEntrada({ tipo }: { tipo: TipoEntrada }) {
       {/* Faixa das casas, de ponta a ponta: logos originais passando devagar (param ao passar o mouse).
           O tom da faixa (--faixa em entrada.css) deixa ler as logos escuras sem mudar as cores delas. */}
       <footer className="ent-casas" aria-label="Casas do grupo">
-        <div className="ent-casas-trilho">
+        <div className="ent-casas-janela"><div className="ent-casas-trilho">
           {[0, 1].map((volta) => (
             <ul key={volta} aria-hidden={volta === 1}>
               {CASAS.map((c) => (
@@ -246,7 +248,7 @@ export function TelaEntrada({ tipo }: { tipo: TipoEntrada }) {
               ))}
             </ul>
           ))}
-        </div>
+        </div></div>
       </footer>
     </main>
   );
