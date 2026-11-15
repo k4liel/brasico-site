@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
+import AcessosSite from "./AcessosSite";
 
 type Usuario = {
   id: string; nome: string; papel: Papel; unidade: string; setor: string; wa_nome: string; ativo: boolean; registra_estoque: boolean;
@@ -82,6 +83,9 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
           </div>
           <button className="small" onClick={() => setAberto("novo")}>Novo usuário</button>
         </div>
+        <AcessosSite supabase={supabase} />
+
+        <h2 className="us-equipe-titulo">Equipe das casas</h2>
         {erro && <p className="tv-alerta">{erro}</p>}
         {aviso && <p className="es-aviso">{aviso}</p>}
 
