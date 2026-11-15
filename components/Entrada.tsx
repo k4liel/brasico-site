@@ -55,7 +55,7 @@ const I = {
   seta: <path d="M5 12h14M13 6l6 6-6 6" />,
   cadeado: <path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 017 0v3" />,
 };
-function Icone({ n, tam = 16 }: { n: keyof typeof I; tam?: number }) {
+export function Icone({ n, tam = 16 }: { n: keyof typeof I; tam?: number }) {
   return (
     <svg width={tam} height={tam} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{I[n]}</svg>
@@ -254,7 +254,7 @@ export function TelaEntrada({ tipo }: { tipo: TipoEntrada }) {
 
 /** Painel escuro da direita: desenho do sistema (sem dado nenhum), em camadas. Com o mouse, a luz acompanha,
  *  o painel inclina de leve e os cartões flutuantes se deslocam em profundidades diferentes. */
-function Vitrine({ tipo }: { tipo: TipoEntrada }) {
+export function Vitrine({ tipo }: { tipo: TipoEntrada }) {
   const ref = useRef<HTMLElement>(null);
   function mover(e: React.PointerEvent<HTMLElement>) {
     const el = ref.current; if (!el || e.pointerType !== "mouse") return;

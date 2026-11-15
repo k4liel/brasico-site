@@ -56,6 +56,74 @@ export function ChipsAcesso({ p }: { p: PessoaAcesso }) {
   );
 }
 
+
+// Link de 1 hora para a pessoa criar ou trocar a própria senha (função acessos-convidar; ninguém digita senha por ela).
+async function pedirLinkSenha(supabase: ReturnType<typeof createClient>, email: string, nome = "") {
+  const { data, error } = await supabase.functions.invoke("acessos-convidar", { body: { email, nome } });
+  if (error) {
+    const corpo = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(corpo?.erro ?? "Não consegui gerar o link.");
+  }
+  return data as { link: string; user_id: string; novo: boolean };
+}
+
+function LinkSenha({ link, nome }: { link: string; nome: string }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <div className="ac-link">
+      <p>Mande este link para <strong>{nome}</strong> (pelo WhatsApp, por exemplo). Ela abre, escolhe a própria senha e já entra. Vale <strong>1 hora</strong> e uma vez só; depois disso, gere outro.</p>
+      <div className="ac-link-caixa">
+        <input readOnly value={link} onFocus={(e) => e.target.select()} aria-label="Link para criar a senha" />
+        <button className="small" onClick={async () => { await navigator.clipboard.writeText(link); setCopiado(true); }}>{copiado ? "Copiado" : "Copiar"}</button>
+      </div>
+    </div>
+  );
+}
+
+export function NovoLogin({ supabase, onFechar, onCriado }: {
+  supabase: ReturnType<typeof createClient>; onFechar: () => void; onCriado: () => void;
+}) {
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const [erro, setErro] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [link, setLink] = useState("");
+
+  async function criar(e: React.FormEvent) {
+    e.preventDefault();
+    setOcupado(true); setErro("");
+    try {
+      const r = await pedirLinkSenha(supabase, email, nome);
+      setLink(r.link);
+      onCriado();
+    } catch (x) { setErro((x as Error).message); }
+    setOcupado(false);
+  }
+
+  return (
+    <Gaveta titulo="Novo login" sub="Para sócios e editores com Claude (entram por e-mail)." fechar={onFechar}>
+      {link ? (
+        <>
+          <LinkSenha link={link} nome={nome || email} />
+          <p className="muted ac-nota">A pessoa começa sem acesso a nada. Abra o cartão dela na lista para marcar o tipo e as áreas.</p>
+          <div className="ac-acoes"><button className="ghost" onClick={onFechar}>Fechar</button></div>
+        </>
+      ) : (
+        <form onSubmit={criar} className="ac-form">
+          <label>Nome<input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Camila" /></label>
+          <label>E-mail<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nome@exemplo.com" autoCapitalize="none" /></label>
+          <p className="muted ac-nota">Ninguém digita a senha por ela: o site gera um link para ela mesma criar a senha.</p>
+          {erro && <p className="tv-alerta">{erro}</p>}
+          <div className="ac-acoes">
+            <button disabled={ocupado || !email.includes("@")}>{ocupado ? "Criando…" : "Criar e gerar o link"}</button>
+            <button type="button" className="ghost" onClick={onFechar}>Cancelar</button>
+          </div>
+        </form>
+      )}
+    </Gaveta>
+  );
+}
+
 export function PainelAcesso({ pessoa, supabase, onFechar, onSalvo }: {
   pessoa: PessoaAcesso; supabase: ReturnType<typeof createClient>; onFechar: () => void; onSalvo: (texto: string) => void;
 }) {
@@ -63,6 +131,13 @@ export function PainelAcesso({ pessoa, supabase, onFechar, onSalvo }: {
   const [areas, setAreas] = useState<Record<string, Nivel>>(() => ({ ...pessoa.areas }));
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [link, setLink] = useState("");
+  const porEmail = !!pessoa.email && !pessoa.email.endsWith("@usuarios.brasico");
+
+  async function gerarLink() {
+    setErro("");
+    try { setLink((await pedirLinkSenha(supabase, pessoa.email!)).link); } catch (x) { setErro((x as Error).message); }
+  }
 
   const todas = (n: Nivel) => setAreas(Object.fromEntries(AREAS.map((a) => [a.id, n])));
 
@@ -117,6 +192,14 @@ export function PainelAcesso({ pessoa, supabase, onFechar, onSalvo }: {
             ))}
           </ul>
           {tipo === "editor" && <p className="muted ac-nota">O editor conecta o próprio Claude nesta página. O Claude dele só consegue mudar as áreas marcadas como Editar.</p>}
+        </>
+      )}
+
+      {porEmail && (
+        <>
+          <h3 className="ac-titulo">Senha</h3>
+          {link ? <LinkSenha link={link} nome={nomeAcesso(pessoa)} />
+            : <button className="ghost small" onClick={gerarLink}>Gerar link para criar ou trocar a senha</button>}
         </>
       )}
 

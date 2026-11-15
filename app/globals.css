@@ -4838,3 +4838,11 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .op-aviso-rascunho { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; font-size: 13px; color: var(--strong);
   background: color-mix(in srgb, var(--hx-ouro) 14%, transparent); border: 1px solid color-mix(in srgb, var(--hx-ouro) 40%, transparent); }
 .op-quadro { display: block; width: 100%; border: 0; border-radius: 16px; background: var(--panel); }
+
+/* Novo login e link para criar a senha (components/AcessosSite.tsx) */
+.ac-form { display: grid; gap: 16px; }
+.ac-form label { display: grid; gap: 6px; font-size: 12.5px; }
+.ac-link { display: grid; gap: 8px; margin: 8px 0 16px; font-size: 14px; }
+.ac-link p { margin: 0; }
+.ac-link-caixa { display: flex; gap: 8px; }
+.ac-link-caixa input { flex: 1; min-width: 0; font-size: 12.5px; }
