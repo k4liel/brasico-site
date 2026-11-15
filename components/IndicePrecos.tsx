@@ -2,266 +2,476 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Faisca, GraficoBarras, GraficoLinhas, GraficoPrecos, type Compra } from "./Graficos";
+import { Faisca, GraficoBarras, GraficoLinhas, GraficoPrecos } from "./Graficos";
 
-// Índice de preços (página /precos, em Operação; antes era aba da página Notas): análise das compras de todas as notas (Cicchetti Management e SEFAZ),
-// com o índice mensal encadeado, o gasto, os alertas de alta e de queda (um por item e fornecedor) e a busca de produto.
-// Cada item abre embaixo com o histórico de preço e a comparação de fornecedores. Funções em supabase/precos_painel.sql.
+// Índice de preços (página /precos, em Operação). Versão de 15/11/2026, escolhida pelo dono entre 3 prévias:
+// a "A" (painel: filtros, números, inflação, onde economizar e curva ABC) com a "B" na aba Produtos (lista à esquerda,
+// ficha do produto à direita). Filtros valem para tudo: período, casa, categoria, fornecedor e "só insumos".
+// Funções: precos_analise, precos_produtos, precos_ficha (supabase/precos_analise.sql) e precos_painel (índice e alertas).
 type Ponto = { serie: string; mes: string; valor: number; variacao: number; itens: number; tem: boolean };
-type Gasto = { mes: string; gasto: number; produtos: number };
 type Sinal = { produto: string; unidade: string; fornecedor: string; categoria: string; data: string; preco: number; media: number; compras: number; pct: number; faisca: number[] | null };
-export type Painel = { indice: Ponto[] | null; gasto: Gasto[] | null; categorias: { categoria: string; gasto: number }[] | null; altas: Sinal[] | null;
-  quedas: Sinal[] | null; produtos: number; fornecedores: number; atualizado_em: string };
-type Achado = { produto: string; unidade: string; categoria: string; compras: number; fornecedores: number; ultimo: number; ultima: string; primeiro_90: number | null };
-type Fornecedor = { fornecedor: string; compras: number; medio: number; menor: number; ultimo: number; ultima: string };
+type Painel = { indice: Ponto[] | null; altas: Sinal[] | null; quedas: Sinal[] | null; atualizado_em: string };
+type Eco = { produto: string; unidade: string; fornecedor: string; preco: number; melhor: string; melhor_preco: number; economia: number };
+type Abc = { produto: string; unidade: string; categoria: string; gasto: number; pct: number; classe: string; compras: number; fornecedores: number; principal: string; ultimo: number; ultima: string; variacao: number | null; faisca: number[] | null };
+type Analise = {
+  resumo: { itens: number; produtos: number; fornecedores: number; gasto: number; de: string | null; ate: string | null };
+  meses: { mes: string; gasto: number }[] | null; economia_total: number; economia: Eco[] | null; abc: Abc[] | null;
+  pareto: { produtos_80: number; total: number };
+  fornecedores: { fornecedor: string; gasto: number; compras: number; produtos: number; ultima: string; pct: number }[] | null;
+  categorias: { categoria: string; gasto: number; produtos: number; pct: number }[] | null;
+  opcoes: { locais: string[] | null; categorias: string[] | null; fornecedores: string[] | null };
+};
+type ProdutoLinha = { produto: string; unidade: string; categoria: string; gasto: number; compras: number; fornecedores: number; ultimo: number; ultima: string; variacao: number | null };
+type Ficha = {
+  produto: string; unidade: string; categoria: string | null;
+  resumo: { ultimo: number; ultima: string; medio: number; menor: number; maior: number; gasto: number; compras: number; consumo_mes: number } | null;
+  compras: { data: string; fornecedor: string; preco: number; quantidade: number; gasto: number; local: string; fonte: string }[] | null;
+  fornecedores: { fornecedor: string; compras: number; medio: number; menor: number; ultimo: number; ultima: string; qtd: number; gasto: number }[] | null;
+  locais: { local: string; compras: number; medio: number; ultimo: number; qtd: number }[] | null;
+  economia: { de: string; preco_de: number; para: string; preco_para: number; por_mes: number } | null;
+};
+type Filtros = { dias: number; local: string; categoria: string; fornecedor: string; insumos: boolean };
 
-const CATEGORIAS = ["Comida", "Bebida", "Descartáveis", "Limpeza"];
+const CATEGORIAS_INDICE = ["Comida", "Bebida", "Descartáveis", "Limpeza"];
+const PERIODOS = [[30, "30 dias"], [90, "90 dias"], [180, "6 meses"], [365, "12 meses"]] as const;
+// "local" vem do Cicchetti Management (código da unidade) ou da nota da SEFAZ (CNPJ de quem comprou)
+const CASAS: Record<string, string> = {
+  pipa_centro: "Cicchetti Pipa", pipa_producao: "Produção", midway: "Cicchetti Midway (encerrado)",
+  "24021962000276": "Brasico77 filial 0002 · notas (Cicchetti e Produção)", "24021962000195": "Filha da Lua · notas (Brasico77 matriz)",
+  "50639716000101": "Sempre Vivo · notas (LAIF)", "36528542000189": "Genesis · notas",
+};
+const casa = (l: string) => CASAS[l] ?? l;
 const brl = (v: number | null | undefined) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
-const mil = (v: number) => (v >= 1000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: v >= 100000 ? 0 : 1 })} mil` : brl(v));
+const reais = (v: number) => (Math.abs(v) >= 10000 ? `R$ ${(v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: Math.abs(v) >= 100000 ? 0 : 1 })} mil` : brl(v));
+const inteiro = (v: number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const pctTxt = (v: number) => `${v > 0 ? "+" : ""}${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 const mesCurto = (m: string) => new Date(`${m.slice(0, 7)}-15T12:00:00`).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(". de ", " ").replace(".", "");
+const mesLongo = (m: string) => new Date(`${m.slice(0, 7)}-15T12:00:00`).toLocaleDateString("pt-BR", { month: "long" });
 const dia = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR");
 const titulo = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+const unid = (u: string) => (u || "un").toLowerCase();
 
-export default function IndicePrecos({ previa }: { previa?: Painel } = {}) {
+function baixarPlanilha(nome: string, cabecalho: string[], linhas: (string | number | null)[][]) {
+  const esc = (v: string | number | null) => { const s = v == null ? "" : typeof v === "number" ? String(v).replace(".", ",") : v; return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const csv = "﻿" + [cabecalho, ...linhas].map((l) => l.map(esc).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `${nome}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+export default function IndicePrecos() {
   const supabase = useMemo(() => createClient(), []);
-  const [p, setP] = useState<Painel | null>(previa ?? null);
-  const [erro, setErro] = useState("");
+  const [aba, setAba] = useState<"geral" | "produtos" | "alertas">("geral");
+  const [f, setF] = useState<Filtros>({ dias: 90, local: "", categoria: "", fornecedor: "", insumos: true });
+  const [painel, setPainel] = useState<Painel | null>(null);
+  const [a, setA] = useState<Analise | null>(null);
   const [carregando, setCarregando] = useState(false);
-  const [cats, setCats] = useState<string[]>([]);
-  const [tabela, setTabela] = useState(false);
-  const [aberto, setAberto] = useState<string | null>(null);
-  const [busca, setBusca] = useState("");
-  const [achados, setAchados] = useState<Achado[] | null>(null);
-  const [lado, setLado] = useState<"altas" | "quedas">("altas");
+  const [erro, setErro] = useState("");
+  const [escolhido, setEscolhido] = useState<{ produto: string; unidade: string } | null>(null);
 
-  const carregar = useCallback(async () => {
-    setCarregando(true); setErro("");
+  const args = useCallback((x: Filtros) => ({ p_dias: x.dias, p_local: x.local || null, p_categoria: x.categoria || null, p_fornecedor: x.fornecedor || null, p_insumos: x.insumos }), []);
+
+  const lerPainel = useCallback(async () => {
     const { data, error } = await supabase.rpc("precos_painel");
+    if (error) return setErro(error.message);
+    setPainel(data as Painel);
+  }, [supabase]);
+  const lerAnalise = useCallback(async (x: Filtros) => {
+    setCarregando(true);
+    const { data, error } = await supabase.rpc("precos_analise", args(x));
     setCarregando(false);
     if (error) return setErro(error.message);
-    setP(data as Painel);
-  }, [supabase]);
-  useEffect(() => { if (!previa) carregar(); }, [carregar, previa]);
+    setA(data as Analise);
+  }, [supabase, args]);
+  useEffect(() => { lerPainel(); }, [lerPainel]);
+  useEffect(() => { lerAnalise(f); }, [lerAnalise, f]);
 
-  useEffect(() => {
-    const t = busca.trim();
-    if (t.length < 3) { setAchados(null); return; }
-    const id = setTimeout(async () => {
-      const { data } = await supabase.rpc("precos_procurar", { p_busca: t });
-      setAchados((data ?? []) as Achado[]);
-    }, 350);
-    return () => clearTimeout(id);
-  }, [busca, supabase]);
+  const abrirProduto = (produto: string, unidade: string) => { setEscolhido({ produto, unidade }); setAba("produtos"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const mudar = (p: Partial<Filtros>) => setF((x) => ({ ...x, ...p }));
 
   if (erro) return <p className="es-aviso tv-alerta">{erro}</p>;
-  if (!p) return <div className="ip-carregando"><span /><span /><span /><span /></div>;
-
-  // O índice começa no mês anterior ao primeiro com cesta de pelo menos 30 itens comparados (esse mês vale 100)
-  const todosMeses = [...new Set((p.indice ?? []).map((x) => x.mes))].sort();
-  const primeiroBom = todosMeses.findIndex((m) => ((p.indice ?? []).find((x) => x.serie === "Geral" && x.mes === m)?.itens ?? 0) >= 30);
-  const meses = todosMeses.slice(Math.max(0, primeiroBom - 1));
-  const serie = (nome: string) => {
-    const bruto = meses.map((m) => (p.indice ?? []).find((x) => x.serie === nome && x.mes === m)?.valor ?? null);
-    const base = bruto[0];
-    return bruto.map((v) => (v == null || !base ? v : Math.round((v / base) * 1000) / 10));
-  };
-  const geral = serie("Geral");
-  const ultimoGeral = (p.indice ?? []).filter((x) => x.serie === "Geral").sort((a, b) => a.mes.localeCompare(b.mes)).pop();
-  const gastos = p.gasto ?? [];
-  const gastoAtual = gastos[gastos.length - 1], gastoAntes = gastos[gastos.length - 2];
-  const varGasto = gastoAtual && gastoAntes?.gasto ? (gastoAtual.gasto / gastoAntes.gasto - 1) * 100 : null;
-  const catGasto = (p.categorias ?? []).filter((c) => c.gasto > 0);
-  const maxCat = Math.max(...catGasto.map((c) => c.gasto), 1);
-  const lista = (lado === "altas" ? p.altas : p.quedas) ?? [];
-  const chave = (s: { produto: string; unidade: string; fornecedor?: string }) => `${s.produto}|${s.unidade}|${s.fornecedor ?? ""}`;
+  if (!a || !painel) return <div className="ip-carregando"><span /><span /><span /><span /></div>;
+  const r = a.resumo;
+  const nAltas = painel.altas?.length ?? 0, nQuedas = painel.quedas?.length ?? 0;
 
   return (
     <div className="ip">
       <div className="ip-cabeca">
         <div>
-          <span className="es-sobre">Operação · compras dos últimos 12 meses</span>
+          <span className="es-sobre">Operação · compras</span>
           <h1>Índice de preços</h1>
-          <p className="muted">Todas as compras das notas (Cicchetti Management e SEFAZ), item a item. Atualizado {new Date(p.atualizado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.</p>
+          <p className="muted">{r.itens.toLocaleString("pt-BR")} itens de notas · {r.produtos.toLocaleString("pt-BR")} produtos · {r.fornecedores} fornecedores no período · atualizado {new Date(painel.atualizado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p>
         </div>
-        <button className="ghost small" disabled={carregando} onClick={carregar}>{carregando ? "Calculando…" : "Atualizar"}</button>
+        <div className="ip-acoes">
+          <button className="ghost small" onClick={() => baixarPlanilha(`indice-precos-${new Date().toISOString().slice(0, 10)}`,
+            ["Classe", "Produto", "Unidade", "Categoria", "Fornecedor principal", "Gasto", "Participação %", "Compras", "Último preço", "Variação %"],
+            (a.abc ?? []).map((x) => [x.classe, x.produto, x.unidade, x.categoria, x.principal, x.gasto, x.pct, x.compras, x.ultimo, x.variacao]))}>Planilha</button>
+          <button className="ghost small" disabled={carregando} onClick={() => { lerPainel(); lerAnalise(f); }}>{carregando ? "Calculando…" : "Atualizar"}</button>
+        </div>
       </div>
 
+      <div className="ip-abas" role="tablist" aria-label="Seções">
+        {([["geral", "Visão geral"], ["produtos", "Produtos"], ["alertas", "Alertas"]] as const).map(([id, nome]) => (
+          <button key={id} role="tab" aria-selected={aba === id} className={aba === id ? "on" : ""} onClick={() => setAba(id)}>
+            {nome}{id === "alertas" && nAltas > 0 && <span className="ip-abas-n">{nAltas}</span>}
+          </button>
+        ))}
+      </div>
+
+      {aba !== "alertas" && (
+        <div className="ip-filtros">
+          <span className="es-segmentos" role="radiogroup" aria-label="Período">
+            {PERIODOS.map(([d, nome]) => <button key={d} role="radio" aria-checked={f.dias === d} className={f.dias === d ? "on" : ""} onClick={() => mudar({ dias: d })}>{nome}</button>)}
+          </span>
+          <select value={f.local} onChange={(e) => mudar({ local: e.target.value })} aria-label="Casa">
+            <option value="">Todas as casas</option>
+            {(a.opcoes.locais ?? []).map((l) => <option key={l} value={l}>{casa(l)}</option>)}
+          </select>
+          <select value={f.categoria} onChange={(e) => mudar({ categoria: e.target.value })} aria-label="Categoria">
+            <option value="">Todas as categorias</option>
+            {(a.opcoes.categorias ?? []).map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={f.fornecedor} onChange={(e) => mudar({ fornecedor: e.target.value })} aria-label="Fornecedor">
+            <option value="">Todos os fornecedores</option>
+            {(a.opcoes.fornecedores ?? []).map((x) => <option key={x} value={x}>{titulo(x)}</option>)}
+          </select>
+          <label className="ip-chave">
+            <input type="checkbox" checked={f.insumos} onChange={(e) => mudar({ insumos: e.target.checked })} />
+            <i aria-hidden="true" />Só insumos <span className="muted">(sem equipamentos e serviços)</span>
+          </label>
+          {carregando && <span className="ip-calculando" aria-live="polite">Calculando…</span>}
+        </div>
+      )}
+
+      {aba === "geral" && <VisaoGeral a={a} painel={painel} dias={f.dias} abrir={abrirProduto} nAltas={nAltas} nQuedas={nQuedas} irAlertas={() => setAba("alertas")} />}
+      {aba === "produtos" && <Produtos f={f} args={args} escolhido={escolhido} escolher={(p, u) => setEscolhido({ produto: p, unidade: u })} />}
+      {aba === "alertas" && <Alertas painel={painel} abrir={abrirProduto} />}
+    </div>
+  );
+}
+
+/* ---------- Visão geral (prévia A) ---------- */
+function VisaoGeral({ a, painel, dias, abrir, nAltas, nQuedas, irAlertas }: {
+  a: Analise; painel: Painel; dias: number; abrir: (p: string, u: string) => void; nAltas: number; nQuedas: number; irAlertas: () => void;
+}) {
+  const [cats, setCats] = useState<string[]>(["Comida"]);
+  const [abc, setAbc] = useState<"produtos" | "fornecedores" | "categorias">("produtos");
+  const [mais, setMais] = useState(false);
+
+  // índice: começa no mês anterior ao primeiro com cesta de pelo menos 30 itens comparados (esse mês vale 100)
+  const ind = painel.indice ?? [];
+  const todosMeses = [...new Set(ind.map((x) => x.mes))].sort();
+  const primeiroBom = todosMeses.findIndex((m) => (ind.find((x) => x.serie === "Geral" && x.mes === m)?.itens ?? 0) >= 30);
+  const meses = todosMeses.slice(Math.max(0, primeiroBom - 1));
+  const serie = (nome: string) => {
+    const bruto = meses.map((m) => ind.find((x) => x.serie === nome && x.mes === m)?.valor ?? null);
+    const base = bruto[0];
+    return bruto.map((v) => (v == null || !base ? v : Math.round((v / base) * 1000) / 10));
+  };
+  const geral = serie("Geral");
+  const ultimoGeral = ind.filter((x) => x.serie === "Geral").sort((x, y) => x.mes.localeCompare(y.mes)).pop();
+
+  // gasto: o último mês fechado contra o anterior
+  const gastos = a.meses ?? [];
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const fechados = gastos.filter((g) => g.mes.slice(0, 7) < mesAtual);
+  const gFech = fechados[fechados.length - 1], gAntes = fechados[fechados.length - 2];
+  const varGasto = gFech && gAntes?.gasto ? (gFech.gasto / gAntes.gasto - 1) * 100 : null;
+  const pctPareto = a.pareto.total ? Math.round((a.pareto.produtos_80 / a.pareto.total) * 100) : 0;
+  const lista = (a.abc ?? []).slice(0, mais ? 60 : 12);
+
+  return (
+    <>
       <div className="ip-numeros">
         <div className="ip-numero">
-          <span className="ip-rotulo">Índice geral</span>
+          <span className="ip-rotulo">Índice geral · mesma cesta</span>
           <span className="ip-valor">{geral[geral.length - 1]?.toLocaleString("pt-BR", { minimumFractionDigits: 1 }) ?? "—"}</span>
-          <span className={`ip-var ${ultimoGeral && ultimoGeral.variacao > 0 ? "sobe" : "desce"}`}>{ultimoGeral ? `${pctTxt(ultimoGeral.variacao)} no mês` : ""}</span>
+          <span className={`ip-var ${ultimoGeral && ultimoGeral.variacao > 0 ? "sobe" : "desce"}`}>{ultimoGeral ? `${ultimoGeral.variacao > 0 ? "▲" : "▼"} ${pctTxt(ultimoGeral.variacao)} em ${mesLongo(ultimoGeral.mes)}` : ""}</span>
           <Faisca valores={geral.filter((v): v is number => v != null)} alta={(ultimoGeral?.variacao ?? 0) > 0} />
         </div>
         <div className="ip-numero">
-          <span className="ip-rotulo">Gasto em {gastoAtual ? mesCurto(gastoAtual.mes) : "—"}</span>
-          <span className="ip-valor">{gastoAtual ? mil(gastoAtual.gasto) : "—"}</span>
-          <span className="ip-var neutro">{varGasto != null ? `${pctTxt(varGasto)} sobre o mês anterior` : ""}</span>
-          <Faisca valores={gastos.map((g) => g.gasto)} alta={(varGasto ?? 0) > 0} />
+          <span className="ip-rotulo">Gasto em {gFech ? mesLongo(gFech.mes) : "—"}</span>
+          <span className="ip-valor">{gFech ? reais(gFech.gasto) : "—"}</span>
+          <span className={`ip-var ${varGasto == null ? "" : varGasto > 0 ? "sobe" : "desce"}`}>{varGasto != null ? `${varGasto > 0 ? "▲" : "▼"} ${pctTxt(varGasto)} sobre ${mesLongo(gAntes!.mes)}` : ""}</span>
+          <Faisca valores={fechados.map((g) => g.gasto)} alta={(varGasto ?? 0) > 0} />
         </div>
         <div className="ip-numero">
-          <span className="ip-rotulo">Itens que subiram</span>
-          <span className="ip-valor">{p.altas?.length ?? 0}</span>
-          <span className="ip-var sobe">10% ou mais na última compra</span>
+          <span className="ip-rotulo">Economia possível</span>
+          <span className="ip-valor ip-verde">{reais(a.economia_total)}</span>
+          <span className="ip-var">comprando do fornecedor mais barato · {dias} dias</span>
         </div>
-        <div className="ip-numero">
-          <span className="ip-rotulo">Acompanhados</span>
-          <span className="ip-valor">{p.produtos.toLocaleString("pt-BR")}</span>
-          <span className="ip-var neutro">produtos de {p.fornecedores} fornecedores em 90 dias</span>
-        </div>
+        <button className="ip-numero ip-numero-botao" onClick={irAlertas}>
+          <span className="ip-rotulo">Alertas de preço</span>
+          <span className="ip-valor">{nAltas} <small>altas</small> · {nQuedas} <small>quedas</small></span>
+          <span className="ip-var">10% ou mais na última compra · ver todos →</span>
+        </button>
       </div>
 
       <div className="ip-grade">
-        <section className="ip-cartao ip-largo">
+        <section className="ip-cartao">
           <header className="ip-cartao-cabeca">
-            <div><h3>Índice mensal</h3><p className="muted">A mesma cesta de itens de um mês para o outro · primeiro mês = 100</p></div>
-            <button className="ghost small" onClick={() => setTabela((t) => !t)}>{tabela ? "Ver gráfico" : "Ver tabela"}</button>
-          </header>
-          <div className="ft-chips ip-chips" role="group" aria-label="Categorias no gráfico">
-            {CATEGORIAS.map((c, i) => (
-              <button key={c} aria-pressed={cats.includes(c)} className={cats.includes(c) ? "on" : ""} onClick={() => setCats((x) => (x.includes(c) ? x.filter((y) => y !== c) : [...x, c]))}>
-                <i style={{ background: `var(--serie-${i + 1})` }} />{c}
-              </button>
-            ))}
-          </div>
-          {tabela ? (
-            <div className="nf-tabela-wrap">
-              <table className="nf-tabela ip-tabela">
-                <thead><tr><th>Mês</th><th className="n">Geral</th>{CATEGORIAS.map((c) => <th key={c} className="n">{c}</th>)}<th className="n">Itens comparados</th></tr></thead>
-                <tbody>
-                  {meses.map((m, i) => (
-                    <tr key={m}>
-                      <td>{mesCurto(m)}</td>
-                      <td className="n"><strong>{geral[i]?.toLocaleString("pt-BR", { minimumFractionDigits: 1 })}</strong></td>
-                      {CATEGORIAS.map((c) => <td key={c} className="n">{serie(c)[i]?.toLocaleString("pt-BR", { minimumFractionDigits: 1 }) ?? "—"}</td>)}
-                      <td className="n">{(p.indice ?? []).find((x) => x.serie === "Geral" && x.mes === m)?.itens ?? 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div><h3>Inflação das compras</h3><p className="muted">índice mensal encadeado: a mesma cesta de itens de um mês para o outro · primeiro mês = 100</p></div>
+            <div className="ft-chips ip-chips" role="group" aria-label="Categorias no gráfico">
+              {CATEGORIAS_INDICE.map((c, i) => (
+                <button key={c} aria-pressed={cats.includes(c)} className={cats.includes(c) ? "on" : ""} onClick={() => setCats((x) => (x.includes(c) ? x.filter((y) => y !== c) : [...x, c]))}>
+                  <i style={{ background: `var(--serie-${i + 1})` }} />{c}
+                </button>
+              ))}
             </div>
-          ) : (
-            <GraficoLinhas rotulos={meses.map(mesCurto)} base={100}
-              series={[{ nome: "Geral", cor: "var(--strong)", pontos: geral, destaque: true },
-                ...cats.map((c) => ({ nome: c, cor: `var(--serie-${CATEGORIAS.indexOf(c) + 1})`, pontos: serie(c) }))]} />
+          </header>
+          <GraficoLinhas rotulos={meses.map(mesCurto)} base={100}
+            series={[{ nome: "Geral", cor: "var(--strong)", pontos: geral, destaque: true },
+              ...cats.map((c) => ({ nome: c, cor: `var(--serie-${CATEGORIAS_INDICE.indexOf(c) + 1})`, pontos: serie(c) }))]} />
+        </section>
+
+        <section className="ip-cartao">
+          <header className="ip-cartao-cabeca"><div><h3>Onde economizar</h3><p className="muted">mesmo produto, fornecedor mais barato no período</p></div></header>
+          {!(a.economia ?? []).length ? <p className="muted">Nenhum produto com dois fornecedores e preço diferente neste filtro.</p> : (
+            <ul className="ip-eco">
+              {(a.economia ?? []).slice(0, 7).map((e) => (
+                <li key={`${e.produto}|${e.unidade}`}>
+                  <button onClick={() => abrir(e.produto, e.unidade)}>
+                    <span className="ip-eco-nome"><strong>{titulo(e.produto)}</strong>
+                      <small>{titulo(e.fornecedor).slice(0, 26)} {brl(e.preco)} → <b>{titulo(e.melhor).slice(0, 26)} {brl(e.melhor_preco)}</b>/{unid(e.unidade)}</small></span>
+                    <span className="ip-eco-valor">{inteiro(e.economia)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
-        </section>
-
-        <section className="ip-cartao">
-          <header className="ip-cartao-cabeca"><div><h3>Gasto por categoria</h3><p className="muted">neste mês</p></div></header>
-          <ul className="ip-barras">
-            {catGasto.slice(0, 9).map((c) => (
-              <li key={c.categoria}>
-                <span className="ip-barras-nome">{c.categoria}</span>
-                <span className="ip-barras-trilho"><span style={{ width: `${(c.gasto / maxCat) * 100}%` }} /></span>
-                <span className="ip-barras-valor">{mil(c.gasto)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="ip-cartao ip-largo">
-          <header className="ip-cartao-cabeca"><div><h3>Gasto por mês</h3><p className="muted">soma de todas as compras das notas</p></div></header>
-          <GraficoBarras rotulos={gastos.map((g) => mesCurto(g.mes))} valores={gastos.map((g) => g.gasto)} formato={mil} />
-        </section>
-
-        <section className="ip-cartao">
-          <header className="ip-cartao-cabeca"><div><h3>Procurar um produto</h3><p className="muted">preço pago em cada compra, por fornecedor</p></div></header>
-          <input type="search" className="ip-busca" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Ex.: limão, mussarela, picanha" aria-label="Procurar produto" />
-          {achados && !achados.length && <p className="muted">Nada encontrado.</p>}
-          {achados && achados.length > 0 && <p className="muted ip-dica">Clique num resultado para ver o histórico.</p>}
         </section>
       </div>
 
-      {achados && achados.length > 0 && (
-        <section className="ip-cartao ip-sinais">
-          <header className="ip-cartao-cabeca"><div><h3>Resultados para “{busca.trim()}”</h3><p className="muted">{achados.length} produtos</p></div></header>
-          <ul className="ip-lista">
-            {achados.map((a) => {
-              const k = chave(a);
-              const v90 = a.primeiro_90 ? (a.ultimo / a.primeiro_90 - 1) * 100 : null;
-              return (
-                <li key={k} className={aberto === k ? "aberto" : ""}>
-                  <button className="ip-linha" onClick={() => setAberto(aberto === k ? null : k)} aria-expanded={aberto === k}>
-                    <span className="ip-linha-nome"><strong>{titulo(a.produto)}</strong><small>{a.categoria} · {a.compras} compras · {a.fornecedores} {a.fornecedores === 1 ? "fornecedor" : "fornecedores"}</small></span>
-                    <span className="ip-linha-preco"><strong>{brl(a.ultimo)}</strong><small>/{a.unidade || "un"} em {dia(a.ultima)}</small></span>
-                    <span className={`ip-selo ${v90 == null ? "" : v90 > 0 ? "sobe" : "desce"}`}>{v90 == null ? "—" : `${pctTxt(v90)} em 90 dias`}</span>
-                    <span className="ip-seta" aria-hidden="true" />
-                  </button>
-                  {aberto === k && <Detalhe produto={a.produto} unidade={a.unidade} />}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      <section className="ip-cartao ip-sinais">
+      <section className="ip-cartao">
         <header className="ip-cartao-cabeca">
-          <div><h3>Alertas de preço</h3><p className="muted">a última compra de cada item, por fornecedor, contra a média das compras anteriores (120 dias)</p></div>
-          <div className="ft-chips" role="tablist" aria-label="Alta ou queda">
-            <button role="tab" aria-selected={lado === "altas"} className={lado === "altas" ? "on" : ""} onClick={() => setLado("altas")}>Subiram<span>{p.altas?.length ?? 0}</span></button>
-            <button role="tab" aria-selected={lado === "quedas"} className={lado === "quedas" ? "on" : ""} onClick={() => setLado("quedas")}>Caíram<span>{p.quedas?.length ?? 0}</span></button>
-          </div>
+          <div><h3>Onde vai o dinheiro · curva ABC</h3>
+            <p className="muted">{a.pareto.produtos_80} produtos ({pctPareto}% do total) somam 80% do gasto de {reais(a.resumo.gasto)} no período · clique num produto para abrir a ficha</p></div>
+          <span className="es-segmentos" role="tablist" aria-label="Agrupar por">
+            {(["produtos", "fornecedores", "categorias"] as const).map((x) => <button key={x} role="tab" aria-selected={abc === x} className={abc === x ? "on" : ""} onClick={() => setAbc(x)}>{titulo(x)}</button>)}
+          </span>
         </header>
-        {!lista.length ? <p className="muted">Nenhum item {lado === "altas" ? "subiu" : "caiu"} 10% ou mais nos últimos 30 dias.</p> : (
-          <ul className="ip-lista">
-            {lista.map((s) => {
-              const k = chave(s);
-              return (
-                <li key={k} className={aberto === k ? "aberto" : ""}>
-                  <button className="ip-linha" onClick={() => setAberto(aberto === k ? null : k)} aria-expanded={aberto === k}>
-                    <span className="ip-linha-nome"><strong>{titulo(s.produto)}</strong><small>{titulo(s.fornecedor)} · {s.categoria}</small></span>
-                    <Faisca valores={s.faisca ?? []} alta={s.pct > 0} />
-                    <span className="ip-linha-preco"><strong>{brl(s.preco)}</strong><small>/{s.unidade || "un"} · média {brl(s.media)}</small></span>
-                    <span className={`ip-selo ${s.pct > 0 ? "sobe" : "desce"}`}>{pctTxt(s.pct)}</span>
-                    <span className="ip-seta" aria-hidden="true" />
-                  </button>
-                  {aberto === k && <Detalhe produto={s.produto} unidade={s.unidade} fornecedor={s.fornecedor} />}
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <div className="nf-tabela-wrap">
+          {abc === "produtos" && (
+            <table className="nf-tabela ip-tabela ip-abc">
+              <thead><tr><th /><th>Produto</th><th>Fornecedor principal</th><th className="n">Gasto</th><th>Participação</th><th className="n">Último preço</th><th className="n">Variação</th><th>Preço mês a mês</th></tr></thead>
+              <tbody>
+                {lista.map((x) => (
+                  <tr key={`${x.produto}|${x.unidade}`} className="ip-clicavel" onClick={() => abrir(x.produto, x.unidade)}>
+                    <td><span className={`ip-classe c-${x.classe}`}>{x.classe}</span></td>
+                    <td><strong>{titulo(x.produto)}</strong> <span className="muted">{unid(x.unidade)}</span><small className="ip-sub">{x.categoria} · {x.compras} compras</small></td>
+                    <td className="muted">{titulo(x.principal)}</td>
+                    <td className="n">{inteiro(x.gasto)}</td>
+                    <td><span className="ip-barra"><i style={{ width: `${Math.min(100, (x.gasto / ((a.abc ?? [])[0]?.gasto || 1)) * 100)}%` }} /></span><small className="ip-sub">{x.pct.toLocaleString("pt-BR")}%</small></td>
+                    <td className="n">{brl(x.ultimo)}</td>
+                    <td className="n">{x.variacao == null ? <span className="muted">—</span> : <span className={`ip-selo ${x.variacao > 0 ? "sobe" : x.variacao < 0 ? "desce" : ""}`}>{pctTxt(x.variacao)}</span>}</td>
+                    <td>{(x.faisca ?? []).length > 1 ? <Faisca valores={x.faisca ?? []} alta={(x.variacao ?? 0) > 0} /> : <span className="muted">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {abc === "fornecedores" && (
+            <table className="nf-tabela ip-tabela">
+              <thead><tr><th>Fornecedor</th><th className="n">Gasto</th><th>Participação</th><th className="n">Compras</th><th className="n">Produtos</th><th>Última compra</th></tr></thead>
+              <tbody>
+                {(a.fornecedores ?? []).slice(0, mais ? 40 : 12).map((x) => (
+                  <tr key={x.fornecedor}>
+                    <td><strong>{titulo(x.fornecedor)}</strong></td><td className="n">{inteiro(x.gasto)}</td>
+                    <td><span className="ip-barra"><i style={{ width: `${Math.min(100, (x.gasto / ((a.fornecedores ?? [])[0]?.gasto || 1)) * 100)}%` }} /></span><small className="ip-sub">{x.pct.toLocaleString("pt-BR")}%</small></td>
+                    <td className="n">{x.compras}</td><td className="n">{x.produtos}</td><td>{dia(x.ultima)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {abc === "categorias" && (
+            <table className="nf-tabela ip-tabela">
+              <thead><tr><th>Categoria</th><th className="n">Gasto</th><th>Participação</th><th className="n">Produtos</th></tr></thead>
+              <tbody>
+                {(a.categorias ?? []).map((x) => (
+                  <tr key={x.categoria}>
+                    <td><strong>{x.categoria}</strong></td><td className="n">{inteiro(x.gasto)}</td>
+                    <td><span className="ip-barra"><i style={{ width: `${Math.min(100, (x.gasto / ((a.categorias ?? [])[0]?.gasto || 1)) * 100)}%` }} /></span><small className="ip-sub">{x.pct.toLocaleString("pt-BR")}%</small></td>
+                    <td className="n">{x.produtos}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {abc !== "categorias" && <button className="ghost small ip-mais" onClick={() => setMais((m) => !m)}>{mais ? "Mostrar menos" : "Mostrar mais"}</button>}
+      </section>
+
+      <section className="ip-cartao">
+        <header className="ip-cartao-cabeca"><div><h3>Gasto por mês</h3><p className="muted">soma das compras das notas, com os filtros de casa, categoria e fornecedor</p></div></header>
+        <GraficoBarras rotulos={(a.meses ?? []).map((g) => mesCurto(g.mes))} valores={(a.meses ?? []).map((g) => g.gasto)} formato={reais} />
+      </section>
+    </>
+  );
+}
+
+/* ---------- Produtos (prévia B): lista à esquerda, ficha à direita ---------- */
+function Produtos({ f, args, escolhido, escolher }: {
+  f: Filtros; args: (x: Filtros) => Record<string, unknown>; escolhido: { produto: string; unidade: string } | null; escolher: (p: string, u: string) => void;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const [busca, setBusca] = useState(escolhido?.produto ?? "");
+  const [soAltas, setSoAltas] = useState(false);
+  const [ordem, setOrdem] = useState<"gasto" | "variacao" | "recente">("gasto");
+  const [lista, setLista] = useState<ProdutoLinha[] | null>(null);
+
+  useEffect(() => {
+    const id = setTimeout(async () => {
+      const { data } = await supabase.rpc("precos_produtos", { ...args(f), p_busca: busca.trim() || null, p_so_altas: soAltas, p_ordem: ordem });
+      const l = (data ?? []) as ProdutoLinha[];
+      setLista(l);
+      if (!escolhido && l[0]) escolher(l[0].produto, l[0].unidade);
+    }, busca ? 300 : 0);
+    return () => clearTimeout(id);
+  }, [supabase, args, f, busca, soAltas, ordem]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="ip-mesa">
+      <aside className="ip-cartao ip-mesa-lista">
+        <input type="search" className="ip-busca" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Procurar produto ou fornecedor…" aria-label="Procurar produto" />
+        <div className="ip-mesa-opcoes">
+          <label className="ip-chave"><input type="checkbox" checked={soAltas} onChange={(e) => setSoAltas(e.target.checked)} /><i aria-hidden="true" />Só os que subiram</label>
+          <select value={ordem} onChange={(e) => setOrdem(e.target.value as typeof ordem)} aria-label="Ordem">
+            <option value="gasto">Maior gasto</option><option value="variacao">Maior alta</option><option value="recente">Compra mais recente</option>
+          </select>
+        </div>
+        <div className="ip-mesa-cab muted"><span>{lista ? `${lista.length}${lista.length === 200 ? "+" : ""} produtos` : "Carregando…"}</span><span>Último · variação</span></div>
+        <ul className="ip-mesa-itens">
+          {(lista ?? []).map((p) => {
+            const on = escolhido?.produto === p.produto && escolhido?.unidade === p.unidade;
+            return (
+              <li key={`${p.produto}|${p.unidade}`}>
+                <button className={on ? "on" : ""} aria-current={on ? "true" : undefined} onClick={() => escolher(p.produto, p.unidade)}>
+                  <span className="ip-mesa-nome"><strong>{titulo(p.produto)}</strong><small>{unid(p.unidade)} · {p.compras} compras · {p.fornecedores} {p.fornecedores === 1 ? "fornecedor" : "fornecedores"}</small></span>
+                  <span className="ip-mesa-preco">{brl(p.ultimo)}</span>
+                  <span className={`ip-selo ${p.variacao == null ? "" : p.variacao > 0 ? "sobe" : p.variacao < 0 ? "desce" : ""}`}>{p.variacao == null ? "—" : pctTxt(p.variacao)}</span>
+                </button>
+              </li>
+            );
+          })}
+          {lista && !lista.length && <li className="muted tv-nada">Nada encontrado com esses filtros.</li>}
+        </ul>
+      </aside>
+      <section className="ip-cartao ip-mesa-ficha">
+        {escolhido ? <FichaProduto produto={escolhido.produto} unidade={escolhido.unidade} /> : <p className="muted">Escolha um produto na lista.</p>}
       </section>
     </div>
   );
 }
 
-// Histórico de um produto: gráfico de cada compra e a comparação entre fornecedores
-function Detalhe({ produto, unidade, fornecedor }: { produto: string; unidade: string; fornecedor?: string }) {
+function FichaProduto({ produto, unidade }: { produto: string; unidade: string }) {
   const supabase = useMemo(() => createClient(), []);
-  const [d, setD] = useState<{ compras: Compra[] | null; fornecedores: Fornecedor[] | null } | null>(null);
+  const [dias, setDias] = useState(180);
+  const [d, setD] = useState<Ficha | null>(null);
   useEffect(() => {
-    supabase.rpc("precos_serie", { p_produto: produto, p_unidade: unidade }).then(({ data }) => setD((data ?? { compras: [], fornecedores: [] }) as typeof d));
-  }, [supabase, produto, unidade]);
-  if (!d) return <div className="ip-detalhe"><p className="muted">Carregando o histórico…</p></div>;
-  const compras = (d.compras ?? []).map((c) => ({ ...c, fornecedor: titulo(c.fornecedor), preco: Number(c.preco), quantidade: Number(c.quantidade) }));
+    setD(null);
+    supabase.rpc("precos_ficha", { p_produto: produto, p_unidade: unidade, p_dias: dias }).then(({ data }) => setD(data as Ficha));
+  }, [supabase, produto, unidade, dias]);
+  if (!d) return <div className="ip-ficha-carregando"><span /><span /><span /></div>;
+  const r = d.resumo;
   const forn = d.fornecedores ?? [];
-  const menor = Math.min(...forn.map((f) => Number(f.medio)));
+  const menorMedio = Math.min(...forn.map((x) => Number(x.medio)));
+  const locais = d.locais ?? [];
+  const compras = (d.compras ?? []).map((c) => ({ ...c, fornecedor: titulo(c.fornecedor), preco: Number(c.preco), quantidade: Number(c.quantidade) }));
+
   return (
-    <div className="ip-detalhe">
-      <GraficoPrecos compras={compras} unidade={unidade} />
-      {forn.length > 0 && (
-        <div className="nf-tabela-wrap">
-          <table className="nf-tabela ip-tabela">
-            <thead><tr><th>Fornecedor</th><th className="n">Compras</th><th className="n">Preço médio</th><th className="n">Menor</th><th className="n">Último</th><th>Última compra</th></tr></thead>
-            <tbody>
-              {forn.map((f) => (
-                <tr key={f.fornecedor} className={fornecedor && f.fornecedor === fornecedor ? "ip-destaque" : ""}>
-                  <td><strong>{titulo(f.fornecedor)}</strong>{Number(f.medio) === menor && forn.length > 1 && <small className="ip-melhor">menor preço médio</small>}</td>
-                  <td className="n">{f.compras}</td>
-                  <td className="n">{brl(f.medio)}</td>
-                  <td className="n">{brl(f.menor)}</td>
-                  <td className="n">{brl(f.ultimo)}</td>
-                  <td>{dia(f.ultima)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="ip-ficha">
+      <header className="ip-ficha-cab">
+        <div>
+          <span className="es-sobre">{d.categoria ?? "Sem categoria"}</span>
+          <h2>{titulo(produto)}</h2>
+          <p className="muted">{unid(unidade)} · {locais.length ? `comprado por ${locais.map((l) => casa(l.local)).join(", ")}` : "sem compras no período"}</p>
         </div>
+        <span className="es-segmentos" role="radiogroup" aria-label="Período da ficha">
+          {[[90, "90 d"], [180, "6 meses"], [365, "12 meses"]].map(([n, nome]) => <button key={n} role="radio" aria-checked={dias === n} className={dias === n ? "on" : ""} onClick={() => setDias(Number(n))}>{nome}</button>)}
+        </span>
+      </header>
+      {!r || !r.compras ? <p className="muted">Nenhuma compra deste produto no período.</p> : (
+        <>
+          <div className="ip-ficha-numeros">
+            <div><span>Último preço</span><b>{brl(r.ultimo)}</b><small>{dia(r.ultima)}</small></div>
+            <div><span>Preço médio</span><b>{brl(r.medio)}</b><small>{r.compras} compras</small></div>
+            <div><span>Menor pago</span><b className="ip-verde">{brl(r.menor)}</b><small>maior {brl(r.maior)}</small></div>
+            <div><span>Gasto</span><b>{reais(r.gasto)}</b><small>no período</small></div>
+            <div><span>Consumo médio</span><b>{Number(r.consumo_mes).toLocaleString("pt-BR")} {unid(unidade)}</b><small>por mês</small></div>
+          </div>
+          <h3 className="ip-ficha-titulo">Preço pago em cada compra, por fornecedor</h3>
+          <GraficoPrecos compras={compras} unidade={unidade} />
+          <div className="ip-ficha-dupla">
+            <div>
+              <h3 className="ip-ficha-titulo">Fornecedores</h3>
+              <div className="nf-tabela-wrap">
+                <table className="nf-tabela ip-tabela">
+                  <thead><tr><th>Fornecedor</th><th className="n">Compras</th><th className="n">Médio</th><th className="n">Último</th><th>Última</th></tr></thead>
+                  <tbody>
+                    {forn.map((x) => (
+                      <tr key={x.fornecedor}>
+                        <td><strong>{titulo(x.fornecedor)}</strong>{Number(x.medio) === menorMedio && forn.length > 1 && <span className="ip-melhor-selo">mais barato</span>}</td>
+                        <td className="n">{x.compras}</td><td className="n">{brl(x.medio)}</td><td className="n">{brl(x.ultimo)}</td><td>{dia(x.ultima)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h3 className="ip-ficha-titulo">O que fazer</h3>
+              {d.economia ? (
+                <div className="ip-dica-cartao ok">
+                  <strong>Economia de ~{inteiro(d.economia.por_mes)}/mês</strong>
+                  <p>comprando de {titulo(d.economia.para)} ({brl(d.economia.preco_para)}) em vez de {titulo(d.economia.de)} ({brl(d.economia.preco_de)}), no consumo de hoje.</p>
+                </div>
+              ) : (
+                <div className="ip-dica-cartao"><strong>{forn.length > 1 ? "Já compra do mais barato" : "Um fornecedor só"}</strong>
+                  <p className="muted">{forn.length > 1 ? "O fornecedor principal deste produto já é o de menor preço médio no período." : "Sem outro fornecedor para comparar no período: vale cotar com outro."}</p></div>
+              )}
+              {locais.length > 1 && (
+                <div className="ip-dica-cartao"><strong>Por casa</strong>
+                  <ul className="ip-casas">{locais.map((l) => <li key={l.local}><span>{casa(l.local)}</span><b>{brl(l.medio)}</b></li>)}</ul></div>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+/* ---------- Alertas ---------- */
+function Alertas({ painel, abrir }: { painel: Painel; abrir: (p: string, u: string) => void }) {
+  const [lado, setLado] = useState<"altas" | "quedas">("altas");
+  const lista = (lado === "altas" ? painel.altas : painel.quedas) ?? [];
+  return (
+    <section className="ip-cartao ip-sinais">
+      <header className="ip-cartao-cabeca">
+        <div><h3>Alertas de preço</h3><p className="muted">a última compra de cada item, por fornecedor, contra a média das compras anteriores (120 dias) · clique para abrir a ficha</p></div>
+        <div className="ft-chips" role="tablist" aria-label="Alta ou queda">
+          <button role="tab" aria-selected={lado === "altas"} className={lado === "altas" ? "on" : ""} onClick={() => setLado("altas")}>Subiram<span>{painel.altas?.length ?? 0}</span></button>
+          <button role="tab" aria-selected={lado === "quedas"} className={lado === "quedas" ? "on" : ""} onClick={() => setLado("quedas")}>Caíram<span>{painel.quedas?.length ?? 0}</span></button>
+        </div>
+      </header>
+      {!lista.length ? <p className="muted">Nenhum item {lado === "altas" ? "subiu" : "caiu"} 10% ou mais nos últimos 30 dias.</p> : (
+        <ul className="ip-lista">
+          {lista.map((s) => (
+            <li key={`${s.produto}|${s.unidade}|${s.fornecedor}`}>
+              <button className="ip-linha" onClick={() => abrir(s.produto, s.unidade)}>
+                <span className="ip-linha-nome"><strong>{titulo(s.produto)}</strong><small>{titulo(s.fornecedor)} · {s.categoria} · {dia(s.data)}</small></span>
+                <Faisca valores={s.faisca ?? []} alta={s.pct > 0} />
+                <span className="ip-linha-preco"><strong>{brl(s.preco)}</strong><small>/{unid(s.unidade)} · média {brl(s.media)}</small></span>
+                <span className={`ip-selo ${s.pct > 0 ? "sobe" : "desce"}`}>{pctTxt(s.pct)}</span>
+                <span className="ip-seta ip-seta-dir" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
