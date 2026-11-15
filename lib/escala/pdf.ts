@@ -138,9 +138,11 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
     // Setor sem nada planejado na semana fica de fora
     const setores = [...new Set(doLocal.map((l) => l.setor))].filter((s) => doLocal.some((l) => l.setor === s && dias.some((d) => l.dias[d]?.codigo)));
     const linhas = doLocal.filter((l) => setores.includes(l.setor));
-    const altLinha = linhas.some((l) => dias.some((d) => l.dias[d]?.codigo === "T" && (l.dias[d]?.posto || partesSplit(l.dias[d])))) ? 38 : 30;
-    const ALT_SETOR = 20, ALT_CAB = 32, RODAPE = 40;
-    let p!: PDFPage, y = 0, cont = false;
+    const altBase = linhas.some((l) => dias.some((d) => l.dias[d]?.codigo === "T" && (l.dias[d]?.posto || partesSplit(l.dias[d])))) ? 38 : 30;
+    // Setor nunca se corta entre folhas (15/11/2026, pedido do dono): se não cabe no resto da folha, vai inteiro
+    // para a próxima; se não cabe nem numa folha inteira, as linhas ficam mais baixas (até ALT_MIN) para caber.
+    const ALT_SETOR = 20, ALT_CAB = 32, RODAPE = 40, ALT_MIN = 15;
+    let p!: PDFPage, y = 0, cont = false, vazia = true, altLinha = altBase;
 
     const novaFolha = () => {
       p = doc.addPage([W, H]);
@@ -186,14 +188,22 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
       texto(p, "SEMANA", M + LARG - COL_HORAS, yc + 13, 7.5, f.negrito, misturar(cor, 0.62), { larg: COL_HORAS, alinhar: "centro", espaco: 0.5 });
       y = yc - 6;
       cont = true;
+      vazia = true;
     };
     const cabeAte = (alt: number) => y - alt >= M + RODAPE;
 
     novaFolha();
     for (const setor of setores) {
       const doSetor = linhas.filter((l) => l.setor === setor);
-      // Faixa do setor (não deixa a faixa sozinha no fim da folha)
-      if (!cabeAte(ALT_SETOR + altLinha)) novaFolha();
+      const precisa = (a: number) => ALT_SETOR + doSetor.length * a;
+      altLinha = altBase;
+      if (!cabeAte(precisa(altBase))) {
+        if (!vazia) novaFolha();
+        if (!cabeAte(precisa(altBase))) altLinha = Math.max(ALT_MIN, Math.floor(((y - (M + RODAPE) - ALT_SETOR) / doSetor.length) * 10) / 10);
+      }
+      vazia = false;
+      // Letras acompanham a altura da linha quando o setor precisou apertar
+      const k = Math.min(1, altLinha / altBase);
       const faixaSetor = (cont_: boolean) => {
         y -= ALT_SETOR;
         caixa(p, M, y + 2, LARG, ALT_SETOR - 4, 3, misturar(cor, 0.86));
@@ -210,12 +220,12 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
         if (i % 2 === 1) p.drawRectangle({ x: M, y, width: LARG, height: altLinha, color: ZEBRA });
         p.drawLine({ start: { x: M, y }, end: { x: M + LARG, y }, thickness: 0.5, color: LINHA });
         // Nome e cargo
-        const temCargo = !!l.cargo;
-        texto(p, l.nome, M + 10, y + altLinha / 2 + (temCargo ? 1.5 : -3.5), 10, f.negrito, TINTA, { larg: COL_NOME - 14 });
-        if (temCargo) texto(p, l.cargo!, M + 10, y + altLinha / 2 - 9, 7, f.normal, CINZA, { larg: COL_NOME - 14 });
+        const temCargo = !!l.cargo && k >= 0.6; // linha muito apertada: só o nome
+        texto(p, l.nome, M + 10, y + altLinha / 2 + (temCargo ? 1.5 : -3.5) * k, 10 * Math.max(k, 0.8), f.negrito, TINTA, { larg: COL_NOME - 14 });
+        if (temCargo) texto(p, l.cargo!, M + 10, y + altLinha / 2 - 9 * k, 7 * Math.max(k, 0.8), f.normal, CINZA, { larg: COL_NOME - 14 });
         // Dias
         dias.forEach((d, j) => {
-          const x = xDia(j) + 2.5, w = colDia - 5, yy = y + 3, h = altLinha - 6;
+          const x = xDia(j) + 2.5, w = colDia - 5, yy = y + 3 * k, h = altLinha - 6 * k;
           const dd = l.dias[d];
           if (!dd?.codigo) {
             p.drawLine({ start: { x: x + w / 2 - 5, y: yy + h / 2 }, end: { x: x + w / 2 + 5, y: yy + h / 2 }, thickness: 0.8, color: hex("#c9cdd8") });
@@ -236,11 +246,19 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
             ];
             if (dd.intervalo && !sp) linhasT.push({ s: `desc. ${dd.intervalo.replace("-", "–")}`, tam: 7, f: f.normal, cor: hex(t.tinta) });
             if (dd.posto) linhasT.push({ s: dd.posto.toUpperCase(), tam: 6.5, f: f.negrito, cor: hex(t.barra), esp: 0.5 });
-            const total = linhasT.reduce((s, x) => s + x.tam + 2, -2);
-            let ty = yy + h / 2 + total / 2 - linhasT[0].tam * 0.78;
-            for (const lt of linhasT) {
+            // Linha apertada (setor grande numa folha só): fica só o horário, em letra que dá para ler
+            let mostrar = linhasT, vao = 2.5 * k;
+            if (k < 0.7) {
+              mostrar = linhasT.filter((x) => x.tam >= 8.5);
+              const tam = Math.min(9.5, ((h - 2) / mostrar.length) * 0.78);
+              mostrar.forEach((x) => { x.tam = tam; });
+              vao = 1.2;
+            } else for (const lt of linhasT) lt.tam *= k;
+            const total = mostrar.reduce((s, x) => s + x.tam + vao, -vao);
+            let ty = yy + h / 2 + total / 2 - mostrar[0].tam * 0.78;
+            for (const lt of mostrar) {
               texto(p, lt.s, x + 2, ty, lt.tam, lt.f, lt.cor, { larg: w - 2, alinhar: "centro", espaco: lt.esp });
-              ty -= lt.tam + 2.5;
+              ty -= lt.tam + vao;
             }
             return;
           }
@@ -249,17 +267,17 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
           usados.add(dd.codigo);
           caixa(p, x, yy, w, h, 4, hex(c.cor));
           const n = c.linhas.length;
-          c.linhas.forEach((s, k) => {
-            const tam = n > 1 ? 7.2 : 8.5;
-            const ty = yy + h / 2 + ((n - 1) / 2 - k) * (tam + 1.5) - tam * 0.36;
+          c.linhas.forEach((s, kk) => {
+            const tam = (n > 1 ? 7.2 : 8.5) * Math.max(k, 0.75);
+            const ty = yy + h / 2 + ((n - 1) / 2 - kk) * (tam + 1.5 * k) - tam * 0.36;
             texto(p, s, x, ty, tam, f.negrito, BRANCO, { larg: w, alinhar: "centro", espaco: 0.5 });
           });
         });
         // Horas e folgas da semana
         const folgas = dias.filter((d) => ["F", "DM", "FC", "BH"].includes(l.dias[d]?.codigo ?? "")).length;
         const xh = M + LARG - COL_HORAS;
-        texto(p, l.minutos ? horasTxt(l.minutos) : "—", xh, y + altLinha / 2 + 1, 9.5, f.negrito, TINTA, { larg: COL_HORAS, alinhar: "centro" });
-        texto(p, `${folgas} ${folgas === 1 ? "folga" : "folgas"}`, xh, y + altLinha / 2 - 9, 7, f.normal, CINZA, { larg: COL_HORAS, alinhar: "centro" });
+        texto(p, l.minutos ? horasTxt(l.minutos) : "—", xh, y + altLinha / 2 + (temCargo ? 1 * k : -3), 9.5 * Math.max(k, 0.8), f.negrito, TINTA, { larg: COL_HORAS, alinhar: "centro" });
+        if (temCargo) texto(p, `${folgas} ${folgas === 1 ? "folga" : "folgas"}`, xh, y + altLinha / 2 - 9 * k, 7 * Math.max(k, 0.8), f.normal, CINZA, { larg: COL_HORAS, alinhar: "centro" });
       });
       y -= 6;
     }
