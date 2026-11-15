@@ -11,6 +11,8 @@ import Topo from "./Topo";
 type Usuario = {
   id: string; nome: string; papel: Papel; unidade: string; setor: string; wa_nome: string; ativo: boolean; registra_estoque: boolean;
   tem_login: boolean; usuario: string; ultimo_acesso: string | null; criado_em: string; grupos: string[];
+  // Casas inteiras que lidera na escala (escala_lideres_locais; 15/11/2026)
+  casas?: string[];
 };
 type Grupo = { id: string; nome: string; local: string; setor: string; pessoas: number };
 type Papel = "solicitante" | "compras" | "estoque" | "lider";
@@ -56,14 +58,17 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
   useEffect(() => { carregar(); }, [carregar]);
 
   const nomeGrupo = new Map(grupos.map((g) => [g.id, g.nome]));
+  // Lidera a escala: por setor (grupos) ou a casa inteira (casas)
+  const lideraEscala = (u: Usuario) => u.grupos.length > 0 || (u.casas?.length ?? 0) > 0;
+  const lideraGrupo = (u: Usuario, g: Grupo) => u.grupos.includes(g.id) || !!u.casas?.includes(g.local);
   const termo = busca.trim().toLowerCase();
   const passa: Record<Filtro, (u: Usuario) => boolean> = {
     Ativos: (u) => u.ativo, Compras: (u) => u.ativo && abreCompras(u), "Câmara fria": (u) => u.ativo && abreCamara(u),
-    Escala: (u) => u.ativo && u.grupos.length > 0, "Sem login": (u) => u.ativo && !u.tem_login, Desativados: (u) => !u.ativo,
+    Escala: (u) => u.ativo && lideraEscala(u), "Sem login": (u) => u.ativo && !u.tem_login, Desativados: (u) => !u.ativo,
   };
   const vistos = (lista ?? []).filter(passa[filtro]).filter((u) => !termo || u.nome.toLowerCase().includes(termo) || u.usuario.toLowerCase().includes(termo));
   const ativos = (lista ?? []).filter((u) => u.ativo);
-  const semLider = grupos.filter((g) => !ativos.some((u) => u.grupos.includes(g.id)));
+  const semLider = grupos.filter((g) => !ativos.some((u) => lideraGrupo(u, g)));
 
   return (
     <div className="pagina">
@@ -86,7 +91,7 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
               <Numero rotulo="Ativos" valor={ativos.length} detalhe={`${ativos.filter((u) => u.tem_login).length} com login`} />
               <Numero rotulo="Compras" valor={ativos.filter(abreCompras).length} detalhe="pedem ou compram" />
               <Numero rotulo="Câmara fria" valor={ativos.filter(abreCamara).length} detalhe="registram o estoque" />
-              <Numero rotulo="Líderes de escala" valor={ativos.filter((u) => u.grupos.length).length}
+              <Numero rotulo="Líderes de escala" valor={ativos.filter(lideraEscala).length}
                 detalhe={semLider.length ? `${semLider.length} grupo${semLider.length === 1 ? "" : "s"} sem líder` : "todos os grupos com líder"} alerta={semLider.length > 0} />
             </div>
 
@@ -114,8 +119,9 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
                       {abreCompras(u) && <i className="us-chip compras">{u.papel === "compras" ? "Setor de compras" : `Compras${u.unidade ? ` · ${UNIDADES[u.unidade] ?? u.unidade}` : ""}`}</i>}
                       {u.papel === "compras" && <i className="us-chip notas">Notas</i>}
                       {abreCamara(u) && <i className="us-chip camara">Câmara fria</i>}
-                      {u.grupos.map((g) => <i key={g} className="us-chip escala">Escala · {nomeGrupo.get(g) ?? "grupo"}</i>)}
-                      {!abreCompras(u) && !abreCamara(u) && !u.grupos.length && <i className="us-chip nada">sem acesso a nada</i>}
+                      {(u.casas ?? []).map((c) => <i key={`c${c}`} className="us-chip escala">Escala · {c} (casa inteira)</i>)}
+                      {u.grupos.filter((g) => !u.casas?.includes(grupos.find((x) => x.id === g)?.local ?? "")).map((g) => <i key={g} className="us-chip escala">Escala · {nomeGrupo.get(g) ?? "grupo"}</i>)}
+                      {!abreCompras(u) && !abreCamara(u) && !lideraEscala(u) && <i className="us-chip nada">sem acesso a nada</i>}
                     </span>
                     {!u.ativo && <span className="es-selo">desativado</span>}
                   </button>
@@ -230,6 +236,9 @@ function Painel({ usuario, grupos, supabase, onFechar, onSalvo }: {
               Também registra a câmara fria</label>
           )}
           <h4>Escala · grupos que lidera</h4>
+          {(usuario?.casas?.length ?? 0) > 0 && (
+            <p className="es-aviso us-ajuda">Lidera a casa inteira: <b>{usuario!.casas!.join(", ")}</b> (todos os setores, inclusive os novos). Para mudar isso, use as bolinhas de líder no cabeçalho da casa, na página Escala.</p>
+          )}
           <p className="muted us-ajuda">Vê, monta e compara a escala só desses grupos. Quem já tem login de Compras passa a abrir também a Escala.</p>
           {grupos.length === 0 ? <p className="muted">Os grupos aparecem depois que alguém abre a escala Planejada no RH.</p> : locais.map((l) => (
             <div key={l} className="us-grupos">
