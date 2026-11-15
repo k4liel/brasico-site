@@ -204,7 +204,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     for (const g of grupos) if (!m.has(g.local)) m.set(g.local, { local: g.local, pessoas: 0, lideres: [] });
     for (const p of daCasa) { const l = m.get(grupoDe.get(p.grupo_id)?.local ?? ""); if (l) l.pessoas++; }
     for (const g of grupos) for (const l of g.lideres) { const x = m.get(g.local)!; if (!x.lideres.includes(l.nome)) x.lideres.push(l.nome); }
-    return [...m.values()].filter((l) => l.pessoas > 0).sort((a, b) => a.local.localeCompare(b.local));
+    // Ordem das abas (14/11/2026, pedido do dono): Cicchetti Centro, Filha da Lua, Sempre Vivo e depois as outras
+    const prioridade = (l: string) => { const i = ["cicchetti-centro", "filha-da-lua", "sempre-vivo"].indexOf(casaDoLocal(l)); return i < 0 ? 9 : i; };
+    return [...m.values()].filter((l) => l.pessoas > 0).sort((a, b) => prioridade(a.local) - prioridade(b.local) || a.local.localeCompare(b.local, "pt-BR"));
   }, [grupos, grupoDe, daCasa]);
   const escolherLocal = (l: string) => {
     setGrupo(l);
