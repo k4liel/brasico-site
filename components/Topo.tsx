@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
-const OPERACAO = ["notas", "compras", "fichas", "estoque", "producao"];
+const OPERACAO = ["compras", "fichas", "estoque", "producao"];
+// Fiscal e Contábil: a página Fiscal (/receita) e as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
+const FISCAL = ["receita", "notas"];
 const RH = ["esocial", "escala"];
 // Hotéis: uma página por hotel (/hoteis/<id>, tabela hoteis)
 const HOTEIS = [
@@ -55,6 +57,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   const [aberto, setAberto] = useState(false);
   // Operação começa fechada, a não ser quando a página aberta é uma das dela
   const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
+  const [fiscalAberta, setFiscalAberta] = useState(FISCAL.includes(ativo ?? ""));
   const [rhAberta, setRhAberta] = useState(RH.includes(ativo ?? ""));
   const [hotAberta, setHotAberta] = useState(/^(op)?hotel:/.test(ativo ?? ""));
   // cada hotel abre e fecha (Gestão e Operação dentro); começa aberto o da página atual
@@ -122,7 +125,13 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               <Item href="/escala" on={ativo === "escala"} vis={aberto && rhAberta} icone={I.escala}>Escala</Item>
             </div></div>
           </>)}
-          {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto} icone={I.receita}>Receita Federal</Item>}
+          {(ve("receita") || ve("operacao")) && (<>
+            <Pasta id="menu-fiscal" on={FISCAL.includes(ativo ?? "")} aberta={fiscalAberta} alternar={() => setFiscalAberta((o) => !o)} vis={aberto} icone={I.receita}>Fiscal e Contábil</Pasta>
+            <div id="menu-fiscal" className={fiscalAberta ? "menu-sub aberto" : "menu-sub"}><div>
+              {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto && fiscalAberta} icone={I.receita}>Fiscal</Item>}
+              {ve("operacao") && <Item href="/notas" on={ativo === "notas"} vis={aberto && fiscalAberta} icone={I.notas}>Notas fiscais</Item>}
+            </div></div>
+          </>)}
 
           {/* Hotéis → cada hotel → Gestão (dados do PMS, /hoteis/<id>) e Operação (área de criação, /hoteis/<id>/operacao) */}
           {HOTEIS.some((h) => ve("hoteis") || ve(opArea(h.id))) && (<>
@@ -151,11 +160,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               })}
             </div></div>
           </>)}
-          {/* Operação: notas, compras, fichas e câmara fria */}
+          {/* Operação: compras, fichas e câmara fria */}
           {ve("operacao") && (<>
             <Pasta id="menu-operacao" on={OPERACAO.includes(ativo ?? "")} aberta={opAberta} alternar={() => setOpAberta((o) => !o)} vis={aberto} icone={I.operacao}>Operação</Pasta>
             <div id="menu-operacao" className={opAberta ? "menu-sub aberto" : "menu-sub"}><div>
-              <Item href="/notas" on={ativo === "notas"} vis={aberto && opAberta} icone={I.notas}>Notas fiscais</Item>
               <Item href="/compras" on={ativo === "compras"} vis={aberto && opAberta} icone={I.compras}>Compras</Item>
               <Item href="/fichas" on={ativo === "fichas"} vis={aberto && opAberta} icone={I.fichas}>Fichas técnicas</Item>
               <Item href="/estoque" on={ativo === "estoque"} vis={aberto && opAberta} icone={I.estoque}>Câmara fria</Item>

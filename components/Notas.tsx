@@ -87,7 +87,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
       <main className="miolo tv es nf nf-larga">
         <div className="es-topo">
           <div>
-            <span className="es-sobre">Operação</span>
+            <span className="es-sobre">Fiscal e Contábil</span>
             <h1>Notas fiscais</h1>
             <p>{compras ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."
               : "NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."}</p>
