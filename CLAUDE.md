@@ -21,6 +21,12 @@ Central de projetos em https://brasico.vercel.app. Cada projeto é um documento 
 - Nunca coloque aqui: chave `service_role`, senhas, tokens, links do conector, e-mails, dados de clientes, propostas, PDFs, seeds com dados reais. O `.gitignore` bloqueia `privado/`, `*.pdf`, `supabase/seed_*.sql` e `.env*`, mas confira antes de cada commit.
 - As únicas variáveis do site são `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` (públicas por natureza).
 
+## Acessos (quem vê e quem edita; supabase/acessos.sql, 15/11/2026)
+- Três tipos em `acessos`: **admin** (Kaliel e Lukasz: tudo, gerenciam acessos, conectam o Claude), **editor** (conecta o Claude com limites, ex.: Camila) e **usuario** (só o site, ex.: Piotr). Por área, `acessos_areas`: nada / `ver` / `editar` (áreas = as de `PAGINAS_DA_AREA` no middleware).
+- **A trava é do banco**: o gatilho `acesso_guarda` (148 tabelas, cada uma ligada a uma área) recusa gravar para quem só vê, venha do site ou do conector (`mcp_auth` grava o dono do link em `brasico.usuario`). Rotinas automáticas (sem usuário) e quem não está em `acessos` (a equipe das casas: compras, câmara fria, escala) seguem as regras antigas. Tabela nova: ligue o `acesso_guarda` com a área dela.
+- `acessos_aplicar` mantém as tabelas antigas em dia a partir de `acessos_areas` (menu `usuario_areas`, `*_acesso`, membros dos projetos). Projeto com `workspaces.restrito` fica só com os admins; projeto novo entra sozinho para admins e para quem tem a área de projetos (`acessos_projeto_novo`). Conectar o Claude (`mcp_tokens`) e convidar para projetos: só admin (convite) e admin/editor (Claude).
+- Tela: "Acessos ao site" no topo da página Usuários (components/AcessosSite.tsx, só admins: `acessos_lista`, `acessos_salvar`, `acessos_projeto_restrito`; histórico em `acessos_historico`). Nunca dê acesso direto nas tabelas `*_acesso` para quem está em `acessos`: mude pela tela.
+
 ## Banco (Supabase `doajznzouxxqbqkvsclv`)
 - RLS em todas as tabelas: só membros do projeto (`is_member`).
 - O conector usa só funções `mcp_*` (`security definer`, `execute` só para `anon`), que validam o link pelo hash em `mcp_tokens`.
