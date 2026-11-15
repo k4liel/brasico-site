@@ -14,7 +14,7 @@ const PAGINAS_DA_AREA: Record<string, string[]> = {
   usuarios: ["/usuarios"],
   conectar: ["/usuarios", "/conectar"], // o Claude de cada um fica na página Usuários
   hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua"],
-  operacao: ["/notas", "/compras", "/fichas", "/estoque", "/producao"],
+  operacao: ["/notas", "/compras", "/precos", "/fichas", "/estoque", "/producao"],
   // Operação de cada hotel: a área de criação (supabase/operacao_hoteis.sql)
   op_filha_da_lua: ["/hoteis/filha-da-lua/operacao"],
   op_sempre_vivo: ["/hoteis/sempre-vivo/operacao"],
@@ -99,7 +99,7 @@ export async function middleware(request: NextRequest) {
     const { data: papel } = await supabase.rpc("operacao_papel", { p_user: user.id });
     const destino = papel === "estoque" ? "/estoque" : papel === "solicitante" || papel === "compras" ? "/compras" : papel === "lider" ? "/escala" : null;
     // o setor de compras (Fernanda) também abre as Notas fiscais (só NF-e, índice e nota avulsa)
-    const liberadas = papel === "compras" ? ["/compras", "/notas"] : destino ? [destino] : [];
+    const liberadas = papel === "compras" ? ["/compras", "/notas", "/precos"] : destino ? [destino] : [];
     // quem tem a Operação completa (operacao_pessoas.operacao_completa) abre também as Fichas e os projetos de que é membro
     if (papel === "compras") {
       const { data: completa } = await supabase.rpc("operacao_completa", { p_user: user.id });

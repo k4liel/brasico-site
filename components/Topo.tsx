@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
-const OPERACAO = ["compras", "fichas", "estoque", "producao"];
+const OPERACAO = ["compras", "precos", "fichas", "estoque", "producao"];
 // Fiscal e Contábil: a página Fiscal (/receita) e as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
 const FISCAL = ["receita", "notas"];
 const RH = ["esocial", "escala"];
@@ -14,7 +14,7 @@ const HOTEIS = [
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
 ];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "precos" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -160,11 +160,12 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               })}
             </div></div>
           </>)}
-          {/* Operação: compras, fichas e câmara fria */}
+          {/* Operação: compras, índice de preços, fichas e câmara fria */}
           {ve("operacao") && (<>
             <Pasta id="menu-operacao" on={OPERACAO.includes(ativo ?? "")} aberta={opAberta} alternar={() => setOpAberta((o) => !o)} vis={aberto} icone={I.operacao}>Operação</Pasta>
             <div id="menu-operacao" className={opAberta ? "menu-sub aberto" : "menu-sub"}><div>
               <Item href="/compras" on={ativo === "compras"} vis={aberto && opAberta} icone={I.compras}>Compras</Item>
+              <Item href="/precos" on={ativo === "precos"} vis={aberto && opAberta} icone={I.precos}>Índice de preços</Item>
               <Item href="/fichas" on={ativo === "fichas"} vis={aberto && opAberta} icone={I.fichas}>Fichas técnicas</Item>
               <Item href="/estoque" on={ativo === "estoque"} vis={aberto && opAberta} icone={I.estoque}>Câmara fria</Item>
             </div></div>
@@ -224,6 +225,7 @@ const I = {
   receita: <path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" />,
   hoteis: <><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></>,
   tela: <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 9h16" /></>,
+  precos: <path d="M3 17l5-5 4 4 8-8M15 8h5v5" />,
   gestao: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
   ophoteis: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><path d="M17.5 14v7M14 17.5h7" /></>,
   operacao: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5" /></>,

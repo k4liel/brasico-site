@@ -3281,7 +3281,7 @@ a.botao:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 /* Índice de preços (components/IndicePrecos.tsx) */
 .ip { display: grid; gap: 20px; }
 .ip-cabeca { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.ip-cabeca h2 { font-family: var(--font-serif), Georgia, serif; font-size: 26px; font-weight: 500; color: var(--strong); margin: 2px 0 4px; }
+.ip-cabeca h1, .ip-cabeca h2 { font-family: var(--font-serif), Georgia, serif; font-size: 30px; font-weight: 500; color: var(--strong); margin: 2px 0 4px; }
 .ip-cabeca p { margin: 0; font-size: 13px; }
 .ip-numeros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .ip-numero { position: relative; display: grid; gap: 4px; padding: 16px 18px; background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }

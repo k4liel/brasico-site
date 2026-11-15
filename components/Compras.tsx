@@ -100,7 +100,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 
   return (
     <div className="pagina">
-      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={papel === "compras" ? { href: "/notas", nome: "Notas fiscais" } : eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : lider ? { href: "/escala", nome: "Escala" } : undefined} />}
+      {papel === "socio" ? <Topo email={userEmail} ativo="compras" /> : <TopoSimples email={userEmail} nome={eu?.nome ?? ""} outra={papel === "compras" ? [{ href: "/precos", nome: "Índice de preços" }, { href: "/notas", nome: "Notas fiscais" }] : eu?.registra_estoque ? { href: "/estoque", nome: "Câmara fria" } : lider ? { href: "/escala", nome: "Escala" } : undefined} />}
       <main className="miolo tv es cp-area nf-larga">
         {cabecalho}
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
@@ -131,15 +131,15 @@ export default function Compras({ userEmail }: { userEmail: string }) {
 }
 
 // Para quem só tem a área de Compras: sem o menu do Brasico
-const ORDEM_AREAS = ["Compras", "Notas fiscais", "Fichas técnicas", "Câmara fria", "Escala"];
+const ORDEM_AREAS = ["Compras", "Índice de preços", "Notas fiscais", "Fichas técnicas", "Câmara fria", "Escala"];
 // Quem tem a Operação completa (operacao_pessoas.operacao_completa) vê todas as áreas e os projetos de que é membro.
 // A página Produção saiu do menu em 10/11/2026 (a produção se organiza no projeto Produção Sempre Vivo).
 const AREAS_OPERACAO = [
-  { href: "/compras", nome: "Compras" }, { href: "/notas", nome: "Notas fiscais" }, { href: "/fichas", nome: "Fichas técnicas" },
+  { href: "/compras", nome: "Compras" }, { href: "/precos", nome: "Índice de preços" }, { href: "/notas", nome: "Notas fiscais" }, { href: "/fichas", nome: "Fichas técnicas" },
   { href: "/estoque", nome: "Câmara fria" },
 ];
 // Topo de quem só abre uma área da Operação (solicitantes, Fernanda, câmara fria)
-export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } }) {
+export function TopoSimples({ email, nome, area = "Compras", outra }: { email: string; nome: string; area?: string; outra?: { href: string; nome: string } | { href: string; nome: string }[] }) {
   const [senha, setSenha] = useState(false);
   const [completa, setCompleta] = useState<{ href: string; nome: string }[] | null>(null);
   // Quem monta a escala de alguma casa vê também a Escala no menu
@@ -164,7 +164,7 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
   }
   const base = completa
     ? (completa.some((p) => p.nome === area) ? completa : [{ href: "", nome: area }, ...completa])
-    : outra ? [{ href: "", nome: area }, outra].sort((x, y) => ORDEM_AREAS.indexOf(x.nome) - ORDEM_AREAS.indexOf(y.nome)) : null;
+    : outra ? [{ href: "", nome: area }, ...(Array.isArray(outra) ? outra : [outra])].sort((x, y) => ORDEM_AREAS.indexOf(x.nome) - ORDEM_AREAS.indexOf(y.nome)) : null;
   const paginas = ehLider && !(base ?? [{ nome: area }]).some((p) => p.nome === "Escala")
     ? [...(base ?? [{ href: "", nome: area }]), { href: "/escala", nome: "Escala" }]
     : base;

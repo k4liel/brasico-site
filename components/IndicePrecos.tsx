@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Faisca, GraficoBarras, GraficoLinhas, GraficoPrecos, type Compra } from "./Graficos";
 
-// Índice de preços (aba da página Notas): análise das compras de todas as notas (Cicchetti Management e SEFAZ),
+// Índice de preços (página /precos, em Operação; antes era aba da página Notas): análise das compras de todas as notas (Cicchetti Management e SEFAZ),
 // com o índice mensal encadeado, o gasto, os alertas de alta e de queda (um por item e fornecedor) e a busca de produto.
 // Cada item abre embaixo com o histórico de preço e a comparação de fornecedores. Funções em supabase/precos_painel.sql.
 type Ponto = { serie: string; mes: string; valor: number; variacao: number; itens: number; tem: boolean };
@@ -80,8 +80,8 @@ export default function IndicePrecos({ previa }: { previa?: Painel } = {}) {
     <div className="ip">
       <div className="ip-cabeca">
         <div>
-          <span className="es-sobre">Compras · últimos 12 meses</span>
-          <h2>Índice de preços</h2>
+          <span className="es-sobre">Operação · compras dos últimos 12 meses</span>
+          <h1>Índice de preços</h1>
           <p className="muted">Todas as compras das notas (Cicchetti Management e SEFAZ), item a item. Atualizado {new Date(p.atualizado_em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.</p>
         </div>
         <button className="ghost small" disabled={carregando} onClick={carregar}>{carregando ? "Calculando…" : "Atualizar"}</button>

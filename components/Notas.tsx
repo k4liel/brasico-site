@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { TopoSimples } from "./Compras";
-import IndicePrecos from "./IndicePrecos";
 import NotasServico, { LeituraNfse } from "./NotasServico";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
@@ -50,7 +49,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   const [compras, setCompras] = useState(false); // setor de compras: só NF-e, índice e nota avulsa
   const [nome, setNome] = useState("");
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [aba, setAba] = useState<"notas" | "nfse" | "indice" | "avulsa" | "sefaz">("notas");
+  const [aba, setAba] = useState<"notas" | "nfse" | "avulsa" | "sefaz">("notas");
 
   const carregarEmpresas = useCallback(async () => {
     const { data } = await supabase.from("notas_empresas").select("*").order("nome");
@@ -82,7 +81,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
 
   return (
     <div className="pagina">
-      {compras ? <TopoSimples email={userEmail} nome={nome} area="Notas fiscais" outra={{ href: "/compras", nome: "Compras" }} />
+      {compras ? <TopoSimples email={userEmail} nome={nome} area="Notas fiscais" outra={[{ href: "/compras", nome: "Compras" }, { href: "/precos", nome: "Índice de preços" }]} />
         : <Topo email={userEmail} ativo="notas" />}
       <main className="miolo tv es nf nf-larga">
         <div className="es-topo">
@@ -97,14 +96,12 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
         <div className="cp-abas" role="tablist">
           <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>NF-e (produtos)</button>
           {!compras && <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>}
-          <button role="tab" aria-selected={aba === "indice"} className={aba === "indice" ? "on" : ""} onClick={() => setAba("indice")}>Índice de preços</button>
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
           {!compras && <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>}
         </div>
 
         {aba === "notas" && <ListaNotas empresas={empresas} />}
         {aba === "nfse" && !compras && <NotasServico />}
-        {aba === "indice" && <IndicePrecos />}
         {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
         {aba === "sefaz" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /></>}
       </main>
