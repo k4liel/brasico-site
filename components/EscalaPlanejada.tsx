@@ -194,6 +194,13 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     };
   }, [supabase, ler]);
 
+  // Ponto ao vivo para quem não é sócio (o aviso do RHiD acima só chega para sócios): relê ontem e hoje a cada minuto
+  useEffect(() => {
+    if (modo !== "real") return;
+    const t = setInterval(() => ler(somarDias(hoje(), -1), hoje()), 60000);
+    return () => clearInterval(t);
+  }, [modo, ler]);
+
   // ---------- Montagem ----------
   const grupos = useMemo(() => (dados?.grupos ?? []).filter((g) => !casa || casaDoLocal(g.local) === casa), [dados?.grupos, casa]);
   const grupoDe = useMemo(() => new Map(grupos.map((g) => [g.id, g])), [grupos]);

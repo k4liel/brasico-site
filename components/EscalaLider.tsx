@@ -189,7 +189,19 @@ function EscalaSocio({ supabase }: { supabase: SupabaseClient }) {
   );
 }
 
-// O líder não vê nada do RHiD (pedido do dono): só a escala editável, sem o ponto oficial
+// Líder (14/11/2026, pedido do dono): o mesmo interruptor do sócio — escala editável ou o ponto oficial do RHiD,
+// sempre só das pessoas dos grupos que ele lidera (escala_dados; supabase/escala_lider_ponto.sql). O banco de horas
+// continua só dos sócios.
 function EscalaDoLider({ supabase }: { supabase: SupabaseClient }) {
-  return <EscalaPlanejada supabase={supabase} modo="planejada" />;
+  const [verPonto, setVerPonto] = useVerPonto();
+  return (
+    <>
+      <div className="ep-topo-acoes">
+        <ChaveVerPonto ver={verPonto} onMudar={setVerPonto} />
+      </div>
+      {verPonto
+        ? <EscalaPlanejada key="ponto" supabase={supabase} modo="real" />
+        : <EscalaPlanejada key="escala" supabase={supabase} modo="planejada" />}
+    </>
+  );
 }
