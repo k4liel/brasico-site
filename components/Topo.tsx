@@ -12,7 +12,7 @@ const HOTEIS = [
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
 ];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -57,6 +57,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
   const [rhAberta, setRhAberta] = useState(RH.includes(ativo ?? ""));
   const [hotAberta, setHotAberta] = useState((ativo ?? "").startsWith("hotel:"));
+  const [opHotAberta, setOpHotAberta] = useState((ativo ?? "").startsWith("ophotel:"));
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
     if (!aberto) return;
@@ -114,13 +115,21 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           </>)}
           {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto} icone={I.receita}>Receita Federal</Item>}
 
-          {/* Hotéis: um item que abre e fecha, com uma página por hotel */}
-          {/* quem só tem a Operação de um hotel vê o hotel, abrindo direto na Operação */}
-          {(ve("hoteis") || HOTEIS.some((h) => ve(`op_${h.id.replace(/-/g, "_")}`))) && (<>
+          {/* Hotéis: um item que abre e fecha, com uma página por hotel (dados do PMS) */}
+          {ve("hoteis") && (<>
             <Pasta id="menu-hoteis" on={(ativo ?? "").startsWith("hotel:")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis</Pasta>
             <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}><div>
-              {HOTEIS.filter((h) => ve("hoteis") || ve(`op_${h.id.replace(/-/g, "_")}`)).map((h) => (
-                <Item key={h.id} href={ve("hoteis") ? `/hoteis/${h.id}` : `/hoteis/${h.id}/operacao`} on={ativo === `hotel:${h.id}`} vis={aberto && hotAberta} icone={h.icone}>{h.nome}</Item>
+              {HOTEIS.map((h) => (
+                <Item key={h.id} href={`/hoteis/${h.id}`} on={ativo === `hotel:${h.id}`} vis={aberto && hotAberta} icone={h.icone}>{h.nome}</Item>
+              ))}
+            </div></div>
+          </>)}
+          {/* Operação dos hotéis: página própria de cada hotel, a área de criação (components/hotel/Operacao.tsx) */}
+          {HOTEIS.some((h) => ve(`op_${h.id.replace(/-/g, "_")}`)) && (<>
+            <Pasta id="menu-ophoteis" on={(ativo ?? "").startsWith("ophotel:")} aberta={opHotAberta} alternar={() => setOpHotAberta((o) => !o)} vis={aberto} icone={I.ophoteis}>Operação dos hotéis</Pasta>
+            <div id="menu-ophoteis" className={opHotAberta ? "menu-sub aberto" : "menu-sub"}><div>
+              {HOTEIS.filter((h) => ve(`op_${h.id.replace(/-/g, "_")}`)).map((h) => (
+                <Item key={h.id} href={`/hoteis/${h.id}/operacao`} on={ativo === `ophotel:${h.id}`} vis={aberto && opHotAberta} icone={h.icone}>{h.nome}</Item>
               ))}
             </div></div>
           </>)}
@@ -188,6 +197,7 @@ const I = {
   escala: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h4M14 13h3M14 17h3" /></>,
   receita: <path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" />,
   hoteis: <><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></>,
+  ophoteis: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><path d="M17.5 14v7M14 17.5h7" /></>,
   operacao: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5" /></>,
   notas: <><path d="M6 3h9l4 4v14l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V4a1 1 0 0 1 1-1Z" /><path d="M9 9h6M9 13h6" /></>,
   compras: <><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L20 8H6.2" /><circle cx="9" cy="20" r="1.3" /><circle cx="17" cy="20" r="1.3" /></>,

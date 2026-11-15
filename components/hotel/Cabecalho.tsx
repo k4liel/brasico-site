@@ -27,7 +27,7 @@ function ha(iso: string) {
   return h < 24 ? `há ${h} h` : new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza" });
 }
 
-export default function Cabecalho({ hotel, nome, vista, mudar, acoes }: { hotel: string; nome: string; vista: Vista | "operacao"; mudar?: (v: Vista) => void; acoes?: ReactNode }) {
+export default function Cabecalho({ hotel, nome, vista, mudar, acoes }: { hotel: string; nome: string; vista: Vista; mudar?: (v: Vista) => void; acoes?: ReactNode }) {
   const supabase = useMemo(() => createClient(), []);
   const [hora, setHora] = useState<Hora | null>(null);
   const [, setTique] = useState(0);
@@ -67,15 +67,6 @@ export default function Cabecalho({ hotel, nome, vista, mudar, acoes }: { hotel:
             {t}
           </button>
         ))}
-        {/* Operação: a área de criação do hotel (recepção, governança, CRM…; components/hotel/Operacao.tsx) */}
-        <span className="hx-abas-sep" aria-hidden="true" />
-        <button type="button" className={`hx-aba-operacao${vista === "operacao" ? " on" : ""}`} aria-current={vista === "operacao" ? "page" : undefined}
-          onClick={() => { window.location.href = `/hoteis/${hotel}/operacao`; }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><path d="M17.5 14v7M14 17.5h7" />
-          </svg>
-          Operação
-        </button>
         {acoes && <div className="hx-abas-acoes">{acoes}</div>}
       </nav>
     </header>

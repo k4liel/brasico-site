@@ -7,7 +7,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "../Topo";
-import Cabecalho from "./Cabecalho";
 
 type Tela = {
   slug: string; titulo: string; descricao: string | null; icone: string | null; ordem: number;
@@ -117,8 +116,7 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
 
   return (
     <div className="pagina pagina-doc modo-pagina">
-      <Topo email={userEmail} ativo={`hotel:${hotel}`} />
-      <Cabecalho hotel={hotel} nome={nome} vista="operacao" />
+      <Topo email={userEmail} ativo={`ophotel:${hotel}`} />
       <main className="hx-pagina op">
         {erro ? <p className="tv-alerta">{erro}</p> : !telas ? (
           <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
@@ -126,8 +124,8 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
           <>
             <div className="op-topo">
               <div>
-                <span className="hx-sobre">Operação · {nome}</span>
-                <h2>Sistemas do dia a dia</h2>
+                <span className="hx-sobre">Operação dos hotéis</span>
+                <h1>{nome}</h1>
                 <p className="muted">Recepção, governança, clientes e as rotinas do hotel, criados aqui dentro.</p>
               </div>
             </div>
