@@ -4549,39 +4549,112 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .ig-numeros-topo .atencao dd, .ig-numeros-topo .erro dd { color: var(--ig-cor); }
 
 /* mapa, atividade e alertas */
-.ig-central { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 32px; }
-.ig-lado { display: grid; gap: 16px; align-content: start; }
+.ig-central { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-bottom: 32px; }
+.ig-lado { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .ig-caixa { border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
 .ig-caixa-cabeca { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 12px; padding: 16px 20px 0; }
 .ig-caixa-cabeca h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--strong); }
 .ig-caixa-cabeca span { font-size: 12px; color: var(--muted); }
-.ig-mapa { display: block; width: 100%; max-width: 520px; height: auto; margin: 0 auto; padding: 8px 64px; overflow: visible; }
-.ig-orbita { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 5; }
-.ig-orbita.interna { stroke-dasharray: 1 6; opacity: .7; }
-.ig-fio { fill: none; stroke: var(--border); stroke-width: 1.2; transition: stroke .2s, stroke-width .2s, opacity .2s; }
-.ig-elo.atencao .ig-fio, .ig-elo.erro .ig-fio { stroke: var(--ig-cor); opacity: .75; stroke-dasharray: 4 3; }
-.ig-pacote { fill: var(--muted); opacity: .75; }
-.ig-elo.atencao .ig-pacote { fill: var(--ig-atencao); }
-.ig-mapa.com-foco .ig-elo:not(.ativo) { opacity: .25; }
-.ig-mapa.com-foco .ig-no-grupo:not(.ativo) { opacity: .45; }
-.ig-elo.ativo .ig-fio { stroke: var(--gold); stroke-width: 2; opacity: 1; }
-.ig-elo.ativo .ig-pacote { fill: var(--gold); opacity: 1; }
-.ig-centro { fill: var(--navy); }
-:root[data-theme="dark"] .ig-centro { fill: #24314f; }
-.ig-centro-anel { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 5; transform-origin: 260px 260px; animation: ig-girar 40s linear infinite; }
-.ig-centro-texto { fill: #fff; font-family: var(--font-serif), Georgia, serif; font-size: 16px; font-weight: 600; pointer-events: none; }
-.ig-no-grupo { cursor: pointer; outline: none; transition: opacity .2s; }
-.ig-no-alvo { fill: transparent; }
-.ig-no { fill: var(--panel); stroke: var(--ig-cor); stroke-width: 3; transition: r .2s var(--ig-curva), stroke-width .2s; }
-.ig-no-grupo.ativo .ig-no { r: 10; stroke-width: 4; }
-.ig-no-grupo:focus-visible .ig-no { stroke: var(--gold); }
 .ig-no-onda { fill: none; stroke: var(--ig-cor); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; animation: ig-onda 2.2s ease-out infinite; }
 @keyframes ig-onda { from { transform: scale(1); opacity: .7; } to { transform: scale(2.4); opacity: 0; } }
-.ig-no-texto { fill: var(--text); font-size: 14px; transition: fill .2s; }
-.ig-no-grupo.ativo .ig-no-texto { fill: var(--strong); font-weight: 600; }
 .ig-legenda { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; padding: 0 20px 16px; font-size: 12px; color: var(--muted); }
 .ig-legenda span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .ig-legenda i { width: 8px; height: 8px; border-radius: 50%; background: var(--ig-cor); }
+
+/* Mapa das conexões (components/MapaConexoes.tsx): largura toda, três jeitos de ver (Central, Fluxo, Órbita) */
+.ig-mc-cabeca { align-items: center; padding-bottom: 4px; }
+.ig-mc-cabeca > div:first-child { display: grid; gap: 2px; }
+.ig-mc-palco { position: relative; padding: 4px 16px 0; }
+.ig-mc-grade { position: absolute; inset: 0; pointer-events: none; opacity: .35;
+  background-image: radial-gradient(var(--line-strong) 1px, transparent 1.2px); background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%); mask-image: radial-gradient(ellipse at center, #000 25%, transparent 72%); }
+.ig-mc-rolar { position: relative; }
+.ig-mc-svg { display: block; width: 100%; height: auto; overflow: visible; animation: ig-entra .45s var(--ig-curva) both; }
+.ig-mc-svg text { font-family: var(--font-sans), system-ui, sans-serif; }
+.ig-mc-d { transition: opacity .25s; }
+.ig-mc.com-foco .ig-mc-d:not(.on) { opacity: .16; }
+.ig-mc-grupo { fill: var(--gold); font-size: 11px; font-weight: 600; letter-spacing: 1.4px; }
+.ig-mc-grupo.fraco { fill: var(--muted); font-size: 10px; }
+/* ligações */
+.ig-mc-trilho { fill: none; stroke: var(--line-strong); stroke-linecap: round; opacity: .3; }
+.ig-mc-fio { fill: none; stroke: var(--ig-cor); stroke-linecap: round; stroke-dasharray: 2 8; opacity: .85; animation: ig-mc-fluxo 3s linear infinite; }
+.ig-mc-elo.sai .ig-mc-fio { animation-direction: reverse; }
+.ig-mc-elo.atencao .ig-mc-fio { stroke-dasharray: 6 5; }
+.ig-mc-elo.erro .ig-mc-fio { stroke-dasharray: 6 5; animation-duration: 7s !important; }
+.ig-mc-elo.pausa .ig-mc-fio { stroke-dasharray: 1 6; opacity: .45; animation: none; }
+@keyframes ig-mc-fluxo { to { stroke-dashoffset: -40; } }
+.ig-mc-pacote { fill: var(--strong); opacity: .9; pointer-events: none; }
+.ig-mc-pacote.ouro { fill: var(--gold); }
+.ig-mc-elo.erro .ig-mc-pacote { fill: var(--ig-erro); }
+.ig-mc-faixa-fonte { fill: none; stroke: var(--ig-cor); stroke-linecap: round; opacity: .38; transition: opacity .2s; }
+.ig-mc-elo.pausa .ig-mc-faixa-fonte { opacity: .22; }
+.ig-mc-faixa-destino { fill: none; stroke: var(--gold); stroke-linecap: round; opacity: .22; transition: opacity .2s; }
+.ig-mc.com-foco .on .ig-mc-faixa-fonte { opacity: .7; }
+.ig-mc.com-foco .on .ig-mc-faixa-destino { opacity: .55; }
+.ig-mc-raio { fill: none; stroke: var(--ig-cor); stroke-width: 2; stroke-dasharray: 3 5; opacity: .6; }
+.ig-mc-invisivel { fill: none; stroke: none; }
+.ig-mc-h { fill: var(--ig-cor); }
+.ig-mc-h.raio { fill: none; stroke: var(--ig-cor); stroke-width: 4; stroke-linecap: round; opacity: .85; }
+.ig-mc-h.raio.sem { stroke-width: 3; opacity: 1; }
+/* núcleo */
+.ig-mc-nucleo { fill: var(--panel); stroke: var(--gold); stroke-width: 1.5; }
+.ig-mc-nucleo-linha { fill: none; stroke: var(--border); }
+.ig-mc-giro { transform-box: view-box; animation: ig-girar 60s linear infinite; }
+.ig-mc-giro.lento { animation-duration: 16s; }
+.ig-mc-giro line { stroke: var(--gold); stroke-width: .8; opacity: .4; }
+.ig-mc-giro line.forte { stroke-width: 1.4; opacity: .8; }
+.ig-mc-varre { fill: var(--gold); opacity: .05; }
+.ig-mc-varre-linha { stroke: var(--gold); opacity: .25; }
+.ig-mc-varre-v { fill: var(--gold); opacity: .07; animation: ig-mc-desce 8s ease-in-out infinite alternate; }
+@keyframes ig-mc-desce { to { transform: translateY(var(--curso)); } }
+.ig-mc-marca { fill: var(--strong); font-family: var(--font-serif), Georgia, serif !important; font-size: 22px; font-weight: 600; }
+.ig-mc-marca.menor { font-size: 19px; }
+.ig-mc-sub { fill: var(--muted); font-size: 12px; }
+.ig-mc-vivo { fill: var(--ig-ok); font-size: 11.5px; font-weight: 600; }
+.ig-mc-orbita { fill: none; stroke: var(--border); }
+.ig-mc-orbita.fina { stroke-dasharray: 2 5; }
+.ig-mc-setor { fill: none; stroke: var(--gold); stroke-width: 1.2; opacity: .5; }
+/* sistemas */
+.ig-mc-no { cursor: pointer; outline: none; }
+.ig-mc-cartao { fill: var(--panel); stroke: var(--border); transition: stroke .2s, fill .2s; }
+.ig-mc-no:hover .ig-mc-cartao, .ig-mc-no:focus-visible .ig-mc-cartao, .ig-mc.com-foco .ig-mc-no.on .ig-mc-cartao { stroke: var(--gold); }
+.ig-mc-no.novo .ig-mc-cartao, .ig-mc-no.novo .ig-mc-bola { animation: ig-mc-novo 2.2s ease-out; }
+@keyframes ig-mc-novo { 0%, 30% { stroke: var(--gold); stroke-width: 2.5; } }
+.ig-mc-faixa, .ig-mc-ponto { fill: var(--ig-cor); }
+.ig-mc-nome { fill: var(--strong); font-size: 13.5px; font-weight: 600; }
+.ig-mc-nome.menor { font-size: 12.5px; }
+.ig-mc-nome.normal { fill: var(--text); font-weight: 500; }
+.ig-mc-num { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ig-mc-frase { fill: var(--muted); font-size: 11px; }
+.ig-mc-frase.erro, .ig-mc-num.erro { fill: var(--ig-erro); }
+.ig-mc-frase.atencao { fill: var(--ig-atencao); }
+.ig-mc-alvo { fill: transparent; }
+.ig-mc-bola { fill: var(--panel); stroke: var(--ig-cor); stroke-width: 3; transition: stroke-width .2s; }
+.ig-mc-no:hover .ig-mc-bola, .ig-mc-no:focus-visible .ig-mc-bola { stroke-width: 4.5; }
+.ig-mc-no:focus-visible .ig-mc-bola { stroke: var(--gold); }
+.ig-mc-anel { fill: none; stroke: var(--border); stroke-width: 2; }
+.ig-mc-anel-cheio { fill: none; stroke: var(--ig-cor); stroke-width: 2; opacity: .8; }
+/* rodapé: legenda ou o sistema sob o mouse */
+.ig-mc-rodape { min-height: 52px; display: flex; align-items: center; justify-content: center; padding: 6px 20px 14px; }
+.ig-mc-rodape .ig-legenda { padding: 0; }
+.ig-mc-dica { color: var(--muted); }
+.ig-mc-dica::before { content: "·"; margin-right: 10px; }
+.ig-mc-info { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 12px; margin: 0; font-size: 13px; color: var(--text); animation: ig-entra .2s ease-out both; }
+.ig-mc-info i { width: 8px; height: 8px; border-radius: 50%; background: var(--ig-cor); }
+.ig-mc-info b { color: var(--strong); }
+.ig-mc-info-estado { color: var(--ig-cor); font-weight: 600; }
+.ig-mc-info.ok .ig-mc-info-estado { color: var(--ig-ok); }
+.ig-mc-info em { color: var(--gold); font-style: normal; font-size: 12px; }
+@media (max-width: 760px) {
+  .ig-mc-cabeca .ig-segmento { width: 100%; }
+  .ig-mc-palco { padding: 4px 0 0; }
+  .ig-mc-rolar { overflow-x: auto; padding: 0 12px; -webkit-overflow-scrolling: touch; }
+  .ig-mc-svg { min-width: 860px; }
+  .ig-mc-rolar::after { content: "arraste para o lado para ver o mapa inteiro"; position: sticky; left: 0; display: block; padding: 6px 0 4px; font-size: 11.5px; color: var(--muted); text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ig-mc-fio, .ig-mc-giro, .ig-mc-varre-v, .ig-mc-no.novo .ig-mc-cartao, .ig-mc-svg, .ig-mc-info { animation: none !important; }
+}
 
 .ig-grafico { padding: 8px 12px 10px 4px; }
 .ig-grafico .recharts-surface { overflow: visible; }
@@ -4708,7 +4781,7 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 
 @media (max-width: 960px) {
   .ig-resumo { grid-template-columns: minmax(0, 1fr); }
-  .ig-central { grid-template-columns: minmax(0, 1fr); }
+  .ig-lado { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
   .ig-vivo { width: 100%; }
@@ -4717,8 +4790,6 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
   .ig-estado { font-size: 17px; }
   .ig-numeros-topo { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 0; }
   .ig-numeros-topo div:nth-child(3) { border-left: 0; padding-left: 0; }
-  .ig-mapa { padding: 4px 44px; }
-  .ig-no-texto { font-size: 19px; }
   .ig-busca { max-width: none; }
   .ig-segmento { width: 100%; overflow-x: auto; }
   .ig-segmento button { flex: 1; padding: 6px 8px; font-size: 12px; }

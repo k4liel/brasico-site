@@ -4,6 +4,7 @@
 // Visual (13/11/2026, depois de duas tentativas recusadas pelo dono): no padrão do sistema, sem neon e sem nada
 // forçado, mas com tecnologia de verdade — atividade por hora (gráfico e barra de 24 h em cada cartão), busca e
 // filtro, painel lateral com o detalhe de cada sistema, mapa interativo e movimentos discretos.
+// O mapa (largura toda, três jeitos de ver: Central, Fluxo dos dados e Órbita 24 h) fica em MapaConexoes.tsx.
 // Dados: integracoes_painel() (supabase/integracoes.sql), relido a cada 30 s e ao voltar para a aba.
 // Regras em lib/integracoes.ts. CSS no bloco "Integrações" de app/globals.css (classes ig-*).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +12,7 @@ import { Area, Bar, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } 
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import Gaveta from "./Gaveta";
+import MapaConexoes from "./MapaConexoes";
 import {
   GRUPOS, NOME_FONTE, STATUS_TEXTO, atividadeGeral, estadoAgenda, estadoEvento, estadoHora, fonteDaAgenda, horaDaPosicao,
   horarioLegivel, montarIntegracoes, quando, type Estado, type Hora, type Integracao, type Painel,
@@ -34,7 +36,6 @@ export default function Integracoes({ userEmail, previa }: { userEmail: string; 
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [aberto, setAberto] = useState<string | null>(null);
-  const [foco, setFoco] = useState<string | null>(null);
   // Sistemas que leram algo novo desde a última atualização: o cartão pisca de leve
   const [novos, setNovos] = useState<Set<string>>(new Set());
   const ultimas = useRef<Record<string, string | null>>({});
@@ -142,13 +143,7 @@ export default function Integracoes({ userEmail, previa }: { userEmail: string; 
           </section>
 
           <section className="ig-central">
-            <div className="ig-caixa ig-entra" style={{ "--i": 1 } as React.CSSProperties}>
-              <div className="ig-caixa-cabeca"><h2>Mapa das conexões</h2><span>passe o mouse ou clique num sistema</span></div>
-              <Mapa lista={lista} foco={foco} setFoco={setFoco} onAbrir={abrir} />
-              <div className="ig-legenda">
-                {(["ok", "atencao", "erro", "pausa"] as Estado[]).map((e) => <span key={e} className={e}><i />{TEXTO_ESTADO[e]}</span>)}
-              </div>
-            </div>
+            <MapaConexoes lista={lista} novos={novos} onAbrir={abrir} />
             <div className="ig-lado">
               <div className="ig-caixa ig-entra" style={{ "--i": 2 } as React.CSSProperties}>
                 <div className="ig-caixa-cabeca"><h2>Atividade nas últimas 24 h</h2>
@@ -425,64 +420,6 @@ function Detalhe({ i, painel, agora }: { i: Integracao; painel: Painel; agora: s
       )}
       {i.pagina && <a className="ig-abrir-pagina" href={i.pagina}>Abrir {i.nome} →</a>}
     </div>
-  );
-}
-
-// Nomes curtos no mapa (o nome completo fica no cartão e ao passar o mouse)
-const NO_MAPA: Record<string, string> = {
-  receita: "Receita", notas: "NF-e", certificados: "Certificados", totvs: "TOTVS", cicchetti: "Cicchetti",
-  pms: "PMS hotéis", conector: "Conector", claude: "Claude",
-};
-
-// Mapa: o Brasico no meio e cada sistema em volta. Pontos discretos correm pelas ligações que estão funcionando;
-// passar o mouse destaca a ligação, clicar abre o detalhe.
-function Mapa({ lista, foco, setFoco, onAbrir }: { lista: Integracao[]; foco: string | null; setFoco: (id: string | null) => void; onAbrir: (id: string) => void }) {
-  const L = 520, c = L / 2, raio = 180;
-  const [mov, setMov] = useState(false);
-  useEffect(() => setMov(!semMovimento()), []);
-  const nos = lista.map((i, k) => {
-    const ang = (-90 + (360 / lista.length) * k) * (Math.PI / 180);
-    return { i, k, x: c + raio * Math.cos(ang), y: c + raio * Math.sin(ang), cos: Math.cos(ang) };
-  });
-  return (
-    <svg className={`ig-mapa ${foco ? "com-foco" : ""}`} viewBox={`0 0 ${L} ${L}`} role="img" aria-label="Mapa das conexões do Brasico">
-      <circle cx={c} cy={c} r={raio} className="ig-orbita" />
-      <circle cx={c} cy={c} r={raio * 0.55} className="ig-orbita interna" />
-      {nos.map(({ i, k, x, y }) => (
-        <g key={`l-${i.id}`} className={`ig-elo ${i.estado} ${foco === i.id ? "ativo" : ""}`}>
-          <path id={`ig-fio-${i.id}`} d={`M${c} ${c} L${x} ${y}`} className="ig-fio" />
-          {mov && (i.estado === "ok" || i.estado === "atencao") && (
-            <circle r="2.4" className="ig-pacote">
-              <animateMotion dur={`${3.2 + (k % 4) * 0.5}s`} repeatCount="indefinite" begin={`${(k * 0.53) % 3}s`}
-                keyPoints={k % 2 ? "0;1" : "1;0"} keyTimes="0;1" calcMode="linear">
-                <mpath href={`#ig-fio-${i.id}`} />
-              </animateMotion>
-            </circle>
-          )}
-        </g>
-      ))}
-      <circle cx={c} cy={c} r={50} className="ig-centro-anel" />
-      <circle cx={c} cy={c} r={42} className="ig-centro" />
-      <text x={c} y={c + 6} textAnchor="middle" className="ig-centro-texto">Brasico</text>
-      {nos.map(({ i, x, y, cos }) => {
-        const meio = Math.abs(cos) <= 0.12;
-        const lx = x + (meio ? 0 : cos > 0 ? 15 : -15);
-        const ly = y + (meio ? (y < c ? -16 : 26) : 4);
-        const anchor = meio ? "middle" : cos > 0 ? "start" : "end";
-        return (
-          <g key={i.id} className={`ig-no-grupo ${i.estado} ${foco === i.id ? "ativo" : ""}`} tabIndex={0} role="button"
-            aria-label={`${i.nome}: ${TEXTO_ESTADO[i.estado]}`}
-            onMouseEnter={() => setFoco(i.id)} onMouseLeave={() => setFoco(null)} onFocus={() => setFoco(i.id)} onBlur={() => setFoco(null)}
-            onClick={() => onAbrir(i.id)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onAbrir(i.id)}>
-            <title>{`${i.nome}: ${TEXTO_ESTADO[i.estado]} · ${i.frase}`}</title>
-            {(i.estado === "erro" || i.estado === "atencao") && <circle cx={x} cy={y} r={8} className="ig-no-onda" />}
-            <circle cx={x} cy={y} r={18} className="ig-no-alvo" />
-            <circle cx={x} cy={y} r={8} className="ig-no" />
-            <text x={lx} y={ly} textAnchor={anchor} className="ig-no-texto">{NO_MAPA[i.id] ?? i.nome}</text>
-          </g>
-        );
-      })}
-    </svg>
   );
 }
 
