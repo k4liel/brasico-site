@@ -138,7 +138,7 @@ begin
   if v_areas is null then
     delete from public.usuario_areas where user_id = p_user;
   else
-    if v_tipo = 'editor' and not ('conectar' = any(v_areas)) then v_areas := v_areas || 'conectar'; end if;
+    if v_tipo = 'editor' and not ('conectar' = any(v_areas)) then v_areas := array_append(v_areas, 'conectar'::text); end if;
     insert into public.usuario_areas (user_id, areas) values (p_user, v_areas)
       on conflict (user_id) do update set areas = excluded.areas;
   end if;

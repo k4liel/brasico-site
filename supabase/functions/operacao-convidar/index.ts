@@ -28,8 +28,12 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: auth } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: papel } = await doUsuario.rpc("operacao_papel", { p_user: (await doUsuario.auth.getUser()).data.user?.id ?? null });
+  const quem = (await doUsuario.auth.getUser()).data.user?.id ?? null;
+  const { data: papel } = await doUsuario.rpc("operacao_papel", { p_user: quem });
   if (papel !== "socio") return responder({ erro: "Só os sócios dão acesso à área de Compras." }, 403);
+  // quem só vê a página Usuários não cria logins (supabase/acessos_revisao.sql)
+  const { data: edita } = await admin.rpc("acesso_edita", { p_user: quem, p_area: "usuarios" });
+  if (!edita) return responder({ erro: "Seu acesso à página Usuários é só para ver." }, 403);
 
   const corpo = await req.json().catch(() => ({}));
   const pessoaId = String(corpo.pessoa ?? "");

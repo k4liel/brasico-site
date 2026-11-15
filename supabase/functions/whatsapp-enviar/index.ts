@@ -28,6 +28,9 @@ Deno.serve(async (req) => {
   if (!usuario) return responder({ erro: "Entre no site de novo." }, 401);
   const { data: acesso } = await supabase.from("wa_acesso").select("user_id").eq("user_id", usuario.id).maybeSingle();
   if (!acesso) return responder({ erro: "Sem acesso ao WhatsApp." }, 403);
+  // quem só vê o WhatsApp não manda mensagem (supabase/acessos_revisao.sql)
+  const { data: edita } = await supabase.rpc("acesso_edita", { p_user: usuario.id, p_area: "whatsapp" });
+  if (!edita) return responder({ erro: "Seu acesso ao WhatsApp é só para ver." }, 403);
 
   // Envio ligado?
   const { data: ajustes } = await supabase.from("wa_ajustes").select("envio_ativo").eq("id", 1).maybeSingle();
