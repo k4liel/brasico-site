@@ -116,7 +116,7 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
 
   return (
     <div className="pagina pagina-doc modo-pagina">
-      <Topo email={userEmail} ativo={`ophotel:${hotel}`} />
+      <Topo email={userEmail} ativo={slug ? `ophotel:${hotel}/${slug}` : `ophotel:${hotel}`} />
       <main className="hx-pagina op">
         {erro ? <p className="tv-alerta">{erro}</p> : !telas ? (
           <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>

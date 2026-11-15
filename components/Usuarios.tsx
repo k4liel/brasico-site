@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
-import { ChipsAcesso, NOME_TIPO, NovoLogin, PainelAcesso, ProjetosRestritos, nomeAcesso, type PessoaAcesso, type ProjetoAcesso } from "./AcessosSite";
+import { ChipsAcesso, NOME_TIPO, NovoLogin, PainelAcesso, RegistroAcessos, ProjetosRestritos, nomeAcesso, type PessoaAcesso, type ProjetoAcesso } from "./AcessosSite";
 import SeuClaude from "./SeuClaude";
 
 type Usuario = {
@@ -59,6 +59,7 @@ export default function Usuarios({ userId, userEmail, cliente }: { userId?: stri
   const [acessoAberto, setAcessoAberto] = useState<PessoaAcesso | null>(null);
   const [verRestritos, setVerRestritos] = useState(false);
   const [novoLogin, setNovoLogin] = useState(false);
+  const [verRegistro, setVerRegistro] = useState(false);
   const [aviso, setAviso] = useState("");
 
   const carregar = useCallback(async () => {
@@ -123,6 +124,7 @@ export default function Usuarios({ userId, userEmail, cliente }: { userId?: stri
           </div>
           {admin && (
             <span className="us-botoes">
+              <button className="ghost small" onClick={() => setVerRegistro(true)}>Registro</button>
               <button className="ghost small" onClick={() => setVerRestritos(true)}>Projetos restritos{restritos ? ` · ${restritos}` : ""}</button>
               <button className="ghost small" onClick={() => setNovoLogin(true)}>Novo login (sócio ou editor)</button>
               <button className="small" onClick={() => setAberto("novo")}>Novo usuário da equipe</button>
@@ -209,6 +211,7 @@ export default function Usuarios({ userId, userEmail, cliente }: { userId?: stri
         <PainelAcesso pessoa={acessoAberto} supabase={supabase} onFechar={() => setAcessoAberto(null)}
           onSalvo={(texto) => { setAcessoAberto(null); setAviso(texto); carregar(); }} />
       )}
+      {verRegistro && <RegistroAcessos pessoas={acessos} supabase={supabase} onFechar={() => setVerRegistro(false)} />}
       {novoLogin && <NovoLogin supabase={supabase} onFechar={() => setNovoLogin(false)} onCriado={carregar} />}
       {verRestritos && (
         <ProjetosRestritos projetos={projetos} supabase={supabase} onFechar={() => setVerRestritos(false)} onMudou={carregar} />

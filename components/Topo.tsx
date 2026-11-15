@@ -58,7 +58,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   const [rhAberta, setRhAberta] = useState(RH.includes(ativo ?? ""));
   const [hotAberta, setHotAberta] = useState(/^(op)?hotel:/.test(ativo ?? ""));
   // cada hotel abre e fecha (Gestão e Operação dentro); começa aberto o da página atual
-  const hotelAtual = (ativo ?? "").replace(/^(op)?hotel:/, "");
+  const hotelAtual = (ativo ?? "").replace(/^(op)?hotel:/, "").split("/")[0];
   const [hotelAberto, setHotelAberto] = useState<Record<string, boolean>>({ [hotelAtual]: true });
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
@@ -75,6 +75,13 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
     createClient().rpc("minhas_areas").then(({ data, error }) => setAreas(error ? null : ((data as string[] | null) ?? null)));
   }, []);
   const ve = (a: string) => areas === null || (areas !== undefined && areas.includes(a));
+  // telas de cada Operação (subpáginas no menu; operacao_menu em supabase/acessos_registro.sql)
+  const [telasOp, setTelasOp] = useState<Record<string, { slug: string; titulo: string; rascunho: boolean }[]>>({});
+  const temOp = HOTEIS.some((h) => ve(opArea(h.id)));
+  useEffect(() => {
+    if (!temOp) return;
+    createClient().rpc("operacao_menu").then(({ data }) => setTelasOp((data as typeof telasOp) ?? {}));
+  }, [temOp]);
 
   const inicial = (email || "?").trim().charAt(0).toUpperCase();
 
@@ -130,6 +137,14 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
                     <div id={`menu-hotel-${h.id}`} className={ab ? "menu-sub aberto" : "menu-sub"}><div>
                       {ve("hoteis") && <Item href={`/hoteis/${h.id}`} on={ativo === `hotel:${h.id}`} vis={vis && ab} icone={I.gestao}>Gestão</Item>}
                       {ve(opArea(h.id)) && <Item href={`/hoteis/${h.id}/operacao`} on={ativo === `ophotel:${h.id}`} vis={vis && ab} icone={I.ophoteis}>Operação</Item>}
+                      {/* subpáginas da Operação: cada tela criada lá dentro (CRM, governança…) */}
+                      {ve(opArea(h.id)) && (telasOp[h.id] ?? []).length > 0 && (
+                        <div className="menu-subpaginas">
+                          {(telasOp[h.id] ?? []).map((t) => (
+                            <Item key={t.slug} href={`/hoteis/${h.id}/operacao/${t.slug}${t.rascunho ? "?rascunho=1" : ""}`} on={ativo === `ophotel:${h.id}/${t.slug}`} vis={vis && ab} icone={I.tela}>{t.titulo}</Item>
+                          ))}
+                        </div>
+                      )}
                     </div></div>
                   </div>
                 );
@@ -200,6 +215,7 @@ const I = {
   escala: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h4M14 13h3M14 17h3" /></>,
   receita: <path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" />,
   hoteis: <><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></>,
+  tela: <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 9h16" /></>,
   gestao: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
   ophoteis: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><path d="M17.5 14v7M14 17.5h7" /></>,
   operacao: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5" /></>,

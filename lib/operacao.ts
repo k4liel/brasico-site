@@ -42,6 +42,9 @@ Toda ferramenta pede o hotel. Só funciona para quem tem a área "Operação do 
     brasico.tema                                    // "claro" ou "escuro" (o tema do site)
 - Visual: siga o Brasico (azul-marinho #1c2a48, dourado #b8925a, fundo claro #f7f5f0 e escuro #12161f,
   títulos com fonte serifada). A tela ocupa a largura da página e cresce na altura sozinha.
+- Tudo fica DENTRO da Operação do hotel. Cada sistema ou página nova (CRM, governança, recepção, relatórios…)
+  é uma TELA nova com slug próprio: aparece no site como subpágina da Operação (menu Hotéis → hotel → Operação →
+  a tela) e em /hoteis/<hotel>/operacao/<slug>. Não existe outro lugar do site para criar páginas.
 - operacao_salvar_pagina guarda como RASCUNHO (slug, título, descrição, ícone em uma palavra, ordem). A
   equipe só vê depois de operacao_publicar. Quem edita vê o rascunho em /hoteis/<hotel>/operacao/<slug>?rascunho=1.
 - Toda versão salva e publicada fica no histórico. operacao_arquivar_pagina tira a tela do menu (nada se apaga).

@@ -4,7 +4,7 @@
 // tipo — Administrador (edita tudo e conecta o Claude), Editor com Claude (conecta o Claude com limites) ou
 // Usuário (só o site) — e, área por área, nada / ver / editar. A trava é do banco (gatilho acesso_guarda):
 // quem só vê não grava nada, nem pelo Claude. Projetos restritos ficam só com os administradores.
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { createClient } from "@/lib/supabase/client";
 import Gaveta from "./Gaveta";
 
@@ -234,6 +234,76 @@ export function ProjetosRestritos({ projetos, supabase, onFechar, onMudou }: {
           </li>
         ))}
       </ul>
+    </Gaveta>
+  );
+}
+
+// Registro: tudo o que cada pessoa fez (projetos, Operação, tentativas recusadas, mudanças de acesso), só para
+// administradores (acessos_registro em supabase/acessos_registro.sql). Serve para conferir se algo acontecer.
+type Registro = { em: string; user_id: string | null; pessoa: string | null; tipo: string; origem: string | null; onde: string | null; o_que: string | null; ok: boolean };
+const TIPOS_REG: Record<string, string> = { projeto: "Projeto", operacao_sql: "Operação · banco", operacao_tela: "Operação · tela", recusa: "Recusado", acesso: "Acesso" };
+const FILTROS_REG = ["Tudo", "Recusados", "Operação", "Projetos", "Acessos"] as const;
+
+export function RegistroAcessos({ pessoas, supabase, onFechar, inicial }: {
+  pessoas: PessoaAcesso[]; supabase: ReturnType<typeof createClient>; onFechar: () => void; inicial?: string;
+}) {
+  const [dias, setDias] = useState(7);
+  const [quem, setQuem] = useState(inicial ?? "");
+  const [filtro, setFiltro] = useState<(typeof FILTROS_REG)[number]>("Tudo");
+  const [linhas, setLinhas] = useState<Registro[] | null>(null);
+  const [erro, setErro] = useState("");
+  const ler = useCallback(async () => {
+    setLinhas(null);
+    const { data, error } = await supabase.rpc("acessos_registro", { p_dias: dias, p_user: quem || null });
+    if (error) return setErro(error.message);
+    setLinhas((data ?? []) as Registro[]);
+  }, [supabase, dias, quem]);
+  useEffect(() => { ler(); }, [ler]);
+
+  const passa = (r: Registro) => filtro === "Tudo" || (filtro === "Recusados" && (r.tipo === "recusa" || !r.ok))
+    || (filtro === "Operação" && r.tipo.startsWith("operacao")) || (filtro === "Projetos" && r.tipo === "projeto") || (filtro === "Acessos" && r.tipo === "acesso");
+  const vistas = (linhas ?? []).filter(passa);
+  const recusas = (linhas ?? []).filter((r) => r.tipo === "recusa" || !r.ok).length;
+  const hora = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Fortaleza", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <Gaveta titulo="Registro" sub="Tudo o que cada pessoa fez: projetos, Operação, tentativas recusadas e mudanças de acesso." fechar={onFechar}>
+      <div className="ac-reg-filtros">
+        <select value={quem} onChange={(e) => setQuem(e.target.value)} aria-label="Pessoa">
+          <option value="">Todas as pessoas</option>
+          {pessoas.map((p) => <option key={p.id} value={p.id}>{nomeAcesso(p)}</option>)}
+        </select>
+        <select value={dias} onChange={(e) => setDias(Number(e.target.value))} aria-label="Período">
+          <option value={1}>Últimas 24 h</option><option value={7}>7 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option>
+        </select>
+      </div>
+      <div className="es-segmentos ac-reg-tipos" role="tablist" aria-label="Tipo">
+        {FILTROS_REG.map((f) => (
+          <button key={f} role="tab" aria-selected={filtro === f} className={filtro === f ? "on" : ""} onClick={() => setFiltro(f)}>
+            {f}{f === "Recusados" && recusas ? <span className="ac-reg-alerta"> {recusas}</span> : null}
+          </button>
+        ))}
+      </div>
+      {erro && <p className="tv-alerta">{erro}</p>}
+      {!linhas ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div> : (
+        <ul className="ac-reg">
+          {vistas.map((r, i) => (
+            <li key={i} className={r.tipo === "recusa" || !r.ok ? "recusa" : ""}>
+              <span className="ac-reg-quando">{hora(r.em)}</span>
+              <span className="ac-reg-corpo">
+                <span className="ac-reg-cabeca">
+                  <strong>{r.pessoa ?? "Rotina automática"}</strong>
+                  <i className={`us-chip ${r.tipo === "recusa" || !r.ok ? "ac-recusa" : "ac-ver"}`}>{r.ok || r.tipo === "recusa" ? TIPOS_REG[r.tipo] ?? r.tipo : "Recusado"}</i>
+                  {r.origem === "claude" && <i className="us-chip nada">via Claude</i>}
+                </span>
+                {r.onde && <span className="muted">{r.onde}</span>}
+                {r.o_que && <code className="ac-reg-oque">{r.o_que}</code>}
+              </span>
+            </li>
+          ))}
+          {vistas.length === 0 && <li className="muted tv-nada">Nada neste período.</li>}
+        </ul>
+      )}
     </Gaveta>
   );
 }
