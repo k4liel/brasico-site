@@ -12,7 +12,7 @@ const PAGINAS_DA_AREA: Record<string, string[]> = {
   certificados: ["/certificados"],
   integracoes: ["/integracoes"],
   usuarios: ["/usuarios"],
-  conectar: ["/conectar"],
+  conectar: ["/usuarios", "/conectar"], // o Claude de cada um fica na página Usuários
   hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua"],
   operacao: ["/notas", "/compras", "/fichas", "/estoque", "/producao"],
 };

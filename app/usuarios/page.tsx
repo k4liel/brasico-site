@@ -11,5 +11,5 @@ export default async function UsuariosPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  return <Usuarios userEmail={user.email ?? ""} />;
+  return <Usuarios userId={user.id} userEmail={user.email ?? ""} />;
 }

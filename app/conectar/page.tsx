@@ -1,15 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import Conectar from "@/components/Conectar";
 
-export const dynamic = "force-dynamic";
-
-export default async function ConectarPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  return <Conectar userId={user.id} userEmail={user.email ?? ""} />;
+// "Claude e equipe" foi juntada à página Usuários (15/11/2026): o Claude de cada um fica lá.
+export default function ConectarPage() {
+  redirect("/usuarios");
 }

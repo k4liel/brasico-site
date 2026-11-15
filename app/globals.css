@@ -4801,3 +4801,9 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .ep-abas-locais button.on { color: var(--strong); border-bottom-color: var(--gold); }
 .ep-abas-locais button.on span { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold); }
 .ep-abas-locais .ep-aba-todas { margin-left: auto; font-weight: 500; }
+
+.us-botoes { display: flex; gap: 8px; align-items: center; }
+.us-avatar.admin { background: color-mix(in srgb, var(--navy) 22%, var(--seg)); }
+.sc { margin-bottom: 24px; }
+.sc-passos { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+.sc-links { margin-top: 12px; }

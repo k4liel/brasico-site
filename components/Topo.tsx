@@ -136,8 +136,8 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
 
           {ve("integracoes") && <Item href="/integracoes" on={ativo === "integracoes"} vis={aberto} icone={I.integracoes}>Integrações</Item>}
           {ve("certificados") && <Item href="/certificados" on={ativo === "certificados"} vis={aberto} icone={I.certificados}>Certificados digitais</Item>}
-          {ve("usuarios") && <Item href="/usuarios" on={ativo === "usuarios"} vis={aberto} icone={I.usuarios}>Usuários</Item>}
-          {ve("conectar") && <Item href="/conectar" on={ativo === "conectar"} vis={aberto} icone={I.conectar}>Claude e equipe</Item>}
+          {/* Usuários e o Claude de cada um numa página só (15/11/2026) */}
+          {(ve("usuarios") || ve("conectar")) && <Item href="/usuarios" on={ativo === "usuarios" || ativo === "conectar"} vis={aberto} icone={I.usuarios}>Usuários</Item>}
         </nav>
 
         <div className="menu-rodape">

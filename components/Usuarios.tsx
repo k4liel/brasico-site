@@ -7,10 +7,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
-import AcessosSite from "./AcessosSite";
+import { ChipsAcesso, NOME_TIPO, PainelAcesso, ProjetosRestritos, nomeAcesso, type PessoaAcesso, type ProjetoAcesso } from "./AcessosSite";
+import SeuClaude from "./SeuClaude";
 
 type Usuario = {
-  id: string; nome: string; papel: Papel; unidade: string; setor: string; wa_nome: string; ativo: boolean; registra_estoque: boolean;
+  id: string; user_id: string | null; nome: string; papel: Papel; unidade: string; setor: string; wa_nome: string; ativo: boolean; registra_estoque: boolean;
   tem_login: boolean; usuario: string; ultimo_acesso: string | null; criado_em: string; grupos: string[];
   // Casas inteiras que lidera na escala (escala_lideres_locais; 15/11/2026)
   casas?: string[];
@@ -25,8 +26,10 @@ const PAPEIS: { id: Papel; nome: string; texto: string }[] = [
 ];
 const UNIDADES: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", sempre_vivo: "Sempre Vivo", filha_da_lua: "Filha da Lua" };
 const SETORES: Record<string, string> = { bar: "Bar", cozinha: "Cozinha", salao: "Salão", producao: "Produção" };
-const FILTROS = ["Ativos", "Compras", "Câmara fria", "Escala", "Sem login", "Desativados"] as const;
+const FILTROS = ["Todos", "Administradores", "Com Claude", "Só o site", "Equipe das casas", "Escala", "Sem login", "Desativados"] as const;
 type Filtro = (typeof FILTROS)[number];
+// Uma lista só: quem entra pelo login dos sócios (acessos ao site) e a equipe das casas (operacao_pessoas)
+type Linha = { tipo: "acesso"; p: PessoaAcesso; nome: string } | { tipo: "equipe"; u: Usuario; nome: string };
 
 const iniciais = (nome: string) => nome.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
 function quando(iso: string | null) {
@@ -40,21 +43,41 @@ function quando(iso: string | null) {
 const abreCompras = (u: Usuario) => u.papel === "solicitante" || u.papel === "compras";
 const abreCamara = (u: Usuario) => u.papel === "estoque" || u.registra_estoque;
 
-export default function Usuarios({ userEmail, cliente }: { userEmail: string; cliente?: ReturnType<typeof createClient> }) {
+export default function Usuarios({ userId, userEmail, cliente }: { userId?: string; userEmail: string; cliente?: ReturnType<typeof createClient> }) {
   const supabase = useMemo(() => cliente ?? createClient(), [cliente]);
   const [lista, setLista] = useState<Usuario[] | null>(null);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
+  const [acessos, setAcessos] = useState<PessoaAcesso[]>([]);
+  const [projetos, setProjetos] = useState<ProjetoAcesso[]>([]);
+  const [admin, setAdmin] = useState(false);
+  const [carregado, setCarregado] = useState(false);
+  const [podeClaude, setPodeClaude] = useState(false);
   const [erro, setErro] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("Ativos");
+  const [filtro, setFiltro] = useState<Filtro>("Todos");
   const [busca, setBusca] = useState("");
   const [aberto, setAberto] = useState<Usuario | "novo" | null>(null);
+  const [acessoAberto, setAcessoAberto] = useState<PessoaAcesso | null>(null);
+  const [verRestritos, setVerRestritos] = useState(false);
   const [aviso, setAviso] = useState("");
 
   const carregar = useCallback(async () => {
-    const [u, g] = await Promise.all([supabase.rpc("usuarios_lista"), supabase.rpc("usuarios_grupos_escala")]);
-    if (u.error) return setErro(u.error.message);
-    setLista((u.data ?? []) as Usuario[]);
-    setGrupos((g.data ?? []) as Grupo[]);
+    const [u, g, a, eu] = await Promise.all([
+      supabase.rpc("usuarios_lista"), supabase.rpc("usuarios_grupos_escala"), supabase.rpc("acessos_lista"), supabase.rpc("minhas_areas"),
+    ]);
+    // admin (vê a lista de acessos) ou editor (área conectar) conecta o Claude aqui
+    const areas = eu.data as string[] | null;
+    setPodeClaude(!a.error || (Array.isArray(areas) && areas.includes("conectar")));
+    setAdmin(!a.error);
+    if (!a.error) {
+      const d = a.data as { pessoas: PessoaAcesso[]; projetos: ProjetoAcesso[] };
+      setAcessos(d.pessoas);
+      setProjetos(d.projetos);
+    }
+    if (!u.error) {
+      setLista((u.data ?? []) as Usuario[]);
+      setGrupos((g.data ?? []) as Grupo[]);
+    } else if (!a.error) setErro(u.error.message);
+    setCarregado(true);
   }, [supabase]);
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -62,14 +85,30 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
   // Lidera a escala: por setor (grupos) ou a casa inteira (casas)
   const lideraEscala = (u: Usuario) => u.grupos.length > 0 || (u.casas?.length ?? 0) > 0;
   const lideraGrupo = (u: Usuario, g: Grupo) => u.grupos.includes(g.id) || !!u.casas?.includes(g.local);
-  const termo = busca.trim().toLowerCase();
-  const passa: Record<Filtro, (u: Usuario) => boolean> = {
-    Ativos: (u) => u.ativo, Compras: (u) => u.ativo && abreCompras(u), "Câmara fria": (u) => u.ativo && abreCamara(u),
-    Escala: (u) => u.ativo && lideraEscala(u), "Sem login": (u) => u.ativo && !u.tem_login, Desativados: (u) => !u.ativo,
+
+  // todos numa lista só; quem já está nos acessos ao site não se repete na equipe
+  const comAcesso = new Set(acessos.map((p) => p.id));
+  const linhas: Linha[] = [
+    ...acessos.map((p) => ({ tipo: "acesso" as const, p, nome: nomeAcesso(p) })),
+    ...(lista ?? []).filter((u) => !u.user_id || !comAcesso.has(u.user_id)).map((u) => ({ tipo: "equipe" as const, u, nome: u.nome })),
+  ];
+  const ativa = (l: Linha) => l.tipo === "acesso" || l.u.ativo;
+  const passa: Record<Filtro, (l: Linha) => boolean> = {
+    Todos: ativa,
+    Administradores: (l) => l.tipo === "acesso" && l.p.tipo === "admin",
+    "Com Claude": (l) => l.tipo === "acesso" && l.p.claude,
+    "Só o site": (l) => l.tipo === "acesso" && l.p.tipo !== "admin",
+    "Equipe das casas": (l) => l.tipo === "equipe" && l.u.ativo,
+    Escala: (l) => l.tipo === "equipe" && l.u.ativo && lideraEscala(l.u),
+    "Sem login": (l) => l.tipo === "equipe" && l.u.ativo && !l.u.tem_login,
+    Desativados: (l) => l.tipo === "equipe" && !l.u.ativo,
   };
-  const vistos = (lista ?? []).filter(passa[filtro]).filter((u) => !termo || u.nome.toLowerCase().includes(termo) || u.usuario.toLowerCase().includes(termo));
+  const termo = busca.trim().toLowerCase();
+  const vistos = linhas.filter(passa[filtro]).filter((l) => !termo || l.nome.toLowerCase().includes(termo)
+    || (l.tipo === "equipe" ? l.u.usuario : l.p.email ?? "").toLowerCase().includes(termo));
   const ativos = (lista ?? []).filter((u) => u.ativo);
   const semLider = grupos.filter((g) => !ativos.some((u) => lideraGrupo(u, g)));
+  const restritos = projetos.filter((p) => p.restrito).length;
 
   return (
     <div className="pagina">
@@ -79,55 +118,70 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
           <div>
             <span className="es-sobre">Companhia · Acessos</span>
             <h1>Usuários</h1>
-            <p className="muted">Quem da equipe entra no Brasico, com qual usuário, e o que cada um abre. A equipe entra em brasico.vercel.app/colaboradores.</p>
+            <p className="muted">Todo mundo que entra no Brasico num lugar só: os sócios, quem conecta o Claude e a equipe das casas, e o que cada um pode ver ou editar.</p>
           </div>
-          <button className="small" onClick={() => setAberto("novo")}>Novo usuário</button>
+          {admin && (
+            <span className="us-botoes">
+              <button className="ghost small" onClick={() => setVerRestritos(true)}>Projetos restritos{restritos ? ` · ${restritos}` : ""}</button>
+              <button className="small" onClick={() => setAberto("novo")}>Novo usuário</button>
+            </span>
+          )}
         </div>
-        <AcessosSite supabase={supabase} />
-
-        <h2 className="us-equipe-titulo">Equipe das casas</h2>
         {erro && <p className="tv-alerta">{erro}</p>}
         {aviso && <p className="es-aviso">{aviso}</p>}
 
-        {!lista ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div> : (
+        {podeClaude && userId && <SeuClaude supabase={supabase} userId={userId} userEmail={userEmail} />}
+
+        {!carregado ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div> : admin && (
           <>
             <div className="es-numeros">
-              <Numero rotulo="Ativos" valor={ativos.length} detalhe={`${ativos.filter((u) => u.tem_login).length} com login`} />
-              <Numero rotulo="Compras" valor={ativos.filter(abreCompras).length} detalhe="pedem ou compram" />
-              <Numero rotulo="Câmara fria" valor={ativos.filter(abreCamara).length} detalhe="registram o estoque" />
+              <Numero rotulo="Pessoas" valor={linhas.filter(ativa).length} detalhe={`${acessos.length} pelo login dos sócios`} />
+              <Numero rotulo="Com Claude" valor={acessos.filter((p) => p.claude).length} detalhe={`${acessos.filter((p) => p.tipo === "admin").length} administradores`} />
+              <Numero rotulo="Equipe das casas" valor={ativos.length} detalhe={`${ativos.filter(abreCompras).length} em compras · ${ativos.filter(abreCamara).length} na câmara fria`} />
               <Numero rotulo="Líderes de escala" valor={ativos.filter(lideraEscala).length}
                 detalhe={semLider.length ? `${semLider.length} grupo${semLider.length === 1 ? "" : "s"} sem líder` : "todos os grupos com líder"} alerta={semLider.length > 0} />
             </div>
 
             <div className="us-filtros">
-              <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou usuário" aria-label="Buscar usuário" />
+              <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, usuário ou e-mail" aria-label="Buscar usuário" />
               <div className="es-segmentos" role="tablist" aria-label="Filtro">
                 {FILTROS.map((f) => (
                   <button key={f} role="tab" aria-selected={filtro === f} className={filtro === f ? "on" : ""} onClick={() => setFiltro(f)}>
-                    {f} <span className="muted">{(lista ?? []).filter(passa[f]).length}</span>
+                    {f} <span className="muted">{linhas.filter(passa[f]).length}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <ul className="us-lista">
-              {vistos.map((u) => (
-                <li key={u.id}>
-                  <button className={`us-cartao${u.ativo ? "" : " desativado"}`} onClick={() => setAberto(u)}>
-                    <span className="us-avatar" aria-hidden="true">{iniciais(u.nome)}</span>
+              {vistos.map((l) => l.tipo === "acesso" ? (
+                <li key={`a${l.p.id}`}>
+                  <button className="us-cartao" onClick={() => setAcessoAberto(l.p)}>
+                    <span className={`us-avatar${l.p.tipo === "admin" ? " admin" : ""}`} aria-hidden="true">{iniciais(l.nome)}</span>
                     <span className="us-quem">
-                      <strong>{u.nome}</strong>
-                      <span className="muted">{u.tem_login ? <>usuário <b>{u.usuario}</b></> : "sem login"} · {quando(u.ultimo_acesso)}</span>
+                      <strong>{l.nome}</strong>
+                      <span className="muted">{l.p.tipo ? NOME_TIPO[l.p.tipo] : "Login dos sócios"}{l.p.claude ? " · Claude conectado" : ""} · {quando(l.p.ultimo_acesso)}</span>
+                    </span>
+                    <span className="us-acessos"><ChipsAcesso p={l.p} /></span>
+                  </button>
+                </li>
+              ) : (
+                <li key={l.u.id}>
+                  <button className={`us-cartao${l.u.ativo ? "" : " desativado"}`} onClick={() => setAberto(l.u)}>
+                    <span className="us-avatar" aria-hidden="true">{iniciais(l.u.nome)}</span>
+                    <span className="us-quem">
+                      <strong>{l.u.nome}</strong>
+                      <span className="muted">Equipe das casas · {l.u.tem_login ? <>usuário <b>{l.u.usuario}</b></> : "sem login"} · {quando(l.u.ultimo_acesso)}</span>
                     </span>
                     <span className="us-acessos">
-                      {abreCompras(u) && <i className="us-chip compras">{u.papel === "compras" ? "Setor de compras" : `Compras${u.unidade ? ` · ${UNIDADES[u.unidade] ?? u.unidade}` : ""}`}</i>}
-                      {u.papel === "compras" && <i className="us-chip notas">Notas</i>}
-                      {abreCamara(u) && <i className="us-chip camara">Câmara fria</i>}
-                      {(u.casas ?? []).map((c) => <i key={`c${c}`} className="us-chip escala">Escala · {c} (casa inteira)</i>)}
-                      {u.grupos.filter((g) => !u.casas?.includes(grupos.find((x) => x.id === g)?.local ?? "")).map((g) => <i key={g} className="us-chip escala">Escala · {nomeGrupo.get(g) ?? "grupo"}</i>)}
-                      {!abreCompras(u) && !abreCamara(u) && !lideraEscala(u) && <i className="us-chip nada">sem acesso a nada</i>}
+                      {abreCompras(l.u) && <i className="us-chip compras">{l.u.papel === "compras" ? "Setor de compras" : `Compras${l.u.unidade ? ` · ${UNIDADES[l.u.unidade] ?? l.u.unidade}` : ""}`}</i>}
+                      {l.u.papel === "compras" && <i className="us-chip notas">Notas</i>}
+                      {abreCamara(l.u) && <i className="us-chip camara">Câmara fria</i>}
+                      {(l.u.casas ?? []).map((c) => <i key={`c${c}`} className="us-chip escala">Escala · {c} (casa inteira)</i>)}
+                      {l.u.grupos.filter((g) => !l.u.casas?.includes(grupos.find((x) => x.id === g)?.local ?? "")).map((g) => <i key={g} className="us-chip escala">Escala · {nomeGrupo.get(g) ?? "grupo"}</i>)}
+                      {!abreCompras(l.u) && !abreCamara(l.u) && !lideraEscala(l.u) && <i className="us-chip nada">sem acesso a nada</i>}
                     </span>
-                    {!u.ativo && <span className="es-selo">desativado</span>}
+                    {!l.u.ativo && <span className="es-selo">desativado</span>}
                   </button>
                 </li>
               ))}
@@ -137,7 +191,7 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
             {semLider.length > 0 && (
               <section className="es-bloco us-semlider">
                 <h2>Grupos da escala sem líder</h2>
-                <p className="muted">Abra um usuário e marque o grupo na parte Escala. Os grupos acompanham os locais e setores da escala do RH.</p>
+                <p className="muted">Abra um usuário da equipe e marque o grupo na parte Escala. Os grupos acompanham os locais e setores da escala do RH.</p>
                 <div className="us-chips">{semLider.map((g) => <i key={g.id} className="us-chip escala">{g.nome} · {g.pessoas} pessoas</i>)}</div>
               </section>
             )}
@@ -148,6 +202,13 @@ export default function Usuarios({ userEmail, cliente }: { userEmail: string; cl
         <Painel usuario={aberto === "novo" ? null : aberto} grupos={grupos} supabase={supabase}
           onFechar={() => setAberto(null)}
           onSalvo={(texto) => { setAberto(null); setAviso(texto); carregar(); }} />
+      )}
+      {acessoAberto && (
+        <PainelAcesso pessoa={acessoAberto} supabase={supabase} onFechar={() => setAcessoAberto(null)}
+          onSalvo={(texto) => { setAcessoAberto(null); setAviso(texto); carregar(); }} />
+      )}
+      {verRestritos && (
+        <ProjetosRestritos projetos={projetos} supabase={supabase} onFechar={() => setVerRestritos(false)} onMudou={carregar} />
       )}
     </div>
   );
