@@ -13,7 +13,10 @@ type Sinal = { produto: string; unidade: string; fornecedor: string; categoria: 
 type Painel = { indice: Ponto[] | null; altas: Sinal[] | null; quedas: Sinal[] | null; atualizado_em: string };
 type Eco = { produto: string; unidade: string; fornecedor: string; preco: number; melhor: string; melhor_preco: number; economia: number };
 type Abc = { produto: string; unidade: string; categoria: string; gasto: number; pct: number; classe: string; compras: number; fornecedores: number; principal: string; ultimo: number; ultima: string; variacao: number | null; faisca: number[] | null };
+type Cards = { dias: number; gasto: number; gasto_ant: number; produtos: number; produtos_ant: number; fornecedores: number; fornecedores_ant: number;
+  compras: number; compras_ant: number; inflacao: number | null; inflacao_itens: number; altas: number; quedas: number; top5_pct: number | null };
 type Analise = {
+  cards: Cards;
   resumo: { itens: number; produtos: number; fornecedores: number; gasto: number; de: string | null; ate: string | null };
   meses: { mes: string; gasto: number }[] | null; economia_total: number; economia: Eco[] | null; abc: Abc[] | null;
   pareto: { produtos_80: number; total: number };
@@ -70,6 +73,7 @@ export default function IndicePrecos() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
   const [escolhido, setEscolhido] = useState<{ produto: string; unidade: string } | null>(null);
+  const [inicioProdutos, setInicioProdutos] = useState<{ soAltas: boolean; ordem: "gasto" | "variacao" | "recente"; n: number }>({ soAltas: false, ordem: "gasto", n: 0 });
 
   const args = useCallback((x: Filtros) => ({ p_dias: x.dias, p_local: x.local || null, p_categoria: x.categoria || null, p_fornecedor: x.fornecedor || null, p_insumos: x.insumos }), []);
 
@@ -94,7 +98,7 @@ export default function IndicePrecos() {
   if (erro) return <p className="es-aviso tv-alerta">{erro}</p>;
   if (!a || !painel) return <div className="ip-carregando"><span /><span /><span /><span /></div>;
   const r = a.resumo;
-  const nAltas = painel.altas?.length ?? 0, nQuedas = painel.quedas?.length ?? 0;
+  const nAltas = painel.altas?.length ?? 0;
 
   return (
     <div className="ip">
@@ -145,22 +149,30 @@ export default function IndicePrecos() {
         </div>
       )}
 
-      {aba === "geral" && <VisaoGeral a={a} painel={painel} dias={f.dias} abrir={abrirProduto} nAltas={nAltas} nQuedas={nQuedas} irAlertas={() => setAba("alertas")} />}
-      {aba === "produtos" && <Produtos f={f} args={args} escolhido={escolhido} escolher={(p, u) => setEscolhido({ produto: p, unidade: u })} />}
+      {aba === "geral" && <VisaoGeral a={a} painel={painel} abrir={abrirProduto}
+        verAltas={() => { setEscolhido(null); setInicioProdutos((x) => ({ soAltas: true, ordem: "variacao", n: x.n + 1 })); setAba("produtos"); }} />}
+      {aba === "produtos" && <Produtos key={inicioProdutos.n} inicio={inicioProdutos} f={f} args={args} escolhido={escolhido} escolher={(p, u) => setEscolhido({ produto: p, unidade: u })} />}
       {aba === "alertas" && <Alertas painel={painel} abrir={abrirProduto} />}
     </div>
   );
 }
 
 /* ---------- Visão geral (prévia A) ---------- */
-function VisaoGeral({ a, painel, dias, abrir, nAltas, nQuedas, irAlertas }: {
-  a: Analise; painel: Painel; dias: number; abrir: (p: string, u: string) => void; nAltas: number; nQuedas: number; irAlertas: () => void;
-}) {
+// Variação contra o período anterior do mesmo tamanho. Os dados começam em abril de 2026: se o período anterior tiver
+// menos de 40% das compras do atual, ele não está completo e o card não compara (seria uma diferença enganosa).
+function Comparacao({ atual, antes, valida, inverter, sufixo }: { atual: number; antes: number; valida: boolean; inverter?: boolean; sufixo: string }) {
+  if (!valida || !antes) return <span className="ip-var">sem período anterior completo para comparar</span>;
+  const v = (atual / antes - 1) * 100;
+  const ruim = inverter ? v < 0 : v > 0;
+  return <span className={`ip-var ${Math.abs(v) < 0.05 ? "" : ruim ? "sobe" : "desce"}`}>{v > 0 ? "▲" : v < 0 ? "▼" : "="} {pctTxt(v)} {sufixo}</span>;
+}
+
+function VisaoGeral({ a, painel, abrir, verAltas }: { a: Analise; painel: Painel; abrir: (p: string, u: string) => void; verAltas: () => void }) {
   const [cats, setCats] = useState<string[]>(["Comida"]);
   const [abc, setAbc] = useState<"produtos" | "fornecedores" | "categorias">("produtos");
   const [mais, setMais] = useState(false);
 
-  // índice: começa no mês anterior ao primeiro com cesta de pelo menos 30 itens comparados (esse mês vale 100)
+  // índice mensal (gráfico): começa no mês anterior ao primeiro com cesta de pelo menos 30 itens comparados (esse mês vale 100)
   const ind = painel.indice ?? [];
   const todosMeses = [...new Set(ind.map((x) => x.mes))].sort();
   const primeiroBom = todosMeses.findIndex((m) => (ind.find((x) => x.serie === "Geral" && x.mes === m)?.itens ?? 0) >= 30);
@@ -171,42 +183,62 @@ function VisaoGeral({ a, painel, dias, abrir, nAltas, nQuedas, irAlertas }: {
     return bruto.map((v) => (v == null || !base ? v : Math.round((v / base) * 1000) / 10));
   };
   const geral = serie("Geral");
-  const ultimoGeral = ind.filter((x) => x.serie === "Geral").sort((x, y) => x.mes.localeCompare(y.mes)).pop();
 
-  // gasto: o último mês fechado contra o anterior
-  const gastos = a.meses ?? [];
-  const mesAtual = new Date().toISOString().slice(0, 7);
-  const fechados = gastos.filter((g) => g.mes.slice(0, 7) < mesAtual);
-  const gFech = fechados[fechados.length - 1], gAntes = fechados[fechados.length - 2];
-  const varGasto = gFech && gAntes?.gasto ? (gFech.gasto / gAntes.gasto - 1) * 100 : null;
+  const c = a.cards;
+  const valida = c.compras_ant >= c.compras * 0.4;
+  const periodo = PERIODOS.find(([d]) => d === c.dias)?.[1] ?? `${c.dias} dias`;
+  const contra = `sobre os ${periodo} anteriores`;
+  // gasto por dia: pelos dias desde a primeira compra do período (os dados começam em abril de 2026)
+  const diasReais = a.resumo.de ? Math.max(1, Math.min(c.dias, Math.round((Date.now() - Date.parse(`${a.resumo.de}T12:00:00`)) / 86400000) + 1)) : c.dias;
+  const porDia = c.gasto / diasReais, porDiaAnt = c.gasto_ant / c.dias;
+  const gastosMes = (a.meses ?? []).map((g) => g.gasto);
   const pctPareto = a.pareto.total ? Math.round((a.pareto.produtos_80 / a.pareto.total) * 100) : 0;
   const lista = (a.abc ?? []).slice(0, mais ? 60 : 12);
 
   return (
     <>
-      <div className="ip-numeros">
+      <div className="ip-numeros ip-numeros-8">
         <div className="ip-numero">
-          <span className="ip-rotulo">Índice geral · mesma cesta</span>
-          <span className="ip-valor">{geral[geral.length - 1]?.toLocaleString("pt-BR", { minimumFractionDigits: 1 }) ?? "—"}</span>
-          <span className={`ip-var ${ultimoGeral && ultimoGeral.variacao > 0 ? "sobe" : "desce"}`}>{ultimoGeral ? `${ultimoGeral.variacao > 0 ? "▲" : "▼"} ${pctTxt(ultimoGeral.variacao)} em ${mesLongo(ultimoGeral.mes)}` : ""}</span>
-          <Faisca valores={geral.filter((v): v is number => v != null)} alta={(ultimoGeral?.variacao ?? 0) > 0} />
+          <span className="ip-rotulo">Gasto · {periodo}</span>
+          <span className="ip-valor">{reais(c.gasto)}</span>
+          <Comparacao atual={c.gasto} antes={c.gasto_ant} valida={valida} sufixo={contra} />
+          {gastosMes.length > 1 && <Faisca valores={gastosMes} alta={c.gasto > c.gasto_ant} />}
         </div>
         <div className="ip-numero">
-          <span className="ip-rotulo">Gasto em {gFech ? mesLongo(gFech.mes) : "—"}</span>
-          <span className="ip-valor">{gFech ? reais(gFech.gasto) : "—"}</span>
-          <span className={`ip-var ${varGasto == null ? "" : varGasto > 0 ? "sobe" : "desce"}`}>{varGasto != null ? `${varGasto > 0 ? "▲" : "▼"} ${pctTxt(varGasto)} sobre ${mesLongo(gAntes!.mes)}` : ""}</span>
-          <Faisca valores={fechados.map((g) => g.gasto)} alta={(varGasto ?? 0) > 0} />
+          <span className="ip-rotulo">Inflação das compras · {periodo}</span>
+          <span className={`ip-valor ${c.inflacao == null || !valida ? "" : c.inflacao > 0 ? "ip-vermelho" : "ip-verde"}`}>{c.inflacao == null || !valida ? "—" : pctTxt(c.inflacao)}</span>
+          <span className="ip-var">{c.inflacao == null || !valida ? "sem período anterior completo para comparar" : `mesma cesta de ${c.inflacao_itens} produtos, ${contra}`}</span>
         </div>
         <div className="ip-numero">
-          <span className="ip-rotulo">Economia possível</span>
+          <span className="ip-rotulo">Economia possível · {periodo}</span>
           <span className="ip-valor ip-verde">{reais(a.economia_total)}</span>
-          <span className="ip-var">comprando do fornecedor mais barato · {dias} dias</span>
+          <span className="ip-var">comprando cada produto do fornecedor mais barato</span>
         </div>
-        <button className="ip-numero ip-numero-botao" onClick={irAlertas}>
-          <span className="ip-rotulo">Alertas de preço</span>
-          <span className="ip-valor">{nAltas} <small>altas</small> · {nQuedas} <small>quedas</small></span>
-          <span className="ip-var">10% ou mais na última compra · ver todos →</span>
+        <button className="ip-numero ip-numero-botao" onClick={verAltas}>
+          <span className="ip-rotulo">Preços que mudaram · {periodo}</span>
+          <span className="ip-valor"><span className="ip-vermelho">{c.altas}</span> <small>subiram</small> · <span className="ip-verde">{c.quedas}</span> <small>caíram</small></span>
+          <span className="ip-var">10% ou mais na última compra · ver os que subiram →</span>
         </button>
+        <div className="ip-numero">
+          <span className="ip-rotulo">Gasto médio por dia</span>
+          <span className="ip-valor">{reais(porDia)}</span>
+          <Comparacao atual={porDia} antes={porDiaAnt} valida={valida} sufixo={contra} />
+        </div>
+        <div className="ip-numero">
+          <span className="ip-rotulo">Produtos comprados</span>
+          <span className="ip-valor">{c.produtos.toLocaleString("pt-BR")}</span>
+          <Comparacao atual={c.produtos} antes={c.produtos_ant} valida={valida} sufixo={contra} />
+        </div>
+        <div className="ip-numero">
+          <span className="ip-rotulo">Fornecedores ativos</span>
+          <span className="ip-valor">{c.fornecedores}</span>
+          <Comparacao atual={c.fornecedores} antes={c.fornecedores_ant} valida={valida} sufixo={contra} />
+        </div>
+        <div className="ip-numero">
+          <span className="ip-rotulo">Concentração</span>
+          <span className="ip-valor">{c.top5_pct == null ? "—" : `${c.top5_pct.toLocaleString("pt-BR")}%`}</span>
+          <span className="ip-var">do gasto com os 5 maiores fornecedores · {c.compras.toLocaleString("pt-BR")} itens comprados</span>
+        </div>
       </div>
 
       <div className="ip-grade">
@@ -313,13 +345,13 @@ function VisaoGeral({ a, painel, dias, abrir, nAltas, nQuedas, irAlertas }: {
 }
 
 /* ---------- Produtos (prévia B): lista à esquerda, ficha à direita ---------- */
-function Produtos({ f, args, escolhido, escolher }: {
-  f: Filtros; args: (x: Filtros) => Record<string, unknown>; escolhido: { produto: string; unidade: string } | null; escolher: (p: string, u: string) => void;
+function Produtos({ inicio, f, args, escolhido, escolher }: {
+  inicio: { soAltas: boolean; ordem: "gasto" | "variacao" | "recente" }; f: Filtros; args: (x: Filtros) => Record<string, unknown>; escolhido: { produto: string; unidade: string } | null; escolher: (p: string, u: string) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [busca, setBusca] = useState(escolhido?.produto ?? "");
-  const [soAltas, setSoAltas] = useState(false);
-  const [ordem, setOrdem] = useState<"gasto" | "variacao" | "recente">("gasto");
+  const [soAltas, setSoAltas] = useState(inicio.soAltas);
+  const [ordem, setOrdem] = useState<"gasto" | "variacao" | "recente">(inicio.ordem);
   const [lista, setLista] = useState<ProdutoLinha[] | null>(null);
 
   useEffect(() => {

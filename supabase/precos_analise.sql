@@ -15,9 +15,12 @@ returns void language plpgsql security definer set search_path = public as $$
 begin
   drop table if exists _pa;
   create temp table _pa on commit drop as
-    select b.*, (b.data > current_date - least(greatest(coalesce(p_dias, 90), 7), 400)) no_periodo
+    select b.*, (b.data > current_date - least(greatest(coalesce(p_dias, 90), 7), 400)) no_periodo,
+      -- o período anterior do mesmo tamanho (os cards comparam com ele)
+      (b.data <= current_date - least(greatest(coalesce(p_dias, 90), 7), 400)
+        and b.data > current_date - 2 * least(greatest(coalesce(p_dias, 90), 7), 400)) no_anterior
     from public.precos_base b
-    where b.data > current_date - 400
+    where b.data > current_date - greatest(400, 2 * least(greatest(coalesce(p_dias, 90), 7), 400) + 130)
       and (p_local is null or b.local = p_local)
       and (p_categoria is null or b.categoria = p_categoria)
       and (p_fornecedor is null or b.fornecedor = p_fornecedor)
@@ -75,8 +78,33 @@ begin
   forn as (
     select fornecedor, sum(gasto) gasto, count(*) compras, count(distinct produto) produtos, max(data) ultima from per group by 1
   ),
-  cats as (select categoria, sum(gasto) gasto, count(distinct produto) produtos from per group by 1)
+  cats as (select categoria, sum(gasto) gasto, count(distinct produto) produtos from per group by 1),
+  -- cards: tudo do período contra o período anterior do mesmo tamanho
+  ant as (select * from _pa where no_anterior),
+  pp as (select produto, unidade, sum(gasto) / nullif(sum(quantidade), 0) p from per group by 1, 2),
+  pa as (select produto, unidade, sum(gasto) / nullif(sum(quantidade), 0) p, sum(gasto) g from ant group by 1, 2),
+  infl as (
+    select sum(a.g * (p.p / a.p)) / nullif(sum(a.g), 0) - 1 r, count(*) n
+    from pp p join pa a using (produto, unidade) where a.p > 0 and p.p / a.p between 0.2 and 5
+  ),
+  pvar as (
+    select p.ultimo / nullif((select avg(x.preco) from _pa x where x.produto = p.produto and x.unidade = p.unidade
+      and x.data < p.ultima and x.data >= p.ultima - 120), 0) r from prod p
+  ),
+  top5 as (select sum(gasto) g from (select gasto from forn order by gasto desc limit 5) x),
+  dias_compra as (select count(distinct data) n from per)
   select jsonb_build_object(
+    'cards', jsonb_build_object(
+      'dias', least(greatest(coalesce(p_dias, 90), 7), 400),
+      'gasto', (select round(coalesce(sum(gasto), 0), 2) from per), 'gasto_ant', (select round(coalesce(sum(gasto), 0), 2) from ant),
+      'produtos', (select count(distinct (produto, unidade)) from per), 'produtos_ant', (select count(distinct (produto, unidade)) from ant),
+      'fornecedores', (select count(distinct fornecedor) from per), 'fornecedores_ant', (select count(distinct fornecedor) from ant),
+      'compras', (select count(*) from per), 'compras_ant', (select count(*) from ant),
+      'inflacao', (select round((r * 100)::numeric, 1) from infl), 'inflacao_itens', (select n from infl),
+      'altas', (select count(*) from pvar where r between 1.1 and 5), 'quedas', (select count(*) from pvar where r between 0.2 and 0.9),
+      'top5_pct', (select round((100 * t.g / nullif(tt.g, 0))::numeric, 1) from top5 t, total tt),
+      'por_dia', (select round(tt.g / nullif(least(greatest(coalesce(p_dias, 90), 7), 400), 0), 2) from total tt),
+      'dias_com_compra', (select n from dias_compra)),
     'resumo', (select jsonb_build_object('itens', count(*), 'produtos', count(distinct (produto, unidade)), 'fornecedores', count(distinct fornecedor),
                  'gasto', round(coalesce(sum(gasto), 0), 2), 'de', min(data), 'ate', max(data)) from per),
     'meses', (select jsonb_agg(jsonb_build_object('mes', m, 'gasto', round(g, 2)) order by m) from (
