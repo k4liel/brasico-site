@@ -115,11 +115,12 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto} icone={I.receita}>Receita Federal</Item>}
 
           {/* Hotéis: um item que abre e fecha, com uma página por hotel */}
-          {ve("hoteis") && (<>
+          {/* quem só tem a Operação de um hotel vê o hotel, abrindo direto na Operação */}
+          {(ve("hoteis") || HOTEIS.some((h) => ve(`op_${h.id.replace(/-/g, "_")}`))) && (<>
             <Pasta id="menu-hoteis" on={(ativo ?? "").startsWith("hotel:")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis</Pasta>
             <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}><div>
-              {HOTEIS.map((h) => (
-                <Item key={h.id} href={`/hoteis/${h.id}`} on={ativo === `hotel:${h.id}`} vis={aberto && hotAberta} icone={h.icone}>{h.nome}</Item>
+              {HOTEIS.filter((h) => ve("hoteis") || ve(`op_${h.id.replace(/-/g, "_")}`)).map((h) => (
+                <Item key={h.id} href={ve("hoteis") ? `/hoteis/${h.id}` : `/hoteis/${h.id}/operacao`} on={ativo === `hotel:${h.id}`} vis={aberto && hotAberta} icone={h.icone}>{h.nome}</Item>
               ))}
             </div></div>
           </>)}

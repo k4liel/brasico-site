@@ -19,7 +19,9 @@ export type ProjetoAcesso = { id: string; nome: string; restrito: boolean };
 export const AREAS: { id: string; nome: string; texto: string }[] = [
   { id: "projetos", nome: "Projetos", texto: "documentos dos projetos (menos os restritos)" },
   { id: "brainstorm", nome: "Brainstorm", texto: "quadro de tarefas e ideias" },
-  { id: "hoteis", nome: "Hotéis", texto: "Filha da Lua e Sempre Vivo" },
+  { id: "hoteis", nome: "Hotéis · dados do PMS", texto: "reservas, mapa, hóspedes e números dos dois hotéis" },
+  { id: "op_filha_da_lua", nome: "Operação · Filha da Lua", texto: "área de criação: editar = o Claude cria tabelas e telas" },
+  { id: "op_sempre_vivo", nome: "Operação · Sempre Vivo", texto: "área de criação: editar = o Claude cria tabelas e telas" },
   { id: "totvs", nome: "Vendas", texto: "faturamento das casas (TOTVS)" },
   { id: "operacao", nome: "Operação", texto: "notas, compras, fichas, câmara fria" },
   { id: "rh", nome: "RH e escala", texto: "equipe, ponto, folha e escala" },

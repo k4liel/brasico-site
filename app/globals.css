@@ -4807,3 +4807,34 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .sc { margin-bottom: 24px; }
 .sc-passos { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
 .sc-links { margin-top: 12px; }
+
+/* Operação dos hotéis (components/hotel/Operacao.tsx) */
+.hx-abas-sep { width: 1px; align-self: stretch; margin: 10px 6px; background: var(--border); flex: none; }
+.hx-abas > button.hx-aba-operacao { color: var(--hx-ouro); }
+.op-topo { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin: 8px 0 24px; }
+.op-topo h2 { font-family: var(--font-serif), Georgia, serif; font-size: 24px; font-weight: 500; margin: 4px 0; color: var(--strong); }
+.op-topo p { margin: 0; font-size: 14px; }
+.op-grade { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.op-cartao { display: grid; grid-template-rows: auto 1fr auto; gap: 12px; height: 100%; min-height: 168px; padding: 20px; border-radius: 16px;
+  border: 1px solid var(--border); background: var(--panel); text-decoration: none; color: inherit; transition: border-color .15s, transform .15s, box-shadow .15s; }
+.op-cartao:hover { border-color: color-mix(in srgb, var(--hx-ouro) 60%, var(--border)); transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0, 0, 0, .08); }
+.op-cartao:focus-visible { outline: 2px solid var(--hx-ouro); outline-offset: 2px; }
+.op-cartao-icone { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: var(--hx-ouro);
+  background: color-mix(in srgb, var(--hx-ouro) 12%, transparent); }
+.op-cartao-texto { display: grid; gap: 4px; align-content: start; }
+.op-cartao-texto strong { font-family: var(--font-serif), Georgia, serif; font-size: 18px; font-weight: 500; color: var(--strong); }
+.op-cartao-texto .muted { font-size: 13px; line-height: 1.45; }
+.op-selo { font-style: normal; font-size: 11.5px; color: var(--muted); }
+.op-selo.rascunho { color: var(--hx-ouro); font-weight: 600; }
+.op-vazio { text-align: center; padding: 56px 24px; border: 1px dashed var(--border); border-radius: 16px; background: var(--panel); }
+.op-vazio h3 { font-family: var(--font-serif), Georgia, serif; font-weight: 500; font-size: 20px; margin: 12px 0 6px; color: var(--strong); }
+.op-vazio p { max-width: 560px; margin: 0 auto; font-size: 14px; line-height: 1.55; }
+.op-vazio-icone { display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; color: var(--hx-ouro); background: color-mix(in srgb, var(--hx-ouro) 12%, transparent); }
+.op-barra { display: flex; align-items: center; gap: 16px; margin: 4px 0 16px; flex-wrap: wrap; }
+.op-barra strong { font-family: var(--font-serif), Georgia, serif; font-size: 20px; font-weight: 500; color: var(--strong); }
+.op-voltar { font-size: 13px; color: var(--muted); text-decoration: none; }
+.op-voltar:hover { color: var(--strong); }
+.op-barra-acoes { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.op-aviso-rascunho { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; font-size: 13px; color: var(--strong);
+  background: color-mix(in srgb, var(--hx-ouro) 14%, transparent); border: 1px solid color-mix(in srgb, var(--hx-ouro) 40%, transparent); }
+.op-quadro { display: block; width: 100%; border: 0; border-radius: 16px; background: var(--panel); }

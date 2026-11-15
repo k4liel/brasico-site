@@ -15,6 +15,9 @@ const PAGINAS_DA_AREA: Record<string, string[]> = {
   conectar: ["/usuarios", "/conectar"], // o Claude de cada um fica na página Usuários
   hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua"],
   operacao: ["/notas", "/compras", "/fichas", "/estoque", "/producao"],
+  // Operação de cada hotel: a área de criação (supabase/operacao_hoteis.sql)
+  op_filha_da_lua: ["/hoteis/filha-da-lua/operacao"],
+  op_sempre_vivo: ["/hoteis/sempre-vivo/operacao"],
 };
 
 export async function middleware(request: NextRequest) {
