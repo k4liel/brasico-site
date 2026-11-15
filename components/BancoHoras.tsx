@@ -8,7 +8,7 @@ import { dataBR, hoje, somarDias } from "@/lib/esocial/rh";
 import { FiltroUnidade } from "./Ponto";
 import { localESetor } from "@/lib/esocial/locais";
 
-type Pessoa = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null; centro_custo_id: number | null };
+type Pessoa = { cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null; centro_custo_id: number | null; cargo_id?: number | null };
 type Dia = { cliente_id: number; pessoa_id: number; dia: string; saldo_banco: number | null };
 type Empresa = { cliente_id: number; id: number; cnpj: string };
 type Departamento = { cliente_id: number; id: number; nome: string };
@@ -45,6 +45,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [departamentos, setDepartamentos] = useState<Departamento[]>([]);
   const [centros, setCentros] = useState<Departamento[]>([]);
+  const [cargos, setCargos] = useState<Departamento[]>([]);
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState("");
   const [unidade, setUnidade] = useState("");
@@ -53,14 +54,15 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
 
   const carregar = useCallback(async () => {
     try {
-      const [pe, em, de, cc, di] = await Promise.all([
-        tudo<Pessoa>((a, b) => supabase.from("rhid_pessoas").select("cliente_id,id,nome,cpf,empresa_id,departamento_id,centro_custo_id")
+      const [pe, em, de, cc, di, cg] = await Promise.all([
+        tudo<Pessoa>((a, b) => supabase.from("rhid_pessoas").select("cliente_id,id,nome,cpf,empresa_id,departamento_id,centro_custo_id,cargo_id")
           .eq("situacao", 1).eq("presente", true).order("nome").range(a, b)),
         supabase.from("rhid_empresas").select("cliente_id,id,cnpj"),
         supabase.from("rhid_departamentos").select("cliente_id,id,nome"),
         supabase.from("rhid_centros_custo").select("cliente_id,id,nome"),
         tudo<Dia>((a, b) => supabase.from("rhid_dias").select("cliente_id,pessoa_id,dia,saldo_banco")
           .gte("dia", somarDias(hoje(), -35)).lte("dia", hoje()).not("saldo_banco", "is", null).order("dia").range(a, b)),
+        supabase.from("rhid_cargos").select("cliente_id,id,nome"),
       ]);
       // Cadastros sem departamento e sem saldo lido (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
       const comSaldo = new Set(di.map((d) => chave(d.cliente_id, d.pessoa_id)));
@@ -68,6 +70,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
       setEmpresas((em.data ?? []) as Empresa[]);
       setDepartamentos((de.data ?? []) as Departamento[]);
       setCentros((cc.data ?? []) as Departamento[]);
+      setCargos((cg.data ?? []) as Departamento[]);
       setDias(di);
       setErro("");
     } catch (e) {
@@ -89,6 +92,7 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
   const raizDe = useMemo(() => new Map(empresas.map((e) => [chave(e.cliente_id, e.id), e.cnpj.slice(0, 8)])), [empresas]);
   const nomeDepto = useMemo(() => new Map(departamentos.map((d) => [chave(d.cliente_id, d.id), d.nome])), [departamentos]);
   const nomeCentro = useMemo(() => new Map(centros.map((d) => [chave(d.cliente_id, d.id), d.nome])), [centros]);
+  const nomeCargo = useMemo(() => new Map(cargos.map((d) => [chave(d.cliente_id, d.id), d.nome])), [cargos]);
   const linhas = useMemo(() => {
     const porPessoa = new Map<string, Dia[]>();
     for (const d of dias) {
@@ -107,10 +111,11 @@ export default function BancoHoras({ supabase, filtroEmpresa, chavesRH, onAbrirP
         variacao: saldo != null && antes?.saldo_banco != null ? saldo - antes.saldo_banco : null,
         raiz: p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "",
         ...localESetor(p.departamento_id != null ? nomeDepto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "", "",
-          p.centro_custo_id != null ? nomeCentro.get(chave(p.cliente_id, p.centro_custo_id)) ?? "" : ""),
+          p.centro_custo_id != null ? nomeCentro.get(chave(p.cliente_id, p.centro_custo_id)) ?? "" : "",
+          p.cargo_id != null ? nomeCargo.get(chave(p.cliente_id, p.cargo_id)) ?? "" : ""),
       };
     });
-  }, [pessoas, dias, raizDe, nomeDepto, nomeCentro]);
+  }, [pessoas, dias, raizDe, nomeDepto, nomeCentro, nomeCargo]);
 
   if (acesso === false) return <section className="es-bloco"><p className="muted">Você não tem acesso ao ponto (RHiD).</p></section>;
   if (!carregado) return <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>;

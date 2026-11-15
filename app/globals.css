@@ -4762,3 +4762,14 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .ep-ed-codigo.c-FL b { background: var(--c-fl); color: var(--c-fl-ink); } .ep-ed-codigo.c-SV b { background: var(--c-sv); color: var(--c-sv-ink); }
 .ep-ed-nota { margin: 0; font-size: 12px; color: var(--muted); }
 @media (max-width: 420px) { .ep-ed-linha { grid-template-columns: 80px minmax(0, 1fr) auto minmax(0, 1fr); } .ep-ed-linha small { display: none; } .ep-ed-cartao.split { grid-column: auto; grid-template-columns: 1fr; } }
+
+/* Escala: cada local numa aba (14/11/2026) */
+.ep-abas-locais { display: flex; gap: 2px; margin: 0 0 16px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.ep-abas-locais::-webkit-scrollbar { display: none; }
+.ep-abas-locais button { all: unset; box-sizing: border-box; cursor: pointer; flex: none; display: inline-flex; align-items: baseline; gap: 8px; padding: 10px 16px 11px;
+  font-size: 15px; font-weight: 600; color: var(--muted); border-bottom: 2.5px solid transparent; margin-bottom: -1px; transition: color .12s ease, border-color .12s ease; }
+.ep-abas-locais button span { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--hover-bg); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ep-abas-locais button:hover { color: var(--strong); }
+.ep-abas-locais button.on { color: var(--strong); border-bottom-color: var(--gold); }
+.ep-abas-locais button.on span { background: color-mix(in srgb, var(--gold) 20%, transparent); color: var(--gold); }
+.ep-abas-locais .ep-aba-todas { margin-left: auto; font-weight: 500; }

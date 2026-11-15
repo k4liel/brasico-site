@@ -206,6 +206,19 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     for (const g of grupos) for (const l of g.lideres) { const x = m.get(g.local)!; if (!x.lideres.includes(l.nome)) x.lideres.push(l.nome); }
     return [...m.values()].filter((l) => l.pessoas > 0).sort((a, b) => a.local.localeCompare(b.local));
   }, [grupos, grupoDe, daCasa]);
+  const escolherLocal = (l: string) => {
+    setGrupo(l);
+    try { localStorage.setItem("brasico-escala-aba", l || "*"); } catch {}
+  };
+  const abaPronta = useRef(false);
+  useEffect(() => {
+    if (abaPronta.current || locais.length < 2) return;
+    abaPronta.current = true;
+    let salva: string | null = null;
+    try { salva = localStorage.getItem("brasico-escala-aba"); } catch {}
+    if (salva === "*") setGrupo(SEM_GRUPO);
+    else setGrupo(locais.some((l) => l.local === salva) ? salva! : locais[0].local);
+  }, [locais]);
   const vistas = daCasa.filter((p) => !grupo || grupoDe.get(p.grupo_id)?.local === grupo)
     .slice().sort((a, b) => (a.posicao ?? 1e6) - (b.posicao ?? 1e6) || a.nome.localeCompare(b.nome));
   const realDe = useMemo(() => {
@@ -544,15 +557,18 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       {cabecalho}
       {erro && <p className="tv-alerta">{erro}</p>}
 
+      {/* Cada local numa aba (14/11/2026, pedido do dono); "Todas" fica por último. A aba escolhida fica guardada no aparelho */}
       {locais.length > 1 && (
-        <div className="ep-grupos" role="group" aria-label="Local da escala">
-          <button className={grupo === SEM_GRUPO ? "on" : ""} onClick={() => setGrupo(SEM_GRUPO)}>Todos <span>{daCasa.length}</span></button>
+        <div className="ep-abas-locais" role="tablist" aria-label="Local da escala">
           {locais.map((l) => (
-            <button key={l.local} className={grupo === l.local ? "on" : ""} onClick={() => setGrupo(l.local)}
+            <button key={l.local} role="tab" aria-selected={grupo === l.local} className={grupo === l.local ? "on" : ""} onClick={() => escolherLocal(l.local)}
               title={l.lideres.length ? `Líderes: ${l.lideres.join(", ")}` : "Sem líder"}>
               {l.local} <span>{l.pessoas}</span>
             </button>
           ))}
+          <button role="tab" aria-selected={grupo === SEM_GRUPO} className={`ep-aba-todas${grupo === SEM_GRUPO ? " on" : ""}`} onClick={() => escolherLocal(SEM_GRUPO)}>
+            Todas <span>{daCasa.length}</span>
+          </button>
         </div>
       )}
 

@@ -19,8 +19,21 @@ const nomeBonito = (s: string) =>
 const MESMO_LUGAR: Record<string, string> = { "VILA DA BARRA": "Hello Barra" };
 const juntar = (r: { local: string; setor: string }) => ({ ...r, local: MESMO_LUGAR[r.local.trim().toUpperCase()] ?? r.local });
 
-export function localESetor(departamento: string, unidadeRH = "", centroCusto = ""): { local: string; setor: string } {
-  return juntar(localESetorBruto(departamento, unidadeRH, centroCusto));
+export function localESetor(departamento: string, unidadeRH = "", centroCusto = "", cargo = ""): { local: string; setor: string } {
+  return setorPeloCargo(juntar(localESetorBruto(departamento, unidadeRH, centroCusto)), cargo);
+}
+
+// Cicchetti Pipa (14/11/2026, pedido do dono): o cargo decide o setor — Bar separado do Salão, Hostess, Vigias
+// (vigilante e porteiro) e Gerência. Nas outras casas o setor continua o do departamento do RHiD.
+const sem = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+export function setorPeloCargo(r: { local: string; setor: string }, cargo: string): { local: string; setor: string } {
+  if (r.local !== "Cicchetti Pipa") return r;
+  const c = sem(cargo ?? ""), s = sem(r.setor);
+  if (/GERENTE|GERENCIA/.test(c)) return { ...r, setor: "Gerência" };
+  if (/HOSTESS/.test(c)) return { ...r, setor: "Hostess" };
+  if (/VIGIA|VIGILANTE|PORTEIRO/.test(c)) return { ...r, setor: "Vigias" };
+  if (s === "SALAO/BAR" || s === "SALAO" || s === "BAR") return { ...r, setor: /BAR/.test(c) ? "Bar" : "Salão" };
+  return r;
 }
 
 function localESetorBruto(departamento: string, unidadeRH: string, centroCusto: string): { local: string; setor: string } {
@@ -47,7 +60,7 @@ function localESetorBruto(departamento: string, unidadeRH: string, centroCusto: 
 
 // Nomes de setor conhecidos (para não confundir setor com local)
 const SETORES = new Set(["ADMINISTRATIVO", "COZINHA", "LIMPEZA", "SALÃO/BAR", "SALAO/BAR", "PRODUÇÃO", "PRODUCAO", "CONFEITARIA", "GOVERNANÇA", "GOVERNANCA",
-  "MANUTENÇÃO/JARDIM", "MANUTENCAO/JARDIM", "RECEPÇÃO", "RECEPCAO", "PORTARIA", "BAR", "SALÃO", "SALAO"]);
+  "MANUTENÇÃO/JARDIM", "MANUTENCAO/JARDIM", "RECEPÇÃO", "RECEPCAO", "PORTARIA", "BAR", "SALÃO", "SALAO", "GERÊNCIA", "GERENCIA", "HOSTESS", "VIGIAS"]);
 
 // Unidade do RH (eSocial) em nome de local
 export const localDaUnidadeRH = (unidade: string) => {

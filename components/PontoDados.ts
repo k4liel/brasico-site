@@ -249,7 +249,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
     const raiz = p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "";
     const depto = p.departamento_id != null ? n.depto.get(chave(p.cliente_id, p.departamento_id)) ?? "" : "";
     const centro = p.centro_custo_id != null ? n.centro.get(chave(p.cliente_id, p.centro_custo_id)) ?? "" : "";
-    const auto = localESetor(depto, unidadeRH.get(`${raiz}:${p.cpf}`) ?? "", centro);
+    const auto = localESetor(depto, unidadeRH.get(`${raiz}:${p.cpf}`) ?? "", centro, p.cargo_id != null ? n.cargo.get(chave(p.cliente_id, p.cargo_id)) ?? "" : "");
     const o = ordem.get(k);
     const local = o?.local ?? auto.local;
     const setor = o?.setor ?? auto.setor;
