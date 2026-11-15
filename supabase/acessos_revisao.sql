@@ -72,3 +72,28 @@ begin
   d := replace(d, 'v_areas := v_areas || ''conectar'';', 'v_areas := array_append(v_areas, ''conectar''::text);');
   execute d;
 end $m$;
+
+-- convites antigos (workspace_invites) não valem para quem está em acessos: os projetos dele vêm da página Usuários.
+-- Para os demais, convite nunca abre projeto restrito. (O convite da Camila era para todos os projetos, até os restritos.)
+create or replace function public.accept_invites()
+ returns integer language plpgsql security definer set search_path to 'public' as $function$
+declare
+  n int;
+  my_email text := lower(auth.jwt() ->> 'email');
+begin
+  if not public.acesso_pode_editar('projetos') then return 0; end if;
+  if auth.uid() is null or my_email is null then return 0; end if;
+  if exists (select 1 from public.acessos where user_id = auth.uid()) then
+    update public.workspace_invites set accepted_at = now() where lower(email) = my_email and accepted_at is null;
+    return 0;
+  end if;
+  insert into public.workspace_members (workspace_id, user_id, role)
+  select i.workspace_id, auth.uid(), 'member'
+  from public.workspace_invites i join public.workspaces w on w.id = i.workspace_id
+  where lower(i.email) = my_email and i.accepted_at is null and not w.restrito
+  on conflict do nothing;
+  get diagnostics n = row_count;
+  update public.workspace_invites set accepted_at = now()
+  where lower(email) = my_email and accepted_at is null;
+  return n;
+end $function$;
