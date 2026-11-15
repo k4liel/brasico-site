@@ -4844,3 +4844,4 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .ac-link p { margin: 0; }
 .ac-link-caixa { display: flex; gap: 8px; }
 .ac-link-caixa input { flex: 1; min-width: 0; font-size: 12.5px; }
+.menu-hotel { display: flex; flex-direction: column; gap: 2px; }

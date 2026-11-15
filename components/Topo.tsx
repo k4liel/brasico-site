@@ -56,8 +56,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   // Operação começa fechada, a não ser quando a página aberta é uma das dela
   const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
   const [rhAberta, setRhAberta] = useState(RH.includes(ativo ?? ""));
-  const [hotAberta, setHotAberta] = useState((ativo ?? "").startsWith("hotel:"));
-  const [opHotAberta, setOpHotAberta] = useState((ativo ?? "").startsWith("ophotel:"));
+  const [hotAberta, setHotAberta] = useState(/^(op)?hotel:/.test(ativo ?? ""));
+  // cada hotel abre e fecha (Gestão e Operação dentro); começa aberto o da página atual
+  const hotelAtual = (ativo ?? "").replace(/^(op)?hotel:/, "");
+  const [hotelAberto, setHotelAberto] = useState<Record<string, boolean>>({ [hotelAtual]: true });
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
     if (!aberto) return;
@@ -115,22 +117,23 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           </>)}
           {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto} icone={I.receita}>Receita Federal</Item>}
 
-          {/* Hotéis: um item que abre e fecha, com uma página por hotel (dados do PMS) */}
-          {ve("hoteis") && (<>
-            <Pasta id="menu-hoteis" on={(ativo ?? "").startsWith("hotel:")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis</Pasta>
+          {/* Hotéis → cada hotel → Gestão (dados do PMS, /hoteis/<id>) e Operação (área de criação, /hoteis/<id>/operacao) */}
+          {HOTEIS.some((h) => ve("hoteis") || ve(opArea(h.id))) && (<>
+            <Pasta id="menu-hoteis" on={/^(op)?hotel:/.test(ativo ?? "")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis</Pasta>
             <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}><div>
-              {HOTEIS.map((h) => (
-                <Item key={h.id} href={`/hoteis/${h.id}`} on={ativo === `hotel:${h.id}`} vis={aberto && hotAberta} icone={h.icone}>{h.nome}</Item>
-              ))}
-            </div></div>
-          </>)}
-          {/* Operação dos hotéis: página própria de cada hotel, a área de criação (components/hotel/Operacao.tsx) */}
-          {HOTEIS.some((h) => ve(`op_${h.id.replace(/-/g, "_")}`)) && (<>
-            <Pasta id="menu-ophoteis" on={(ativo ?? "").startsWith("ophotel:")} aberta={opHotAberta} alternar={() => setOpHotAberta((o) => !o)} vis={aberto} icone={I.ophoteis}>Operação dos hotéis</Pasta>
-            <div id="menu-ophoteis" className={opHotAberta ? "menu-sub aberto" : "menu-sub"}><div>
-              {HOTEIS.filter((h) => ve(`op_${h.id.replace(/-/g, "_")}`)).map((h) => (
-                <Item key={h.id} href={`/hoteis/${h.id}/operacao`} on={ativo === `ophotel:${h.id}`} vis={aberto && opHotAberta} icone={h.icone}>{h.nome}</Item>
-              ))}
+              {HOTEIS.filter((h) => ve("hoteis") || ve(opArea(h.id))).map((h) => {
+                const vis = aberto && hotAberta;
+                const ab = !!hotelAberto[h.id];
+                return (
+                  <div key={h.id} className="menu-hotel">
+                    <Pasta id={`menu-hotel-${h.id}`} on={hotelAtual === h.id} aberta={ab} alternar={() => setHotelAberto((o) => ({ ...o, [h.id]: !o[h.id] }))} vis={vis} icone={h.icone}>{h.nome}</Pasta>
+                    <div id={`menu-hotel-${h.id}`} className={ab ? "menu-sub aberto" : "menu-sub"}><div>
+                      {ve("hoteis") && <Item href={`/hoteis/${h.id}`} on={ativo === `hotel:${h.id}`} vis={vis && ab} icone={I.gestao}>Gestão</Item>}
+                      {ve(opArea(h.id)) && <Item href={`/hoteis/${h.id}/operacao`} on={ativo === `ophotel:${h.id}`} vis={vis && ab} icone={I.ophoteis}>Operação</Item>}
+                    </div></div>
+                  </div>
+                );
+              })}
             </div></div>
           </>)}
           {/* Operação: notas, compras, fichas e câmara fria */}
@@ -197,6 +200,7 @@ const I = {
   escala: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h4M14 13h3M14 17h3" /></>,
   receita: <path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" />,
   hoteis: <><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></>,
+  gestao: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
   ophoteis: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><path d="M17.5 14v7M14 17.5h7" /></>,
   operacao: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 4v5M16 4v5" /></>,
   notas: <><path d="M6 3h9l4 4v14l-2.5-1.5L14 21l-2-1.5L10 21l-2.5-1.5L5 21V4a1 1 0 0 1 1-1Z" /><path d="M9 9h6M9 13h6" /></>,
@@ -216,6 +220,8 @@ function Icone({ d }: { d: React.ReactNode }) {
     </span>
   );
 }
+
+const opArea = (hotel: string) => `op_${hotel.replace(/-/g, "_")}`;
 
 function Item({ href, on, vis, icone, children, ref }: {
   href: string; on: boolean; vis: boolean; icone: React.ReactNode; children: React.ReactNode; ref?: React.Ref<HTMLAnchorElement>;
