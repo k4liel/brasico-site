@@ -538,8 +538,10 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
           const r = await fetch(`/escala/logos/${arquivo}.png`);
           return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
         },
+        // PDF impresso: só o apelido, sem cargo nem nome completo (15/11/2026, pedido do dono). Sem apelido,
+        // o primeiro nome; se dois da mesma casa têm o mesmo primeiro nome, o primeiro e o último.
         linhas: ordemDaGrade(doPdf, ordemSetores).map((p) => ({
-          nome: p.nome, cargo: p.cargo, local: p.local, setor: p.setor,
+          nome: nomeNoPdf(p, doPdf), local: p.local, setor: p.setor,
           dias: Object.fromEntries(periodo.map((d) => [d, plano.get(p.chave)?.get(d)])), minutos: horasPlanejadas(p.chave),
         })),
       });
@@ -724,6 +726,16 @@ function MenuPdf({ setores, x, y, onTodos, onSetor, onFechar }: {
 
 // A janelinha do bloquinho: o que o dia (ou os dias escolhidos) vira
 // Caixinha do apelido (clicar no nome na escala)
+type NomePdf = { nome: string; completo?: string; local: string };
+function nomeNoPdf(p: NomePdf, todos: NomePdf[]) {
+  const completo = p.completo || p.nome;
+  if (p.nome !== completo) return p.nome; // tem apelido
+  const partes = completo.trim().split(/\s+/);
+  const primeiro = partes[0] ?? completo;
+  const repete = todos.some((o) => o !== p && o.local === p.local && o.nome === (o.completo || o.nome) && o.nome.trim().split(/\s+/)[0] === primeiro);
+  return repete && partes.length > 1 ? `${primeiro} ${partes[partes.length - 1]}` : primeiro;
+}
+
 function CaixaApelido({ nome, apelido, x, y, onSalvar, onFechar }: { nome: string; apelido: string; x: number; y: number; onSalvar: (a: string) => void; onFechar: () => void }) {
   const [valor, setValor] = useState(apelido);
   const left = Math.max(8, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1000) - 300));

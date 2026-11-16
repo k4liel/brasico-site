@@ -276,8 +276,8 @@ export async function gerarPdfEscala(e: EntradaPdf): Promise<Uint8Array> {
         // Horas e folgas da semana
         const folgas = dias.filter((d) => ["F", "DM", "FC", "BH"].includes(l.dias[d]?.codigo ?? "")).length;
         const xh = M + LARG - COL_HORAS;
-        texto(p, l.minutos ? horasTxt(l.minutos) : "—", xh, y + altLinha / 2 + (temCargo ? 1 * k : -3), 9.5 * Math.max(k, 0.8), f.negrito, TINTA, { larg: COL_HORAS, alinhar: "centro" });
-        if (temCargo) texto(p, `${folgas} ${folgas === 1 ? "folga" : "folgas"}`, xh, y + altLinha / 2 - 9 * k, 7 * Math.max(k, 0.8), f.normal, CINZA, { larg: COL_HORAS, alinhar: "centro" });
+        texto(p, l.minutos ? horasTxt(l.minutos) : "—", xh, y + altLinha / 2 + (k >= 0.6 ? 1 * k : -3), 9.5 * Math.max(k, 0.8), f.negrito, TINTA, { larg: COL_HORAS, alinhar: "centro" });
+        if (k >= 0.6) texto(p, `${folgas} ${folgas === 1 ? "folga" : "folgas"}`, xh, y + altLinha / 2 - 9 * k, 7 * Math.max(k, 0.8), f.normal, CINZA, { larg: COL_HORAS, alinhar: "centro" });
       });
       y -= 6;
     }
