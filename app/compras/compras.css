@@ -645,14 +645,14 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
 .cp-enviar { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; text-decoration: none; }
 a.cp-enviar { background: #1f8f4e; color: #fff; border: 1px solid #1f8f4e; }
 a.cp-enviar:hover { filter: brightness(1.08); }
-.cp-etapas { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--panel); }
-.cp-etapas button { padding: 5px 12px; font-size: 12.5px; font-weight: 600; border: 0; border-right: 1px solid var(--border); border-radius: 0;
+.cp-passos-ped { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--panel); }
+.cp-passos-ped button { padding: 5px 12px; font-size: 12.5px; font-weight: 600; border: 0; border-right: 1px solid var(--border); border-radius: 0;
   background: transparent; color: var(--muted); white-space: nowrap; }
-.cp-etapas button:last-child { border-right: 0; }
-.cp-etapas button.feito { color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
-.cp-etapas button.atual { color: #fff; background: var(--primary); }
-.cp-etapas button.atual.feito:last-child { background: var(--ok); }
-.cp-etapas button:not(:disabled):hover:not(.atual) { background: var(--soft); filter: none; }
+.cp-passos-ped button:last-child { border-right: 0; }
+.cp-passos-ped button.feito { color: var(--ok); background: color-mix(in srgb, var(--ok) 8%, var(--panel)); }
+.cp-passos-ped button.atual { color: #fff; background: var(--primary); }
+.cp-passos-ped button.atual.feito:last-child { background: var(--ok); }
+.cp-passos-ped button:not(:disabled):hover:not(.atual) { background: var(--soft); filter: none; }
 .cp-filtro-ped { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 .cp-filtro-ped button { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
   background: var(--panel); color: var(--strong); border: 1px solid var(--border); }
@@ -661,7 +661,7 @@ a.cp-enviar:hover { filter: brightness(1.08); }
 .cp-filtro-ped button.on b { background: color-mix(in srgb, #fff 20%, transparent); }
 @media (max-width: 640px) {
   .cp-fluxo { margin-left: 0; flex-basis: 100%; }
-  .cp-etapas { flex: 1; } .cp-etapas button { flex: 1; padding: 6px 6px; }
+  .cp-passos-ped { flex: 1; } .cp-passos-ped button { flex: 1; padding: 6px 6px; }
 }
 @media print { .cp-fluxo, .cp-filtro-ped { display: none !important; } }
 
@@ -682,3 +682,140 @@ a.cp-enviar:hover { filter: brightness(1.08); }
 .pn-conferir-n small { color: var(--muted); font-size: 12px; }
 .pn-conferir-ir { color: var(--muted); font-size: 20px; }
 @media (max-width: 640px) { .cp-gaveta-nav { padding: 0 16px 10px; } }
+
+/* ===================================================================================================================
+   Compras · celular (17/11/2026, pedido do dono: "nada cortando, tabelas destravadas, responsivo profissional").
+   Tudo de celular das Compras fica neste bloco; os blocos acima cuidam do computador.
+   =================================================================================================================== */
+/* blocos que encolhem: texto longo e tabela larga não empurram a página para o lado */
+.cp-msgs > li, .cp-msg, .cp-anexo, .cp-anexo-nome, .cp-pedido-titulo, .cp-planilha, .cp-lista, .cp-lista-titulo, .cp-forn, .cp-empresa,
+.cp-da-pessoa, .cp-gaveta-listas, .pn-bloco, .cp-unidade { min-width: 0; }
+.cp-pedido-titulo small, .cp-msg-quando { overflow-wrap: anywhere; }
+.cp-planilha, .nf-tabela-wrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 760px) {
+  /* topo simples: marca e páginas numa faixa que rola de lado; nome e botões numa linha só */
+  .cp-topo { gap: 6px; padding-left: 16px; padding-right: 16px; }
+  .cp-menu { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; width: 100%; }
+  .cp-menu::-webkit-scrollbar { display: none; }
+  .cp-menu-item { white-space: nowrap; padding: 6px 12px; font-size: 13.5px; }
+  .cp-quem { width: 100%; justify-content: flex-end; gap: 6px; font-size: 13px; }
+  .cp-quem button { padding: 5px 10px; }
+  /* abas: uma faixa só, que rola de lado */
+  .cp-abas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 0; }
+  .cp-abas::-webkit-scrollbar { display: none; }
+  .cp-abas button { white-space: nowrap; padding: 10px 12px; }
+  .cp-area .es-topo h1 { font-size: 26px; }
+  .cp-area .es-topo p { font-size: 13.5px; }
+}
+
+@media (max-width: 760px) {
+  /* lista da pessoa: cada item vira um cartão (nome e pedido em cima; Pediu, Sugestão, Pedir, Unid., Preço e Total em blocos) */
+  .cp-lista { grid-template-columns: minmax(0, 1fr); padding: 14px 12px; }
+  .cp-lista > * { min-width: 0; }
+  .cp-lista .nf-tabela-wrap { margin: 0; overflow: visible; }
+  .cp-tabela-lista, .cp-tabela-lista tbody { display: block; width: 100%; min-width: 0; }
+  .cp-tabela-lista thead { display: none; }
+  .cp-tabela-lista tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 10px; padding: 12px; margin: 0 0 10px;
+    border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+  .cp-tabela-lista td { display: flex; flex-direction: column; justify-content: flex-start; gap: 3px; padding: 0 !important; border: 0 !important;
+    min-width: 0; text-align: left !important; background: transparent !important; box-shadow: none !important; }
+  .cp-tabela-lista td[data-rotulo]::before { content: attr(data-rotulo); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .cp-tabela-lista td.cp-item { grid-column: 1 / -1; min-width: 0; }
+  .cp-tabela-lista td.cp-td-acao { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; }
+  .cp-tabela-lista td.cp-td-acao:empty { display: none; }
+  .cp-tabela-lista input.cp-edita, .cp-tabela-lista input.cp-edita.cp-un { width: 100%; min-width: 0; }
+  .cp-tabela-lista .cp-tot { font-weight: 700; color: var(--strong); }
+  .cp-tabela-lista .cp-nome { font-size: 15px; }
+  .cp-forn-edita { flex-wrap: wrap; gap: 4px 8px; }
+  .cp-forn-edita input.cp-edita { max-width: none; flex: 1 1 100%; }
+  /* aviso do item: grudado embaixo do cartão */
+  .cp-tabela-lista tr.cp-com-obs { margin-bottom: 0; border-bottom: 0; border-radius: 12px 12px 0 0; }
+  .cp-tabela-lista tr.cp-obs { display: block; margin: 0 0 10px; padding: 10px 12px; border-top: 1px dashed var(--border); border-radius: 0 0 12px 12px;
+    font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+  .cp-tabela-lista tr.cp-obs td { display: block; }
+  /* item que pede atenção: faixa dourada no cartão inteiro */
+  .cp-tabela-lista tr.cp-pede { background: color-mix(in srgb, var(--gold) 7%, var(--panel)); box-shadow: inset 4px 0 0 var(--gold); }
+  .cp-tabela-lista tr.cp-tirado { opacity: .55; }
+  .cp-item { min-width: 0; }
+  /* cabeçalho da lista: título em cima; total, situação e Aprovar embaixo */
+  .cp-lista-cabeca { gap: 8px 10px; }
+  .cp-lista-titulo { flex: 1 1 calc(100% - 44px); }
+  .cp-lista-titulo input, .cp-lista-titulo h3 { font-size: 17px; }
+  .cp-lista-total b { font-size: 22px; }
+  .cp-legenda { font-size: 12.5px; }
+  .cp-incluir { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cp-incluir > input:first-child, .cp-incluir > input:nth-child(2) { grid-column: 1 / -1; }
+  .cp-incluir input { width: 100%; min-width: 0; }
+  .cp-incluir button { grid-column: 1 / -1; }
+  .cp-rodape, .cp-mover-semana { flex-wrap: wrap; width: 100%; }
+  .cp-mover-semana button { flex: 1; }
+  .cp-atencao button { width: 100%; }
+
+  /* Lista Geral: cada item vira cartão; a alça de arrastar some (no celular, use Mover) */
+  .cp-tabela-unica, .cp-tabela-unica tbody { display: block; width: 100%; }
+  .cp-tabela-unica thead { display: none; }
+  .cp-tabela-unica tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; padding: 12px; margin: 0 0 8px;
+    border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+  .cp-tabela-unica td { display: flex; flex-direction: column; gap: 3px; padding: 0 !important; border: 0 !important; min-width: 0; text-align: left !important; }
+  .cp-tabela-unica td[data-rotulo]::before { content: attr(data-rotulo); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .cp-tabela-unica td.cp-caixa { display: none; }
+  .cp-tabela-unica td:nth-child(2), .cp-tabela-unica td.cp-forn-col, .cp-tabela-unica td.cp-item-acoes { grid-column: 1 / -1; }
+  .cp-tabela-unica td.cp-item-acoes { flex-direction: row; justify-content: flex-end; gap: 8px; }
+  .cp-tabela-unica td.cp-item-acoes:empty { display: none; }
+  .cp-tabela-unica input, .cp-tabela-unica select { width: 100%; min-width: 0; }
+  .cp-tabela-unica td.cp-qtd { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .cp-tabela-unica td.cp-qtd::before { flex-basis: 100%; }
+  .cp-tabela-unica td.cp-qtd input { width: calc(100% - 34px); }
+  .cp-tabela-unica tr.cp-mover-linha { display: block; }
+  .cp-tabela-unica tr.cp-tirado-linha { opacity: .6; }
+  /* cabeçalho do fornecedor: nome em cima; total; Mandar e as etapas embaixo */
+  .cp-forn-cabeca { padding: 12px; gap: 8px; }
+  .cp-forn-cabeca strong { flex: 1 1 calc(100% - 30px); min-width: 0; overflow-wrap: anywhere; }
+  .cp-fluxo { width: 100%; }
+  .cp-enviar { flex: 1 1 100%; justify-content: center; padding: 8px 12px; }
+  .cp-empresa-cabeca { flex-wrap: wrap; }
+  .cp-empresa-nome { min-width: 0; flex: 1 1 60%; }
+  .cp-empresa-nome small { overflow-wrap: anywhere; }
+  .cp-forn-contato { flex-wrap: wrap; }
+  .cp-filtro-ped { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .cp-filtro-ped button { white-space: nowrap; }
+
+  /* aba Listas: painel lateral ocupa a tela; Anterior/Próxima com nomes curtos */
+  .cp-gaveta-nav button { max-width: 42%; }
+  .fx-gaveta:has(.cp-gaveta-listas) .fx-gaveta-corpo { padding: 12px 12px 40px; }
+  .cp-soma-listas { grid-template-columns: 1fr 1fr; }
+  .cp-pessoa { flex-wrap: wrap; }
+  .cp-pessoa-nome { min-width: 0; flex: 1 1 60%; }
+  .cp-pessoa-nome strong, .cp-pessoa-nome small { overflow-wrap: anywhere; }
+  .cp-msgs { padding: 10px; }
+  .cp-msg { padding: 10px; }
+}
+
+/* acertos de enquadramento (valem em qualquer tela) */
+.cp-msgs { grid-template-columns: minmax(0, 1fr); }
+.cp-pedido-cabeca, .cp-pedido-titulo, .cp-pedido-titulo small { white-space: normal; }
+.cp-anexo-planilha .cp-planilha { min-width: 0; }
+@media (max-width: 760px) {
+  .cp-menu .marca { flex-shrink: 0; white-space: nowrap; }
+  .cp-topo { overflow: hidden; }
+}
+@media (max-width: 760px) {
+  .cp-legenda { display: block; margin: 0; line-height: 1.5; }
+  .cp-legenda .cp-campo-exemplo { display: inline-block; margin-right: 6px; vertical-align: middle; }
+  .cp-planilha td { white-space: normal; min-width: 64px; overflow-wrap: anywhere; }
+}
+@media (max-width: 760px) {
+  .cp-planilha td { overflow-wrap: normal; word-break: normal; }
+  .cp-planilha tr.cab td { white-space: nowrap; }
+}
+@media (max-width: 760px) {
+  /* pessoa na aba Listas: avatar e nome em cima (nome inteiro); valor e situação na linha de baixo */
+  .cp-pessoas .cp-pessoa { grid-template-columns: 32px minmax(0, 1fr) auto; grid-template-areas: "av nome nome" "av total estado"; row-gap: 4px; padding: 10px; }
+  .cp-pessoas .cp-pessoa .cp-avatar { grid-area: av; align-self: start; }
+  .cp-pessoas .cp-pessoa .cp-pessoa-nome { grid-area: nome; flex: none; }
+  .cp-pessoas .cp-pessoa .cp-pessoa-total { grid-area: total; justify-self: start; font-size: 13.5px; }
+  .cp-pessoas .cp-pessoa > .estado, .cp-pessoas .cp-pessoa > .cp-selo-compra { grid-area: estado; justify-self: end; white-space: nowrap; }
+  .cp-pessoas .cp-pessoa .cp-pessoa-nome strong { overflow-wrap: normal; }
+  .cp-pessoas .cp-pessoa .cp-pessoa-nome small { white-space: normal; }
+}

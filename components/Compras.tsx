@@ -614,13 +614,13 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
                       )}
                       {i.incluido_na_revisao && <span className="cp-sub">incluído na revisão</span>}
                     </td>
-                    <td className="n cp-pediu">{num(i.qtd_pedida) || "—"}</td>
-                    <td className="n"><span className={difere ? "cp-sug difere" : "cp-sug"}>{num(i.qtd_sugerida) || "—"}</span></td>
-                    <td className="n">{edita ? <input className="n cp-edita" inputMode="decimal" defaultValue={num(i.qtd)} onBlur={(v) => ler(v.target.value) !== i.qtd && salvar(i, { qtd: ler(v.target.value) })} aria-label={`Quantidade a pedir de ${i.nome}`} /> : <b>{num(i.qtd)}</b>}</td>
-                    <td>{edita ? <input className="cp-edita cp-un" defaultValue={i.unidade ?? ""} onBlur={(v) => v.target.value !== (i.unidade ?? "") && salvar(i, { unidade: v.target.value })} aria-label={`Unidade de ${i.nome}`} /> : i.unidade ?? ""}</td>
-                    <td className="n">{edita ? <input className="n cp-edita" inputMode="decimal" defaultValue={num(i.preco)} onBlur={(v) => ler(v.target.value) !== i.preco && salvar(i, { preco: ler(v.target.value) })} aria-label={`Preço de ${i.nome}`} /> : brl(i.preco)}</td>
-                    <td className="n cp-tot">{brl((i.qtd ?? 0) * (i.preco ?? 0))}</td>
-                    <td>{podeEditar && <button className="ghost small" onClick={() => salvar(i, { removido: !i.removido })}>{i.removido ? "Voltar" : "Tirar"}</button>}</td>
+                    <td className="n cp-pediu" data-rotulo="Pediu">{num(i.qtd_pedida) || "—"}</td>
+                    <td className="n" data-rotulo="Sugestão"><span className={difere ? "cp-sug difere" : "cp-sug"}>{num(i.qtd_sugerida) || "—"}</span></td>
+                    <td className="n" data-rotulo="Pedir">{edita ? <input className="n cp-edita" inputMode="decimal" defaultValue={num(i.qtd)} onBlur={(v) => ler(v.target.value) !== i.qtd && salvar(i, { qtd: ler(v.target.value) })} aria-label={`Quantidade a pedir de ${i.nome}`} /> : <b>{num(i.qtd)}</b>}</td>
+                    <td data-rotulo="Unid.">{edita ? <input className="cp-edita cp-un" defaultValue={i.unidade ?? ""} onBlur={(v) => v.target.value !== (i.unidade ?? "") && salvar(i, { unidade: v.target.value })} aria-label={`Unidade de ${i.nome}`} /> : i.unidade ?? ""}</td>
+                    <td className="n" data-rotulo="Preço">{edita ? <input className="n cp-edita" inputMode="decimal" defaultValue={num(i.preco)} onBlur={(v) => ler(v.target.value) !== i.preco && salvar(i, { preco: ler(v.target.value) })} aria-label={`Preço de ${i.nome}`} /> : brl(i.preco)}</td>
+                    <td className="n cp-tot" data-rotulo="Total">{brl((i.qtd ?? 0) * (i.preco ?? 0))}</td>
+                    <td className="cp-td-acao">{podeEditar && <button className="ghost small" onClick={() => salvar(i, { removido: !i.removido })}>{i.removido ? "Voltar" : "Tirar"}</button>}</td>
                   </tr>
                   {porque && !i.removido && (
                     <tr className={`cp-obs ${pedeAtencao(i) ? "cp-pede" : ""}`}><td colSpan={8}><span aria-hidden="true">{/^Revisor/.test(i.motivo ?? "") ? "🔎" : "💡"}</span> {porque}</td></tr>
@@ -1076,7 +1076,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
                                   💬 Mandar no WhatsApp</a>
                               : <button type="button" className="ghost small cp-enviar" onClick={() => copiar(k, texto)}>{copiado === k ? "✓ Copiado" : "📋 Copiar pedido"}</button>;
                           })()}
-                          <span className="cp-etapas" role="group" aria-label={`Situação do pedido de ${g.f}`}>
+                          <span className="cp-passos-ped" role="group" aria-label={`Situação do pedido de ${g.f}`}>
                             {(["a_pedir", "pedido", "recebido"] as const).map((x, n) => {
                               const feito = ["a_pedir", "pedido", "recebido"].indexOf(st) >= n;
                               const quandoX = x === "pedido" ? ped?.pedido_em : x === "recebido" ? ped?.recebido_em : null;
@@ -1129,14 +1129,14 @@ function ListaUnica({ semana }: { semana: Semana }) {
                                 <span className={aberta ? "so-print" : ""}>{l.nome}</span>
                                 <small className="no-print">{(l.origem ?? []).map((o) => `${o.pessoa} ${num(o.qtd)}`).join(" · ")}{l.movido ? " · movido" : l.editado ? " · editado" : ""}</small>
                               </td>
-                              <td className="no-print cp-forn-col">{aberta ? (
+                              <td className="no-print cp-forn-col" data-rotulo="Fornecedor">{aberta ? (
                                 <select value={valorForn(l.fornecedor)} onChange={(v) => mover(l.id, l.empresa, v.target.value)} aria-label={`Fornecedor de ${l.nome}`}>
                                   {!doCadastro(l.fornecedor) && <option value={l.fornecedor}>{l.fornecedor}</option>}
                                   {opcoesForn.map((o) => <option key={o.nome} value={o.valor}>{o.nome}</option>)}
                                 </select>) : (doCadastro(l.fornecedor)?.nome ?? l.fornecedor)}</td>
-                              <td className="n cp-qtd">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.qtd)} onBlur={(v) => ler(v.target.value) !== l.qtd && salvar(l, { qtd: ler(v.target.value) })} aria-label="Quantidade" /><span className="so-print">{num(l.qtd)}</span></> : num(l.qtd)} <span className="cp-un-txt">{l.unidade}</span></td>
-                              <td className="n cp-preco">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.preco)} placeholder="—" onBlur={(v) => ler(v.target.value) !== l.preco && salvar(l, { preco: ler(v.target.value) })} aria-label={`Preço unitário de ${l.nome}`} /><span className="so-print">{brl(l.preco)}</span></> : brl(l.preco)}</td>
-                              <td className="n cp-preco cp-tot">{brl((l.qtd ?? 0) * (l.preco ?? 0))}</td>
+                              <td className="n cp-qtd" data-rotulo="Qtd.">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.qtd)} onBlur={(v) => ler(v.target.value) !== l.qtd && salvar(l, { qtd: ler(v.target.value) })} aria-label="Quantidade" /><span className="so-print">{num(l.qtd)}</span></> : num(l.qtd)} <span className="cp-un-txt">{l.unidade}</span></td>
+                              <td className="n cp-preco" data-rotulo="Preço unit.">{aberta ? <><input className="n no-print-input" inputMode="decimal" defaultValue={num(l.preco)} placeholder="—" onBlur={(v) => ler(v.target.value) !== l.preco && salvar(l, { preco: ler(v.target.value) })} aria-label={`Preço unitário de ${l.nome}`} /><span className="so-print">{brl(l.preco)}</span></> : brl(l.preco)}</td>
+                              <td className="n cp-preco cp-tot" data-rotulo="Total">{brl((l.qtd ?? 0) * (l.preco ?? 0))}</td>
                               <td className="no-print cp-item-acoes">{aberta && <>
                                 <button className={movendo === l.id ? "ghost small on" : "ghost small"} onClick={() => setMovendo(movendo === l.id ? null : l.id)} aria-expanded={movendo === l.id}>Mover</button>
                                 <button className="ghost small" onClick={() => salvar(l, { removido: true })}>Tirar</button>
