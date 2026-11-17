@@ -577,10 +577,59 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
 .pn-sem-dono { border-left: 4px solid var(--gold); }
 .pn-sem-dono ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
 .pn-sem-dono li { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-  padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
 .pn-sem-dono-msg { flex: 1 1 320px; min-width: 0; }
 .pn-sem-dono-msg small { color: var(--muted); font-size: 12.5px; }
 .pn-sem-dono-msg p { margin: 4px 0 0; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6.5em; overflow: hidden; }
 .pn-sem-dono-acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .pn-sem-dono-acoes select { max-width: 240px; }
 .pn-sem-dono-aviso { margin: 0 0 12px; font-size: 13px; color: var(--strong); }
+
+/* Listas · pedido completo do grupo (17/11/2026): mensagens e arquivos da pessoa na semana, em cima das listas */
+.cp-pedido-grupo { margin: 0 0 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); overflow: hidden; }
+.cp-pedido-cabeca { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--soft);
+  border: 0; border-bottom: 1px solid var(--soft-line); color: var(--strong); text-align: left; cursor: pointer; border-radius: 0; }
+.cp-pedido-cabeca:hover { filter: none; background: color-mix(in srgb, var(--gold) 14%, var(--panel)); }
+.cp-pedido-icone { font-size: 20px; }
+.cp-pedido-titulo { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.cp-pedido-titulo b { font-size: 15px; }
+.cp-pedido-titulo small { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+.cp-pedido-seta { color: var(--muted); }
+.cp-msgs { list-style: none; margin: 0; padding: 12px 16px 16px; display: grid; gap: 12px; max-height: 70vh; overflow: auto; }
+.cp-msg { display: grid; gap: 6px; padding: 12px 14px; border-radius: 4px 14px 14px 14px; background: color-mix(in srgb, var(--ok) 7%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--ok) 18%, var(--border)); max-width: 900px; }
+.cp-msg-quando { color: var(--muted); font-size: 12px; }
+.cp-msg-texto { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; color: var(--text); }
+.cp-anexo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--panel); }
+.cp-anexo-nome { flex: 1 1 220px; min-width: 0; font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; color: var(--strong); }
+.cp-anexo-acoes { display: flex; gap: 8px; }
+.cp-anexo-acoes a { display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);
+  color: var(--strong); text-decoration: none; font-size: 13px; background: transparent; }
+.cp-anexo-acoes a:hover { background: var(--soft); }
+.cp-anexo-pdf { flex-basis: 100%; width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.cp-anexo-foto img { display: block; max-width: min(100%, 520px); max-height: 60vh; border-radius: 10px; border: 1px solid var(--border); }
+.cp-anexo-audio { width: min(100%, 360px); }
+.cp-anexo-planilha { align-items: flex-start; }
+.cp-planilha-abas { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-planilha-abas button { padding: 4px 10px; font-size: 12.5px; border-radius: 8px; background: transparent; color: var(--strong); border: 1px solid var(--border); }
+.cp-planilha-abas button.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.cp-planilha { flex-basis: 100%; max-height: 60vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.cp-planilha table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.cp-planilha td { padding: 6px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap; color: var(--text); }
+.cp-planilha tr.cab td { position: sticky; top: 0; background: var(--soft); font-weight: 700; color: var(--strong); }
+.cp-planilha tr:nth-child(even):not(.cab) td { background: color-mix(in srgb, var(--bg) 50%, var(--panel)); }
+
+/* Listas · como cada item foi pedido e os itens que pedem atenção */
+.cp-pediu-txt { display: block; margin-top: 2px; font-size: 12.5px; color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.cp-atencao { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 0 0 12px;
+  padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 12%, var(--panel)); border: 1px solid var(--soft-line); }
+.cp-atencao span { display: flex; flex-direction: column; gap: 2px; }
+.cp-atencao b { color: var(--strong); font-size: 14px; }
+.cp-atencao small { color: var(--muted); font-size: 12.5px; }
+.cp-tabela-lista tr.cp-pede > td:first-child { box-shadow: inset 4px 0 0 var(--gold); }
+.cp-tabela-lista tr.cp-pede > td { background: color-mix(in srgb, var(--gold) 6%, var(--panel)); }
+@media (max-width: 640px) {
+  .cp-msgs { padding: 10px; max-height: none; }
+  .cp-anexo-pdf { height: 60vh; }
+}

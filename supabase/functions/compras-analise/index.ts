@@ -451,6 +451,7 @@ function ajustar(i: Item, porItem: Map<string, ItemCand>, todos: Cand[], aumento
   const pedida = typeof i.qtd_pedida === "number" ? i.qtd_pedida : null;
   const saida: Item = { ...i, qtd_pedida: pedida };
   delete saida.item_pedido;
+  saida.pedido_item = pedidoTxt; // como veio no grupo ("6 uni de pimentão"), mostrado embaixo do item na lista
   if (!c) {
     return { ...saida, produto_nota: null, fornecedor: escolhida ? i.fornecedor ?? null : null, preco: null, media_4s: null, projecao: null, base: null,
       confianca: "baixa", qtd_sugerida: pedida, motivo: lista.length ? "Não achei este produto com certeza nas notas: confira o fornecedor e o preço." : "Este produto não aparece nas notas de compra dos últimos 120 dias." };

@@ -23,7 +23,9 @@ const COMPRA: Record<string, string> = { recebida: "✓ Comprada e recebida", co
 type Item = { id: number; lista_id: string; ordem: number; nome: string; fornecedor: string | null; unidade: string | null;
   qtd_pedida: number | null; qtd_sugerida: number | null; motivo: string | null; qtd: number | null; preco: number | null;
   removido: boolean; incluido_na_revisao: boolean; media_4s: number | null; projecao: number | null; base: string | null;
-  produto_nota: string | null; confianca: "alta" | "media" | "baixa" | null };
+  produto_nota: string | null; confianca: "alta" | "media" | "baixa" | null; pedido_item?: string | null };
+// Item que pede atenção de quem revisa: sem produto nas notas, sem preço, produto parecido ou aviso do revisor
+const pedeAtencao = (i: Item) => !i.removido && (i.confianca !== "alta" || i.preco == null || /^Revisor/.test(i.motivo ?? ""));
 type Pedido = { fornecedor: string; empresa: string; status: "a_pedir" | "pedido" | "recebido"; pedido_em: string | null; recebido_em: string | null; nota_chave: string | null; observacao: string | null };
 type Final = { id: number; fornecedor: string; empresa: string; movido: boolean; nome: string; unidade: string; qtd: number | null; preco: number | null;
   origem: { pessoa: string; unidade: string; setor: string; qtd: number }[]; removido: boolean; editado: boolean; atualizado_em?: string | null };
@@ -327,6 +329,7 @@ function MinhaLista({ semana, pessoa }: { semana: Semana; pessoa: Pessoa }) {
   return (
     <>
       <AvisoListaNova pessoa={pessoa.id} listas={listas} />
+      <PedidoNoGrupo semana={semana} pessoa={pessoa.id} />
       <Listas semana={semana} listas={listas} itens={itens} sit={sit} carregar={carregar} gestor={false} />
     </>
   );
@@ -356,6 +359,103 @@ function AvisoListaNova({ pessoa, listas }: { pessoa: string; listas: Lista[] })
   );
 }
 
+// O pedido completo que a pessoa mandou no grupo COMPRAS na semana (17/11/2026, pedido do dono): todas as mensagens,
+// na ordem, e cada arquivo aberto na tela — planilha vira tabela com todas as linhas, PDF e foto aparecem aqui mesmo.
+// compras_pedido_mensagens + rota /api/compras/anexo (supabase/compras_pedido_completo.sql)
+type MsgPedido = { id: string; enviada_em: string; autor: string; tipo: string; texto: string | null; midia: string | null; midia_nome: string | null; midia_mime: string | null };
+const extDe = (m: MsgPedido) => (m.midia ?? "").split(".").pop()?.toLowerCase() ?? "";
+function PedidoNoGrupo({ semana, pessoa }: { semana: Semana; pessoa: string }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [msgs, setMsgs] = useState<MsgPedido[] | null>(null);
+  const [aberto, setAberto] = useState(true);
+  useEffect(() => {
+    supabase.rpc("compras_pedido_mensagens", { p_semana: semana.id, p_pessoa: pessoa })
+      .then(({ data }) => setMsgs(((data ?? []) as MsgPedido[]).filter((m) => (m.texto ?? "").trim() || m.midia)));
+  }, [supabase, semana.id, pessoa]);
+  if (!msgs?.length) return null;
+  const arquivos = msgs.filter((m) => m.midia).length;
+  return (
+    <section className="cp-pedido-grupo">
+      <button type="button" className="cp-pedido-cabeca" onClick={() => setAberto(!aberto)} aria-expanded={aberto}>
+        <span className="cp-pedido-icone" aria-hidden="true">💬</span>
+        <span className="cp-pedido-titulo"><b>Pedido no grupo COMPRAS</b>
+          <small>{msgs.length} {msgs.length === 1 ? "mensagem" : "mensagens"}{arquivos ? ` · ${arquivos} ${arquivos === 1 ? "arquivo" : "arquivos"}` : ""} · {quando(msgs[0].enviada_em)}{msgs.length > 1 ? ` a ${quando(msgs[msgs.length - 1].enviada_em)}` : ""}</small></span>
+        <span className="cp-pedido-seta" aria-hidden="true">{aberto ? "▾" : "▸"}</span>
+      </button>
+      {aberto && (
+        <ol className="cp-msgs">
+          {msgs.map((m) => (
+            <li key={m.id} className="cp-msg">
+              <small className="cp-msg-quando">{quando(m.enviada_em)}{m.autor ? ` · ${m.autor}` : ""}</small>
+              {m.midia && <AnexoPedido m={m} />}
+              {(m.texto ?? "").trim() && <p className="cp-msg-texto">{m.texto}</p>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function AnexoPedido({ m }: { m: MsgPedido }) {
+  const ext = extDe(m);
+  const url = `/api/compras/anexo?m=${encodeURIComponent(m.id)}`;
+  const nome = m.midia_nome || `arquivo .${ext}`;
+  const [ver, setVer] = useState(false);
+  if (["xlsx", "xls", "csv", "ods"].includes(ext)) return <PlanilhaPedido url={url} nome={nome} />;
+  if (["jpg", "jpeg", "png", "webp"].includes(ext) || m.tipo === "imagem") {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <a className="cp-anexo-foto" href={url} target="_blank" rel="noreferrer"><img src={url} alt={`Foto do pedido (${nome})`} loading="lazy" /></a>;
+  }
+  if (["ogg", "mp3", "m4a", "opus"].includes(ext) || m.tipo === "audio") return <audio className="cp-anexo-audio" controls src={url} preload="none" />;
+  return (
+    <div className="cp-anexo">
+      <span className="cp-anexo-nome"><span aria-hidden="true">📎</span> {nome}</span>
+      <span className="cp-anexo-acoes">
+        {ext === "pdf" && <button type="button" className="ghost small" onClick={() => setVer(!ver)}>{ver ? "Esconder" : "Ver aqui"}</button>}
+        <a className="ghost small botao" href={url} target="_blank" rel="noreferrer">Abrir</a>
+      </span>
+      {ver && <iframe className="cp-anexo-pdf" src={url} title={nome} />}
+    </div>
+  );
+}
+
+function PlanilhaPedido({ url, nome }: { url: string; nome: string }) {
+  const [abas, setAbas] = useState<{ nome: string; linhas: string[][] }[] | null>(null);
+  const [aba, setAba] = useState(0);
+  const [erro, setErro] = useState(false);
+  useEffect(() => {
+    fetch(`${url}&ler=1`).then((r) => (r.ok ? r.json() : Promise.reject())).then((j) => setAbas(j.abas ?? [])).catch(() => setErro(true));
+  }, [url]);
+  const atual = abas?.[aba];
+  return (
+    <div className="cp-anexo cp-anexo-planilha">
+      <span className="cp-anexo-nome"><span aria-hidden="true">📊</span> {nome}{atual ? ` · ${atual.linhas.length} linhas` : ""}</span>
+      <span className="cp-anexo-acoes"><a className="ghost small botao" href={`${url}&baixar=1`}>Baixar</a></span>
+      {erro ? <p className="muted">Não consegui abrir a planilha aqui; use Baixar.</p>
+        : !abas ? <p className="muted">Lendo a planilha…</p>
+        : !atual ? <p className="muted">A planilha está vazia.</p> : (
+          <>
+            {abas.length > 1 && (
+              <div className="cp-planilha-abas" role="tablist">
+                {abas.map((a, k) => <button key={a.nome} role="tab" aria-selected={k === aba} className={k === aba ? "on" : ""} onClick={() => setAba(k)}>{a.nome}</button>)}
+              </div>
+            )}
+            <div className="cp-planilha">
+              <table>
+                <tbody>
+                  {atual.linhas.map((l, k) => (
+                    <tr key={k} className={k === 0 ? "cab" : ""}>{l.map((c, j) => <td key={j}>{c}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+    </div>
+  );
+}
+
 // Nomes dos fornecedores do cadastro (compras_fornecedores_nomes), lidos uma vez só para todas as listas da tela.
 // Serve para sugerir na troca de fornecedor e para mostrar o nome do cadastro no lugar da razão social da nota.
 type NomeForn = { nome: string; razao_social: string | null };
@@ -379,6 +479,8 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
   const [novo, setNovo] = useState({ nome: "", fornecedor: "", unidade: "", qtd: "", preco: "" });
   const vivos = itens.filter((i) => !i.removido);
   const total = vivos.reduce((s, i) => s + (i.qtd ?? 0) * (i.preco ?? 0), 0);
+  const atencao = vivos.filter(pedeAtencao);
+  const [soAtencao, setSoAtencao] = useState(false);
   const nomesForn = useNomesForn();
   // fornecedor como a equipe conhece (nome do cadastro), se o item tiver a razão social da nota
   const nomeForn = (f: string | null) => {
@@ -454,8 +556,13 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
       )}
       {lista.movida_em && <p className="cp-faixa-movida">Esta lista veio de outra semana ({quando(lista.movida_em)}).</p>}
       {aberta && <>
-      {lista.pedido_texto && (
-        <details className="cp-pedido"><summary>O pedido que veio no grupo</summary><pre>{lista.pedido_texto}</pre></details>
+      {atencao.length > 0 && (
+        <div className="cp-atencao" role="status">
+          <span><b>{atencao.length} {atencao.length === 1 ? "item pede" : "itens pedem"} atenção</b>
+            <small>sem produto nas notas, sem preço ou com aviso do revisor · estão marcados em amarelo</small></span>
+          <button type="button" className={soAtencao ? "small" : "ghost small"} aria-pressed={soAtencao} onClick={() => setSoAtencao(!soAtencao)}>
+            {soAtencao ? "Mostrar todos" : "Ver só esses"}</button>
+        </div>
       )}
       {podeEditar && (
         <p className="cp-legenda"><span className="cp-campo-exemplo" aria-hidden="true">12</span>
@@ -471,17 +578,18 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
             <th className="n">Total</th><th />
           </tr></thead>
           <tbody>
-            {itens.map((i) => {
+            {itens.filter((i) => !soAtencao || pedeAtencao(i)).map((i) => {
               const difere = i.qtd_sugerida != null && i.qtd_pedida != null && i.qtd_sugerida !== i.qtd_pedida;
               const edita = podeEditar && !i.removido;
               // por que a sugestão: a conta (média, compras, fornecedor) e o aviso da análise
               const porque = [i.motivo, i.base && !i.motivo?.includes("média") ? `Base: ${i.base}.` : null].filter(Boolean).join(" ");
               return (
                 <Fragment key={i.id}>
-                  <tr className={`${i.removido ? "cp-tirado" : ""} ${porque ? "cp-com-obs" : ""}`}>
+                  <tr className={`${i.removido ? "cp-tirado" : ""} ${porque ? "cp-com-obs" : ""} ${pedeAtencao(i) ? "cp-pede" : ""}`}>
                     <td className="cp-item">
                       {gestor && edita ? <input className="cp-nome" defaultValue={i.nome} onBlur={(v) => v.target.value !== i.nome && salvar(i, { nome: v.target.value })} aria-label="Item" />
                         : <b className="cp-nome">{i.nome}</b>}
+                      {i.pedido_item && <span className="cp-pediu-txt" title="Como veio no grupo">Pediu: “{i.pedido_item}”</span>}
                       <span className="cp-sub">
                         {i.confianca && <span className={`cp-conf ${i.confianca}`} title={CONFIANCA[i.confianca]}>{i.confianca === "alta" ? "✓" : i.confianca === "media" ? "≈" : "?"}</span>}
                         {i.produto_nota ? i.produto_nota : CONFIANCA[i.confianca ?? ""] ?? ""}
@@ -506,7 +614,7 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
                     <td>{podeEditar && <button className="ghost small" onClick={() => salvar(i, { removido: !i.removido })}>{i.removido ? "Voltar" : "Tirar"}</button>}</td>
                   </tr>
                   {porque && !i.removido && (
-                    <tr className="cp-obs"><td colSpan={8}><span aria-hidden="true">💡</span> {porque}</td></tr>
+                    <tr className={`cp-obs ${pedeAtencao(i) ? "cp-pede" : ""}`}><td colSpan={8}><span aria-hidden="true">{/^Revisor/.test(i.motivo ?? "") ? "🔎" : "💡"}</span> {porque}</td></tr>
                   )}
                 </Fragment>
               );
@@ -642,8 +750,9 @@ function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: P
         <button className="ghost small" onClick={onFechar}>Fechar</button>
       </header>
       {listas === undefined ? <p className="muted">Carregando…</p>
-        : !listas.length ? <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui depois que for montada.</p>
-        : <Listas semana={semana} listas={listas} itens={itens} sit={sit} carregar={carregar} gestor />}
+        : !listas.length ? <><PedidoNoGrupo semana={semana} pessoa={pessoa.id} />
+            <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui depois que for montada.</p></>
+        : <><PedidoNoGrupo semana={semana} pessoa={pessoa.id} /><Listas semana={semana} listas={listas} itens={itens} sit={sit} carregar={carregar} gestor /></>}
     </div>
   );
 }
