@@ -546,6 +546,13 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
         <div className="cp-lista-total"><span>{vivos.length} itens</span><b>{brl(total)}</b></div>
         {comprada ? <span className={`cp-selo-compra ${comprada}`}>{COMPRA[comprada]}{comprada === "parte" && sit ? ` · ${sit.pedidos} de ${sit.itens}` : ""}</span>
           : <span className={`estado ${lista.status === "aprovada" ? "tv-ok" : "tv-revisar"}`}>{STATUS[lista.status] ?? lista.status}</span>}
+        {/* Aprovar e reabrir no cabeçalho: aparecem com a lista aberta ou fechada (pedido do dono, 17/11/2026) */}
+        {(podeEditar && lista.status !== "aprovada") || (gestor && lista.status === "aprovada" && semanaAberta) ? (
+          <span className="cp-lista-acao">
+            {podeEditar && lista.status !== "aprovada" && <button type="button" className="small" onClick={() => aprovar(true)}>Aprovar a lista</button>}
+            {gestor && lista.status === "aprovada" && semanaAberta && <button type="button" className="ghost small" onClick={() => aprovar(false)}>Reabrir</button>}
+          </span>
+        ) : null}
       </div>
       {comprada && (
         <p className={`cp-faixa-compra ${comprada}`}>
@@ -634,8 +641,6 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
       )}
       {erro && <p className="tv-alerta">{erro}</p>}
       <div className="cp-rodape">
-        {podeEditar && <button onClick={() => aprovar(true)}>Aprovar a lista</button>}
-        {gestor && lista.status === "aprovada" && <button className="ghost" onClick={() => aprovar(false)}>Reabrir para a pessoa</button>}
         {lista.status === "aprovada" && !gestor && !comprada && <p className="es-tudo-certo">Lista aprovada. O setor de compras já pode juntá-la na lista final.</p>}
         {podeMover && (
           <span className="cp-mover-semana">

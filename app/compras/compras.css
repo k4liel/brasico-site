@@ -633,3 +633,8 @@ input.cp-edita.cp-un { width: 64px; text-transform: lowercase; }
   .cp-msgs { padding: 10px; max-height: none; }
   .cp-anexo-pdf { height: 60vh; }
 }
+
+/* Aprovar / Reabrir no cabeçalho da lista (aberta ou fechada) */
+.cp-lista-acao { display: flex; gap: 8px; }
+.cp-lista-acao button { white-space: nowrap; }
+@media (max-width: 640px) { .cp-lista-acao { flex-basis: 100%; } .cp-lista-acao button { flex: 1; } }
