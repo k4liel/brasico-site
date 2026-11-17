@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { NotaAvulsa } from "./Notas";
+import Gaveta from "./Gaveta";
 
 // Compras (Operação · fase 2): pedidos do grupo COMPRAS analisados pelo Claude viram listas por pessoa
 // (uma por pedido: mercado, Ceasa...), cada item ligado ao produto das notas, com a média de 4 semanas e a
@@ -55,6 +56,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
   const [semanas, setSemanas] = useState<Semana[]>([]);
   const [semana, setSemana] = useState<Semana | null>(null);
   const [aba, setAba] = useState<Aba>("painel");
+  const [pessoaAberta, setPessoaAberta] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -114,8 +116,8 @@ export default function Compras({ userEmail }: { userEmail: string }) {
               ))}
             </div>
             <AvisosGestor semana={semana} irPara={setAba} />
-            {aba === "painel" && <Painel semana={semana} />}
-            {aba === "andamento" && <Andamento semana={semana} />}
+            {aba === "painel" && <Painel semana={semana} abrirPessoa={(id) => { setPessoaAberta(id); setAba("andamento"); }} />}
+            {aba === "andamento" && <Andamento semana={semana} aberta={pessoaAberta} setAberta={setPessoaAberta} />}
             {aba === "final" && <ListaUnica semana={semana} />}
             {aba === "fornecedores" && <Fornecedores />}
             {aba === "avulsa" && <NotaAvulsa empresas={[]} onPronto={() => {}} />}
@@ -367,7 +369,7 @@ const extDe = (m: MsgPedido) => (m.midia ?? "").split(".").pop()?.toLowerCase() 
 function PedidoNoGrupo({ semana, pessoa }: { semana: Semana; pessoa: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [msgs, setMsgs] = useState<MsgPedido[] | null>(null);
-  const [aberto, setAberto] = useState(true);
+  const [aberto, setAberto] = useState(false); // começa fechado; abre ao clicar (pedido do dono, 17/11/2026)
   useEffect(() => {
     supabase.rpc("compras_pedido_mensagens", { p_semana: semana.id, p_pessoa: pessoa })
       .then(({ data }) => setMsgs(((data ?? []) as MsgPedido[]).filter((m) => (m.texto ?? "").trim() || m.midia)));
@@ -658,11 +660,10 @@ function EditorLista({ lista, itens, podeEditar, onMudou, gestor, abertaInicial 
 const ANALISE: Record<string, string> = { analisando: "analisando…", no_lote: "analisando…", ok: "lista sugerida pelo Claude", sem_pedido: "sem pedido no grupo",
   pulada: "já estava em revisão", falha: "a análise falhou" };
 
-function Andamento({ semana }: { semana: Semana }) {
+function Andamento({ semana, aberta, setAberta }: { semana: Semana; aberta: string | null; setAberta: (id: string | null) => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
   const [listas, setListas] = useState<Lista[]>([]);
-  const [aberta, setAberta] = useState<string | null>(null);
   const [analises, setAnalises] = useState<Record<string, { status: string; erro: string | null }>>({});
   const [sit, setSit] = useState<SitLista[]>([]);
   const [versao, setVersao] = useState(0);
@@ -740,20 +741,39 @@ function Andamento({ semana }: { semana: Semana }) {
           );
         })}
       </div>
-      {aberta && <ListaDaPessoa key={`${aberta}-${versao}`} semana={semana} pessoa={pessoas.find((p) => p.id === aberta)!} onFechar={() => setAberta(null)} />}
+      {aberta && pessoas.some((p) => p.id === aberta) && (() => {
+        // ordem da tela (casa por casa); Anterior/Próxima passam só por quem tem lista
+        const ordem = porUnidade.flatMap((x) => x.pessoas).filter((p) => daPessoa(p.id).length);
+        const k = ordem.findIndex((p) => p.id === aberta);
+        const p = pessoas.find((x) => x.id === aberta)!;
+        return (
+          <Gaveta titulo={p.nome} sub={`${SETORES[p.setor ?? ""] ?? ""} · ${UNIDADES[p.unidade ?? ""] ?? ""}`} fechar={() => setAberta(null)}
+            topo={ordem.length > 1 && k >= 0 ? (
+              <div className="cp-gaveta-nav">
+                <button type="button" className="ghost small" disabled={k === 0} onClick={() => setAberta(ordem[k - 1].id)}>← {k > 0 ? ordem[k - 1].nome : "Anterior"}</button>
+                <small>{k + 1} de {ordem.length}</small>
+                <button type="button" className="ghost small" disabled={k === ordem.length - 1} onClick={() => setAberta(ordem[k + 1].id)}>{k < ordem.length - 1 ? ordem[k + 1].nome : "Próxima"} →</button>
+              </div>
+            ) : undefined}>
+            <div className="cp-gaveta-listas">
+              <ListaDaPessoa key={`${aberta}-${versao}`} semana={semana} pessoa={p} onFechar={() => setAberta(null)} semCabeca />
+            </div>
+          </Gaveta>
+        );
+      })()}
     </>
   );
 }
 
-function ListaDaPessoa({ semana, pessoa, onFechar }: { semana: Semana; pessoa: Pessoa; onFechar: () => void }) {
+function ListaDaPessoa({ semana, pessoa, onFechar, semCabeca }: { semana: Semana; pessoa: Pessoa; onFechar: () => void; semCabeca?: boolean }) {
   const { listas, itens, sit, carregar } = useListas(semana.id, pessoa.id);
   return (
     <div className="cp-da-pessoa">
-      <header className="cp-da-pessoa-cabeca">
+      {!semCabeca && <header className="cp-da-pessoa-cabeca">
         <span className="cp-avatar grande" aria-hidden="true">{pessoa.nome.slice(0, 1)}</span>
         <div><h3>{pessoa.nome}</h3><small>{SETORES[pessoa.setor ?? ""]} · {UNIDADES[pessoa.unidade ?? ""]}</small></div>
         <button className="ghost small" onClick={onFechar}>Fechar</button>
-      </header>
+      </header>}
       {listas === undefined ? <p className="muted">Carregando…</p>
         : !listas.length ? <><PedidoNoGrupo semana={semana} pessoa={pessoa.id} />
             <p className="muted">Ainda sem lista nesta semana. Quando a pessoa pedir no grupo, a lista sugerida aparece aqui depois que for montada.</p></>
@@ -1308,7 +1328,57 @@ function SemDono({ semana }: { semana: Semana }) {
   );
 }
 
-function Painel({ semana }: { semana: Semana }) {
+// Itens que pedem atenção nas listas da semana, por pessoa (o que a Fernanda precisa olhar antes de pedir)
+function ParaConferir({ semana, abrirPessoa }: { semana: Semana; abrirPessoa: (id: string) => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [linhas, setLinhas] = useState<{ id: string; nome: string; casa: string; n: number; sem: number; total: number }[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      const { data: ls } = await supabase.from("compras_listas").select("id,pessoa_id").eq("semana_id", semana.id).in("status", ATIVAS);
+      const listas = (ls ?? []) as { id: string; pessoa_id: string }[];
+      if (!listas.length) return setLinhas([]);
+      const [{ data: its }, { data: ps }] = await Promise.all([
+        supabase.from("compras_itens").select("lista_id,confianca,preco,motivo,removido").in("lista_id", listas.map((l) => l.id)),
+        supabase.from("operacao_pessoas").select("id,nome,unidade").in("id", [...new Set(listas.map((l) => l.pessoa_id))]),
+      ]);
+      const daLista = new Map(listas.map((l) => [l.id, l.pessoa_id]));
+      const conta = new Map<string, { n: number; sem: number; total: number }>();
+      for (const i of (its ?? []) as Item[]) {
+        if (i.removido) continue;
+        const pid = daLista.get(i.lista_id)!;
+        const c = conta.get(pid) ?? { n: 0, sem: 0, total: 0 };
+        c.total++;
+        if (pedeAtencao(i)) c.n++;
+        if (i.confianca === "baixa" || i.preco == null) c.sem++;
+        conta.set(pid, c);
+      }
+      setLinhas(((ps ?? []) as { id: string; nome: string; unidade: string | null }[])
+        .map((p) => ({ id: p.id, nome: p.nome, casa: UNIDADES[p.unidade ?? ""] ?? "", ...(conta.get(p.id) ?? { n: 0, sem: 0, total: 0 }) }))
+        .filter((x) => x.n > 0).sort((a, b) => b.n - a.n));
+    })();
+  }, [supabase, semana.id]);
+  if (!linhas?.length) return null;
+  const totalN = linhas.reduce((s, x) => s + x.n, 0);
+  return (
+    <section className="pn-bloco pn-conferir">
+      <header><h2>Para conferir</h2><small>{totalN} {totalN === 1 ? "item pede" : "itens pedem"} atenção · sem produto nas notas, sem preço ou com aviso do revisor</small></header>
+      <ul>
+        {linhas.map((x) => (
+          <li key={x.id}>
+            <button type="button" onClick={() => abrirPessoa(x.id)}>
+              <span className="pn-avatar" aria-hidden="true">{x.nome.slice(0, 1)}</span>
+              <span className="pn-pessoa-nome"><b>{x.nome}</b><small>{x.casa} · {x.total} itens nas listas</small></span>
+              <span className="pn-conferir-n"><b>{x.n}</b><small>{x.sem ? `${x.sem} sem preço ou produto` : "a conferir"}</small></span>
+              <span className="pn-conferir-ir" aria-hidden="true">›</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Painel({ semana, abrirPessoa }: { semana: Semana; abrirPessoa: (id: string) => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [d, setD] = useState<PainelDados | null>(null);
   const [casas, setCasas] = useState<Casa[]>([]);
@@ -1391,6 +1461,7 @@ function Painel({ semana }: { semana: Semana }) {
       </ol>
 
       <SemDono semana={semana} />
+      <ParaConferir semana={semana} abrirPessoa={abrirPessoa} />
 
       <div className="pn-duas">
         {/* Por casa */}
