@@ -1046,7 +1046,9 @@ function ListaUnica({ semana }: { semana: Semana }) {
                         <span className="cp-fluxo no-print" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
                           {(() => {
                             const cad = doCadastro(g.f);
-                            const tel = (cad?.whatsapp ?? "").replace(/\D/g, "");
+                            // WhatsApp do cadastro; sem ele, o telefone das notas quando é celular (DDD + 9 + 8 dígitos)
+                            const celular = (t: string) => { const d = t.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, ""); return d.length === 11 && d[2] === "9" ? d : ""; };
+                            const tel = (cad?.whatsapp ?? "").replace(/\D/g, "") || celular(cad?.telefone ?? "");
                             const texto = textoPedido(e.cnpj, g.f, g.itens);
                             return tel
                               ? <a className="cp-enviar" href={`https://wa.me/${tel.length <= 11 ? `55${tel}` : tel}?text=${encodeURIComponent(texto)}`} target="_blank" rel="noreferrer"
