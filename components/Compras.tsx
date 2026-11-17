@@ -848,6 +848,9 @@ function ListaUnica({ semana }: { semana: Semana }) {
   // abrir e fechar: empresas começam abertas, fornecedores começam fechados (só o cabeçalho com a situação e o total)
   const [empFechadas, setEmpFechadas] = useState<Set<string>>(new Set());
   const [fornAbertos, setFornAbertos] = useState<Set<string>>(new Set());
+  // filtro pela situação do pedido (17/11/2026: fluxo do pedido na linha do fornecedor)
+  const [filtro, setFiltro] = useState<"todos" | Pedido["status"]>("todos");
+  const [copiado, setCopiado] = useState<string | null>(null);
   const alternar = (set: (f: (s: Set<string>) => Set<string>) => void, k: string) =>
     set((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const teclaAbre = (fn: () => void) => (ev: React.KeyboardEvent) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); } };
@@ -911,6 +914,18 @@ function ListaUnica({ semana }: { semana: Semana }) {
     carregar();
   }
 
+  // texto do pedido para o fornecedor (sem preços, com quem fatura), para o WhatsApp ou para copiar
+  const textoPedido = (cnpj: string, forn: string, itens: Final[]) => {
+    const e = empresaDe(cnpj);
+    return [`Olá! Pedido da semana de ${diaSemana(semana.inicio)} a ${fimSemana(semana.inicio)}.`,
+      `Faturar para: ${e.razao || e.nome} · CNPJ ${fmtCnpj(cnpj)}`, "",
+      ...itens.map((l) => `• ${l.nome} — ${num(l.qtd)} ${l.unidade ?? ""}`.trimEnd()), "", "Obrigado!"].join("\n");
+  };
+  async function copiar(k: string, texto: string) {
+    try { await navigator.clipboard.writeText(texto); setCopiado(k); setTimeout(() => setCopiado((c) => (c === k ? null : c)), 2500); }
+    catch { setErro("Não consegui copiar; use o PDF para o fornecedor."); }
+  }
+
   const vivas = linhas.filter((l) => !l.removido);
   // retirados à mão pelo setor de compras: ficam apagados no pedido, com o botão Reativar (não entram em totais nem PDFs).
   // Os que saíram sozinhos (lista reaberta) não aparecem: voltam quando a lista for aprovada de novo.
@@ -928,6 +943,9 @@ function ListaUnica({ semana }: { semana: Semana }) {
     });
   const comItens = empresas.filter((x) => x.itens.length);
   const nPedidos = comItens.reduce((s, x) => s + x.grupos.filter((g) => g.itens.length).length, 0);
+  const statusDe = (cnpj: string, f: string): Pedido["status"] => pedidos[chavePedido(cnpj, f)]?.status ?? "a_pedir";
+  const contagem = { a_pedir: 0, pedido: 0, recebido: 0 } as Record<Pedido["status"], number>;
+  comItens.forEach((x) => x.grupos.filter((g) => g.itens.length).forEach((g) => { contagem[statusDe(x.e.cnpj, g.f)]++; }));
   // Opções do select de fornecedor: todos do cadastro. Se o fornecedor já está na lista geral com o nome da nota,
   // a opção usa esse nome, para o item cair no mesmo pedido (e não abrir um segundo com outro nome).
   const opcoesForn = cadastro.map((c) => ({ nome: c.nome, valor: vivas.find((l) => doCadastro(l.fornecedor)?.id === c.id)?.fornecedor ?? c.nome }))
@@ -970,6 +988,13 @@ function ListaUnica({ semana }: { semana: Semana }) {
         </div>
       </div>
       {erro && <p className="tv-alerta no-print">{erro}</p>}
+      {nPedidos > 0 && (
+        <div className="cp-filtro-ped no-print" role="group" aria-label="Situação dos pedidos">
+          {([["todos", "Todos", nPedidos], ["a_pedir", "A pedir", contagem.a_pedir], ["pedido", "Pedido feito", contagem.pedido], ["recebido", "Recebido", contagem.recebido]] as const).map(([k, t, n]) => (
+            <button key={k} type="button" className={`${filtro === k ? "on" : ""} ${k}`} aria-pressed={filtro === k} onClick={() => setFiltro(k)}>{t}<b>{n}</b></button>
+          ))}
+        </div>
+      )}
 
       <div className={imprimir ? "cp-pdf cp-so-um" : "cp-pdf"}>
         <div className="cp-pdf-cabeca">
@@ -1008,6 +1033,7 @@ function ListaUnica({ semana }: { semana: Semana }) {
                 const ped = pedidos[k];
                 const st = ped?.status ?? "a_pedir";
                 if (imprimindo && imprimindo.forn !== g.f) return null;
+                if (!imprimindo && filtro !== "todos" && (st !== filtro || !g.itens.length)) return null;
                 const fornAberto = fornAbertos.has(k) || !!imprimindo;
                 return (
                   <div key={k} className={`cp-forn${imprimir === k ? " cp-imprimir" : ""}${alvo === k ? " cp-solta" : ""}${!g.itens.length ? " cp-forn-so-tirados no-print" : ""}`} {...(aberta ? soltarEm(e.cnpj, g.f) : {})}>
@@ -1015,15 +1041,38 @@ function ListaUnica({ semana }: { semana: Semana }) {
                       onClick={() => alternar(setFornAbertos, k)} onKeyDown={teclaAbre(() => alternar(setFornAbertos, k))}>
                       <span className={`cp-seta no-print${fornAberto ? " aberta" : ""}`} aria-hidden="true">›</span>
                       <strong>{g.f}<small className="cp-forn-qtd no-print">{g.itens.length} {g.itens.length === 1 ? "item" : "itens"}{g.tirados.length ? ` · ${g.tirados.length} ${g.tirados.length === 1 ? "retirado" : "retirados"}` : ""}</small></strong>
-                      <span className={`cp-ped no-print ${st}`}>{PEDIDO[st]}{st === "pedido" && ped?.pedido_em ? ` · ${quando(ped.pedido_em)}` : st === "recebido" && ped?.recebido_em ? ` · ${quando(ped.recebido_em)}` : ""}{ped?.nota_chave ? " · nota ligada" : ""}</span>
                       <span className="cp-preco">{brl(soma(g.itens))}</span>
+                      {g.itens.length > 0 && (
+                        <span className="cp-fluxo no-print" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
+                          {(() => {
+                            const cad = doCadastro(g.f);
+                            const tel = (cad?.whatsapp ?? "").replace(/\D/g, "");
+                            const texto = textoPedido(e.cnpj, g.f, g.itens);
+                            return tel
+                              ? <a className="cp-enviar" href={`https://wa.me/${tel.length <= 11 ? `55${tel}` : tel}?text=${encodeURIComponent(texto)}`} target="_blank" rel="noreferrer"
+                                  onClick={() => { if (st === "a_pedir") setTimeout(() => { if (confirm(`Mandou o pedido para ${cad?.nome ?? g.f}? Marcar como "pedido feito"?`)) marcar(e.cnpj, g.f, "pedido"); }, 800); }}>
+                                  💬 Mandar no WhatsApp</a>
+                              : <button type="button" className="ghost small cp-enviar" onClick={() => copiar(k, texto)}>{copiado === k ? "✓ Copiado" : "📋 Copiar pedido"}</button>;
+                          })()}
+                          <span className="cp-etapas" role="group" aria-label={`Situação do pedido de ${g.f}`}>
+                            {(["a_pedir", "pedido", "recebido"] as const).map((x, n) => {
+                              const feito = ["a_pedir", "pedido", "recebido"].indexOf(st) >= n;
+                              const quandoX = x === "pedido" ? ped?.pedido_em : x === "recebido" ? ped?.recebido_em : null;
+                              return (
+                                <button key={x} type="button" disabled={!aberta && x !== st} className={`${feito ? "feito" : ""} ${st === x ? "atual" : ""}`} aria-pressed={st === x}
+                                  title={quandoX ? `${PEDIDO[x]} em ${quando(quandoX)}` : PEDIDO[x]} onClick={() => st !== x && marcar(e.cnpj, g.f, x)}>
+                                  {feito && n > 0 ? "✓ " : ""}{x === "a_pedir" ? "A pedir" : x === "pedido" ? "Pedido feito" : "Recebido"}
+                                </button>
+                              );
+                            })}
+                          </span>
+                        </span>
+                      )}
                     </div>
                     <div className={`cp-corpo${fornAberto ? "" : " cp-fechado"}`}>
                     <div className="cp-forn-acoes no-print">
                       <button className="ghost small" onClick={() => setImprimir(k)}>PDF para o fornecedor</button>
-                      {st === "a_pedir" && <button className="small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Marcar pedido feito</button>}
-                      {st === "pedido" && <><button className="small" onClick={() => marcar(e.cnpj, g.f, "recebido")}>Marcar recebido</button><button className="ghost small" onClick={() => marcar(e.cnpj, g.f, "a_pedir")}>Voltar para “a pedir”</button></>}
-                      {st === "recebido" && <button className="ghost small" onClick={() => marcar(e.cnpj, g.f, "pedido")}>Desfazer recebido</button>}
+                      {st !== "a_pedir" && <small className="muted">{st === "pedido" && ped?.pedido_em ? `Pedido feito em ${quando(ped.pedido_em)}.` : st === "recebido" && ped?.recebido_em ? `Recebido em ${quando(ped.recebido_em)}.` : ""}{ped?.nota_chave ? " Nota fiscal ligada." : ""}</small>}
                     </div>
                     {(() => {
                       const f = doCadastro(g.f);
