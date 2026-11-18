@@ -5,18 +5,18 @@
 #   - de dia: 2 ou 3 pausas de 15 a 50 minutos, em horários sorteados entre 09h e 22h30.
 # Os horários mudam todo dia. O login fica guardado: ao voltar, a Evolution reconecta sozinha e o
 # WhatsApp entrega as mensagens que chegaram durante a pausa (nada se perde).
-# Roda num contêiner ao lado da Evolution (docker-compose.yml, serviço "rotina") e só liga e desliga
-# o contêiner da Evolution do mesmo projeto. ATIVA=0 deixa a Evolution sempre ligada.
+# Roda num projeto próprio na VPS (brasico-wa-rotina, rotina/docker-compose.yml) e só liga e desliga o
+# contêiner da Evolution (nome em ALVO, hoje "evolution_api"). ATIVA=0 deixa a Evolution sempre ligada.
 
 ATIVA="${ATIVA:-1}"
+ALVO="${ALVO:-evolution_api}"
 export TZ="<-03>3"   # Fortaleza (sem horário de verão)
 
 log() { echo "$(date '+%Y-%m-%d %H:%M') $*"; }
 
-# Contêiner da Evolution deste mesmo projeto do compose
-projeto=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$(hostname)" 2>/dev/null)
+# Contêiner da Evolution (pelo nome exato)
 alvo() {
-  docker ps -aq --filter "label=com.docker.compose.project=$projeto" --filter "label=com.docker.compose.service=evolution" | head -n1
+  docker ps -aq --filter "name=^${ALVO}$" | head -n1
 }
 
 sorteio() { # sorteio MIN MAX -> inteiro entre MIN e MAX (semente nova a cada sorteio)
@@ -67,7 +67,7 @@ while true; do
       log "Volta: ligando a Evolution"; docker start "$c" >/dev/null
     fi
   else
-    log "Contêiner da Evolution não encontrado (projeto $projeto)"
+    log "Contêiner da Evolution não encontrado ($ALVO)"
   fi
   sleep 60
 done
