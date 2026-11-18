@@ -14,6 +14,7 @@ Grupos ─► número da Brasico ─► Evolution API (VPS) ─► Edge Function
 ## Cuidados
 
 - A Evolution usa o WhatsApp Web, que **não é oficial**: o número pode ser banido. Para reduzir o risco, o número **só lê**. Não mande mensagens em massa por ele.
+- Para não ser bloqueado de novo (o número foi bloqueado em 16/11/2026): mantenha a Evolution atualizada; deixe o celular do número ligado e use o WhatsApp Business nele de vez em quando, como uma pessoa; não coloque o número em vários grupos no mesmo dia; não ligue "Rejeitar chamadas" nem "Sincronizar histórico completo"; nunca use o número para mandar pedidos a fornecedores (o "Mandar no WhatsApp" das Compras abre o WhatsApp de quem clica).
 - Avise os administradores e participantes dos grupos que o número da Brasico registra e resume as conversas (LGPD).
 - Só os sócios (tabela `wa_acesso`) veem as mensagens e os resumos.
 
@@ -47,7 +48,7 @@ docker compose up -d
 1. Abra `http://IP-DA-VPS:8080/manager` e entre com o `AUTHENTICATION_API_KEY`.
 2. Crie uma instância chamada `brasico`, tipo **Baileys**.
 3. No celular do número da Brasico: WhatsApp Business → Aparelhos conectados → Conectar um aparelho → leia o QR code.
-4. Nas configurações da instância: **Rejeitar chamadas** ligado, **Ler mensagens** desligado, **Ignorar grupos** desligado.
+4. Nas configurações da instância: **Rejeitar chamadas** desligado, **Sincronizar histórico completo** desligado, **Ler mensagens** desligado, **Ignorar grupos** desligado.
 
 ### 5. Chave do Claude no Supabase
 Painel do Supabase → Edge Functions → Secrets → adicione:

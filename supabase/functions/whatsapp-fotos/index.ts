@@ -47,6 +47,15 @@ Deno.serve(async (req) => {
   const base = evo.url.replace(/\/$/, "");
   const cab = { apikey: evo.chave, "Content-Type": "application/json" };
 
+  // Número desconectado (ou banido): não mexe em nada. Sem esta trava, cada foto voltava vazia e era apagada
+  // da conversa (foi o que aconteceu em 17/11/2026, depois do bloqueio de 16/11).
+  const estado = await fetch(`${base}/instance/connectionState/${INSTANCIA}`, { headers: cab })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  if (estado?.instance?.state !== "open") {
+    return Response.json({ pulado: true, motivo: `WhatsApp não está conectado (${estado?.instance?.state ?? "sem resposta"})` }, { status: 503 });
+  }
+
   // 1. Grupos: nome, descrição e link da foto de todos de uma vez
   const fotoDoGrupo = new Map<string, string>();
   const r = await fetch(`${base}/group/fetchAllGroups/${INSTANCIA}?getParticipants=false`, { headers: cab });
