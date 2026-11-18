@@ -48,8 +48,23 @@ const DESTINOS: Record<string, string[]> = {
   rhid: ["escala", "rh"], whatsapp: ["whatsapp", "compras"], gemini: ["compras"], claude: ["whatsapp"], conector: ["projetos", "claude"],
 };
 
+// Servidores no caminho, da fonte até o Brasico (17/11/2026, pedido do dono: "mostrando como o whatsapp opera com eles
+// e brasico"): a mensagem sai do WhatsApp, passa pelo proxy (IPRoyal, IP de casa no Brasil), chega à Evolution no
+// servidor (Hostinger) e vai ao Brasico pelo webhook. O robô do PMS também roda na Hostinger.
+const RELES: Record<string, string[]> = { whatsapp: ["iproyal", "hostinger"], pms: ["hostinger"] };
+const PAPEL: Record<string, Record<string, string>> = {
+  whatsapp: { iproyal: "IPRoyal · IP de casa", hostinger: "Hostinger · Evolution" },
+  pms: { hostinger: "Hostinger · robô do PMS" },
+};
+// Quem acende junto ao passar o mouse: a fonte e os servidores do caminho dela (e, num servidor, as fontes que passam por ele)
+function relacionados(id: string, tem: Set<string>): string[] {
+  if (RELES[id]) return [id, ...RELES[id].filter((r) => tem.has(r))];
+  if (tem.has(id)) return [id, ...Object.entries(RELES).filter(([, rs]) => rs.includes(id)).flatMap(([f, rs]) => [f, ...rs.filter((r) => tem.has(r))])];
+  return [id];
+}
+
 type Props = {
-  lista: Integracao[]; mov: boolean; novos: Set<string>; leituras: number;
+  lista: Integracao[]; reles: Record<string, Integracao>; mov: boolean; novos: Set<string>; leituras: number;
   d: (id: string) => string; // classe de esmaecer/destacar
   alvo: (i: Integracao) => React.SVGProps<SVGGElement>;
   focarPagina: (p: string | null) => void;
@@ -69,8 +84,12 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
   useEffect(() => { const el = rolar.current; if (el && el.scrollWidth > el.clientWidth) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; }, [vista]);
   const trocar = (v: Vista) => { setVista(v); setFoco(null); setPagina(null); try { localStorage.setItem(CHAVE, v); } catch { /* ok */ } };
 
-  const daPagina = pagina ? lista.filter((i) => DESTINOS[i.id]?.includes(pagina)).map((i) => i.id) : null;
-  const ligados = foco ? [foco] : daPagina;
+  // os servidores (Hostinger, IPRoyal) não são fontes de dados: aparecem no caminho de quem passa por eles
+  const fontes = lista.filter((i) => i.grupo !== "servidores");
+  const reles = Object.fromEntries(lista.filter((i) => i.grupo === "servidores").map((i) => [i.id, i])) as Record<string, Integracao>;
+  const temRele = new Set(Object.keys(reles));
+  const daPagina = pagina ? fontes.filter((i) => DESTINOS[i.id]?.includes(pagina)).map((i) => i.id) : null;
+  const ligados = foco ? relacionados(foco, temRele) : daPagina;
   const d = (id: string) => `ig-mc-d ${ligados?.includes(id) ? "on" : ""}`;
   const alvo = (i: Integracao): React.SVGProps<SVGGElement> => ({
     tabIndex: 0, role: "button", "aria-label": `${i.nome}: ${TEXTO_ESTADO[i.estado]}. ${i.frase}. Abrir detalhes`,
@@ -80,14 +99,14 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
   });
   // mesma conta do gráfico de atividade: leituras boas, sem as mensagens do WhatsApp
   const leituras = lista.filter((i) => i.id !== "whatsapp").reduce((s, i) => s + (i.horas ?? []).reduce((t, h) => t + h[0], 0), 0);
-  const props: Props = { lista, mov, novos, leituras, d, alvo, focarPagina: setPagina };
+  const props: Props = { lista: fontes, reles, mov, novos, leituras, d, alvo, focarPagina: setPagina };
   const sel = foco ? lista.find((i) => i.id === foco) : null;
   const pag = pagina ? PAGINAS.find((p) => p.id === pagina) : null;
 
   return (
     <div className={`ig-caixa ig-mc ig-entra ${ligados ? "com-foco" : ""}`} style={{ "--i": 1 } as React.CSSProperties}>
       <div className="ig-caixa-cabeca ig-mc-cabeca">
-        <div><h2>Mapa das conexões</h2><span>{lista.length} sistemas · {mil(leituras)} leituras em 24 h</span></div>
+        <div><h2>Mapa das conexões</h2><span>{fontes.length} sistemas{temRele.size ? ` · ${temRele.size} servidores no caminho` : ""} · {mil(leituras)} leituras em 24 h</span></div>
         <div className="ig-segmento" role="group" aria-label="Jeito de ver o mapa">
           {VISTAS.map(([v, t]) => <button key={v} className={vista === v ? "on" : ""} onClick={() => trocar(v)} aria-pressed={vista === v}>{t}</button>)}
         </div>
@@ -114,6 +133,7 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
           <div className="ig-legenda">
             {(["ok", "atencao", "erro", "pausa"] as Estado[]).map((e) => <span key={e} className={e}><i />{TEXTO_ESTADO[e]}</span>)}
             <span className="ig-mc-dica">{vista === "orbita" ? "cada ligação: 24 h, do centro (há 24 h) até o sistema (agora)" : "linha mais grossa = mais leituras"}</span>
+            {temRele.size > 0 && <span className="ig-mc-dica">caixas redondas = servidores por onde o dado passa (WhatsApp → IPRoyal → Hostinger → Brasico)</span>}
           </div>
         )}
       </div>
@@ -137,8 +157,23 @@ function Onda({ i, cx, cy }: { i: Integracao; cx: number; cy: number }) {
   return i.estado === "erro" || i.estado === "atencao" ? <circle cx={cx} cy={cy} r={7} className="ig-no-onda" /> : null;
 }
 
+// Servidor no caminho (Hostinger, IPRoyal): caixa redonda centrada em (x, y), por cima da linha da fonte
+function Rele({ i, x, y, w, rotulo, d, alvo, h = 26 }: { i: Integracao; x: number; y: number; w: number; rotulo: string; d: Props["d"]; alvo: Props["alvo"]; h?: number }) {
+  const x0 = x - w / 2;
+  return (
+    <g className={`ig-mc-no rele ${i.estado} ${d(i.id)}`} {...alvo(i)}>
+      <title>{`${i.nome}: ${TEXTO_ESTADO[i.estado]} · ${i.frase}`}</title>
+      <rect x={x0} y={y - h / 2} width={w} height={h} rx={h / 2} className="ig-mc-cartao ig-mc-rele" />
+      <Onda i={i} cx={x0 + h / 2} cy={y} />
+      <circle cx={x0 + h / 2} cy={y} r={4} className="ig-mc-ponto" />
+      <text x={x0 + h / 2 + 10} y={y + 4} className="ig-mc-nome rele">{rotulo}</text>
+    </g>
+  );
+}
+const relesDe = (id: string, reles: Record<string, Integracao>) => (RELES[id] ?? []).filter((r) => reles[r]).map((r) => reles[r]);
+
 // ---------- Central: núcleo, cartões e curvas ----------
-function Central({ lista, mov, novos, leituras, d, alvo }: Props) {
+function Central({ lista, reles, mov, novos, leituras, d, alvo }: Props) {
   const W = 1160, H = 600, cx = W / 2, cy = H / 2, cw = 220, ch = 76;
   type Pos = { x: number; y: number; lado: "esq" | "dir" | "cima" | "baixo" };
   const pos: Record<string, Pos> = {};
@@ -156,14 +191,23 @@ function Central({ lista, mov, novos, leituras, d, alvo }: Props) {
   linha(com.slice(0, meio), 36, "cima");
   linha(com.slice(meio), H - 12 - ch, "baixo");
 
-  const caminho = ({ x, y, lado }: Pos) => {
+  // curva de cada cartão até o núcleo: início, dois pontos de controle e fim
+  type P = [number, number];
+  const pontos = ({ x, y, lado }: Pos): [P, P, P, P] => {
     if (lado === "esq" || lado === "dir") {
       const ax = lado === "esq" ? x + cw : x, ay = y + ch / 2, bx = cx + (lado === "esq" ? -62 : 62), by = cy + (ay - cy) * 0.3, mx = (ax + bx) / 2;
-      return `M${ax} ${ay} C${mx} ${ay}, ${mx} ${by}, ${bx} ${by}`;
+      return [[ax, ay], [mx, ay], [mx, by], [bx, by]];
     }
     const ax = x + cw / 2, ay = lado === "cima" ? y + ch : y, bx = cx + (ax - cx) * 0.3, by = cy + (lado === "cima" ? -62 : 62), my = (ay + by) / 2;
-    return `M${ax} ${ay} C${ax} ${my}, ${bx} ${my}, ${bx} ${by}`;
+    return [[ax, ay], [ax, my], [bx, my], [bx, by]];
   };
+  const caminho = (p: Pos) => { const [a, b, c, e] = pontos(p); return `M${a[0]} ${a[1]} C${b[0]} ${b[1]}, ${c[0]} ${c[1]}, ${e[0]} ${e[1]}`; };
+  // ponto da curva na fração t (0 = cartão, 1 = núcleo): onde ficam os servidores do caminho
+  const naCurva = (p: Pos, t: number): P => {
+    const [a, b, c, e] = pontos(p), u = 1 - t, k = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
+    return [k[0] * a[0] + k[1] * b[0] + k[2] * c[0] + k[3] * e[0], k[0] * a[1] + k[1] * b[1] + k[2] * c[1] + k[3] * e[1]];
+  };
+  const fracoes = (n: number) => (n === 1 ? [0.5] : [0.28, 0.6]);
   const xCom = com[0] ? pos[com[0].id].x : cx;
 
   return (
@@ -222,13 +266,27 @@ function Central({ lista, mov, novos, leituras, d, alvo }: Props) {
           </g>
         );
       })}
+
+      {/* servidores no caminho, por cima da linha da fonte */}
+      {lista.map((i) => {
+        const rs = relesDe(i.id, reles);
+        if (!rs.length || !pos[i.id]) return null;
+        const ts = fracoes(rs.length);
+        return rs.map((r, k) => {
+          const [x, y] = naCurva(pos[i.id], ts[k]);
+          return <Rele key={`${i.id}-${r.id}`} i={r} x={x} y={y} w={164} h={24} rotulo={PAPEL[i.id]?.[r.id] ?? r.nome} d={d} alvo={alvo} />;
+        });
+      })}
     </svg>
   );
 }
 
 // ---------- Fluxo: de onde vem → Brasico → onde aparece ----------
-function Fluxo({ lista, mov, novos, leituras, d, alvo, focarPagina }: Props) {
+function Fluxo({ lista, reles, mov, novos, leituras, d, alvo, focarPagina }: Props) {
   const W = 1160, xa = 16, wa = 232, wc = 124, xc = W / 2 - wc / 2, wb = 196, xb = W - 16 - wb;
+  // coluna dos servidores no caminho, entre as fontes e o Brasico (IPRoyal antes, Hostinger depois)
+  const rw = 100, COL: Record<string, number> = { iproyal: xa + wa + 14, hostinger: xa + wa + 14 + rw + 10 };
+  const temServidor = lista.some((i) => relesDe(i.id, reles).length);
   const fy: Record<string, number> = {};
   const rotulos: { t: string; y: number }[] = [];
   let y = 44;
@@ -256,15 +314,21 @@ function Fluxo({ lista, mov, novos, leituras, d, alvo, focarPagina }: Props) {
       <text x={xa} y={20} className="ig-mc-grupo">DE ONDE VEM</text>
       <text x={xc + wc / 2} y={20} textAnchor="middle" className="ig-mc-grupo">O BRASICO GUARDA</text>
       <text x={xb + wb} y={20} textAnchor="end" className="ig-mc-grupo">ONDE APARECE</text>
+      {temServidor && <text x={COL.iproyal} y={20} className="ig-mc-grupo fraco">SERVIDORES NO CAMINHO</text>}
       {rotulos.map((r) => <text key={r.t} x={xa} y={r.y} className="ig-mc-grupo fraco">{r.t}</text>)}
 
       {lista.map((i, k) => {
         const n = total(i), id = `ig-mc-f-${i.id}`, ya = fy[i.id] + 14, yb = entra[i.id];
         const qtos = !mov || !anda(i) ? 0 : (n ?? 0) > 40 ? 3 : (n ?? 0) > 8 ? 2 : 1;
+        // com servidores no caminho: a faixa passa por eles (reto) e só depois faz a curva até o Brasico
+        const rs = relesDe(i.id, reles);
+        const x0 = rs.length ? COL[rs[rs.length - 1].id] + rw : xa + wa;
+        const inicio = rs.length ? `M${xa + wa} ${ya} L${x0} ${ya} ` : "";
+        const resto = curva(x0, ya, xc, yb);
         return (
           <g key={`e-${i.id}`}>
             <g className={`ig-mc-elo fluxo ${i.estado} ${d(i.id)}`}>
-              <path id={id} d={curva(xa + wa, ya, xc, yb)} className="ig-mc-faixa-fonte" strokeWidth={espessura(n) * 1.7} />
+              <path id={id} d={inicio ? inicio + resto.replace(/^M[^C]+/, "") : resto} className="ig-mc-faixa-fonte" strokeWidth={espessura(n) * 1.7} />
               {Array.from({ length: qtos }, (_, j) => <Pacote key={j} caminho={id} dur={ritmo(n) + 1} atraso={j * 1.6 + k * 0.21} volta={sai(i)} r={2.4} />)}
             </g>
             {(DESTINOS[i.id] ?? []).filter((p) => py[p] != null).map((p, j) => {
@@ -294,6 +358,10 @@ function Fluxo({ lista, mov, novos, leituras, d, alvo, focarPagina }: Props) {
         );
       })}
 
+      {lista.map((i) => relesDe(i.id, reles).map((r) => (
+        <Rele key={`${i.id}-${r.id}`} i={r} x={COL[r.id] + rw / 2} y={fy[i.id] + 14} w={rw} h={22} rotulo={r.nome} d={d} alvo={alvo} />
+      )))}
+
       <rect x={xc} y={cTop} width={wc} height={cBot - cTop} rx={18} className="ig-mc-nucleo" />
       {Array.from({ length: Math.floor((cBot - cTop - 110) / 14) }, (_, k) => (
         <line key={k} x1={xc + 16} x2={xc + wc - 16} y1={cTop + 70 + k * 14} y2={cTop + 70 + k * 14} className="ig-mc-nucleo-linha" />
@@ -322,7 +390,7 @@ function Fluxo({ lista, mov, novos, leituras, d, alvo, focarPagina }: Props) {
 }
 
 // ---------- Órbita: cada ligação é a linha do tempo de 24 h ----------
-function Orbita({ lista, mov, novos, leituras, d, alvo }: Props) {
+function Orbita({ lista, reles, mov, novos, leituras, d, alvo }: Props) {
   const W = 1160, H = 660, cx = W / 2, cy = H / 2 + 6, R = 250, r0 = 62, r1 = R - 16;
   // ângulos: os grupos em sequência, com um respiro entre eles; o Governo centrado no alto
   const ordem = ["governo", "casas", "comunicacao"].map((g) => lista.filter((i) => i.grupo === g)).filter((l) => l.length);
@@ -380,6 +448,27 @@ function Orbita({ lista, mov, novos, leituras, d, alvo }: Props) {
             {mov && anda(i) && <Pacote caminho={id} dur={2.4 + (k % 4) * 0.35} atraso={k * 0.41} volta={!sai(i)} r={2.4} />}
           </g>
         );
+      })}
+
+      {/* servidores no caminho: contas no raio da fonte (o mais perto do centro é o último antes do Brasico) */}
+      {lista.map((i) => {
+        const rs = relesDe(i.id, reles);
+        if (!rs.length || ang[i.id] == null) return null;
+        const g = ang[i.id], c = Math.cos(rad(g)), sn = Math.sin(rad(g));
+        const fr = rs.length === 1 ? [0.42] : [0.62, 0.3]; // da fonte para o centro
+        return rs.map((r, k) => {
+          const [x, y] = ponto(g, r0 + (r1 - r0) * fr[k]);
+          // rótulo de lado, perpendicular ao raio
+          const lx = x - sn * 12, ly = y + c * 12 + 4, anchor = Math.abs(sn) < 0.3 ? "middle" : -sn > 0 ? "start" : "end";
+          return (
+            <g key={`${i.id}-${r.id}`} className={`ig-mc-no rele ${r.estado} ${d(r.id)}`} {...alvo(r)}>
+              <title>{`${r.nome}: ${TEXTO_ESTADO[r.estado]} · ${r.frase}`}</title>
+              <circle cx={x} cy={y} r={9} className="ig-mc-alvo" />
+              <circle cx={x} cy={y} r={6} className="ig-mc-bola rele" />
+              <text x={lx} y={ly} textAnchor={anchor} className="ig-mc-nome rele">{r.nome}</text>
+            </g>
+          );
+        });
       })}
 
       <circle cx={cx} cy={cy} r={54} className="ig-mc-nucleo" />

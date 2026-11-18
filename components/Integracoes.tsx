@@ -143,7 +143,7 @@ export default function Integracoes({ userEmail, previa }: { userEmail: string; 
           </section>
 
           <section className="ig-central">
-            <MapaConexoes lista={lista.filter((i) => i.grupo !== "servidores")} novos={novos} onAbrir={abrir} />
+            <MapaConexoes lista={lista} novos={novos} onAbrir={abrir} />
             <div className="ig-lado">
               <div className="ig-caixa ig-entra" style={{ "--i": 2 } as React.CSSProperties}>
                 <div className="ig-caixa-cabeca"><h2>Atividade nas últimas 24 h</h2>

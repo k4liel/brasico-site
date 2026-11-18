@@ -4630,6 +4630,10 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .ig-mc-frase.atencao { fill: var(--ig-atencao); }
 .ig-mc-alvo { fill: transparent; }
 .ig-mc-bola { fill: var(--panel); stroke: var(--ig-cor); stroke-width: 3; transition: stroke-width .2s; }
+/* servidores no caminho (Hostinger, IPRoyal): caixa redonda por cima da linha da fonte */
+.ig-mc-rele { fill: var(--bg-elev, var(--panel)); stroke: var(--ig-cor); stroke-opacity: .55; }
+.ig-mc-nome.rele { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+.ig-mc-bola.rele { stroke-width: 2.5; }
 .ig-mc-no:hover .ig-mc-bola, .ig-mc-no:focus-visible .ig-mc-bola { stroke-width: 4.5; }
 .ig-mc-no:focus-visible .ig-mc-bola { stroke: var(--gold); }
 .ig-mc-anel { fill: none; stroke: var(--border); stroke-width: 2; }
