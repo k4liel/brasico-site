@@ -12,10 +12,10 @@ const BUCKET = "workspace-files";
 // fontes (.ttf/.otf/.woff2) e imagens dos menus vivos (cardapios/fontes, cardapios/imagens): 18/11/2026
 const TIPOS: Record<string, string> = {
   ".pdf": "application/pdf", ".jpg": "image/jpeg", ".png": "image/png",
-  ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2",
+  ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2", ".svg": "image/svg+xml",
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const PARTE = /^[a-z0-9][a-z0-9_-]*(\.(pdf|jpg|png|ttf|otf|woff2))?$/;
+const PARTE = /^[a-z0-9][a-z0-9_-]*(\.(pdf|jpg|png|ttf|otf|woff2|svg))?$/;
 
 export async function GET(req: Request, { params }: { params: Promise<{ caminho: string[] }> }) {
   const { caminho } = await params;
@@ -47,6 +47,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ caminho:
       // sem guardar cópia no navegador: quando o arquivo é trocado (ex.: caderno da Produção), a versão nova aparece na hora
       "Cache-Control": ext.startsWith(".pdf") || ext === ".jpg" || ext === ".png" ? "private, no-store" : "private, max-age=86400",
       "X-Content-Type-Options": "nosniff",
+      // fundo dos menus vivos em SVG: nunca roda script, mesmo aberto direto
+      ...(ext === ".svg" ? { "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:" } : {}),
     },
   });
 }
