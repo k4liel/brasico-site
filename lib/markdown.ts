@@ -291,6 +291,20 @@ function renderArquivos(body: string[], idioma: Idioma = "pt") {
       continue;
     }
     const [codigo, titulo, desc, arq, paginas, classe] = t.split("|").map((x) => (x ?? "").trim());
+    // menu vivo (18/11/2026): "menu:<código>" no lugar do arquivo abre o menu editável (components/VisorMenu.tsx)
+    const vivo = (arq ?? "").match(/^menu:([a-z0-9][a-z0-9-]{0,60})$/);
+    if (vivo && BASE_ARQ.test(base) && base.startsWith("/api/arquivo/")) {
+      const meta = `<span class="arq-meta">${paginas ? `<span>${esc(paginas)}</span>` : ""}<span class="arq-tag vivo">${T.editavel}</span></span>`;
+      itens.push(
+        `<button type="button" class="arq arq-vivo" data-menu="${esc(vivo[1])}" data-titulo="${esc(titulo ?? "")}" data-codigo="${esc(codigo ?? "")}">` +
+          (estilo === "lista" ? `<span class="arq-ic" aria-hidden="true">MENU</span>` : `<span class="arq-capa" data-menu-capa="${esc(vivo[1])}"></span>`) +
+          `<span class="arq-info"><span class="arq-cod">${esc(codigo ?? "")}</span><b>${inline(titulo ?? "")}</b>` +
+          (desc ? `<span class="arq-desc">${inline(desc)}</span>` : "") +
+          meta +
+          `</span><span class="arq-abrir" aria-hidden="true">${T.abrir}</span></button>`
+      );
+      continue;
+    }
     if (!BASE_ARQ.test(base) || !/^[a-z0-9][a-z0-9_-]*$/.test(arq ?? "")) continue;
     const pdf = `${base}/${arq}.pdf`;
     const restrito = /restrit/i.test(classe ?? "");

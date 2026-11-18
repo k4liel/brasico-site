@@ -9,9 +9,13 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const BUCKET = "workspace-files";
-const TIPOS: Record<string, string> = { ".pdf": "application/pdf", ".jpg": "image/jpeg", ".png": "image/png" };
+// fontes (.ttf/.otf/.woff2) e imagens dos menus vivos (cardapios/fontes, cardapios/imagens): 18/11/2026
+const TIPOS: Record<string, string> = {
+  ".pdf": "application/pdf", ".jpg": "image/jpeg", ".png": "image/png",
+  ".ttf": "font/ttf", ".otf": "font/otf", ".woff2": "font/woff2",
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const PARTE = /^[a-z0-9][a-z0-9_-]*(\.(pdf|jpg|png))?$/;
+const PARTE = /^[a-z0-9][a-z0-9_-]*(\.(pdf|jpg|png|ttf|otf|woff2))?$/;
 
 export async function GET(req: Request, { params }: { params: Promise<{ caminho: string[] }> }) {
   const { caminho } = await params;
@@ -41,7 +45,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ caminho:
       "Content-Type": TIPOS[ext],
       "Content-Disposition": `${baixar ? "attachment" : "inline"}; filename="${nome}"`,
       // sem guardar cópia no navegador: quando o arquivo é trocado (ex.: caderno da Produção), a versão nova aparece na hora
-      "Cache-Control": "private, no-store",
+      "Cache-Control": ext.startsWith(".pdf") || ext === ".jpg" || ext === ".png" ? "private, no-store" : "private, max-age=86400",
       "X-Content-Type-Options": "nosniff",
     },
   });

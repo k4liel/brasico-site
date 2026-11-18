@@ -11,6 +11,7 @@ import { chaveCelula } from "@/lib/markdown";
 import Topo from "./Topo";
 import { TopoSimples } from "./Compras";
 import VisorPdf from "./VisorPdf";
+import VisorMenu from "./VisorMenu";
 import Bandeira from "./Bandeira";
 import Abas, { semNumero } from "./Abas";
 import { IDIOMAS, TEXTOS, ehIdioma, type Idioma } from "@/lib/idioma";
@@ -36,6 +37,7 @@ const COISA: Record<string, string> = {
   metrics: "o indicador",
   files: "o arquivo",
   workspaces: "o projeto",
+  cardapios_vivos: "o menu",
 };
 
 
@@ -85,7 +87,7 @@ export default function Projeto({ projectId, userId, userEmail }: { projectId: s
 
   const { rows: notas, loading } = useTable<Nota>("notes", projectId, { orderBy: "title", ascending: true, limit: 500 });
   const { rows: logTodo } = useTable<Log>("activity_log", projectId, { orderBy: "created_at", ascending: false, limit: 200 });
-  const log = semDuplicatas(logTodo).filter((l) => (l.entity === "notes" || l.entity === "workspaces") && !ehTraducao(l)).slice(0, 15);
+  const log = semDuplicatas(logTodo).filter((l) => (l.entity === "notes" || l.entity === "workspaces" || l.entity === "cardapios_vivos") && !ehTraducao(l)).slice(0, 15);
 
   useEffect(() => {
     (async () => {
@@ -480,6 +482,7 @@ Quem tiver o link vê o documento deste projeto, sem login. Não vê outros proj
       </main>
 
       <VisorPdf />
+      <VisorMenu projectId={projectId} />
 
       {painel && <div className="painel-fundo" onClick={() => setPainel(null)} />}
 
