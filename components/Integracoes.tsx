@@ -15,7 +15,7 @@ import Gaveta from "./Gaveta";
 import MapaConexoes from "./MapaConexoes";
 import {
   GRUPOS, NOME_FONTE, STATUS_TEXTO, atividadeGeral, estadoAgenda, estadoEvento, estadoHora, fonteDaAgenda, horaDaPosicao,
-  horarioLegivel, montarIntegracoes, quando, type Estado, type Hora, type Integracao, type Painel,
+  horarioLegivel, montarIntegracoes, quando, totalContratos, type Estado, type Hora, type Integracao, type Painel,
 } from "@/lib/integracoes";
 
 const INTERVALO = 30; // segundos entre leituras
@@ -143,7 +143,7 @@ export default function Integracoes({ userEmail, previa }: { userEmail: string; 
           </section>
 
           <section className="ig-central">
-            <MapaConexoes lista={lista} novos={novos} onAbrir={abrir} />
+            <MapaConexoes lista={lista.filter((i) => i.grupo !== "servidores")} novos={novos} onAbrir={abrir} />
             <div className="ig-lado">
               <div className="ig-caixa ig-entra" style={{ "--i": 2 } as React.CSSProperties}>
                 <div className="ig-caixa-cabeca"><h2>Atividade nas últimas 24 h</h2>
@@ -188,7 +188,9 @@ export default function Integracoes({ userEmail, previa }: { userEmail: string; 
             if (!doGrupo.length) return null;
             return (
               <section key={g.id} className="ig-grupo">
-                <div className="ig-grupo-cabeca"><h2>{g.titulo}</h2><p>{g.explica}</p></div>
+                <div className="ig-grupo-cabeca"><h2>{g.titulo}</h2><p>{g.explica}</p>
+                  {g.id === "servidores" && painel?.fontes.servidores && <p className="ig-grupo-total">{totalContratos(painel.fontes.servidores.contratos)}</p>}
+                </div>
                 <Cartoes>
                   {doGrupo.map((i, k) => <Cartao key={i.id} i={i} ordem={k} agora={agora} novo={novos.has(i.id)} onAbrir={() => abrir(i.id)} />)}
                 </Cartoes>

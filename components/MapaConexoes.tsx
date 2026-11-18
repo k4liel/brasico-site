@@ -14,7 +14,7 @@ type Vista = "central" | "fluxo" | "orbita";
 const VISTAS: [Vista, string][] = [["central", "Central"], ["fluxo", "Fluxo dos dados"], ["orbita", "Órbita 24 h"]];
 const CHAVE = "brasico-ig-mapa";
 const TEXTO_ESTADO: Record<Estado, string> = { ok: "Funcionando", atencao: "Atenção", erro: "Parada", pausa: "Pausada" };
-const GRUPO_TITULO: Record<string, string> = { governo: "Governo", casas: "Sistemas das casas", comunicacao: "Comunicação e IA" };
+const GRUPO_TITULO: Record<string, string> = { governo: "Governo", casas: "Sistemas das casas", comunicacao: "Comunicação e IA", servidores: "Servidores" };
 
 // Nomes que cabem no mapa (o completo fica no rodapé e no detalhe)
 const NOME: Record<string, string> = { claude: "Claude · resumo", cicchetti: "Cicchetti", certificados: "Certificados" };

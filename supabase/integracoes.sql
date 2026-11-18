@@ -111,6 +111,13 @@ begin
         'ultimo_resumo', (select max(created_at) from public.wa_resumos_gerais where criado_por is null),
         'resumo_ontem', exists (select 1 from public.wa_resumos_gerais where criado_por is null
           and de <= (now() at time zone 'America/Fortaleza')::date - 1 and ate >= (now() at time zone 'America/Fortaleza')::date - 1)),
+      -- Servidores e contas pagas (supabase/integracoes_servidores.sql): Hostinger e IPRoyal
+      'servidores', jsonb_build_object(
+        'contratos', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'fornecedor', c.fornecedor, 'servico', c.servico,
+            'valor', c.valor, 'moeda', c.moeda, 'periodo', c.periodo, 'proxima_cobranca', c.proxima_cobranca,
+            'renova_sozinho', c.renova_sozinho, 'observacao', c.observacao, 'conferido_em', c.conferido_em) order by c.ordem), '[]'::jsonb)
+          from public.integracoes_contratos c where c.ativo),
+        'evolution', (select to_jsonb(e) - 'id' from public.wa_evolution_estado e where e.id = 1)),
       'conector', jsonb_build_object(
         'links', (select count(*) from public.mcp_tokens where revoked_at is null),
         'ultimo_uso', (select max(last_used_at) from public.mcp_tokens where revoked_at is null))

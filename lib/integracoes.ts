@@ -27,13 +27,26 @@ export type Painel = {
     gemini: Exec;
     claude: { ultimo_resumo: string | null; resumo_ontem: boolean };
     conector: { links: number; ultimo_uso: string | null };
+    servidores?: { contratos: Contrato[]; evolution: EvolutionEstado | null };
   };
   certificados: { nome: string; cnpj: string; matriz: boolean; validade: string }[];
   agendas: { nome: string; horario: string; ativa: boolean; ultima: string | null; ultima_status: string | null; ultima_msg: string | null; rodadas_24h: number; falhas_24h: number }[];
   eventos: { fonte: string; status: string; quando: string; detalhe: string | null; erro: string | null }[];
 };
 
-export type Grupo = "governo" | "casas" | "comunicacao";
+// Servidores e contas pagas (supabase/integracoes_servidores.sql)
+export type Contrato = {
+  id: string; fornecedor: string; servico: string; valor: number; moeda: "BRL" | "USD"; periodo: "mês" | "ano";
+  proxima_cobranca: string | null; renova_sozinho: boolean; observacao: string | null; conferido_em: string;
+};
+// Estado da Evolution (WhatsApp) lido a cada 5 min (wa_evolution_ler)
+export type EvolutionEstado = {
+  respondeu: boolean | null; vps_no_ar: boolean | null; http_status: number | null; evolution_ok_em: string | null;
+  conexao: string | null; motivo_queda: string | null; caiu_em: string | null;
+  proxy_ligado: boolean | null; proxy_local: string | null; lido_em: string | null; erro: string | null;
+};
+
+export type Grupo = "governo" | "casas" | "comunicacao" | "servidores";
 export type Integracao = {
   id: string; nome: string; quem: string; grupo: Grupo; oQueFaz: string; pagina?: string;
   estado: Estado; frase: string;
@@ -48,6 +61,7 @@ export const GRUPOS: { id: Grupo; titulo: string; explica: string }[] = [
   { id: "governo", titulo: "Governo", explica: "Receita, eSocial, notas fiscais e os certificados que abrem essas portas." },
   { id: "casas", titulo: "Sistemas das casas", explica: "Caixa dos restaurantes, gestão do Cicchetti, PMS dos hotéis e relógios de ponto." },
   { id: "comunicacao", titulo: "Comunicação e inteligência", explica: "WhatsApp, as IAs que leem as compras e resumem o dia, e o conector do Claude." },
+  { id: "servidores", titulo: "Servidores e contas pagas", explica: "Onde rodam o WhatsApp e o robô dos hotéis, o proxy do WhatsApp e quanto custa cada um." },
 ];
 
 // ---------- tempo ----------
@@ -85,6 +99,36 @@ function erroAberto(x: { ultima_falha: string | null; ultima_ok: string | null; 
 function frescor(iso: string | null, agora: string, bom: number, limite: number): Estado {
   const m = minutos(iso, agora);
   return m <= bom ? "ok" : m <= limite ? "atencao" : "erro";
+}
+
+// Situação da Evolution. A rotina de pausas desliga a Evolution de propósito (o servidor responde, ela não):
+// pausa = servidor no ar e Evolution calada há menos de 75 min, ou de madrugada (0h às 7h de Fortaleza).
+export function situacaoEvolution(ev: EvolutionEstado | null, agora: string): "conectado" | "desconectado" | "pausa" | "sem_resposta" | "sem_dados" {
+  if (!ev?.lido_em) return "sem_dados";
+  if (ev.respondeu) return ev.conexao === "open" ? "conectado" : "desconectado";
+  if (!ev.vps_no_ar) return "sem_resposta";
+  return horaFortaleza(agora) < 7 || minutos(ev.evolution_ok_em, agora) <= 75 ? "pausa" : "sem_resposta";
+}
+export const valorContrato = (c: Contrato) =>
+  `${Number(c.valor).toLocaleString("pt-BR", { style: "currency", currency: c.moeda })} por ${c.periodo}`;
+// "Custo fixo: R$ 136,00 por mês + R$ 64,99 por ano" (soma por moeda e período)
+export function totalContratos(lista: Contrato[]) {
+  const soma = new Map<string, number>();
+  for (const c of lista) soma.set(`${c.moeda}|${c.periodo}`, (soma.get(`${c.moeda}|${c.periodo}`) ?? 0) + Number(c.valor));
+  const ordem = ["BRL|mês", "USD|mês", "BRL|ano", "USD|ano"];
+  const partes = ordem.filter((k) => soma.has(k)).map((k) => {
+    const [moeda, periodo] = k.split("|");
+    return `${soma.get(k)!.toLocaleString("pt-BR", { style: "currency", currency: moeda })} por ${periodo}`;
+  });
+  return partes.length ? `Custo fixo: ${partes.join(" + ")}` : "";
+}
+export function proximaCobranca(c: Contrato, agora: string) {
+  if (!c.proxima_cobranca) return c.renova_sozinho ? "renova sozinho" : "—";
+  const [a, m, d] = c.proxima_cobranca.slice(0, 10).split("-");
+  const hoje = fort(agora);
+  const dias = Math.round((Date.UTC(+a, +m - 1, +d) - Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())) / 86400000);
+  const falta = dias === 0 ? "hoje" : dias === 1 ? "amanhã" : dias > 1 && dias <= 31 ? `em ${dias} dias` : "";
+  return `${d}/${m}/${a}${falta ? ` (${falta})` : ""}${c.renova_sozinho ? "" : " · não renova"}`;
 }
 
 // ---------- regras de cada integração ----------
@@ -265,13 +309,20 @@ export function montarIntegracoes(p: Painel): Integracao[] {
   // WhatsApp (Evolution API na VPS): mensagens dos grupos chegam pelo webhook
   {
     const w = f.whatsapp;
+    const ev = f.servidores?.evolution ?? null;
     const dia = h >= 8 && h <= 23;
     let estado = dia ? frescor(w.ultima_mensagem, agora, 3 * 60, 12 * 60) : frescor(w.ultima_mensagem, agora, 12 * 60, 24 * 60);
     if (w.envios_falha_24h) estado = pior(estado, "atencao");
+    let frase = `última mensagem ${quando(w.ultima_mensagem, agora)}`;
+    const conexao = situacaoEvolution(ev, agora);
+    if (conexao === "desconectado") {
+      estado = "erro";
+      frase = `número desconectado do WhatsApp${ev?.caiu_em ? ` ${quando(ev.caiu_em, agora)}` : ""}${ev?.motivo_queda ? ` (código ${ev.motivo_queda})` : ""}`;
+    } else if (conexao === "pausa") frase = `em pausa (rotina de usuário comum) · ${frase}`;
     lista.push({
       id: "whatsapp", nome: "WhatsApp", quem: "Evolution API · VPS da Hostinger", grupo: "comunicacao", pagina: "/whatsapp",
       oQueFaz: "Recebe as mensagens e mídias dos grupos da companhia (o pedido de compras sai daqui).",
-      estado, frase: `última mensagem ${quando(w.ultima_mensagem, agora)}`,
+      estado, frase,
       numeros: [
         { rotulo: "Mensagens em 24 h", valor: String(w.mensagens_24h) },
         { rotulo: "Grupos com conversa", valor: String(w.grupos_24h) },
@@ -315,6 +366,61 @@ export function montarIntegracoes(p: Painel): Integracao[] {
       estado: c.links ? "ok" : "pausa", frase: `último uso ${quando(c.ultimo_uso, agora)}`,
       numeros: [{ rotulo: "Links ativos", valor: String(c.links) }],
     });
+  }
+
+  // Hostinger (VPS e domínio) e IPRoyal (proxy do WhatsApp): se está no ar e quanto custa
+  if (f.servidores) {
+    const { contratos, evolution: ev } = f.servidores;
+    const c = (id: string) => contratos.find((x) => x.id === id);
+    const conexao = situacaoEvolution(ev, agora);
+    const lidoHa = minutos(ev?.lido_em ?? null, agora);
+
+    const vps = c("hostinger_vps"), dominio = c("hostinger_dominio");
+    if (vps) {
+      const pmsMin = minutos(f.pms.ultima_ok, agora);
+      let estado: Estado; let frase: string;
+      if (lidoHa > 20) { estado = "atencao"; frase = `servidor sem conferir desde ${quando(ev?.lido_em ?? null, agora)}`; }
+      else if (ev?.vps_no_ar === false) { estado = "erro"; frase = "o servidor não respondeu"; }
+      else { estado = "ok"; frase = `servidor no ar · conferido ${quando(ev?.lido_em ?? null, agora)}`; }
+      const evoEstado: Estado = conexao === "conectado" ? "ok" : conexao === "pausa" ? "pausa" : conexao === "desconectado" ? "erro" : "atencao";
+      const evoTexto = conexao === "conectado" ? "conectada" : conexao === "pausa" ? "em pausa pela rotina" : conexao === "desconectado" ? "número desconectado" : "sem resposta";
+      lista.push({
+        id: "hostinger", nome: "Hostinger", quem: "VPS KVM 2 · domínio brasico.com.br", grupo: "servidores",
+        oQueFaz: "Servidor alugado onde rodam a Evolution (o WhatsApp da Brasico), o robô do PMS dos hotéis e a rotina de pausas do WhatsApp. Também guarda o domínio brasico.com.br.",
+        estado, frase,
+        linhas: [
+          { nome: "Evolution (WhatsApp)", estado: evoEstado, texto: evoTexto },
+          { nome: "Robô do PMS dos hotéis", estado: pmsMin <= 90 ? "ok" : pmsMin <= 240 ? "atencao" : "erro", texto: `última rodada ${quando(f.pms.ultima_ok, agora)}` },
+          { nome: "Rotina de pausas", estado: "ok", texto: "desliga o WhatsApp de madrugada e em 2 ou 3 pausas curtas por dia" },
+        ],
+        numeros: [
+          { rotulo: "Servidor (VPS)", valor: valorContrato(vps) },
+          { rotulo: "Próxima cobrança", valor: proximaCobranca(vps, agora) },
+          ...(dominio ? [{ rotulo: "Domínio", valor: `${valorContrato(dominio)} · ${proximaCobranca(dominio, agora)}` }] : []),
+        ],
+      });
+    }
+
+    const proxy = c("iproyal_proxy");
+    if (proxy) {
+      let estado: Estado; let frase: string;
+      if (lidoHa > 20) { estado = "atencao"; frase = `sem conferir desde ${quando(ev?.lido_em ?? null, agora)}`; }
+      else if (ev?.proxy_ligado === false) { estado = "atencao"; frase = "proxy desligado: o WhatsApp sai pelo IP do servidor"; }
+      else if (conexao === "desconectado") { estado = "erro"; frase = "WhatsApp desconectado (veja se o proxy venceu)"; }
+      else if (conexao === "pausa") { estado = "pausa"; frase = "WhatsApp em pausa pela rotina · volta sozinho"; }
+      else if (conexao !== "conectado") { estado = "atencao"; frase = `a Evolution não responde desde ${quando(ev?.evolution_ok_em ?? null, agora)}`; }
+      else { estado = "ok"; frase = `WhatsApp conectado pelo proxy${ev?.proxy_local ? ` · ${ev.proxy_local}` : ""}`; }
+      lista.push({
+        id: "iproyal", nome: "IPRoyal", quem: "Proxy residencial · 1 IP fixo no Brasil", grupo: "servidores",
+        oQueFaz: "O WhatsApp da Brasico conecta por um IP de internet de casa, no Brasil, e não pelo IP do servidor — assim não parece robô (proteção depois do bloqueio de 16/11/2026).",
+        estado, frase,
+        numeros: [
+          { rotulo: "Custo", valor: valorContrato(proxy) },
+          { rotulo: "Próxima cobrança", valor: proximaCobranca(proxy, agora) },
+          { rotulo: "De onde o WhatsApp conecta", valor: ev?.proxy_local ?? "—" },
+        ],
+      });
+    }
   }
 
   // Atividade por hora de cada fonte (o painel desenha uma barra de 24 h em cada cartão)

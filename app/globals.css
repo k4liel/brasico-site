@@ -4688,6 +4688,7 @@ a.cp-menu-item:hover { color: var(--strong); background: var(--hover-bg); border
 .ig-grupo-cabeca { margin-bottom: 14px; }
 .ig-grupo-cabeca h2 { margin: 0; font-family: var(--font-serif), Georgia, serif; font-size: 22px; font-weight: 600; color: var(--strong); }
 .ig-grupo-cabeca p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+.ig-grupo-cabeca p.ig-grupo-total { display: inline-block; margin-top: 8px; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--gold) 12%, transparent); color: var(--strong); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .ig-cartoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .ig-cartao { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 18px; text-align: left; cursor: pointer; outline: none;
   border: 1px solid var(--border); border-radius: 16px; background: var(--panel); color: var(--text);
