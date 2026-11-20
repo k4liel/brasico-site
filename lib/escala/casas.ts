@@ -10,6 +10,8 @@ export const CASAS: Casa[] = [
   { id: "sempre-vivo", nome: "Sempre Vivo", locais: ["Sempre Vivo"], hotel: true },
   { id: "filho-do-vento", nome: "Filho do Vento", locais: ["Filho do Vento"], hotel: true },
   { id: "cicchetti-centro", nome: "Cicchetti Centro", locais: ["Cicchetti Pipa", "Cicchetti Centro"], hotel: false },
+  // Ponta Negra (Natal, 20/11/2026): ainda sem ponto; setores fixos em supabase/escala_ponta_negra.sql
+  { id: "cicchetti-ponta-negra", nome: "Cicchetti Ponta Negra", locais: ["Cicchetti Ponta Negra"], hotel: false },
   { id: "outras-casas", nome: "Outras casas", locais: [], hotel: false },
 ];
 

@@ -21,7 +21,7 @@ const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e"]);
 const nomeProprio = (s: string) =>
   s.toLowerCase().split(/\s+/).map((p, i) => (i > 0 && MINUSCULAS.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1))).join(" ");
 const iniciais = (s: string) => s.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
-type Aba = "fora" | "escala" | "ignorados";
+type Aba = "fora" | "escala" | "ignorados" | "nova";
 
 export default function EscalaContratados({ supabase, lista, locais, onMudou }: {
   supabase: SupabaseClient; lista: Contratado[];
@@ -35,6 +35,9 @@ export default function EscalaContratados({ supabase, lista, locais, onMudou }: 
   const [escolha, setEscolha] = useState<Record<string, { local: string; setor: string }>>({});
   const [ocupado, setOcupado] = useState("");
   const [erro, setErro] = useState("");
+  // Pessoa nova (20/11/2026, Cicchetti Ponta Negra): quem ainda não está no RH nem no ponto (escala_pessoa_nova)
+  const [nova, setNova] = useState({ nome: "", cargo: "", local: "", setor: "" });
+  const [incluida, setIncluida] = useState("");
 
   const faltam = lista.filter((c) => c.situacao !== "na_escala" && c.situacao !== "ignorado");
   const naEscala = lista.filter((c) => c.situacao === "na_escala");
@@ -59,6 +62,19 @@ export default function EscalaContratados({ supabase, lista, locais, onMudou }: 
     setOcupado("");
     if (error) return setErro(error.message);
     setEscolha((v) => { const n = { ...v }; delete n[chave(c)]; return n; });
+    onMudou();
+  }
+
+  async function incluirNova() {
+    if (nova.nome.trim().length < 2) return setErro("Escreva o nome da pessoa.");
+    if (!nova.local) return setErro("Escolha a casa.");
+    setOcupado("nova");
+    setErro("");
+    const { error } = await supabase.rpc("escala_pessoa_nova", { p_nome: nova.nome, p_cargo: nova.cargo, p_local: nova.local, p_setor: nova.setor });
+    setOcupado("");
+    if (error) return setErro(error.message);
+    setIncluida(`${nomeProprio(nova.nome.trim())} entrou na escala de ${nova.local}${nova.setor ? ` · ${nova.setor}` : ""}.`);
+    setNova((v) => ({ ...v, nome: "", cargo: "" }));
     onMudou();
   }
 
@@ -112,20 +128,40 @@ export default function EscalaContratados({ supabase, lista, locais, onMudou }: 
         {faltam.length > 0 && <b>{faltam.length}</b>}
       </button>
       {aberto && (
-        <Gaveta titulo="Contratados sem ponto" sub="Ativos no RH, mas sem cadastro no relógio (RHiD). Inclua na escala escolhendo a casa e o setor; eles aparecem com “fora do ponto” ao lado do nome."
+        <Gaveta titulo="Contratados sem ponto" sub="Ativos no RH, mas sem cadastro no relógio (RHiD). Inclua na escala escolhendo a casa e o setor; eles aparecem com “fora do ponto” ao lado do nome. Quem ainda não está no RH entra por Pessoa nova."
           fechar={() => setAberto(false)}
           topo={
             <nav className="fx-abas" role="tablist">
-              {([["fora", `Fora da escala (${faltam.length})`], ["escala", `Na escala (${naEscala.length})`], ["ignorados", `Não trabalham aqui (${ignorados.length})`]] as [Aba, string][]).map(([v, t]) => (
-                <button key={v} role="tab" aria-selected={aba === v} className={aba === v ? "on" : ""} onClick={() => setAba(v)}>{t}</button>
+              {([["fora", `Fora da escala (${faltam.length})`], ["escala", `Na escala (${naEscala.length})`], ["ignorados", `Não trabalham aqui (${ignorados.length})`], ["nova", "Pessoa nova"]] as [Aba, string][]).map(([v, t]) => (
+                <button key={v} role="tab" aria-selected={aba === v} className={aba === v ? "on" : ""} onClick={() => { setAba(v); setIncluida(""); }}>{t}</button>
               ))}
             </nav>
           }>
           {erro && <p className="tv-alerta">{erro}</p>}
+          {aba === "nova" ? (
+            <div className="ct-nova">
+              <p className="muted small">Para quem ainda não está no RH nem no relógio de ponto (ex.: a equipe do Cicchetti Ponta Negra). A pessoa entra na escala com “fora do ponto” e aparece aqui em “Na escala” como “Fora do RH (a confirmar)”, onde dá para mudar de lugar ou tirar.</p>
+              <label>Nome<input value={nova.nome} onChange={(e) => setNova({ ...nova, nome: e.target.value })} placeholder="Nome completo" /></label>
+              <label>Cargo<input value={nova.cargo} onChange={(e) => setNova({ ...nova, cargo: e.target.value })} placeholder="Ex.: cozinheiro, garçom" /></label>
+              <div className="ct-lugar">
+                <select value={nova.local} onChange={(e) => setNova({ ...nova, local: e.target.value, setor: "" })} aria-label="Casa">
+                  <option value="">Casa…</option>
+                  {nomesLocais.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+                <select value={nova.setor} onChange={(e) => setNova({ ...nova, setor: e.target.value })} aria-label="Setor" disabled={!nova.local}>
+                  <option value="">Sem setor</option>
+                  {(locais.find((l) => l.local === nova.local)?.setores ?? []).map((x) => <option key={x} value={x}>{x}</option>)}
+                </select>
+              </div>
+              <button disabled={ocupado === "nova" || !nova.nome.trim() || !nova.local} onClick={incluirNova}>Incluir na escala</button>
+              {incluida && <p className="ct-ok">{incluida}</p>}
+            </div>
+          ) : <>
           <input className="ct-busca" type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, cargo ou unidade" />
           {vistos.length === 0
             ? <p className="cmp-vazio">{aba === "fora" ? "Ninguém faltando: todos os contratados sem ponto já foram resolvidos." : aba === "escala" ? "Ninguém incluído ainda." : "Ninguém marcado."}</p>
             : <ul className="ct-lista">{vistos.map((c) => linha(c, aba))}</ul>}
+          </>}
         </Gaveta>
       )}
     </>

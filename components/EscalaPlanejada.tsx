@@ -212,8 +212,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
     for (const p of daCasa) { const l = m.get(grupoDe.get(p.grupo_id)?.local ?? ""); if (l) l.pessoas++; }
     for (const g of grupos) for (const l of g.lideres) { const x = m.get(g.local)!; if (!x.lideres.includes(l.nome)) x.lideres.push(l.nome); }
     // Ordem das abas (14/11/2026, pedido do dono): Cicchetti Centro, Filha da Lua, Sempre Vivo e depois as outras
-    const prioridade = (l: string) => { const i = ["cicchetti-centro", "filha-da-lua", "sempre-vivo"].indexOf(casaDoLocal(l)); return i < 0 ? 9 : i; };
-    return [...m.values()].filter((l) => l.pessoas > 0).sort((a, b) => prioridade(a.local) - prioridade(b.local) || a.local.localeCompare(b.local, "pt-BR"));
+    const prioridade = (l: string) => { const i = ["cicchetti-centro", "cicchetti-ponta-negra", "filha-da-lua", "sempre-vivo"].indexOf(casaDoLocal(l)); return i < 0 ? 9 : i; };
+    // Casa nova ainda sem ninguém (Ponta Negra) aparece pelos grupos fixos, para receber a equipe
+    return [...m.values()].filter((l) => l.pessoas > 0 || grupos.some((g) => g.fixo && g.local === l.local)).sort((a, b) => prioridade(a.local) - prioridade(b.local) || a.local.localeCompare(b.local, "pt-BR"));
   }, [grupos, grupoDe, daCasa]);
   const escolherLocal = (l: string) => {
     setGrupo(l);
@@ -620,7 +621,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       )}
 
       {!dados ? <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div> : pessoas.length === 0 ? (
-        <p className="muted tv-nada">{dados.socio ? "Ninguém desta casa nos grupos da escala ainda. Os grupos seguem a escala do RH (local e setor de cada pessoa): abra RH › Escala uma vez para montá-los." : "Nenhuma pessoa no seu grupo."}</p>
+        <p className="muted tv-nada">{gruposVazios.length > 0 && grupo
+          ? `Ainda ninguém na escala de ${grupo} (setores: ${gruposVazios.map((g) => g.setor).join(", ")}).${dados.socio ? " Para pôr a equipe, abra o botão Sem ponto: quem já está no RH, escolha a casa e Incluir; quem ainda não está, use Pessoa nova." : ""}`
+          : dados.socio ? "Ninguém desta casa nos grupos da escala ainda. Os grupos seguem a escala do RH (local e setor de cada pessoa): abra RH › Escala uma vez para montá-los." : "Nenhuma pessoa no seu grupo."}</p>
       ) : null}
       {dados && pessoas.length > 0 && (
         <PontoEscala modo={modo} pessoas={pessoas} plano={plano} avisos={avisos} feriados={feriados} garantir={garantir} detalheDia={modo === "real" ? undefined : detalheDia}
