@@ -49,6 +49,23 @@ async function quadroCom(page, alvo, ms = 30000) {
   return null;
 }
 
+// Desde 19/11/2026 a TOTVS mostra, depois do login, o aviso "Alerta de segurança da sua conta" (recomenda ligar a
+// verificação em duas etapas) por cima da lista de empresas; ele bloqueia o clique em "Acessar". O robô clica em "Entendi".
+// É só uma recomendação: se um dia a TOTVS passar a exigir o código, o robô para (ver "pediu verificação em duas etapas").
+async function fecharAvisos(page) {
+  let fechou = false;
+  for (const f of page.frames()) {
+    if (!(await f.getByText("Alerta de segurança", { exact: false }).first().isVisible().catch(() => false))) continue;
+    const botao = f.getByRole("button", { name: /^\s*Entendi\s*$/i }).or(f.getByText("Entendi", { exact: true })).first();
+    if (await botao.isVisible().catch(() => false)) {
+      await botao.click({ timeout: 5000 }).catch(() => {});
+      fechou = true;
+    }
+  }
+  if (fechou) { log("[aviso] fechei o alerta de segurança da TOTVS (Entendi)"); await espera(800); }
+  return fechou;
+}
+
 async function entrar(page, usuario, senha) {
   await page.goto(`${BASE}/auth/login`, { waitUntil: "domcontentloaded" });
   const f = await quadroCom(page, { css: 'input[type="password"]' }, 60000);
@@ -71,7 +88,8 @@ async function entrar(page, usuario, senha) {
     for (const fr of page.frames()) {
       const tx = await fr.locator("body").innerText({ timeout: 1000 }).catch(() => "");
       if (/Acesso não autorizado|senha inválida|usuário ou senha|verifique seus dados/i.test(tx)) throw new Error("login recusado pelo PMS (usuário ou senha)");
-      if (/código de verificação|autenticação de dois fatores|two-factor/i.test(tx)) { await diagnostico(page, "duas-etapas", 600); throw new Error("o PMS pediu verificação em duas etapas"); }
+      const soAviso = /Alerta de segurança da sua conta|ainda não possui a autenticação/i.test(tx);
+      if (!soAviso && /código de verificação|autenticação de dois fatores|two-factor/i.test(tx)) { await diagnostico(page, "duas-etapas", 600); throw new Error("o PMS pediu verificação em duas etapas"); }
       if (/captcha/i.test(tx)) throw new Error("o PMS mostrou um CAPTCHA; o robô parou");
     }
     await espera(1000);
@@ -91,6 +109,7 @@ async function diagnostico(page, etapa, max = 300) {
 
 async function escolherHotel(page, cnpj) {
   let f = await quadroCom(page, cnpj, 3000);
+  await fecharAvisos(page);
   if (!f) {
     await page.goto(`${BASE}/dashboard`, { waitUntil: "domcontentloaded" });
     await page.locator(".toolbar-profile-container").first().click({ timeout: 30000 }).catch(() => {});
@@ -98,6 +117,7 @@ async function escolherHotel(page, cnpj) {
     await page.evaluate(() => document.querySelector(".tenant-selection__action")?.click());
     f = await quadroCom(page, cnpj, 30000);
     if (!f) throw new Error("a lista de empresas não apareceu");
+    await fecharAvisos(page);
   }
   const acessar = f.locator("div", { hasText: cnpj }).filter({ has: f.getByText("Acessar", { exact: true }) }).last()
     .getByText("Acessar", { exact: true });
@@ -118,8 +138,7 @@ async function escolherHotel(page, cnpj) {
       return `${el.tagName}.${el.className} ${Math.round(r.width)}x${Math.round(r.height)} @${Math.round(x)},${Math.round(y)} por cima: ${topo ? `${topo.tagName}.${topo.className}`.slice(0, 80) : "nada"}`;
     })).catch(() => []);
     log(`[empresa] botões "Acessar": ${botoes.length} · ${botoes.slice(0, 4).join(" | ")}`);
-    await page.keyboard.press("Escape").catch(() => {});
-    await espera(800);
+    if (!(await fecharAvisos(page))) { await page.keyboard.press("Escape").catch(() => {}); await espera(800); }
     await acessar.click({ timeout: 15000 });
   }
   const fim = Date.now() + 60000;
