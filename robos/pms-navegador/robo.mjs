@@ -71,7 +71,7 @@ async function entrar(page, usuario, senha) {
     for (const fr of page.frames()) {
       const tx = await fr.locator("body").innerText({ timeout: 1000 }).catch(() => "");
       if (/Acesso não autorizado|senha inválida|usuário ou senha|verifique seus dados/i.test(tx)) throw new Error("login recusado pelo PMS (usuário ou senha)");
-      if (/código de verificação|autenticação de dois fatores|two-factor/i.test(tx)) throw new Error("o PMS pediu verificação em duas etapas");
+      if (/código de verificação|autenticação de dois fatores|two-factor/i.test(tx)) { await diagnostico(page, "duas-etapas", 600); throw new Error("o PMS pediu verificação em duas etapas"); }
       if (/captcha/i.test(tx)) throw new Error("o PMS mostrou um CAPTCHA; o robô parou");
     }
     await espera(1000);
@@ -81,9 +81,9 @@ async function entrar(page, usuario, senha) {
 }
 
 // Mostra no log onde a tela parou (endereços e começo do texto de cada quadro), sem senha nem dados de hóspede
-async function diagnostico(page, etapa) {
+async function diagnostico(page, etapa, max = 300) {
   for (const f of page.frames()) {
-    const tx = (await f.locator("body").innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ").slice(0, 300);
+    const tx = (await f.locator("body").innerText({ timeout: 2000 }).catch(() => "")).replace(/\s+/g, " ").slice(0, max);
     const campos = await f.locator("input").evaluateAll((els) => els.map((e) => `${e.type}:${e.name || e.getAttribute("formcontrolname") || e.placeholder || ""}:${e.value ? "preenchido" : "vazio"}`)).catch(() => []);
     log(`[${etapa}] quadro ${f.url().slice(0, 80)} | campos ${campos.join(", ")} | texto: ${tx}`);
   }
@@ -99,8 +99,29 @@ async function escolherHotel(page, cnpj) {
     f = await quadroCom(page, cnpj, 30000);
     if (!f) throw new Error("a lista de empresas não apareceu");
   }
-  await f.locator("div", { hasText: cnpj }).filter({ has: f.getByText("Acessar", { exact: true }) }).last()
-    .getByText("Acessar", { exact: true }).click({ timeout: 30000 });
+  const acessar = f.locator("div", { hasText: cnpj }).filter({ has: f.getByText("Acessar", { exact: true }) }).last()
+    .getByText("Acessar", { exact: true });
+  try {
+    await acessar.click({ timeout: 30000 });
+  } catch (e) {
+    // 19/11/2026: o clique em "Acessar" passou a esgotar o tempo. Registra o que está na tela (sem senha nem hóspede)
+    // e tenta de novo depois de fechar algum aviso que esteja por cima da lista.
+    await diagnostico(page, "empresa", 900);
+    for (const fr of page.frames()) {
+      const avisos = await fr.locator('[role="dialog"], .modal, .cdk-overlay-pane, .mat-dialog-container, .swal2-popup').evaluateAll(
+        (els) => els.filter((el) => el.offsetParent !== null).map((el) => el.innerText.replace(/\s+/g, " ").slice(0, 300))).catch(() => []);
+      if (avisos.length) log(`[empresa] aviso por cima em ${fr.url().slice(0, 60)}: ${avisos.join(" || ")}`);
+    }
+    const botoes = await f.getByText("Acessar", { exact: true }).evaluateAll((els) => els.map((el) => {
+      const r = el.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const topo = document.elementFromPoint(x, y);
+      return `${el.tagName}.${el.className} ${Math.round(r.width)}x${Math.round(r.height)} @${Math.round(x)},${Math.round(y)} por cima: ${topo ? `${topo.tagName}.${topo.className}`.slice(0, 80) : "nada"}`;
+    })).catch(() => []);
+    log(`[empresa] botões "Acessar": ${botoes.length} · ${botoes.slice(0, 4).join(" | ")}`);
+    await page.keyboard.press("Escape").catch(() => {});
+    await espera(800);
+    await acessar.click({ timeout: 15000 });
+  }
   const fim = Date.now() + 60000;
   while (Date.now() < fim) {
     await espera(1000);
