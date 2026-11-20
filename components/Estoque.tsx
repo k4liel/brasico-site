@@ -37,9 +37,24 @@ const unid = (s: { unidade: string }, q: number) => (s.unidade === "porção" ? 
 const temPacote = (s: Saldo) => !!s.pacote_tamanho && Number(s.pacote_tamanho) !== 1;
 const pct = (s: Saldo) => (s.pacote_nome === "pacote" ? "pct" : s.pacote_nome);
 // "22 pct" (principal) e "44 L" (detalhe); sem pacote, só a unidade
+// Sempre números inteiros: kg e L quebrados viram "5 kg 500 g"; pacote quebrado vira "7 pct + 1 porção"
+function base(s: { unidade: string }, q: number) {
+  const n = Math.round(q * 1000) / 1000;
+  if ((s.unidade === "kg" || s.unidade === "L") && n % 1 !== 0) {
+    const sinal = n < 0 ? "-" : ""; const a = Math.abs(n);
+    const int = Math.floor(a); const resto = Math.round((a - int) * 1000);
+    const peq = s.unidade === "kg" ? "g" : "ml";
+    return int ? `${sinal}${num(int)} ${s.unidade} ${resto} ${peq}` : `${sinal}${resto} ${peq}`;
+  }
+  return `${num(Math.round(n))} ${unid(s, n)}`;
+}
 function qtd(s: Saldo, q: number) {
-  if (temPacote(s)) return { pri: `${num(q / Number(s.pacote_tamanho))} ${pct(s)}`, sec: `${num(q)} ${unid(s, q)}` };
-  return { pri: `${num(q)} ${unid(s, q)}`, sec: "" };
+  if (!temPacote(s)) return { pri: base(s, q), sec: "" };
+  const t = Number(s.pacote_tamanho); const a = Math.abs(q); const sinal = q < 0 ? "-" : "";
+  const p = Math.floor(a / t + 1e-9); const resto = Math.round((a - p * t) * 1000) / 1000;
+  if (!p) return { pri: base(s, q), sec: "" };
+  const pri = resto ? `${sinal}${num(p)} ${pct(s)} + ${base(s, resto)}` : `${sinal}${num(p)} ${pct(s)}`;
+  return { pri, sec: base(s, q) };
 }
 
 type Prazo = { cls: "vencido" | "logo" | "ok" | "sem"; dias: number | null; txt: string; curto: string };
@@ -379,7 +394,9 @@ function Registrar({ itens, hoje, inicial, tipoInicial, onPronto }: { itens: Ite
   // Contagem: começa com os lotes que o item tem hoje
   const preencher = useCallback((it: Item | undefined, emPac: boolean) => {
     if (!it) return setLinhas([{ qtd: "", validade: "" }]);
-    const f = temPacote(it) && emPac ? Number(it.pacote_tamanho) : 1;
+    let f = temPacote(it) && emPac ? Number(it.pacote_tamanho) : 1;
+    // lote que não fecha pacote inteiro: preenche na unidade, para não aparecer número quebrado
+    if (f !== 1 && it.lotes.some((l) => l.quantidade > 0 && Math.abs(l.quantidade / f - Math.round(l.quantidade / f)) > 1e-9)) { f = 1; setEmPacotes(false); }
     const ls = it.lotes.filter((l) => l.quantidade > 0).map((l) => ({ qtd: String(Number((l.quantidade / f).toFixed(2))).replace(".", ","), validade: l.validade ?? "" }));
     setLinhas(ls.length ? ls : [{ qtd: "", validade: "" }]);
   }, []);
@@ -406,6 +423,13 @@ function Registrar({ itens, hoje, inicial, tipoInicial, onPronto }: { itens: Ite
     if (!item) return setMsg("Escolha o item.");
     setEnviando(true);
     let error: { message: string } | null = null;
+    // Só número inteiro (pacotes, porções, unidades). Em kg/L, pode ter gramas (ex.: 5,5 kg).
+    const aceitaQuebrado = !pac && (item.unidade === "kg" || item.unidade === "L");
+    const textos = tipo === "contagem" ? linhas.map((l) => l.qtd).filter((t) => t.trim()) : [qtdTxt];
+    if (!aceitaQuebrado && textos.some((t) => { const n = Number(t.replace(",", ".")); return !Number.isNaN(n) && !Number.isInteger(n); })) {
+      setEnviando(false);
+      return setMsg(`Use só número inteiro de ${nomeQtd}.${pac ? ` Se sobrou pacote aberto, desmarque "Contar em ${item.pacote_nome}s" e informe em ${unid(item, 2)}.` : ""}`);
+    }
     if (tipo === "contagem") {
       const lotes = linhas.filter((l) => l.qtd.trim()).map((l) => ({ quantidade: ler(l.qtd), validade: l.validade || null }));
       if (lotes.some((l) => l.quantidade == null || l.quantidade < 0)) { setEnviando(false); return setMsg("Confira as quantidades."); }
