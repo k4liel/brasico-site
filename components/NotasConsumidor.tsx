@@ -111,6 +111,12 @@ export default function NotasConsumidor() {
   // Sempre Vivo: o restaurante vende pelo PDV do PMS, que não emite NFC-e (relatórios de notas do PMS vazios, 22/11/2026)
   const [pdvSv, setPdvSv] = useState<{ total: number; itens: number; dias: number } | null>(null);
   // Assinadas do mês (para o resumo: quantas já têm quarto e hóspede)
+  // Casas que são hotel (as assinadas vão para a conta do quarto no PMS)
+  const [hoteis, setHoteis] = useState<string[]>([]);
+  useEffect(() => {
+    supabase.from("pms_hoteis").select("totvs_unidade").not("totvs_unidade", "is", null)
+      .then(({ data }) => setHoteis(((data ?? []) as { totvs_unidade: string }[]).map((h) => h.totvs_unidade)));
+  }, [supabase]);
   const [assinadas, setAssinadas] = useState<{ unidade_id: string; valor: number; quarto: string | null; pagamentos: { descricao: string }[] }[]>([]);
 
   useEffect(() => { setMes((v) => v || meses[0]?.mes || ""); }, [meses]);
@@ -256,10 +262,10 @@ export default function NotasConsumidor() {
           <dl className="nc-numeros">
             <div><dt>{info.nome}</dt><dd>{brl(atual.valor)}</dd><small>{num(atual.vendas)} venda{atual.vendas === 1 ? "" : "s"} no mês</small></div>
             {grupo === "sem_nota" && (() => {
-              const as = assinadas.filter((x) => !unidade || x.unidade_id === unidade);
+              const as = assinadas.filter((x) => (!unidade || x.unidade_id === unidade) && hoteis.includes(x.unidade_id));
               const lig = as.filter((x) => x.quarto);
               return as.length > 0 && (
-                <div><dt>Assinadas com quarto e hóspede</dt><dd>{num(lig.length)} de {num(as.length)}</dd>
+                <div><dt>Assinadas do hotel com quarto</dt><dd>{num(lig.length)} de {num(as.length)}</dd>
                   <small>{brl(lig.reduce((s, x) => s + Number(x.valor), 0))} ligadas à conta do quarto no PMS · {brl(as.filter((x) => !x.quarto).reduce((s, x) => s + Number(x.valor), 0))} ainda sem quarto</small></div>
               );
             })()}
@@ -304,7 +310,10 @@ export default function NotasConsumidor() {
                               </>
                             ) : (
                               <>
-                                <strong>{n.chave ? `NFC-e nº ${n.numero ?? "—"}` : `Cupom ${n.cupom ?? "—"}`}{ehAssinada(n) && <em className="nc-sem-quarto"> · quarto ainda não achado no PMS</em>}</strong>
+                                <strong>{n.chave ? `NFC-e nº ${n.numero ?? "—"}` : `Cupom ${n.cupom ?? "—"}`}
+                                  {ehAssinada(n) && (hoteis.includes(n.unidade_id)
+                                    ? <em className="nc-sem-quarto"> · quarto ainda não achado no PMS</em>
+                                    : n.cliente_nome ? <em className="nc-sem-quarto"> · cliente: {n.cliente_nome}</em> : null)}</strong>
                                 <small>{nomeUnidade[n.unidade_id] ?? n.unidade_id}{n.chave ? ` · série ${n.serie ?? "—"} · cupom ${n.cupom ?? "—"}` : ""} · caixa {n.caixa ?? "—"}{n.operador ? ` · fechou: ${n.operador}` : ""}</small>
                               </>
                             )}
@@ -314,7 +323,7 @@ export default function NotasConsumidor() {
                           <span className="nc-valor">{brl(n.valor)}</span>
                           <span className="ip-seta" aria-hidden="true" />
                         </button>
-                        {esta && <NfceAberta linha={n} casa={nomeUnidade[n.unidade_id]} onFechar={() => setAberta(null)} />}
+                        {esta && <NfceAberta linha={n} casa={nomeUnidade[n.unidade_id]} hotel={hoteis.includes(n.unidade_id)} onFechar={() => setAberta(null)} />}
                       </li>
                     );
                   })}
@@ -335,7 +344,7 @@ export default function NotasConsumidor() {
   );
 }
 
-function NfceAberta({ linha, casa, onFechar }: { linha: Linha; casa?: string; onFechar: () => void }) {
+function NfceAberta({ linha, casa, hotel, onFechar }: { linha: Linha; casa?: string; hotel?: boolean; onFechar: () => void }) {
   const supabase = useMemo(() => createClient(), []);
   const [n, setN] = useState<Completa | null>(null);
   const [verPdf, setVerPdf] = useState(false);
@@ -384,7 +393,9 @@ function NfceAberta({ linha, casa, onFechar }: { linha: Linha; casa?: string; on
           <>
             {linha.situacao === "pendente" && <p className="es-aviso">Esta venda deveria ter NFC-e, mas a TOTVS não mostra a autorização da SEFAZ (sem chave ou sem protocolo). Confira no caixa se a nota foi transmitida.</p>}
             {linha.situacao === "sem_nota" && !linha.quarto && (
-              <p className="es-aviso">{ehAssinada(linha)
+              <p className="es-aviso">{ehAssinada(linha) && !hotel
+                ? `Assinada sem nota fiscal${linha.cliente_nome ? `, no cliente "${linha.cliente_nome}" da TOTVS` : ""}. Esta casa não é hotel: não há conta de quarto para ligar.`
+                : ehAssinada(linha)
                 ? "Assinada sem nota fiscal. O Brasico ainda não achou na conta de nenhum quarto do PMS um lançamento \"RESTAURANTE\" com este valor (ele entra no dia seguinte; conta dividida ou lançada com outro valor não casa)."
                 : "Esta venda não emitiu nota fiscal no caixa."}</p>
             )}
@@ -395,6 +406,7 @@ function NfceAberta({ linha, casa, onFechar }: { linha: Linha; casa?: string; on
                   {linha.quarto && <div><dt>Assinou (conta do quarto)</dt><dd><strong>{linha.hospede ?? "—"}</strong><br /><small className="muted">quarto {linha.quarto}{linha.conta_tipo === "Company" ? " · conta da empresa" : ""}</small></dd></div>}
                   {linha.reserva && <div><dt>Reserva no PMS</dt><dd>{linha.reserva}<br /><small className="muted">lançada como RESTAURANTE em {dia(linha.pms_dia ? `${linha.pms_dia}T12:00:00-03:00` : null)}</small></dd></div>}
                   <div><dt>Fechou no caixa</dt><dd>{linha.operador ?? "—"}<br /><small className="muted">caixa {linha.caixa ?? "—"} · cupom {linha.cupom ?? "—"}</small></dd></div>
+                  {!linha.quarto && linha.cliente_nome && <div><dt>Cliente na TOTVS</dt><dd>{linha.cliente_nome}</dd></div>}
                   <div><dt>Garçons</dt><dd>{(linha.atendentes ?? []).length ? (linha.atendentes ?? []).join(", ") : "—"}</dd></div>
                 </dl>
               </section>
