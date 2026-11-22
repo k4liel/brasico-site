@@ -104,6 +104,8 @@ export default function NotasConsumidor() {
   const [formas, setFormas] = useState<Forma[]>([]);
   const [aberta, setAberta] = useState<string | null>(null);
   const [versao, setVersao] = useState(0);
+  // Sempre Vivo: o restaurante vende pelo PDV do PMS, que não emite NFC-e (relatórios de notas do PMS vazios, 22/11/2026)
+  const [pdvSv, setPdvSv] = useState<{ total: number; itens: number; dias: number } | null>(null);
 
   useEffect(() => { setMes((v) => v || meses[0]?.mes || ""); }, [meses]);
   useEffect(() => { setPagina(0); setAberta(null); }, [mes, unidade, grupo, termo]);
@@ -127,6 +129,11 @@ export default function NotasConsumidor() {
       supabase.from("nfce_dia_resumo").select("*").gte("dia", `${mes}-01`).lt("dia", fimMes),
       supabase.from("nfce_formas").select("*").eq("mes", mes),
     ]).then(([d, f]) => { setDias((d.data ?? []) as DiaResumo[]); setFormas((f.data ?? []) as Forma[]); });
+    const ultimo = new Date(new Date(`${fimMes}T12:00:00`).getTime() - 86400000).toISOString().slice(0, 10);
+    supabase.rpc("vendas_hoteis_pdv_dia", { p_de: `${mes}-01`, p_ate: ultimo }).then(({ data }) => {
+      const sv = ((data ?? []) as { hotel_id: string; total: number; itens: number }[]).filter((x) => x.hotel_id === "sempre-vivo");
+      setPdvSv(sv.length ? { total: sv.reduce((s, x) => s + Number(x.total), 0), itens: sv.reduce((s, x) => s + Number(x.itens), 0), dias: sv.length } : null);
+    });
   }, [supabase, mes, fimMes, versao]);
 
   useEffect(() => {
@@ -195,6 +202,17 @@ export default function NotasConsumidor() {
           ))}
         </div>
       </div>
+
+      {!unidade && pdvSv && pdvSv.total > 0 && (
+        <div className="nc-aviso">
+          <span className="nc-aviso-marca" aria-hidden="true">!</span>
+          <p>
+            <strong>Sempre Vivo · restaurante pelo PDV do PMS: {brl(pdvSv.total)} neste mês ({num(pdvSv.itens)} itens), sem NFC-e.</strong>{" "}
+            O Sempre Vivo não usa o caixa TOTVS, e os relatórios de notas do PMS vêm vazios: o PDV de lá não emite nota fiscal de consumidor.
+            Por isso essas vendas não aparecem nos grupos abaixo. Vale levar ao contador.
+          </p>
+        </div>
+      )}
 
       <div className="nc-grupos" role="tablist" aria-label="Situação das vendas">
         {GRUPOS.map((g) => {

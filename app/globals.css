@@ -5436,3 +5436,9 @@ body:has(.mp) { background: #f6f2ea; }
   .nc-linha .ip-seta { grid-area: s; }
   .nc-barra input { width: 100%; }
 }
+/* Aviso do Sempre Vivo (PDV do PMS sem NFC-e) */
+.nc-aviso { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border-radius: 14px; border: 1px solid var(--danger); background: var(--panel); }
+.nc-aviso p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.nc-aviso strong { color: var(--strong); }
+.nc-aviso-marca { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: #fff;
+  font-size: 13px; font-weight: 700; margin-top: 1px; }
