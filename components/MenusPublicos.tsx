@@ -298,7 +298,6 @@ export default function MenusPublicos({ slug, nome, menus }: { slug: string; nom
               <button type="button" className="mp-capa" onClick={() => abrir(m)} aria-label={`Ver ${m.titulo}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={`${base}.jpg`} alt="" loading="lazy" />
-                <span className="mp-capa-ver"><Svg d={Icone.ver} /> Ver cardápio</span>
               </button>
               <div className="mp-info">
                 <h2>{m.titulo}</h2>

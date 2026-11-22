@@ -5259,11 +5259,6 @@ body:has(.mp) { background: #f6f2ea; }
 .mp-cartao:hover { transform: translateY(-3px); box-shadow: 0 14px 34px rgba(31,45,74,.12); }
 .mp-capa { all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; background: #efe9dd; border-bottom: 1px solid var(--mp-linha); }
 .mp-capa:focus-visible { outline: 2px solid var(--mp-gold); outline-offset: -2px; }
-.mp-capa-ver { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 6px); display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; background: rgba(31,45,74,.88); color: #fff; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity .18s ease, transform .18s ease; pointer-events: none; white-space: nowrap; }
-.mp-capa-ver svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
-.mp-cartao:hover .mp-capa-ver, .mp-capa:focus-visible .mp-capa-ver { opacity: 1; transform: translate(-50%, 0); }
-@media (hover: none) { .mp-capa-ver { opacity: 1; transform: translate(-50%, 0); } }
-.mp-capa img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; transition: transform .3s ease; }
 .mp-cartao:hover .mp-capa img { transform: scale(1.04); }
 .mp-info { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px 18px; flex: 1; }
 .mp-info h2 { margin: 0; color: var(--mp-navy); font-family: var(--font-serif), Georgia, serif; font-size: 21px; font-weight: 600; line-height: 1.2; }
