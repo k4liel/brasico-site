@@ -5442,3 +5442,4 @@ body:has(.mp) { background: #f6f2ea; }
 .nc-aviso strong { color: var(--strong); }
 .nc-aviso-marca { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: #fff;
   font-size: 13px; font-weight: 700; margin-top: 1px; }
+.nc-sem-quarto { font-style: normal; font-weight: 400; font-size: 12px; color: var(--gold); }

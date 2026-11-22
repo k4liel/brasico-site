@@ -23,7 +23,11 @@ type Linha = {
   unidade_id: string; chave_venda: string; dia: string; emissao: string | null; chave: string | null; emitente_cnpj: string | null;
   numero: number | null; serie: string | null; situacao: string; cupom: number | null; caixa: number | null; valor: number | null; protocolo: string | null;
   pagamentos?: { descricao: string; valor: number; recebido?: number }[];
+  // Quem fechou (caixa) e, nas assinadas de hotel, de quem é a conta (ligada ao lançamento no PMS; supabase/nfce_assinadas.sql)
+  operador?: string | null; atendentes?: string[]; cliente_nome?: string | null;
+  quarto?: string | null; reserva?: string | null; hospede?: string | null; conta_tipo?: string | null; pms_dia?: string | null;
 };
+const ehAssinada = (n: Linha) => n.situacao === "sem_nota" && (n.pagamentos ?? []).some((p) => /assinad/i.test(p.descricao));
 type Imp = { aliquota: number | null; base?: number | null; valor: number | null; cst?: string } | null;
 type ItemV = {
   n: number; codigo: number | null; nome: string; grupo: string | null; ncm: string | null; unidade: string | null; cfop: string | null;
@@ -106,6 +110,8 @@ export default function NotasConsumidor() {
   const [versao, setVersao] = useState(0);
   // Sempre Vivo: o restaurante vende pelo PDV do PMS, que não emite NFC-e (relatórios de notas do PMS vazios, 22/11/2026)
   const [pdvSv, setPdvSv] = useState<{ total: number; itens: number; dias: number } | null>(null);
+  // Assinadas do mês (para o resumo: quantas já têm quarto e hóspede)
+  const [assinadas, setAssinadas] = useState<{ unidade_id: string; valor: number; quarto: string | null; pagamentos: { descricao: string }[] }[]>([]);
 
   useEffect(() => { setMes((v) => v || meses[0]?.mes || ""); }, [meses]);
   useEffect(() => { setPagina(0); setAberta(null); }, [mes, unidade, grupo, termo]);
@@ -129,6 +135,8 @@ export default function NotasConsumidor() {
       supabase.from("nfce_dia_resumo").select("*").gte("dia", `${mes}-01`).lt("dia", fimMes),
       supabase.from("nfce_formas").select("*").eq("mes", mes),
     ]).then(([d, f]) => { setDias((d.data ?? []) as DiaResumo[]); setFormas((f.data ?? []) as Forma[]); });
+    supabase.from("nfce_notas").select("unidade_id,valor,quarto,pagamentos").eq("situacao", "sem_nota").gte("dia", `${mes}-01`).lt("dia", fimMes).limit(5000)
+      .then(({ data }) => setAssinadas(((data ?? []) as typeof assinadas).filter((x) => (x.pagamentos ?? []).some((p) => /assinad/i.test(p.descricao)))));
     const ultimo = new Date(new Date(`${fimMes}T12:00:00`).getTime() - 86400000).toISOString().slice(0, 10);
     supabase.rpc("vendas_hoteis_pdv_dia", { p_de: `${mes}-01`, p_ate: ultimo }).then(({ data }) => {
       const sv = ((data ?? []) as { hotel_id: string; total: number; itens: number }[]).filter((x) => x.hotel_id === "sempre-vivo");
@@ -141,13 +149,18 @@ export default function NotasConsumidor() {
       if (!mes) { setLinhas(pronto ? [] : null); return; }
       if (versao === 0) setLinhas(null);
       let q = supabase.from("nfce_notas")
-        .select("unidade_id,chave_venda,dia,emissao,chave,emitente_cnpj,numero,serie,situacao,cupom,caixa,valor,protocolo,pagamentos", { count: "exact" })
+        .select("unidade_id,chave_venda,dia,emissao,chave,emitente_cnpj,numero,serie,situacao,cupom,caixa,valor,protocolo,pagamentos,operador,atendentes,cliente_nome,quarto,reserva,hospede,conta_tipo,pms_dia", { count: "exact" })
         .gte("dia", `${mes}-01`).lt("dia", fimMes).eq("situacao", grupo);
       if (unidade) q = q.eq("unidade_id", unidade);
       const t = termo.replace(/\D/g, "");
       if (termo) {
         if (t.length === 44) q = q.eq("chave", t);
-        else if (t) q = q.or(`numero.eq.${t},cupom.eq.${t}`);
+        else if (t && t === termo.replace(/\s/g, "")) q = q.or(`numero.eq.${t},cupom.eq.${t},quarto.ilike.${t}%`);
+        else {
+          // Texto: hóspede, quarto, operador do caixa ou garçom
+          const s = termo.replace(/[%,()*]/g, " ").trim();
+          q = q.or(`hospede.ilike.*${s}*,quarto.ilike.${s}*,operador.ilike.*${s}*,reserva.ilike.*${s}*`);
+        }
       }
       const { data, count } = await q.order("emissao", { ascending: false, nullsFirst: false })
         .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
@@ -242,7 +255,15 @@ export default function NotasConsumidor() {
         ) : (
           <dl className="nc-numeros">
             <div><dt>{info.nome}</dt><dd>{brl(atual.valor)}</dd><small>{num(atual.vendas)} venda{atual.vendas === 1 ? "" : "s"} no mês</small></div>
-            {formasDoGrupo.slice(0, 3).map((f) => (
+            {grupo === "sem_nota" && (() => {
+              const as = assinadas.filter((x) => !unidade || x.unidade_id === unidade);
+              const lig = as.filter((x) => x.quarto);
+              return as.length > 0 && (
+                <div><dt>Assinadas com quarto e hóspede</dt><dd>{num(lig.length)} de {num(as.length)}</dd>
+                  <small>{brl(lig.reduce((s, x) => s + Number(x.valor), 0))} ligadas à conta do quarto no PMS · {brl(as.filter((x) => !x.quarto).reduce((s, x) => s + Number(x.valor), 0))} ainda sem quarto</small></div>
+              );
+            })()}
+            {formasDoGrupo.slice(0, grupo === "sem_nota" ? 2 : 3).map((f) => (
               <div key={f.forma}><dt>{f.forma}</dt><dd>{brl(f.valor)}</dd><small>{num(f.vendas)} venda{f.vendas === 1 ? "" : "s"}</small></div>
             ))}
           </dl>
@@ -251,7 +272,7 @@ export default function NotasConsumidor() {
 
       <div className="nc-barra">
         <h2>{info.nome} <span>· {nomeMes(mes || "2026-01")}</span></h2>
-        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nº da nota, cupom ou chave" aria-label="Buscar NFC-e" />
+        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder={grupo === "sem_nota" ? "Hóspede, quarto, cupom ou operador" : "Nº da nota, cupom, chave ou operador"} aria-label="Buscar NFC-e" />
       </div>
 
       {linhas === null ? <p className="muted">Carregando as vendas…</p> : !linhas.length ? (
@@ -276,8 +297,17 @@ export default function NotasConsumidor() {
                         <button className="nc-linha" onClick={() => setAberta(esta ? null : k)} aria-expanded={esta}>
                           <span className={`nc-marca nc-m-${SITUACAO[n.situacao]?.marca ?? "neutro"}`} aria-hidden="true" />
                           <span className="nc-titulo">
-                            <strong>{n.chave ? `NFC-e nº ${n.numero ?? "—"}` : `Cupom ${n.cupom ?? "—"}`}</strong>
-                            <small>{nomeUnidade[n.unidade_id] ?? n.unidade_id}{n.chave ? ` · série ${n.serie ?? "—"} · cupom ${n.cupom ?? "—"}` : ""} · caixa {n.caixa ?? "—"}</small>
+                            {n.quarto ? (
+                              <>
+                                <strong>Quarto {n.quarto} · {n.hospede ?? (n.conta_tipo === "Company" ? "conta da empresa" : "hóspede")}</strong>
+                                <small>{nomeUnidade[n.unidade_id] ?? n.unidade_id} · cupom {n.cupom ?? "—"}{n.operador ? ` · fechou: ${n.operador}` : ""}</small>
+                              </>
+                            ) : (
+                              <>
+                                <strong>{n.chave ? `NFC-e nº ${n.numero ?? "—"}` : `Cupom ${n.cupom ?? "—"}`}{ehAssinada(n) && <em className="nc-sem-quarto"> · quarto ainda não achado no PMS</em>}</strong>
+                                <small>{nomeUnidade[n.unidade_id] ?? n.unidade_id}{n.chave ? ` · série ${n.serie ?? "—"} · cupom ${n.cupom ?? "—"}` : ""} · caixa {n.caixa ?? "—"}{n.operador ? ` · fechou: ${n.operador}` : ""}</small>
+                              </>
+                            )}
                           </span>
                           <span className="nc-hora">{n.emissao ? hora(n.emissao) : "—"}</span>
                           <span className="nc-forma" title={forma}>{forma || "—"}</span>
@@ -353,7 +383,22 @@ function NfceAberta({ linha, casa, onFechar }: { linha: Linha; casa?: string; on
         {!n ? <p className="muted">Carregando a nota…</p> : (
           <>
             {linha.situacao === "pendente" && <p className="es-aviso">Esta venda deveria ter NFC-e, mas a TOTVS não mostra a autorização da SEFAZ (sem chave ou sem protocolo). Confira no caixa se a nota foi transmitida.</p>}
-            {linha.situacao === "sem_nota" && <p className="es-aviso">Esta venda não emitiu nota fiscal no caixa (ex.: assinada que vai para a conta do quarto e é faturada pelo hotel).</p>}
+            {linha.situacao === "sem_nota" && !linha.quarto && (
+              <p className="es-aviso">{ehAssinada(linha)
+                ? "Assinada sem nota fiscal. O Brasico ainda não achou na conta de nenhum quarto do PMS um lançamento \"RESTAURANTE\" com este valor (ele entra no dia seguinte; conta dividida ou lançada com outro valor não casa)."
+                : "Esta venda não emitiu nota fiscal no caixa."}</p>
+            )}
+            {(linha.quarto || linha.operador || (linha.atendentes ?? []).length > 0) && (
+              <section className="nf-bloco">
+                <h3>Quem fechou{linha.quarto ? " e quem assinou" : ""}</h3>
+                <dl className="nf-dados">
+                  {linha.quarto && <div><dt>Assinou (conta do quarto)</dt><dd><strong>{linha.hospede ?? "—"}</strong><br /><small className="muted">quarto {linha.quarto}{linha.conta_tipo === "Company" ? " · conta da empresa" : ""}</small></dd></div>}
+                  {linha.reserva && <div><dt>Reserva no PMS</dt><dd>{linha.reserva}<br /><small className="muted">lançada como RESTAURANTE em {dia(linha.pms_dia ? `${linha.pms_dia}T12:00:00-03:00` : null)}</small></dd></div>}
+                  <div><dt>Fechou no caixa</dt><dd>{linha.operador ?? "—"}<br /><small className="muted">caixa {linha.caixa ?? "—"} · cupom {linha.cupom ?? "—"}</small></dd></div>
+                  <div><dt>Garçons</dt><dd>{(linha.atendentes ?? []).length ? (linha.atendentes ?? []).join(", ") : "—"}</dd></div>
+                </dl>
+              </section>
+            )}
             {n.cancelamento && (
               <p className="es-aviso">Cancelada{n.cancelamento.quando ? ` em ${dia(n.cancelamento.quando)} ${hora(n.cancelamento.quando)}` : ""}{n.cancelamento.operador ? ` por ${n.cancelamento.operador}` : ""}{n.cancelamento.motivo ? ` · motivo: ${n.cancelamento.motivo}` : ""}{n.cancelamento.protocolo ? ` · protocolo ${n.cancelamento.protocolo}` : ""}.</p>
             )}

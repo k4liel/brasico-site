@@ -399,6 +399,11 @@ function notasFiscais(vendasResp: J) {
         valor: r2(pg.ValorEfetivo != null ? n(pg.ValorEfetivo) : n(pg.ValorRecebido)), recebido: r2(n(pg.ValorRecebido)),
       })),
       cancelamento: canc && d ? { quando: comFuso(d.Data), motivo: nulo(d.Motivo), protocolo: nulo(d.ProtocoloCancelamentoSefaz), operador: nulo(d.Operador?.Nome) } : null,
+      // Quem fechou a conta no caixa, os garçons e o cliente da TOTVS (só código e nome: sem documento nem contato)
+      operador: nulo(v.Caixa?.Operador?.Nome),
+      atendentes: [...new Set((Array.isArray(v.Itens) ? v.Itens : []).map((it: J) => txt(it.AtendenteVenda || it.NomeAgenteVenda)).filter(Boolean))],
+      cliente_codigo: v.Cliente?.Codigo ?? null,
+      cliente_nome: nulo(v.Cliente?.Nome),
     };
   });
   const inutilizadas = (Array.isArray(vendasResp?.NotasInutilizadas) ? vendasResp.NotasInutilizadas : []).map((x: J) => ({
