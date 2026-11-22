@@ -5,10 +5,14 @@ import { createClient } from "@/lib/supabase/client";
 import Topo from "./Topo";
 import { TopoSimples } from "./Compras";
 import NotasServico, { LeituraNfse } from "./NotasServico";
+import NotasConsumidor, { LeituraNfce } from "./NotasConsumidor";
+import NotasFrete, { LeituraCte } from "./NotasFrete";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
 // Abas: NF-e (produtos: por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
-// Ambiente Nacional, com o PDF), Índice de preços, Nota avulsa e Leituras (SEFAZ e Portal Nacional da NFS-e).
+// Ambiente Nacional, com o PDF), NFC-e (vendas dos restaurantes, do caixa TOTVS; components/NotasConsumidor.tsx),
+// CT-e (fretes, do Ambiente Nacional do CT-e; components/NotasFrete.tsx), Nota avulsa e Leituras (SEFAZ, Portal
+// Nacional da NFS-e, caixa TOTVS e CT-e).
 // O PDF (DANFE) é montado do XML oficial em /api/notas/danfe/<chave>. Tabelas e funções em supabase/notas*.sql.
 type Empresa = {
   cnpj: string; nome: string; ativa: boolean; ciencia: boolean; ult_nsu: string; max_nsu: string | null;
@@ -49,7 +53,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   const [compras, setCompras] = useState(false); // setor de compras: só NF-e, índice e nota avulsa
   const [nome, setNome] = useState("");
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [aba, setAba] = useState<"notas" | "nfse" | "avulsa" | "sefaz">("notas");
+  const [aba, setAba] = useState<"notas" | "nfse" | "nfce" | "cte" | "avulsa" | "sefaz">("notas");
 
   const carregarEmpresas = useCallback(async () => {
     const { data } = await supabase.from("notas_empresas").select("*").order("nome");
@@ -89,21 +93,25 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
             <span className="es-sobre">Fiscal e Contábil</span>
             <h1>Notas fiscais</h1>
             <p>{compras ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."
-              : "NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."}</p>
+              : "NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. NFC-e são as notas das vendas dos restaurantes, do caixa TOTVS. CT-e são os fretes, da SEFAZ. Nota avulsa é a compra sem nota, lançada com foto. Tudo se atualiza sozinho. Clique numa nota para ver os detalhes."}</p>
           </div>
         </div>
 
         <div className="cp-abas" role="tablist">
           <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>NF-e (produtos)</button>
           {!compras && <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>}
+          {!compras && <button role="tab" aria-selected={aba === "nfce"} className={aba === "nfce" ? "on" : ""} onClick={() => setAba("nfce")}>NFC-e (vendas)</button>}
+          {!compras && <button role="tab" aria-selected={aba === "cte"} className={aba === "cte" ? "on" : ""} onClick={() => setAba("cte")}>CT-e (fretes)</button>}
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
           {!compras && <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>}
         </div>
 
         {aba === "notas" && <ListaNotas empresas={empresas} />}
         {aba === "nfse" && !compras && <NotasServico />}
+        {aba === "nfce" && !compras && <NotasConsumidor />}
+        {aba === "cte" && !compras && <NotasFrete />}
         {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
-        {aba === "sefaz" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /></>}
+        {aba === "sefaz" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /><LeituraCte /><LeituraNfce /></>}
       </main>
     </div>
   );

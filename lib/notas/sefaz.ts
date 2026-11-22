@@ -17,6 +17,13 @@ const SERVICOS = {
     ns: "http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4",
     acao: "nfeRecepcaoEvento",
   },
+  // CT-e (NT 2015.002): os conhecimentos de transporte de interesse do CNPJ, no Ambiente Nacional do CT-e
+  cte: {
+    host: "www1.cte.fazenda.gov.br",
+    caminho: "/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx",
+    ns: "http://www.portalfiscal.inf.br/cte/wsdl/CTeDistribuicaoDFe",
+    acao: "cteDistDFeInteresse",
+  },
 } as const;
 
 export type Servico = keyof typeof SERVICOS;
@@ -31,7 +38,9 @@ export function chamar(servico: Servico, mensagem: string, cadeiaPem: string, ch
   // A distribuição embrulha nfeDadosMsg na operação; os serviços versão 4 recebem nfeDadosMsg direto
   const corpoSoap = servico === "distribuicao"
     ? `<${s.acao} xmlns="${s.ns}"><nfeDadosMsg>${mensagem}</nfeDadosMsg></${s.acao}>`
-    : `<nfeDadosMsg xmlns="${s.ns}">${mensagem}</nfeDadosMsg>`;
+    : servico === "cte"
+      ? `<${s.acao} xmlns="${s.ns}"><cteDadosMsg>${mensagem}</cteDadosMsg></${s.acao}>`
+      : `<nfeDadosMsg xmlns="${s.ns}">${mensagem}</nfeDadosMsg>`;
   const envelope = `<?xml version="1.0" encoding="utf-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"><soap12:Body>${corpoSoap}</soap12:Body></soap12:Envelope>`;
   const corpo = Buffer.from(envelope, "utf8");
 
