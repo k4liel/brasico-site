@@ -5495,3 +5495,4 @@ body:has(.mp) { background: #f6f2ea; }
   .cf-sev { justify-self: start; }
   .cf-regra-imp { text-align: left; }
 }
+.cf-so { white-space: nowrap; }

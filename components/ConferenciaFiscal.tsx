@@ -66,6 +66,10 @@ export default function ConferenciaFiscal({ mes, fimMes, unidade, nomeUnidade }:
   const pago = r.achados.filter((a) => a.sentido === "pago").reduce((s, a) => s + Number(a.impacto ?? 0), 0);
   const aMenos = r.achados.filter((a) => a.sentido === "a_menos").reduce((s, a) => s + Number(a.impacto ?? 0), 0);
   const aDefinir = r.regras.filter((x) => !x.valor).length;
+  // Produtos distintos (o mesmo produto pode cair em mais de uma regra)
+  const chave = (a: Achado) => `${a.unidade_id}|${a.cod ?? a.nome}`;
+  const prodErro = new Set(erros.map(chave));
+  const prodAtencao = new Set(r.achados.filter((a) => a.sev === "atencao" && !prodErro.has(chave(a))).map(chave));
 
   function planilha() {
     const linhas = [["Regra", "Severidade", "Casa", "Código", "Produto", "Campo", "Como está", "Esperado", "Itens", "Notas", "Vendido", "Impacto", "Sentido", "Nota exemplo"]];
@@ -84,10 +88,10 @@ export default function ConferenciaFiscal({ mes, fimMes, unidade, nomeUnidade }:
   return (
     <div className="cf">
       <dl className="nc-numeros">
-        <div><dt>Erros</dt><dd className={erros.length ? "cf-ruim" : ""}>{num(erros.length)}</dd><small>produtos com classificação errada</small></div>
-        <div><dt>Pontos de atenção</dt><dd>{num(r.achados.length - erros.length)}</dd><small>a conferir com a contabilidade</small></div>
-        <div><dt>Imposto pago a mais (estimado)</dt><dd>{brl(pago)}</dd><small>no mês, nos itens com problema</small></div>
-        <div><dt>Possível imposto a menos</dt><dd className={aMenos > 0 ? "cf-ruim" : ""}>{brl(aMenos)}</dd><small>risco se a alíquota maior for a certa</small></div>
+        <div><dt>Produtos com erro</dt><dd className={prodErro.size ? "cf-ruim" : ""}>{num(prodErro.size)}</dd><small>{num(erros.length)} achados de erro</small></div>
+        <div><dt>Só com atenção</dt><dd>{num(prodAtencao.size)}</dd><small>produtos a conferir com a contabilidade</small></div>
+        <div><dt>Pago a mais (estimado)</dt><dd>{brl(pago)}</dd><small>no mês, nos itens com problema</small></div>
+        <div><dt>Possível a menos</dt><dd className={aMenos > 0 ? "cf-ruim" : ""}>{brl(aMenos)}</dd><small>risco se a alíquota maior for a certa</small></div>
       </dl>
       <p className="nc-explica cf-escopo">
         Conferidos {num(r.itens)} itens de {num(r.produtos)} produtos das NFC-e autorizadas de {new Date(`${r.de}T12:00:00`).toLocaleDateString("pt-BR")} a{" "}
