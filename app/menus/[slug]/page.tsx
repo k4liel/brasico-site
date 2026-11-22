@@ -1,0 +1,86 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+// Página pública dos cardápios de uma casa (22/11/2026, pedido do dono: "uma página que fique aberta para
+// qualquer um que tiver o link baixar ... sempre atualizado", para o grupo da casa e o marketing).
+// Sem login; mostra só os PDFs ativos (cardapios_publicos). O link e cada PDF têm endereço fixo.
+
+export const dynamic = "force-dynamic";
+
+type Menu = { codigo: string; titulo: string; descricao: string; formato: string; paginas: number | null; atualizado_em: string };
+type Dados = { nome: string; menus: Menu[] };
+
+async function ler(slug: string): Promise<Dados | null> {
+  if (!/^[a-z0-9][a-z0-9-]{11,79}$/.test(slug)) return null;
+  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data } = await supabase.rpc("cardapios_publicos", { p_slug: slug });
+  return (data as Dados | null) ?? null;
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const d = await ler(slug);
+  return {
+    title: d ? `Cardápios · ${d.nome}` : "Cardápios",
+    description: d ? `Baixe os cardápios do ${d.nome} em PDF, sempre na versão atual.` : undefined,
+    robots: { index: false, follow: false },
+    referrer: "no-referrer",
+  };
+}
+
+const data = (s: string) => new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Fortaleza" });
+
+export default async function MenusPublicos({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const d = await ler(slug);
+  if (!d) notFound();
+  const recente = d.menus.reduce((m, x) => (x.atualizado_em > m ? x.atualizado_em : m), "");
+  const cicchetti = /cicchetti/i.test(d.nome);
+
+  return (
+    <div className="mp">
+      <header className="mp-cab">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {cicchetti && <img className="mp-logo" src="/marcas/cicchetti.png" alt="Cicchetti" width={147} height={130} />}
+        <span className="mp-olho">{d.nome}</span>
+        <h1>Cardápios</h1>
+        <p>Baixe o PDF de cada cardápio. Este endereço é sempre o mesmo: quando um cardápio muda, o arquivo daqui já é o novo.</p>
+        {recente && <span className="mp-atual">Atualizado em {data(recente)}</span>}
+      </header>
+
+      <main className="mp-grade">
+        {d.menus.map((m) => {
+          const base = `/api/menus/${slug}/${m.codigo}`;
+          return (
+            <article key={m.codigo} className="mp-cartao">
+              <a className="mp-capa" href={`${base}.pdf`} target="_blank" rel="noreferrer" aria-label={`Ver ${m.titulo}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`${base}.jpg`} alt="" loading="lazy" />
+              </a>
+              <div className="mp-info">
+                <h2>{m.titulo}</h2>
+                {m.descricao && <p>{m.descricao}</p>}
+                <span className="mp-meta">
+                  {[m.formato, m.paginas ? `${m.paginas} ${m.paginas > 1 ? "páginas" : "página"}` : "", `versão de ${data(m.atualizado_em)}`].filter(Boolean).join(" · ")}
+                </span>
+                <div className="mp-acoes">
+                  <a className="mp-botao forte" href={`${base}.pdf?baixar`}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" /></svg>
+                    Baixar PDF
+                  </a>
+                  <a className="mp-botao" href={`${base}.pdf`} target="_blank" rel="noreferrer">Ver</a>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+        {d.menus.length === 0 && <p className="mp-vazio">Nenhum cardápio disponível agora.</p>}
+      </main>
+
+      <footer className="mp-rodape">{d.nome}</footer>
+    </div>
+  );
+}

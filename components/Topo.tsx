@@ -3,18 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
+import { RESTAURANTES } from "@/lib/restaurantes";
 
 const OPERACAO = ["compras", "precos", "fichas", "estoque", "producao"];
 // Fiscal e Contábil: a página Fiscal (/receita) e as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
 const FISCAL = ["receita", "notas"];
 const RH = ["esocial", "escala"];
-// Hotéis: uma página por hotel (/hoteis/<id>, tabela hoteis)
+// Hotéis e restaurantes (22/11/2026, pedido do dono): uma página por hotel (/hoteis/<id>, tabela hoteis)
+// e uma por restaurante (/restaurantes/<id>, lib/restaurantes.ts; por enquanto só os Cardápios)
+const RESTAURANTES_MENU = RESTAURANTES.map((r) => ({ ...r, icone: <><path d="M7 3v8a2 2 0 0 0 2 2v8M7 3v5M11 3v5M9 3v5" /><path d="M17 21V3c-2 1.5-3 4-3 7s1 4 3 4" /></> }));
 const HOTEIS = [
   { id: "filha-da-lua", nome: "Filha da Lua", icone: <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" /> },
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
 ];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "precos" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "conectar" | "usuarios" | "notas" | "precos" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` | `rest:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -59,9 +62,9 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
   const [opAberta, setOpAberta] = useState(OPERACAO.includes(ativo ?? ""));
   const [fiscalAberta, setFiscalAberta] = useState(FISCAL.includes(ativo ?? ""));
   const [rhAberta, setRhAberta] = useState(RH.includes(ativo ?? ""));
-  const [hotAberta, setHotAberta] = useState(/^(op)?hotel:/.test(ativo ?? ""));
+  const [hotAberta, setHotAberta] = useState(/^((op)?hotel|rest):/.test(ativo ?? ""));
   // cada hotel abre e fecha (Gestão e Operação dentro); começa aberto o da página atual
-  const hotelAtual = (ativo ?? "").replace(/^(op)?hotel:/, "").split("/")[0];
+  const hotelAtual = (ativo ?? "").replace(/^((op)?hotel|rest):/, "").split("/")[0];
   const [hotelAberto, setHotelAberto] = useState<Record<string, boolean>>({ [hotelAtual]: true });
   const primeiro = useRef<HTMLAnchorElement | null>(null);
   useEffect(() => {
@@ -133,9 +136,10 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             </div></div>
           </>)}
 
-          {/* Hotéis → cada hotel → Gestão (dados do PMS, /hoteis/<id>) e Operação (área de criação, /hoteis/<id>/operacao) */}
+          {/* Hotéis e restaurantes → cada hotel → Gestão (dados do PMS, /hoteis/<id>) e Operação (área de criação, /hoteis/<id>/operacao);
+              cada restaurante → Cardápios (/restaurantes/<id>/cardapios) */}
           {HOTEIS.some((h) => ve("hoteis") || ve(opArea(h.id))) && (<>
-            <Pasta id="menu-hoteis" on={/^(op)?hotel:/.test(ativo ?? "")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis</Pasta>
+            <Pasta id="menu-hoteis" on={/^((op)?hotel|rest):/.test(ativo ?? "")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis e restaurantes</Pasta>
             <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}><div>
               {HOTEIS.filter((h) => ve("hoteis") || ve(opArea(h.id))).map((h) => {
                 const vis = aberto && hotAberta;
@@ -154,6 +158,18 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
                           ))}
                         </div>
                       )}
+                    </div></div>
+                  </div>
+                );
+              })}
+              {ve("hoteis") && RESTAURANTES_MENU.map((r) => {
+                const vis = aberto && hotAberta;
+                const ab = !!hotelAberto[r.id];
+                return (
+                  <div key={r.id} className="menu-hotel">
+                    <Pasta id={`menu-rest-${r.id}`} on={hotelAtual === r.id} aberta={ab} alternar={() => setHotelAberto((o) => ({ ...o, [r.id]: !o[r.id] }))} vis={vis} icone={r.icone}>{r.nome}</Pasta>
+                    <div id={`menu-rest-${r.id}`} className={ab ? "menu-sub aberto" : "menu-sub"}><div>
+                      <Item href={`/restaurantes/${r.id}/cardapios`} on={ativo === `rest:${r.id}/cardapios`} vis={vis && ab} icone={I.cardapios}>Cardápios</Item>
                     </div></div>
                   </div>
                 );
@@ -224,6 +240,7 @@ const I = {
   escala: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4M7 13h4M7 17h4M14 13h3M14 17h3" /></>,
   receita: <path d="M3 10h18M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 21h18M12 3l9 5H3Z" />,
   hoteis: <><path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-6h6v6M3 21h18" /></>,
+  cardapios: <><path d="M6 3h10a2 2 0 0 1 2 2v16l-3-2-3 2-3-2-3 2V5a2 2 0 0 1 2-2Z" /><path d="M9 8h6M9 12h6M9 16h3" /></>,
   tela: <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M4 9h16" /></>,
   precos: <path d="M3 17l5-5 4 4 8-8M15 8h5v5" />,
   gestao: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,

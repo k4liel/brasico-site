@@ -6,14 +6,13 @@ import { createClient } from "@/lib/supabase/client";
 // Menus vivos (18/11/2026, pedido do dono: "deixe esses menus editáveis na tela quando abro").
 // No bloco :::arquivos, a linha com "menu:<código>" abre aqui o menu da tabela cardapios_vivos
 // (supabase/cardapios_vivos.sql): o mesmo visual do impresso, num iframe sem scripts.
-// Editar = clicar no texto e digitar; Salvar grava uma versão nova (a anterior vai para o histórico);
-// Baixar PDF imprime pelo navegador no tamanho certo (e, se a folha pedir, várias cópias com marcas de corte).
+// Editar = clicar no texto e digitar; Salvar grava uma versão nova (a anterior vai para o histórico).
+// Sem "Baixar PDF" desde 22/11/2026 (pedido do dono: a tela é só para editar): os PDFs para imprimir
+// ficam em cardapios_impressos, na parte "Para imprimir" da página do restaurante e no link público.
 
 type Menu = { id: string; codigo: string; title: string; html: string; css: string; folha: Folha; versao: number; updated_at: string };
-type Folha = { largura?: number; altura?: number; grade?: [number, number]; marcas?: boolean };
+type Folha = { largura?: number; altura?: number; grade?: [number, number]; marcas?: boolean }; // impressão (fica no banco; o PDF sai pelo Claude)
 type Versao = { versao: number; html: string; css: string; gravado_em: string };
-
-const PT_PX = 4 / 3;
 
 // Visual da tela (fundo cinza, folhas com sombra); não vai para o que se grava nem para a impressão
 const CSS_TELA = `
@@ -38,66 +37,6 @@ function limpar(body: HTMLElement) {
     }
   });
   return c.innerHTML.trim();
-}
-
-// Tamanho da página em pt, lido do CSS já aplicado
-function tamanhoPagina(doc: Document) {
-  const p = doc.querySelector<HTMLElement>(".pagina");
-  if (!p) return { w: 595.28, h: 841.89 };
-  const r = p.getBoundingClientRect();
-  const z = parseFloat(p.style.zoom || "1") || 1;
-  return { w: r.width / z / PT_PX, h: r.height / z / PT_PX };
-}
-
-function documentoImpressao(menu: { css: string; html: string; folha: Folha }, tam: { w: number; h: number }) {
-  const tmp = new DOMParser().parseFromString(`<body>${menu.html}</body>`, "text/html");
-  const paginas = Array.from(tmp.querySelectorAll(".pagina")).map((p) => p.outerHTML);
-  const f = menu.folha ?? {};
-  if (f.grade && f.largura && f.altura) {
-    const [lin, col] = f.grade;
-    const W = f.largura, H = f.altura;
-    const ox = (W - col * tam.w) / 2, oy = (H - lin * tam.h) / 2;
-    const marcas: string[] = [];
-    if (f.marcas) {
-      const L = 10, g = 3;
-      for (let j = 0; j <= col; j++) {
-        const x = ox + j * tam.w;
-        marcas.push(`<i class="mc" style="left:${x - 0.2}pt;top:${oy - g - L}pt;width:.4pt;height:${L}pt"></i>`);
-        marcas.push(`<i class="mc" style="left:${x - 0.2}pt;top:${oy + lin * tam.h + g}pt;width:.4pt;height:${L}pt"></i>`);
-      }
-      for (let i = 0; i <= lin; i++) {
-        const y = oy + i * tam.h;
-        marcas.push(`<i class="mc" style="top:${y - 0.2}pt;left:${ox - g - L}pt;height:.4pt;width:${L}pt"></i>`);
-        marcas.push(`<i class="mc" style="top:${y - 0.2}pt;left:${ox + col * tam.w + g}pt;height:.4pt;width:${L}pt"></i>`);
-      }
-    }
-    const folhas = paginas.map((p) => {
-      const copias: string[] = [];
-      for (let i = 0; i < lin; i++)
-        for (let j = 0; j < col; j++)
-          copias.push(`<div class="cp" style="left:${ox + j * tam.w}pt;top:${oy + i * tam.h}pt">${p}</div>`);
-      return `<div class="folha-imp">${copias.join("")}${marcas.join("")}</div>`;
-    });
-    const css = `@page { size: ${W}pt ${H}pt; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; width: auto !important; height: auto !important; background: #fff !important; }
-      .folha-imp { position: relative; width: ${W}pt; height: ${H}pt; overflow: hidden; page-break-after: always; break-after: page; }
-      .folha-imp:last-child { page-break-after: auto; break-after: auto; }
-      .cp { position: absolute; } .mc { position: absolute; background: #8c8c8c; display: block; }
-      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }`;
-    return documento(menu.css, folhas.join(""), css);
-  }
-  const css = `@page { size: ${tam.w}pt ${tam.h}pt; margin: 0; } html, body { margin: 0 !important; padding: 0 !important; width: auto !important; height: auto !important; background: #fff !important; }
-    .pagina { page-break-after: always; break-after: page; } .pagina:last-child { page-break-after: auto; break-after: auto; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }`;
-  return documento(menu.css, paginas.join(""), css);
-}
-
-async function esperarPronto(doc: Document) {
-  try {
-    await doc.fonts.ready;
-  } catch {}
-  await Promise.all(
-    Array.from(doc.images).map((im) => (im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; })))
-  );
 }
 
 export default function VisorMenu({ projectId }: { projectId: string }) {
@@ -301,27 +240,6 @@ export default function VisorMenu({ projectId }: { projectId: string }) {
     setVersoes((data ?? []) as Versao[]);
   }
 
-  async function baixarPdf() {
-    const d = quadro.current?.contentDocument;
-    if (!mostrado || !d) return;
-    const tam = tamanhoPagina(d);
-    const html = editando && d.body ? limpar(d.body) : mostrado.html;
-    const f = document.createElement("iframe");
-    f.setAttribute("sandbox", "allow-same-origin allow-modals");
-    f.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none";
-    f.srcdoc = documentoImpressao({ css: mostrado.css, html, folha: (menu?.folha ?? {}) as Folha }, tam);
-    f.onload = async () => {
-      const doc = f.contentDocument;
-      if (doc) await esperarPronto(doc);
-      const antes = document.title;
-      document.title = (aberto?.titulo || "Menu").replace(/[\\/:*?"<>|]/g, "-");
-      f.contentWindow?.print();
-      document.title = antes;
-      setTimeout(() => f.remove(), 60000);
-    };
-    document.body.appendChild(f);
-  }
-
   if (!aberto) return null;
   const quando = (s: string) => new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
@@ -343,7 +261,6 @@ export default function VisorMenu({ projectId }: { projectId: string }) {
             <button className="visor-botao vm-editar" onClick={() => { setEditando(true); setAviso(null); }}>Editar</button>
           ))}
           {menu && <button className="visor-botao" onClick={abrirVersoes} disabled={editando}>{versoes ? "Fechar versões" : "Versões"}</button>}
-          {menu && <button className="visor-botao" onClick={baixarPdf}>Baixar PDF</button>}
           <button className="visor-fechar" onClick={fechar} aria-label="Fechar">×</button>
         </div>
         {editando && <div className="vm-faixa">Clique no texto do menu e digite. Ctrl+Z desfaz. Quando terminar, clique em <b>Salvar</b>.</div>}

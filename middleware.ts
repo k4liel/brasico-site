@@ -13,7 +13,7 @@ const PAGINAS_DA_AREA: Record<string, string[]> = {
   integracoes: ["/integracoes"],
   usuarios: ["/usuarios"],
   conectar: ["/usuarios", "/conectar"], // o Claude de cada um fica na página Usuários
-  hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua"],
+  hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua", "/restaurantes"],
   operacao: ["/notas", "/compras", "/precos", "/fichas", "/estoque", "/producao"],
   // Operação de cada hotel: a área de criação (supabase/operacao_hoteis.sql)
   op_filha_da_lua: ["/hoteis/filha-da-lua/operacao"],
@@ -59,6 +59,8 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   // /p/<código>: link público de um projeto (só leitura, sem login)
   if (path.startsWith("/p/")) return response;
+  // /menus/<código>: cardápios em PDF para baixar, sem login (cardapios_links, supabase/cardapios_impressos.sql)
+  if (path.startsWith("/menus/")) return response;
   // /colaboradores: login próprio da equipe das casas (só usuário e senha)
   const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/colaboradores");
   const areaEquipe = path.startsWith("/compras") || path.startsWith("/estoque") || path.startsWith("/producao") || path.startsWith("/escala");
