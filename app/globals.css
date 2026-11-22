@@ -5328,3 +5328,97 @@ body:has(.mp) { background: #f6f2ea; }
   .mp-visor-acoes > .mp-botao.forte { order: 5; flex: 1.4; }
   .mp-visor-paginas { padding: 8px; gap: 10px; }
 }
+
+/* =====================================================================
+   NFC-e (aba "NFC-e (vendas)" da página Notas, components/NotasConsumidor.tsx; 22/11/2026)
+   Grupos por situação no topo (autorizadas separadas do resto), resumo do grupo e as vendas por dia.
+   ===================================================================== */
+.nc { display: grid; gap: 16px; }
+.nc-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.nc-filtros select { min-width: 190px; }
+.nc-casas { display: flex; flex-wrap: wrap; gap: 6px; }
+.nc-casas button { all: unset; box-sizing: border-box; cursor: pointer; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); font-size: 13.5px; color: var(--muted); }
+.nc-casas button:hover { color: var(--strong); border-color: var(--soft-line); }
+.nc-casas button.on { background: var(--strong); border-color: var(--strong); color: var(--panel); }
+.nc-casas button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* Os cinco grupos: uma faixa de cartões clicáveis */
+.nc-grupos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.nc-grupo { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 4px; padding: 14px 16px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--panel); transition: border-color .15s, box-shadow .15s, transform .15s; min-width: 0; }
+.nc-grupo:hover { border-color: var(--soft-line); box-shadow: 0 4px 16px var(--shadow); }
+.nc-grupo:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.nc-grupo.on { border-color: var(--gold); box-shadow: 0 6px 20px var(--shadow); }
+.nc-grupo.vazio-g:not(.on) { opacity: .6; }
+.nc-grupo-nome { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-grupo-nome i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.nc-grupo-qtd { font-size: 24px; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; line-height: 1.15; }
+.nc-grupo-valor { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-g-ok .nc-grupo-nome i, .nc-m-ok { background: var(--ok); }
+.nc-g-erro .nc-grupo-nome i, .nc-m-erro { background: var(--danger); }
+.nc-g-aviso .nc-grupo-nome i, .nc-m-aviso { background: var(--gold); }
+.nc-g-neutro .nc-grupo-nome i, .nc-m-neutro { background: var(--muted); }
+.nc-grupo.alerta { border-color: var(--danger); }
+.nc-grupo.alerta .nc-grupo-qtd { color: var(--danger); }
+
+/* Resumo do grupo escolhido */
+.nc-resumo { display: grid; gap: 12px; padding: 16px 18px; border-radius: 16px; background: var(--soft); border: 1px solid var(--soft-line); }
+.nc-explica { margin: 0; font-size: 13.5px; color: var(--text); line-height: 1.5; }
+.nc-numeros { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 0; }
+.nc-numeros > div { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--border); min-width: 0; }
+.nc-numeros dt { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-numeros dd { margin: 0; font-size: 19px; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; }
+.nc-numeros small { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+/* Título da lista e busca */
+.nc-barra { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 4px; }
+.nc-barra h2 { margin: 0; font-family: var(--font-serif), Georgia, serif; font-size: 22px; font-weight: 600; color: var(--strong); }
+.nc-barra h2 span { font-family: inherit; font-size: 16px; font-weight: 400; color: var(--muted); }
+.nc-barra input { width: min(320px, 100%); }
+.nc-vazio { margin: 0; padding: 28px 18px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: 14px; }
+
+/* Um dia: cabeçalho com o total e as vendas */
+.nc-dia { display: grid; gap: 8px; }
+.nc-dia-cabeca { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 6px 2px 4px;
+  border-bottom: 1px solid var(--border); }
+.nc-dia-cabeca h3 { margin: 0; font-size: 15px; font-weight: 600; color: var(--strong); }
+.nc-dia-cabeca span { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.nc-dia-cabeca b { color: var(--strong); font-weight: 600; }
+.nc-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.nc-item { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.nc-item:hover { border-color: var(--soft-line); }
+.nc-item.aberto { border-color: var(--gold); box-shadow: 0 8px 28px var(--shadow); }
+.nc-linha { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; align-items: center; gap: 14px; padding: 11px 16px;
+  grid-template-columns: 10px minmax(0, 1fr) 54px minmax(0, 190px) 110px 14px; }
+.nc-linha:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; border-radius: 12px; }
+.nc-marca { width: 10px; height: 10px; border-radius: 50%; }
+.nc-titulo { min-width: 0; }
+.nc-titulo strong { display: block; font-size: 14px; color: var(--strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-titulo small { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-hora { font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums; }
+.nc-forma { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nc-valor { text-align: right; font-size: 15px; font-weight: 600; color: var(--strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nc-item.aberto .ip-seta { transform: rotate(-135deg) translate(-2px, -2px); }
+.nc-item .nf-aberta { border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg); }
+.nc-item .nf-aberta-cabeca { background: transparent; }
+.nc-item .nf-aberta .es-sobre, .nc-item .nf-aberta .nf-painel-nome { display: none; }
+
+@media (max-width: 1100px) {
+  .nc-grupos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .nc-grupos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nc-grupo { padding: 12px; }
+  .nc-grupo-qtd { font-size: 20px; }
+  .nc-linha { grid-template-columns: 10px minmax(0, 1fr) auto 14px; grid-template-areas: "m t v s" "m f h s"; gap: 3px 12px; padding: 11px 14px; }
+  .nc-marca { grid-area: m; }
+  .nc-titulo { grid-area: t; }
+  .nc-valor { grid-area: v; }
+  .nc-forma { grid-area: f; }
+  .nc-hora { grid-area: h; text-align: right; font-size: 12px; color: var(--muted); }
+  .nc-linha .ip-seta { grid-area: s; }
+  .nc-barra input { width: 100%; }
+}

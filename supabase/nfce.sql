@@ -257,3 +257,21 @@ select u.id unidade_id, u.nome,
 from public.totvs_unidades u
 where u.ativa and u.loja is not null and u.encerrada_em is null;
 grant select on public.nfce_leitura to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Aba NFC-e revista (22/11/2026, pedido do dono: separar as autorizadas do resto e organizar por dia)
+-- ---------------------------------------------------------------------
+-- Totais por dia, casa e situação (cabeçalho de cada dia na lista)
+create or replace view public.nfce_dia_resumo with (security_invoker = true) as
+select dia, unidade_id, situacao, count(*)::int vendas, coalesce(sum(valor), 0) valor
+from public.nfce_notas group by 1, 2, 3;
+grant select on public.nfce_dia_resumo to authenticated;
+
+-- Formas de pagamento por mês, casa e situação (ex.: as vendas sem nota são quase todas "ASSINADA")
+create or replace view public.nfce_formas with (security_invoker = true) as
+select to_char(n.dia, 'YYYY-MM') mes, n.unidade_id, n.situacao, coalesce(nullif(p->>'descricao', ''), 'Sem pagamento') forma,
+  count(distinct n.chave_venda)::int vendas, coalesce(sum((p->>'valor')::numeric), 0) valor
+from public.nfce_notas n
+left join lateral jsonb_array_elements(n.pagamentos) p on true
+group by 1, 2, 3, 4;
+grant select on public.nfce_formas to authenticated;

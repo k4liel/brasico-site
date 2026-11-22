@@ -6,17 +6,23 @@ import JanelaPdfNota from "./JanelaPdfNota";
 
 // NFC-e da página Notas: as notas fiscais de consumidor das vendas dos restaurantes, que a TOTVS manda junto
 // com cada venda (supabase/nfce.sql). Atualiza sozinho: a leitura ao vivo da TOTVS roda a cada minuto.
-//  - NotasConsumidor: aba "NFC-e (vendas)": por mês e casa, 50 por página, nota aberta com itens, impostos e PDF.
+//  - NotasConsumidor: aba "NFC-e (vendas)". Revista em 22/11/2026 a pedido do dono ("separar as autorizadas das não
+//    autorizadas, não ficar confuso"): no topo, um grupo por situação — Autorizadas (abre nela), Canceladas, Para conferir
+//    (sem autorização da SEFAZ), Sem nota fiscal (ex.: assinada que vai para a conta do quarto) e Vendas canceladas —,
+//    cada um com quantidade e valor do mês; embaixo, as vendas daquele grupo por dia (50 por página), a nota abre no lugar
+//    com itens, impostos e PDF. Visual num bloco só em globals.css ("NFC-e", classes nc-*).
 //  - LeituraNfce: bloco da aba "Leituras" (andamento do histórico por casa).
-// Vendas sem nota (ex.: assinada que vai para a conta do quarto) e notas pendentes também aparecem, para conferir.
 type Unidade = { id: string; nome: string };
 type Mes = {
   mes: string; unidade_id: string; emitente_cnpj: string | null; notas: number; canceladas: number; pendentes: number; sem_nota: number;
   valor: number; valor_sem_nota: number; valor_pendente: number; servico: number; icms: number; pis: number; cofins: number; cbs: number; ibs: number;
 };
+type DiaResumo = { dia: string; unidade_id: string; situacao: string; vendas: number; valor: number };
+type Forma = { mes: string; unidade_id: string; situacao: string; forma: string; vendas: number; valor: number };
 type Linha = {
   unidade_id: string; chave_venda: string; dia: string; emissao: string | null; chave: string | null; emitente_cnpj: string | null;
   numero: number | null; serie: string | null; situacao: string; cupom: number | null; caixa: number | null; valor: number | null; protocolo: string | null;
+  pagamentos?: { descricao: string; valor: number; recebido?: number }[];
 };
 type Imp = { aliquota: number | null; base?: number | null; valor: number | null; cst?: string } | null;
 type ItemV = {
@@ -41,16 +47,29 @@ const qtd = (v: number) => Number(v).toLocaleString("pt-BR", { maximumFractionDi
 const pct = (v: number | null | undefined) => (v == null ? "" : `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`);
 const doc = (c: string | null) => (c && c.length === 14 ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : c ?? "");
 const chaveFmt = (c: string) => (c.match(/.{1,4}/g) ?? []).join(" ");
+const num = (v: number) => v.toLocaleString("pt-BR");
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const nomeMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]} de ${m.slice(0, 4)}`;
+const nomeDia = (d: string) => {
+  const t = new Date(`${d}T12:00:00-03:00`).toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza", weekday: "long", day: "numeric", month: "long" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
 const POR_PAGINA = 50;
 const SITUACAO: Record<string, { txt: string; cls: string; marca: string }> = {
-  autorizada: { txt: "autorizada", cls: "tv-ok", marca: "completa" },
-  cancelada: { txt: "cancelada", cls: "tv-falha", marca: "cancelada" },
-  pendente: { txt: "pendente na SEFAZ", cls: "tv-falha", marca: "cancelada" },
-  sem_nota: { txt: "sem nota fiscal", cls: "tv-revisar", marca: "resumo" },
-  venda_cancelada: { txt: "venda cancelada", cls: "tv-revisar", marca: "cancelada" },
+  autorizada: { txt: "autorizada", cls: "tv-ok", marca: "ok" },
+  cancelada: { txt: "cancelada", cls: "tv-falha", marca: "erro" },
+  pendente: { txt: "sem autorização", cls: "tv-falha", marca: "erro" },
+  sem_nota: { txt: "sem nota fiscal", cls: "tv-revisar", marca: "aviso" },
+  venda_cancelada: { txt: "venda cancelada", cls: "tv-revisar", marca: "neutro" },
 };
+// Os grupos do topo da aba, na ordem em que aparecem
+const GRUPOS: { id: string; nome: string; explica: string }[] = [
+  { id: "autorizada", nome: "Autorizadas", explica: "NFC-e emitidas no caixa e autorizadas pela SEFAZ. São as notas fiscais válidas das vendas." },
+  { id: "cancelada", nome: "Canceladas", explica: "NFC-e que foram autorizadas e depois canceladas no caixa (a SEFAZ registra o cancelamento)." },
+  { id: "pendente", nome: "Para conferir", explica: "Vendas que deveriam ter NFC-e, mas a TOTVS não mostra a autorização da SEFAZ (sem chave ou sem protocolo). Normalmente é nota em contingência que o caixa ainda não transmitiu: confira no caixa." },
+  { id: "sem_nota", nome: "Sem nota fiscal", explica: "Vendas que não emitem NFC-e no caixa. Quase sempre é a assinada, que vai para a conta do quarto e é faturada pelo hotel; veja abaixo por forma de pagamento." },
+  { id: "venda_cancelada", nome: "Vendas canceladas", explica: "Vendas canceladas no caixa antes de emitir nota fiscal." },
+];
 const urlPdf = (n: { unidade_id: string; chave_venda: string }) => `/api/nfce/danfce/${n.unidade_id}/${encodeURIComponent(n.chave_venda)}`;
 
 function useBase(supabase: ReturnType<typeof createClient>) {
@@ -75,17 +94,19 @@ export default function NotasConsumidor() {
   const { unidades, meses, pronto, carregar } = useBase(supabase);
   const [mes, setMes] = useState("");
   const [unidade, setUnidade] = useState("");
-  const [situacao, setSituacao] = useState("");
+  const [grupo, setGrupo] = useState("autorizada");
   const [busca, setBusca] = useState("");
   const [termo, setTermo] = useState("");
   const [pagina, setPagina] = useState(0);
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [dias, setDias] = useState<DiaResumo[]>([]);
+  const [formas, setFormas] = useState<Forma[]>([]);
   const [aberta, setAberta] = useState<string | null>(null);
   const [versao, setVersao] = useState(0);
 
   useEffect(() => { setMes((v) => v || meses[0]?.mes || ""); }, [meses]);
-  useEffect(() => { setPagina(0); }, [mes, unidade, situacao, termo]);
+  useEffect(() => { setPagina(0); setAberta(null); }, [mes, unidade, grupo, termo]);
   useEffect(() => { const t = setTimeout(() => setTermo(busca.trim()), 350); return () => clearTimeout(t); }, [busca]);
   // Notas novas chegam a cada minuto (leitura ao vivo da TOTVS): a lista e os totais se atualizam sozinhos
   useEffect(() => {
@@ -93,17 +114,29 @@ export default function NotasConsumidor() {
     return () => clearInterval(t);
   }, [carregar]);
 
+  const fimMes = useMemo(() => {
+    if (!mes) return "";
+    const prox = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1);
+    return `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, "0")}-01`;
+  }, [mes]);
+
+  // Totais por dia e formas de pagamento do mês
+  useEffect(() => {
+    if (!mes) return;
+    Promise.all([
+      supabase.from("nfce_dia_resumo").select("*").gte("dia", `${mes}-01`).lt("dia", fimMes),
+      supabase.from("nfce_formas").select("*").eq("mes", mes),
+    ]).then(([d, f]) => { setDias((d.data ?? []) as DiaResumo[]); setFormas((f.data ?? []) as Forma[]); });
+  }, [supabase, mes, fimMes, versao]);
+
   useEffect(() => {
     (async () => {
       if (!mes) { setLinhas(pronto ? [] : null); return; }
       if (versao === 0) setLinhas(null);
-      const prox = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1);
-      const fim = `${prox.getFullYear()}-${String(prox.getMonth() + 1).padStart(2, "0")}-01`;
       let q = supabase.from("nfce_notas")
-        .select("unidade_id,chave_venda,dia,emissao,chave,emitente_cnpj,numero,serie,situacao,cupom,caixa,valor,protocolo", { count: "exact" })
-        .gte("dia", `${mes}-01`).lt("dia", fim);
+        .select("unidade_id,chave_venda,dia,emissao,chave,emitente_cnpj,numero,serie,situacao,cupom,caixa,valor,protocolo,pagamentos", { count: "exact" })
+        .gte("dia", `${mes}-01`).lt("dia", fimMes).eq("situacao", grupo);
       if (unidade) q = q.eq("unidade_id", unidade);
-      if (situacao) q = q.eq("situacao", situacao);
       const t = termo.replace(/\D/g, "");
       if (termo) {
         if (t.length === 44) q = q.eq("chave", t);
@@ -114,123 +147,143 @@ export default function NotasConsumidor() {
       setLinhas((data ?? []) as Linha[]);
       setTotal(count ?? 0);
     })();
-  }, [supabase, mes, unidade, situacao, termo, pagina, pronto, versao]);
+  }, [supabase, mes, fimMes, unidade, grupo, termo, pagina, pronto, versao]);
 
   const nomeUnidade = Object.fromEntries(unidades.map((u) => [u.id, u.nome]));
   const doMes = meses.filter((m) => m.mes === mes && (!unidade || m.unidade_id === unidade));
   const soma = (k: keyof Mes) => doMes.reduce((s, m) => s + Number(m[k] ?? 0), 0);
+  const diasDoFiltro = dias.filter((d) => !unidade || d.unidade_id === unidade);
+  const doGrupo = (g: string) => {
+    const ds = diasDoFiltro.filter((d) => d.situacao === g);
+    return { vendas: ds.reduce((s, d) => s + d.vendas, 0), valor: ds.reduce((s, d) => s + Number(d.valor), 0) };
+  };
+  const atual = doGrupo(grupo);
+  const formasDoGrupo = Object.values(formas.filter((f) => f.situacao === grupo && (!unidade || f.unidade_id === unidade))
+    .reduce<Record<string, { forma: string; vendas: number; valor: number }>>((acc, f) => {
+      const x = (acc[f.forma] ??= { forma: f.forma, vendas: 0, valor: 0 });
+      x.vendas += f.vendas; x.valor += Number(f.valor);
+      return acc;
+    }, {})).sort((a, b) => b.valor - a.valor);
   const listaMeses = [...new Set(meses.map((m) => m.mes))];
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
-  const unidadesComNota = unidades.filter((u) => meses.some((m) => m.unidade_id === u.id));
+  const casas = unidades.filter((u) => meses.some((m) => m.unidade_id === u.id));
+  const info = GRUPOS.find((g) => g.id === grupo)!;
 
-  // Na página: agrupa por casa
-  const grupos: { unidade: string; notas: Linha[] }[] = [];
+  // A página agrupada por dia (data de movimento do caixa)
+  const porDia: { dia: string; linhas: Linha[] }[] = [];
   for (const n of linhas ?? []) {
-    let g = grupos.find((x) => x.unidade === n.unidade_id);
-    if (!g) grupos.push((g = { unidade: n.unidade_id, notas: [] }));
-    g.notas.push(n);
+    let g = porDia.find((x) => x.dia === n.dia);
+    if (!g) porDia.push((g = { dia: n.dia, linhas: [] }));
+    g.linhas.push(n);
   }
-  const tm = (u?: string) => meses.filter((x) => x.mes === mes && (!u || x.unidade_id === u));
+  const totalDia = (d: string) => {
+    const ds = diasDoFiltro.filter((x) => x.dia === d && x.situacao === grupo);
+    return { vendas: ds.reduce((s, x) => s + x.vendas, 0), valor: ds.reduce((s, x) => s + Number(x.valor), 0) };
+  };
 
   return (
-    <>
-      <div className="es-numeros">
-        <div className="es-numero"><span className="tv-cartao-rotulo">NFC-e autorizadas</span><span className="es-numero-valor">{brl(soma("valor"))}</span><span className="tv-cartao-detalhe">{soma("notas").toLocaleString("pt-BR")} notas · taxa de serviço {brl(soma("servico"))}</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Impostos nas notas</span><span className="es-numero-valor">{brl(soma("icms") + soma("pis") + soma("cofins"))}</span><span className="tv-cartao-detalhe">ICMS {brl(soma("icms"))} · PIS {brl(soma("pis"))} · Cofins {brl(soma("cofins"))}</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Reforma (teste 2026)</span><span className="es-numero-valor">{brl(soma("cbs") + soma("ibs"))}</span><span className="tv-cartao-detalhe">CBS {brl(soma("cbs"))} · IBS {brl(soma("ibs"))}</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Para conferir</span><span className="es-numero-valor">{(soma("pendentes") + soma("canceladas")).toLocaleString("pt-BR")}</span><span className="tv-cartao-detalhe">{soma("pendentes")} pendentes ({brl(soma("valor_pendente"))}) · {soma("canceladas")} canceladas · {soma("sem_nota")} vendas sem nota ({brl(soma("valor_sem_nota"))})</span></div>
-      </div>
-      {soma("pendentes") > 0 && (
-        <p className="es-aviso">
-          {soma("pendentes")} venda(s) deste mês aparecem como NFC-e sem autorização da SEFAZ (sem chave ou sem protocolo). Normalmente é nota em contingência que o caixa
-          ainda não transmitiu. Filtre por &quot;Pendentes na SEFAZ&quot; para ver quais são e confira no caixa da TOTVS.
-        </p>
-      )}
-
-      <div className="ft-barra nf-barra">
-        <div className="nf-escolha">
-          <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
-            {!listaMeses.length && <option value="">Sem notas ainda</option>}
-            {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
-          </select>
-          <select value={situacao} onChange={(e) => setSituacao(e.target.value)} aria-label="Situação">
-            <option value="">Todas as vendas</option>
-            <option value="autorizada">Só NFC-e autorizadas</option>
-            <option value="cancelada">Só NFC-e canceladas</option>
-            <option value="pendente">Pendentes na SEFAZ</option>
-            <option value="sem_nota">Vendas sem nota fiscal</option>
-            <option value="venda_cancelada">Vendas canceladas sem nota</option>
-          </select>
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Número da nota, cupom ou chave de acesso" aria-label="Buscar NFC-e" />
+    <div className="nc">
+      <div className="nc-filtros">
+        <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
+          {!listaMeses.length && <option value="">Sem notas ainda</option>}
+          {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
+        </select>
+        <div className="nc-casas" role="tablist" aria-label="Casa">
+          <button role="tab" aria-selected={!unidade} className={!unidade ? "on" : ""} onClick={() => setUnidade("")}>Todas as casas</button>
+          {casas.map((u) => (
+            <button key={u.id} role="tab" aria-selected={unidade === u.id} className={unidade === u.id ? "on" : ""} onClick={() => setUnidade(u.id)}>{u.nome}</button>
+          ))}
         </div>
       </div>
-      <div className="ft-chips nf-empresas" role="tablist" aria-label="Casa">
-        <button role="tab" aria-selected={!unidade} className={!unidade ? "on" : ""} onClick={() => setUnidade("")}>Todas as casas</button>
-        {unidadesComNota.map((u) => (
-          <button key={u.id} role="tab" aria-selected={unidade === u.id} className={unidade === u.id ? "on" : ""} onClick={() => setUnidade(u.id)}>
-            {u.nome}<span>{tm(u.id).reduce((s, m) => s + m.notas, 0).toLocaleString("pt-BR")}</span>
-          </button>
-        ))}
+
+      <div className="nc-grupos" role="tablist" aria-label="Situação das vendas">
+        {GRUPOS.map((g) => {
+          const t = doGrupo(g.id);
+          const alerta = g.id === "pendente" && t.vendas > 0;
+          return (
+            <button key={g.id} role="tab" aria-selected={grupo === g.id}
+              className={`nc-grupo nc-g-${SITUACAO[g.id].marca}${grupo === g.id ? " on" : ""}${alerta ? " alerta" : ""}${!t.vendas ? " vazio-g" : ""}`}
+              onClick={() => setGrupo(g.id)}>
+              <span className="nc-grupo-nome"><i aria-hidden="true" />{g.nome}</span>
+              <span className="nc-grupo-qtd">{num(t.vendas)}</span>
+              <span className="nc-grupo-valor">{brl(t.valor)}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {linhas === null ? <p className="muted">Carregando as NFC-e…</p> : !linhas.length ? (
-        <p className="muted vazio">{meses.length ? "Nenhuma venda com esses filtros." : "Nenhuma NFC-e lida ainda. As notas chegam junto com as vendas da TOTVS; o histórico vai entrando aos poucos (aba Leituras)."}</p>
+      <section className="nc-resumo">
+        <p className="nc-explica">{info.explica}</p>
+        {grupo === "autorizada" ? (
+          <dl className="nc-numeros">
+            <div><dt>Vendido com nota</dt><dd>{brl(soma("valor"))}</dd><small>{num(soma("notas"))} NFC-e · média {brl(soma("notas") ? soma("valor") / soma("notas") : 0)}</small></div>
+            <div><dt>Taxa de serviço</dt><dd>{brl(soma("servico"))}</dd><small>dentro do valor das notas</small></div>
+            <div><dt>ICMS · PIS · Cofins</dt><dd>{brl(soma("icms") + soma("pis") + soma("cofins"))}</dd><small>ICMS {brl(soma("icms"))} · PIS {brl(soma("pis"))} · Cofins {brl(soma("cofins"))}</small></div>
+            <div><dt>CBS · IBS (teste 2026)</dt><dd>{brl(soma("cbs") + soma("ibs"))}</dd><small>CBS {brl(soma("cbs"))} · IBS {brl(soma("ibs"))}</small></div>
+          </dl>
+        ) : (
+          <dl className="nc-numeros">
+            <div><dt>{info.nome}</dt><dd>{brl(atual.valor)}</dd><small>{num(atual.vendas)} venda{atual.vendas === 1 ? "" : "s"} no mês</small></div>
+            {formasDoGrupo.slice(0, 3).map((f) => (
+              <div key={f.forma}><dt>{f.forma}</dt><dd>{brl(f.valor)}</dd><small>{num(f.vendas)} venda{f.vendas === 1 ? "" : "s"}</small></div>
+            ))}
+          </dl>
+        )}
+      </section>
+
+      <div className="nc-barra">
+        <h2>{info.nome} <span>· {nomeMes(mes || "2026-01")}</span></h2>
+        <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nº da nota, cupom ou chave" aria-label="Buscar NFC-e" />
+      </div>
+
+      {linhas === null ? <p className="muted">Carregando as vendas…</p> : !linhas.length ? (
+        <p className="nc-vazio">{termo ? "Nenhuma venda com essa busca." : `Nenhuma venda em "${info.nome}" neste mês${unidade ? " nesta casa" : ""}.`}</p>
       ) : (
         <>
-          <section className="nf-mes">
-            <header className="nf-mes-cabeca">
-              <h2>{nomeMes(mes)}</h2>
-              <span className="muted">{tm(unidade || undefined).reduce((s, m) => s + m.notas, 0).toLocaleString("pt-BR")} NFC-e · {brl(tm(unidade || undefined).reduce((s, m) => s + Number(m.valor), 0))}</span>
-            </header>
-            {grupos.map((g) => {
-              const t = tm(g.unidade);
-              const cnpjs = [...new Set(t.map((x) => x.emitente_cnpj).filter(Boolean))] as string[];
-              return (
-                <div key={g.unidade} className="nf-grupo aberto">
-                  <div className="nf-grupo-cabeca">
-                    <span className="nf-grupo-icone" aria-hidden="true">{(nomeUnidade[g.unidade] ?? "C").slice(0, 1)}</span>
-                    <span className="nf-grupo-nome"><strong>{nomeUnidade[g.unidade] ?? g.unidade}</strong><small>{cnpjs.map((c) => `CNPJ ${doc(c)}`).join(" · ") || "caixa TOTVS"}</small></span>
-                    <span className="nf-grupo-conta">
-                      <span><i className="nf-card-marca completa" />{t.reduce((s, x) => s + x.notas, 0).toLocaleString("pt-BR")} autorizadas</span>
-                      {t.reduce((s, x) => s + x.canceladas, 0) > 0 && <span><i className="nf-card-marca cancelada" />{t.reduce((s, x) => s + x.canceladas, 0)} canceladas</span>}
-                      {t.reduce((s, x) => s + x.sem_nota, 0) > 0 && <span><i className="nf-card-marca resumo" />{t.reduce((s, x) => s + x.sem_nota, 0)} sem nota</span>}
-                      <span className="muted">{g.notas.length} nesta página</span>
-                    </span>
-                    <span className="nf-grupo-total"><b>{brl(t.reduce((s, x) => s + Number(x.valor), 0))}</b><small>no mês</small></span>
-                  </div>
-                  <ul className="nf-cards">
-                    {g.notas.map((n) => {
-                      const k = `${n.unidade_id}|${n.chave_venda}`;
-                      const esta = aberta === k;
-                      const s = SITUACAO[n.situacao] ?? SITUACAO.autorizada;
-                      return (
-                        <li key={k} className={esta ? "nf-card aberto" : "nf-card"}>
-                          <button className="nf-card-linha" onClick={() => setAberta(esta ? null : k)} aria-expanded={esta}>
-                            <span className={`nf-card-marca ${s.marca}`} aria-hidden="true" />
-                            <span className="nf-card-forn"><strong>{n.chave ? `NFC-e nº ${n.numero ?? "—"}` : `Venda · cupom ${n.cupom ?? "—"}`}</strong><small>{n.chave ? `série ${n.serie ?? "—"} · cupom ${n.cupom ?? "—"}` : "sem chave de acesso"} · caixa {n.caixa ?? "—"}</small></span>
-                            <span className="nf-card-num"><b>{hora(n.emissao)}</b><small>hora</small></span>
-                            <span className="nf-card-data"><b>{dia(n.emissao ?? `${n.dia}T12:00:00-03:00`)}</b><small>emissão</small></span>
-                            <span className="nf-card-valor">{brl(n.valor)}</span>
-                            <span className="nf-card-selo"><span className={`estado ${s.cls}`}>{s.txt}</span></span>
-                            <span className="ip-seta" aria-hidden="true" />
-                          </button>
-                          {esta && <NfceAberta linha={n} casa={nomeUnidade[n.unidade_id]} onFechar={() => setAberta(null)} />}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })}
-          </section>
-          <nav className="nf-paginas" aria-label="Páginas">
-            <button className="ghost small" disabled={pagina === 0} onClick={() => setPagina((p) => p - 1)}>← Anterior</button>
-            <span className="muted">Página {pagina + 1} de {paginas} · {total.toLocaleString("pt-BR")} vendas</span>
-            <button className="ghost small" disabled={pagina + 1 >= paginas} onClick={() => setPagina((p) => p + 1)}>Próxima →</button>
-          </nav>
+          {porDia.map((d) => {
+            const td = totalDia(d.dia);
+            return (
+              <section key={d.dia} className="nc-dia">
+                <header className="nc-dia-cabeca">
+                  <h3>{nomeDia(d.dia)}</h3>
+                  <span>{num(td.vendas)} {grupo === "autorizada" || grupo === "cancelada" ? "nota" : "venda"}{td.vendas === 1 ? "" : "s"} · <b>{brl(td.valor)}</b></span>
+                </header>
+                <ul className="nc-lista">
+                  {d.linhas.map((n) => {
+                    const k = `${n.unidade_id}|${n.chave_venda}`;
+                    const esta = aberta === k;
+                    const forma = (n.pagamentos ?? []).map((p) => p.descricao).filter((v, i, a) => a.indexOf(v) === i).join(" + ");
+                    return (
+                      <li key={k} className={esta ? "nc-item aberto" : "nc-item"}>
+                        <button className="nc-linha" onClick={() => setAberta(esta ? null : k)} aria-expanded={esta}>
+                          <span className={`nc-marca nc-m-${SITUACAO[n.situacao]?.marca ?? "neutro"}`} aria-hidden="true" />
+                          <span className="nc-titulo">
+                            <strong>{n.chave ? `NFC-e nº ${n.numero ?? "—"}` : `Cupom ${n.cupom ?? "—"}`}</strong>
+                            <small>{nomeUnidade[n.unidade_id] ?? n.unidade_id}{n.chave ? ` · série ${n.serie ?? "—"} · cupom ${n.cupom ?? "—"}` : ""} · caixa {n.caixa ?? "—"}</small>
+                          </span>
+                          <span className="nc-hora">{n.emissao ? hora(n.emissao) : "—"}</span>
+                          <span className="nc-forma" title={forma}>{forma || "—"}</span>
+                          <span className="nc-valor">{brl(n.valor)}</span>
+                          <span className="ip-seta" aria-hidden="true" />
+                        </button>
+                        {esta && <NfceAberta linha={n} casa={nomeUnidade[n.unidade_id]} onFechar={() => setAberta(null)} />}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+          {paginas > 1 && (
+            <nav className="nf-paginas" aria-label="Páginas">
+              <button className="ghost small" disabled={pagina === 0} onClick={() => setPagina((p) => p - 1)}>← Anterior</button>
+              <span className="muted">Página {pagina + 1} de {paginas} · {num(total)} vendas</span>
+              <button className="ghost small" disabled={pagina + 1 >= paginas} onClick={() => setPagina((p) => p + 1)}>Próxima →</button>
+            </nav>
+          )}
         </>
       )}
-    </>
+    </div>
   );
 }
 
