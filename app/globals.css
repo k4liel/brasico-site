@@ -5413,10 +5413,20 @@ body:has(.mp) { background: #f6f2ea; }
   .nc-grupo-qtd { font-size: 20px; }
   .nc-grupo-valor { font-size: 12px; }
 }
-@media (max-width: 760px) {
+@media (max-width: 860px) {
+  .nc-grupos { gap: 6px; }
+  .nc-grupo { padding: 10px; }
+  .nc-grupo-nome { font-size: 10px; letter-spacing: 0; gap: 5px; }
+  .nc-grupo-qtd { font-size: 18px; }
+  .nc-grupo-valor { font-size: 11px; }
+}
+@media (max-width: 600px) {
   /* No celular os cinco grupos viram uma faixa que rola de lado (nenhum fica sozinho numa linha) */
-  .nc-grupos { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
-  .nc-grupo { flex: 0 0 150px; scroll-snap-align: start; }
+  .nc-grupos { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .nc-grupos::-webkit-scrollbar { display: none; }
+  .nc-grupo { flex: 0 0 140px; scroll-snap-align: start; }
+}
+@media (max-width: 760px) {
   .nc-linha { grid-template-columns: 10px minmax(0, 1fr) auto 14px; grid-template-areas: "m t v s" "m f h s"; gap: 3px 12px; padding: 11px 14px; }
   .nc-marca { grid-area: m; }
   .nc-titulo { grid-area: t; }
