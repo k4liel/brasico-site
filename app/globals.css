@@ -5443,3 +5443,55 @@ body:has(.mp) { background: #f6f2ea; }
 .nc-aviso-marca { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--danger); color: #fff;
   font-size: 13px; font-weight: 700; margin-top: 1px; }
 .nc-sem-quarto { font-style: normal; font-weight: 400; font-size: 12px; color: var(--gold); }
+
+/* Conferência fiscal (aba NFC-e → Conferência fiscal, components/ConferenciaFiscal.tsx) */
+.nc-modos { display: inline-flex; margin-left: auto; padding: 3px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); }
+.nc-modos button { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--muted); }
+.nc-modos button.on { background: var(--gold); color: #1a1a1a; font-weight: 600; }
+.nc-modos button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.cf { display: grid; gap: 16px; }
+.cf-ruim { color: var(--danger) !important; }
+.cf-escopo { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }
+.cf-decisoes { padding: 14px 16px; border-radius: 14px; border: 1px solid var(--soft-line); background: var(--soft); }
+.cf-decisoes header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.cf-decisoes h3 { margin: 0; font-size: 14px; color: var(--strong); }
+.cf-decisoes header span { font-size: 12px; color: var(--gold); }
+.cf-decisoes ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; }
+.cf-decisoes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 5px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.cf-decisoes li small { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); }
+.cf-dec-nome { color: var(--text); min-width: 0; }
+.cf-dec-valor { color: var(--muted); font-style: italic; white-space: nowrap; }
+.cf-decisoes li.ok .cf-dec-valor { color: var(--ok); font-style: normal; }
+.cf-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cf-acoes input[type="search"] { width: min(240px, 100%); }
+.cf-so { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); cursor: pointer; }
+.cf-regra { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.cf-regra.cf-erro { border-left: 4px solid var(--danger); }
+.cf-regra.cf-atencao { border-left: 4px solid var(--gold); }
+.cf-regra-cabeca { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; display: grid; align-items: center; gap: 12px; padding: 12px 16px;
+  grid-template-columns: auto minmax(0, 1fr) auto 14px; }
+.cf-regra-cabeca:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.cf-sev { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+.cf-erro .cf-sev { background: var(--danger); color: #fff; }
+.cf-atencao .cf-sev { background: var(--soft); color: var(--gold); border: 1px solid var(--soft-line); }
+.cf-regra-titulo strong { display: block; font-size: 14px; color: var(--strong); }
+.cf-regra-titulo small { display: block; font-size: 12px; color: var(--muted); }
+.cf-regra-imp { text-align: right; }
+.cf-regra-imp b { display: block; font-size: 15px; color: var(--strong); font-variant-numeric: tabular-nums; }
+.cf-regra-imp small { font-size: 11.5px; color: var(--muted); }
+.cf-regra.aberta .ip-seta { transform: rotate(-135deg) translate(-2px, -2px); }
+.cf-regra-corpo { padding: 0 16px 14px; border-top: 1px solid var(--border); }
+.cf-explica { margin: 12px 0; font-size: 13px; color: var(--text); line-height: 1.5; }
+.cf-tabela td small { display: block; font-size: 11.5px; }
+.cf-ok { padding: 12px 16px; border-radius: 14px; border: 1px solid var(--border); background: var(--panel); }
+.cf-ok h3 { margin: 0 0 6px; font-size: 13px; color: var(--strong); }
+.cf-ok ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.cf-ok li { font-size: 12.5px; color: var(--text); }
+.cf-ok li::before { content: "✓ "; color: var(--ok); font-weight: 700; }
+@media (max-width: 760px) {
+  .nc-modos { margin-left: 0; }
+  .cf-decisoes ul { grid-template-columns: 1fr; }
+  .cf-regra-cabeca { grid-template-columns: minmax(0, 1fr) 14px; }
+  .cf-sev { justify-self: start; }
+  .cf-regra-imp { text-align: left; }
+}
