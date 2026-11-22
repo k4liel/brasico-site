@@ -43,8 +43,8 @@ const PAGINAS = [
   { id: "claude", nome: "Claude dos sócios", href: "/usuarios" },
 ];
 const DESTINOS: Record<string, string[]> = {
-  receita: ["fiscal"], esocial: ["rh"], notas: ["notas", "precos", "compras"], nfse: ["notas", "fiscal"],
-  certificados: ["fiscal", "rh", "notas"], totvs: ["vendas"], cicchetti: ["claude"], pms: ["hoteis", "vendas"],
+  receita: ["fiscal"], esocial: ["rh"], notas: ["notas", "precos", "compras"], nfse: ["notas", "fiscal"], cte: ["notas"],
+  certificados: ["fiscal", "rh", "notas"], totvs: ["vendas", "notas"], cicchetti: ["claude"], pms: ["hoteis", "vendas"],
   rhid: ["escala", "rh"], whatsapp: ["whatsapp", "compras"], gemini: ["compras"], claude: ["whatsapp"], conector: ["projetos", "claude"],
 };
 

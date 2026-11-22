@@ -20,7 +20,8 @@ export type Painel = {
     receita: Exec & { ultimo_evento: string | null; empresas_producao: number; gasto_ciclo: number; orcamento_ciclo: number; cobradas_hoje: number; chamadas_erro_24h: number };
     notas: Exec & { empresas: number; bloqueadas: number; notas_7d: number; ultima_nota: string | null };
     nfse: Exec & { empresas: number; bloqueadas: number; notas_7d: number };
-    totvs: Exec & { unidades: { nome: string; ultimo_dia: string | null; ontem: string | null }[] };
+    cte?: Exec & { empresas: number; bloqueadas: number; ctes_7d: number };
+    totvs: Exec & { unidades: { nome: string; ultimo_dia: string | null; ontem: string | null }[]; nfce_7d?: number; nfce_pendentes_7d?: number };
     cicchetti: { ultima: string | null; ultima_ok: string | null; ultima_falha: string | null; ok_24h: number; falha_24h: number; ultimo_erro: string | null; horas?: Hora[] };
     pms: Exec & { intervalo_min: number | null; hoteis: { nome: string; ultima_leitura: string | null }[] };
     whatsapp: { ultima_mensagem: string | null; mensagens_24h: number; grupos_24h: number; envios_24h: number; envios_falha_24h: number; horas?: Hora[] };
@@ -215,6 +216,24 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     });
   }
 
+  // CT-e (fretes, Ambiente Nacional do CT-e): de hora em hora; sem CT-e novo a SEFAZ manda esperar 1 h (normal)
+  if (f.cte) {
+    const n = f.cte;
+    let estado = frescor(n.ultima_ok, agora, 3 * 60, 8 * 60);
+    const erro = erroAberto(n, agora);
+    if (erro) estado = pior(estado, "atencao");
+    lista.push({
+      id: "cte", nome: "SEFAZ · CT-e", quem: "Ambiente Nacional do CT-e · distribuição", grupo: "governo", pagina: "/notas",
+      oQueFaz: "Traz os conhecimentos de transporte (fretes) em que cada CNPJ do grupo aparece, ligados às NF-e transportadas.",
+      estado, frase: `última leitura ${quando(n.ultima_ok, agora)}`, erro,
+      numeros: [
+        { rotulo: "CT-e em 7 dias", valor: String(n.ctes_7d) },
+        { rotulo: "CNPJs lidos", valor: `${n.empresas}${n.bloqueadas ? ` · ${n.bloqueadas} esperando 1 h` : ""}` },
+        { rotulo: "Leituras em 24 h", valor: `${n.ok_24h} ok · ${n.falha_24h} falha` },
+      ],
+    });
+  }
+
   // Certificados digitais (e-CNPJ A1): sem eles, eSocial, Receita e notas param
   {
     const cs = p.certificados;
@@ -250,9 +269,12 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     if (erro) estado = pior(estado, "atencao");
     lista.push({
       id: "totvs", nome: "TOTVS Chef Web", quem: "Caixa dos restaurantes", grupo: "casas", pagina: "/vendas",
-      oQueFaz: "Vendas, pagamentos, sangrias e fechamentos de cada dia, por unidade.",
+      oQueFaz: "Vendas, pagamentos, sangrias e fechamentos de cada dia, por unidade, e a NFC-e de cada venda.",
       estado, frase: `última leitura ${quando(t.ultima_ok, agora)}`, erro, linhas,
-      numeros: [{ rotulo: "Leituras em 24 h", valor: `${t.ok_24h} ok · ${t.falha_24h} falha` }],
+      numeros: [
+        { rotulo: "Leituras em 24 h", valor: `${t.ok_24h} ok · ${t.falha_24h} falha` },
+        ...(t.nfce_7d != null ? [{ rotulo: "NFC-e em 7 dias", valor: `${t.nfce_7d}${t.nfce_pendentes_7d ? ` · ${t.nfce_pendentes_7d} pendentes na SEFAZ` : ""}` }] : []),
+      ],
     });
   }
 
@@ -426,7 +448,7 @@ export function montarIntegracoes(p: Painel): Integracao[] {
   // Atividade por hora de cada fonte (o painel desenha uma barra de 24 h em cada cartão)
   const horas: Record<string, [Hora[] | undefined, string]> = {
     rhid: [f.rhid.horas, "leituras"], esocial: [f.esocial.horas, "leituras"], receita: [f.receita.horas, "leituras"],
-    notas: [f.notas.horas, "leituras"], nfse: [f.nfse.horas, "leituras"], totvs: [f.totvs.horas, "leituras"],
+    notas: [f.notas.horas, "leituras"], nfse: [f.nfse.horas, "leituras"], cte: [f.cte?.horas, "leituras"], totvs: [f.totvs.horas, "leituras"],
     cicchetti: [f.cicchetti.horas, "consultas"], pms: [f.pms.horas, "rodadas"], whatsapp: [f.whatsapp.horas, "mensagens"],
     gemini: [f.gemini.horas, "análises"],
   };
@@ -463,7 +485,7 @@ const nomeEmpresa = (s: string) =>
 
 // ---------- agendas (pg_cron, horário em UTC) ----------
 const FONTE_DA_AGENDA: [RegExp, string][] = [
-  [/^rhid/, "RHiD"], [/^esocial/, "eSocial"], [/^receita|^fiscal/, "Receita Federal"], [/^notas/, "SEFAZ · NF-e"], [/^nfse/, "NFS-e"],
+  [/^rhid/, "RHiD"], [/^esocial/, "eSocial"], [/^receita|^fiscal/, "Receita Federal"], [/^notas/, "SEFAZ · NF-e"], [/^nfse/, "NFS-e"], [/^cte/, "SEFAZ · CT-e"], [/^nfce/, "TOTVS Chef Web"],
   [/^totvs/, "TOTVS Chef Web"], [/^precos/, "Cicchetti Management"], [/^pms/, "PMS dos hotéis"], [/^whatsapp/, "WhatsApp"],
   [/^compras/, "Compras"],
 ];
@@ -517,7 +539,7 @@ export function estadoAgenda(a: Painel["agendas"][number]): Estado {
 
 // Nome amigável da fonte de cada evento da linha do tempo
 export const NOME_FONTE: Record<string, string> = {
-  rhid: "RHiD", esocial: "eSocial", receita: "Receita", notas: "NF-e", nfse: "NFS-e", totvs: "TOTVS",
+  rhid: "RHiD", esocial: "eSocial", receita: "Receita", notas: "NF-e", nfse: "NFS-e", cte: "CT-e", totvs: "TOTVS",
   pms: "PMS", gemini: "Gemini", cicchetti: "Cicchetti",
 };
 export function estadoEvento(status: string): Estado {
