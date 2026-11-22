@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
+import MenusPublicos, { type MenuPublico } from "@/components/MenusPublicos";
 import { createClient } from "@supabase/supabase-js";
 
 // Página pública dos cardápios de uma casa (22/11/2026, pedido do dono: "uma página que fique aberta para
@@ -9,8 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-type Menu = { codigo: string; titulo: string; descricao: string; formato: string; paginas: number | null; atualizado_em: string };
-type Dados = { nome: string; menus: Menu[] };
+type Dados = { nome: string; menus: MenuPublico[] };
 
 async function ler(slug: string): Promise<Dados | null> {
   if (!/^[a-z0-9][a-z0-9-]{11,79}$/.test(slug)) return null;
@@ -52,7 +52,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 const data = (s: string) => new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Fortaleza" });
 
-export default async function MenusPublicos({ params }: { params: Promise<{ slug: string }> }) {
+export default async function MenusPublicosPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const d = await ler(slug);
   if (!d) notFound();
@@ -66,38 +66,11 @@ export default async function MenusPublicos({ params }: { params: Promise<{ slug
         {cicchetti && <img className="mp-logo" src="/marcas/cicchetti.png" alt="Cicchetti" width={147} height={130} />}
         <span className="mp-olho">{d.nome}</span>
         <h1>Cardápios</h1>
-        <p>Baixe o PDF de cada cardápio. Este endereço é sempre o mesmo: quando um cardápio muda, o arquivo daqui já é o novo.</p>
+        <p>Veja, baixe ou compartilhe cada cardápio. Este endereço é sempre o mesmo: quando um cardápio muda, o arquivo daqui já é o novo.</p>
         {recente && <span className="mp-atual">Atualizado em {data(recente)}</span>}
       </header>
 
-      <main className="mp-grade">
-        {d.menus.map((m) => {
-          const base = `/api/menus/${slug}/${m.codigo}`;
-          return (
-            <article key={m.codigo} className="mp-cartao">
-              <a className="mp-capa" href={`${base}.pdf`} target="_blank" rel="noreferrer" aria-label={`Ver ${m.titulo}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`${base}.jpg`} alt="" loading="lazy" />
-              </a>
-              <div className="mp-info">
-                <h2>{m.titulo}</h2>
-                {m.descricao && <p>{m.descricao}</p>}
-                <span className="mp-meta">
-                  {[m.formato, m.paginas ? `${m.paginas} ${m.paginas > 1 ? "páginas" : "página"}` : "", `versão de ${data(m.atualizado_em)}`].filter(Boolean).join(" · ")}
-                </span>
-                <div className="mp-acoes">
-                  <a className="mp-botao forte" href={`${base}.pdf?baixar`}>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" /></svg>
-                    Baixar PDF
-                  </a>
-                  <a className="mp-botao" href={`${base}.pdf`} target="_blank" rel="noreferrer">Ver</a>
-                </div>
-              </div>
-            </article>
-          );
-        })}
-        {d.menus.length === 0 && <p className="mp-vazio">Nenhum cardápio disponível agora.</p>}
-      </main>
+      <MenusPublicos slug={slug} nome={d.nome} menus={d.menus} />
 
       <footer className="mp-rodape">{d.nome}</footer>
     </div>
