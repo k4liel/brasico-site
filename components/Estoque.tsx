@@ -20,8 +20,6 @@ type Pessoa = { id: string; nome: string; papel: string; unidade: string | null;
 type Tipo = "entrada" | "saida" | "contagem";
 
 const DESTINOS: Record<string, string> = { cicchetti_centro: "Cicchetti Centro", sempre_vivo: "Sempre Vivo", filha_da_lua: "Filha da Lua", midway: "Cicchetti Midway", outro: "Outro" };
-// Destinos que não recebem mais saídas (o nome continua valendo no histórico): o Midway encerrou em 31/10/2026
-const DESTINOS_ENCERRADOS = new Set(["midway"]);
 const TIPOS: Record<Tipo, string> = { entrada: "Entrada", saida: "Saída", contagem: "Contagem" };
 const ORIGENS: Record<string, string> = { tela: "pela tela", grupo: "pedido do grupo", projeto: "contagem do projeto", producao: "da produção" };
 // Grupos da câmara pela ordem do cadastro (10 massas, 20 carnes e peixes, 30 molhos, 40 pães)
@@ -68,6 +66,24 @@ function prazo(v: string | null, hoje: string): Prazo {
   return { cls: "ok", dias, txt: `vence em ${data}`, curto: data.slice(0, 5) + (v.slice(0, 4) !== hoje.slice(0, 4) ? `/${v.slice(2, 4)}` : "") };
 }
 
+// Desde 22/11/2026 (pedido do dono, prévia A): uma página só, o estoque em cartões por grupo e, embaixo,
+// as saídas, entradas e contagens agrupadas por pedido, que abrem e fecham. Entradas e saídas são lançadas pelo Claude:
+// a página não tem mais formulário de registro.
+type Filtro = "todos" | "vencido" | "logo" | "zerado";
+type Pedido = { chave: string; m: Mov; itens: Mov[] };
+
+const JANELA_PEDIDO = 15 * 60 * 1000; // mesmo tipo, destino e pessoa, lançados em até 15 min = um pedido
+function agruparPedidos(movs: Mov[]): Pedido[] {
+  const pedidos: Pedido[] = [];
+  for (const m of movs) {
+    const p = pedidos.find((x) => x.m.tipo === m.tipo && (x.m.destino ?? "") === (m.destino ?? "") && x.m.registrado_por === m.registrado_por
+      && Math.abs(Date.parse(x.m.quando) - Date.parse(m.quando)) <= JANELA_PEDIDO);
+    if (p) p.itens.push(m); else pedidos.push({ chave: `p${m.id}`, m, itens: [m] });
+  }
+  return pedidos;
+}
+const nomeDestino = (d: string | null) => (d ? DESTINOS[d] ?? d : "");
+
 export default function Estoque({ userId, userEmail }: { userId: string; userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [papel, setPapel] = useState<string | null | undefined>(undefined);
@@ -76,18 +92,17 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
   const [saldos, setSaldos] = useState<Saldo[]>([]);
   const [lotes, setLotes] = useState<Lote[]>([]);
   const [movs, setMovs] = useState<Mov[]>([]);
-  const [aba, setAba] = useState<"estoque" | "registrar" | "movimentos" | "pessoas">("estoque");
-  const [reg, setReg] = useState<{ item: string; tipo: Tipo; n: number }>({ item: "", tipo: "entrada", n: 0 });
-  const [filtro, setFiltro] = useState<"todos" | "vencido" | "logo" | "minimo">("todos");
+  const [filtro, setFiltro] = useState<Filtro>("todos");
   const [busca, setBusca] = useState("");
   const [aberto, setAberto] = useState<string | null>(null);
+  const [verPessoas, setVerPessoas] = useState(false);
   const hoje = hojeISO();
 
   const carregar = useCallback(async () => {
     const [s, l, m] = await Promise.all([
       supabase.from("estoque_saldo").select("*").order("ordem").order("nome"),
       supabase.from("estoque_lotes").select("item_id,validade,quantidade"),
-      supabase.from("estoque_movimentos").select("*").order("quando", { ascending: false }).order("id", { ascending: false }).limit(300),
+      supabase.from("estoque_movimentos").select("*").order("quando", { ascending: false }).order("id", { ascending: false }).limit(400),
     ]);
     setSaldos(((s.data ?? []) as Saldo[]).map((x) => ({ ...x, saldo: Number(x.saldo), minimo: x.minimo == null ? null : Number(x.minimo), pacote_tamanho: x.pacote_tamanho == null ? null : Number(x.pacote_tamanho) })));
     setLotes(((l.data ?? []) as Lote[]).map((x) => ({ ...x, quantidade: Number(x.quantidade) })).filter((x) => x.quantidade !== 0));
@@ -109,7 +124,7 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
     })();
   }, [supabase, userId, carregar]);
 
-  // Registros de outras pessoas aparecem na hora
+  // Registros feitos pelo Claude aparecem na hora
   useEffect(() => {
     if (!papel) return;
     const canal = supabase.channel("estoque").on("postgres_changes", { event: "*", schema: "public", table: "estoque_movimentos" }, () => carregar()).subscribe();
@@ -118,8 +133,9 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
 
   const itens: Item[] = useMemo(() => saldos.map((s) => ({
     ...s,
-    lotes: lotes.filter((l) => l.item_id === s.item_id).sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999")),
+    lotes: lotes.filter((l) => l.item_id === s.item_id && l.quantidade > 0).sort((a, b) => (a.validade ?? "9999").localeCompare(b.validade ?? "9999")),
   })), [saldos, lotes]);
+  const pedidos = useMemo(() => agruparPedidos(movs), [movs]);
 
   const socio = papel === "socio";
   const topo = socio ? <Topo email={userEmail} ativo="estoque" />
@@ -135,176 +151,218 @@ export default function Estoque({ userId, userEmail }: { userId: string; userEma
     );
   }
 
-  // Lotes que pedem atenção: vencidos e os que vencem nos próximos 7 dias
-  const atencao = itens.flatMap((it) => it.lotes.filter((l) => l.quantidade > 0).map((l) => ({ it, l, p: prazo(l.validade, hoje) })))
-    .filter((x) => x.p.cls === "vencido" || x.p.cls === "logo")
-    .sort((a, b) => (a.l.validade ?? "").localeCompare(b.l.validade ?? ""));
-  const vencidos = atencao.filter((x) => x.p.cls === "vencido");
-  const logo = atencao.filter((x) => x.p.cls === "logo");
-  const abaixo = itens.filter((s) => s.minimo != null && s.saldo < s.minimo);
+  const temLote = (it: Item, cls: Prazo["cls"]) => it.lotes.some((l) => prazo(l.validade, hoje).cls === cls);
   const comSaldo = itens.filter((s) => s.saldo > 0);
+  const zerados = itens.filter((s) => s.saldo <= 0);
+  const vencidos = itens.filter((it) => it.saldo > 0 && temLote(it, "vencido"));
+  const logo = itens.filter((it) => it.saldo > 0 && temLote(it, "logo"));
   const ultimaContagem = saldos.map((s) => s.contada_em).filter(Boolean).sort().pop() ?? null;
-  const temLote = (it: Item, cls: Prazo["cls"]) => it.lotes.some((l) => l.quantidade > 0 && prazo(l.validade, hoje).cls === cls);
+  const semana = Date.parse(hoje) - 6 * 864e5;
+  const saidasSemana = pedidos.filter((p) => p.m.tipo === "saida" && p.itens.some((x) => !x.removido) && Date.parse(p.m.quando) >= semana);
+  const destinosSemana = [...new Set(saidasSemana.map((p) => nomeDestino(p.m.destino)).filter(Boolean))];
 
   const termo = busca.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const passa = (it: Item) =>
     (!termo || it.nome.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").includes(termo)) &&
-    (filtro === "todos" || (filtro === "vencido" && temLote(it, "vencido")) || (filtro === "logo" && temLote(it, "logo")) ||
-      (filtro === "minimo" && it.minimo != null && it.saldo < it.minimo));
+    (filtro === "todos" ? it.saldo > 0 : filtro === "zerado" ? it.saldo <= 0 : it.saldo > 0 && temLote(it, filtro));
   let inicio = 0;
   const grupos = GRUPOS.map((g) => {
-    const doGrupo = itens.filter((s) => s.ordem >= inicio && s.ordem < g.ate && passa(s));
+    const doGrupo = itens.filter((s) => s.ordem >= inicio && s.ordem < g.ate);
     inicio = g.ate;
-    return { ...g, comSaldo: doGrupo.filter((s) => s.saldo !== 0), zerados: doGrupo.filter((s) => s.saldo === 0) };
-  }).filter((g) => g.comSaldo.length || (g.zerados.length && filtro === "todos"));
+    return { ...g, mostrar: doGrupo.filter(passa), semEstoque: doGrupo.filter((s) => s.saldo <= 0) };
+  }).filter((g) => g.mostrar.length || (filtro === "todos" && !termo && g.semEstoque.length));
 
-  const registrar = (item: string, tipo: Tipo) => {
-    setReg((r) => ({ item, tipo, n: r.n + 1 }));
-    setAberto(null);
-    setAba("registrar");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
   const itemAberto = itens.find((i) => i.item_id === aberto) ?? null;
+  const filtros: [Filtro, string, number][] = [["todos", "Todos", comSaldo.length], ["vencido", "Vencidos", vencidos.length], ["logo", `Vencem em ${LOGO} dias`, logo.length], ["zerado", "Sem estoque", zerados.length]];
 
   return (
     <div className="pagina">
       {topo}
-      <main className="miolo tv es et nf-larga cm">
+      <main className="miolo tv es nf-larga cm">
         <div className="es-topo">
           <div>
             <span className="es-sobre">Operação</span>
             <h1>Câmara fria</h1>
-            <p>Cada item com o total e quanto tem de cada validade. O que vence primeiro sai primeiro.</p>
+            <p>O estoque em cartões, com quanto tem de cada validade. Embaixo, as saídas e entradas por pedido.</p>
           </div>
         </div>
 
-        <div className="ip-numeros cm-numeros">
-          <div className="ip-numero"><span className="ip-rotulo">Itens com estoque</span><span className="ip-valor">{comSaldo.length}</span>
-            <span className="ip-var neutro">{num(comSaldo.reduce((t, s) => t + s.lotes.length, 0))} lotes · contado em {diaCurto(ultimaContagem)}</span></div>
-          <button className={`ip-numero cm-num-botao ${vencidos.length ? "cm-num-ruim" : ""}`} onClick={() => { setAba("estoque"); setFiltro("vencido"); }}>
-            <span className="ip-rotulo">Vencidos</span><span className="ip-valor">{vencidos.length}</span>
-            <span className="ip-var neutro">{vencidos.length ? `${vencidos.length === 1 ? "lote" : "lotes"} para tirar da câmara` : "nenhum lote vencido"}</span></button>
-          <button className={`ip-numero cm-num-botao ${logo.length ? "cm-num-atencao" : ""}`} onClick={() => { setAba("estoque"); setFiltro("logo"); }}>
-            <span className="ip-rotulo">Vencem em {LOGO} dias</span><span className="ip-valor">{logo.length}</span>
-            <span className="ip-var neutro">{logo.length ? "usar primeiro" : "nada perto de vencer"}</span></button>
-          <button className={`ip-numero cm-num-botao ${abaixo.length ? "cm-num-atencao" : ""}`} onClick={() => { setAba("estoque"); setFiltro("minimo"); }}>
-            <span className="ip-rotulo">Abaixo do mínimo</span><span className="ip-valor">{abaixo.length}</span>
-            <span className="ip-var neutro">{abaixo.length ? abaixo.slice(0, 3).map((s) => s.nome).join(", ") : "nada faltando"}</span></button>
+        <div className="cm-nums">
+          <button className={`cm-num ${filtro === "todos" ? "on" : ""}`} onClick={() => setFiltro("todos")}>
+            <small>Itens com estoque</small><b>{comSaldo.length}</b><span>contado em {diaCurto(ultimaContagem)}</span></button>
+          <button className={`cm-num ${vencidos.length ? "ruim" : ""} ${filtro === "vencido" ? "on" : ""}`} onClick={() => setFiltro("vencido")}>
+            <small>Vencidos</small><b>{vencidos.length}</b><span>{vencidos.length ? vencidos.map((s) => s.nome).join(", ") : "nenhum lote vencido"}</span></button>
+          <button className={`cm-num ${logo.length ? "atencao" : ""} ${filtro === "logo" ? "on" : ""}`} onClick={() => setFiltro("logo")}>
+            <small>Vencem em {LOGO} dias</small><b>{logo.length}</b><span>{logo.length ? logo.map((s) => s.nome).join(", ") : "nada perto de vencer"}</span></button>
+          <a className="cm-num" href="#saidas">
+            <small>Saídas na semana</small><b>{saidasSemana.length} {saidasSemana.length === 1 ? "pedido" : "pedidos"}</b><span>{destinosSemana.join(", ") || "nenhuma saída"}</span></a>
         </div>
 
-        <div className="cp-abas" role="tablist">
-          <button role="tab" aria-selected={aba === "estoque"} className={aba === "estoque" ? "on" : ""} onClick={() => setAba("estoque")}>Estoque</button>
-          <button role="tab" aria-selected={aba === "registrar"} className={aba === "registrar" ? "on" : ""} onClick={() => setAba("registrar")}>Registrar</button>
-          <button role="tab" aria-selected={aba === "movimentos"} className={aba === "movimentos" ? "on" : ""} onClick={() => setAba("movimentos")}>Movimentos</button>
-          {socio && <button role="tab" aria-selected={aba === "pessoas"} className={aba === "pessoas" ? "on" : ""} onClick={() => setAba("pessoas")}>Quem registra</button>}
-        </div>
-
-        {aba === "estoque" && (
-          <>
-            {atencao.length > 0 && filtro === "todos" && !termo && (
-              <section className="cm-atencao" aria-label="Validades que pedem atenção">
-                <h2>Pede atenção</h2>
-                <ul>
-                  {atencao.map(({ it, l, p }) => {
-                    const q = qtd(it, l.quantidade);
-                    return (
-                      <li key={`${it.item_id}-${l.validade}`}>
-                        <button className={`cm-aviso ${p.cls}`} onClick={() => setAberto(it.item_id)}>
-                          <i aria-hidden="true" />
-                          <span className="cm-aviso-nome"><strong>{it.nome}</strong><small>{q.pri}{q.sec && ` · ${q.sec}`}</small></span>
-                          <span className="cm-aviso-prazo">{p.txt}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            )}
-
-            <div className="cm-ferramentas">
-              <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Procurar item…" aria-label="Procurar item" />
-              <div className="ft-chips" role="tablist" aria-label="Filtro">
-                {([["todos", "Todos", itens.length], ["vencido", "Vencidos", vencidos.length], ["logo", `Vencem em ${LOGO} dias`, logo.length], ["minimo", "Abaixo do mínimo", abaixo.length]] as const).map(([k, t, n]) => (
-                  <button key={k} role="tab" aria-selected={filtro === k} className={filtro === k ? "on" : ""} onClick={() => setFiltro(k)}>{t}<span>{n}</span></button>
-                ))}
-              </div>
-            </div>
-
-            <div className="cm-legenda" aria-hidden="true">
-              <span><i className="vencido" />vencido</span><span><i className="logo" />vence em até {LOGO} dias</span><span><i className="ok" />dentro da validade</span><span><i className="sem" />sem validade</span>
-            </div>
-
-            {grupos.map((g) => (
-              <section key={g.nome} className="cm-grupo">
-                <h2>{g.nome}<span>{g.comSaldo.length} com estoque</span></h2>
-                {g.comSaldo.length > 0 && (
-                  <ul className="cm-lista">
-                    {g.comSaldo.map((it) => <Linha key={it.item_id} it={it} hoje={hoje} onAbrir={() => setAberto(it.item_id)} />)}
-                  </ul>
-                )}
-                {g.zerados.length > 0 && (
-                  <p className="cm-zerados">Sem estoque: {g.zerados.map((z, i) => (
-                    <span key={z.item_id}>{i > 0 && ", "}<button onClick={() => setAberto(z.item_id)}>{z.nome}</button></span>
-                  ))}</p>
-                )}
-              </section>
+        <div className="cm-ferr">
+          <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Procurar item…" aria-label="Procurar item" />
+          <div className="cm-chips" role="tablist" aria-label="Filtro">
+            {filtros.map(([k, t, n]) => (
+              <button key={k} role="tab" aria-selected={filtro === k} className={filtro === k ? "on" : ""} onClick={() => setFiltro(k)}>{t}<span>{n}</span></button>
             ))}
-            {!grupos.length && <p className="muted vazio">Nenhum item com esse filtro.</p>}
-          </>
+          </div>
+        </div>
+
+        {grupos.map((g) => (
+          <section key={g.nome} className="cm-grupo2">
+            <header><h2>{g.nome}</h2><span>{g.mostrar.length} {g.mostrar.length === 1 ? "item" : "itens"}</span></header>
+            {g.mostrar.length > 0 && (
+              <div className="cm-cards">
+                {g.mostrar.map((it) => <Cartao key={it.item_id} it={it} hoje={hoje} onAbrir={() => setAberto(it.item_id)} />)}
+              </div>
+            )}
+            {filtro === "todos" && !termo && g.semEstoque.length > 0 && (
+              <p className="cm-zerados">Sem estoque: {g.semEstoque.map((z, i) => (
+                <span key={z.item_id}>{i > 0 && ", "}<button onClick={() => setAberto(z.item_id)}>{z.nome}</button></span>
+              ))}</p>
+            )}
+          </section>
+        ))}
+        {!grupos.length && <p className="muted vazio">Nenhum item com esse filtro.</p>}
+
+        <Pedidos pedidos={pedidos} itens={itens} socio={socio} userId={userId} onPronto={carregar} />
+
+        {socio && (
+          <section className="cm-pessoas">
+            <button className="cm-pessoas-botao" aria-expanded={verPessoas} onClick={() => setVerPessoas((v) => !v)}>
+              <span>Quem registra na câmara fria</span><i aria-hidden="true">{verPessoas ? "−" : "+"}</i>
+            </button>
+            {verPessoas && <QuemRegistra />}
+          </section>
         )}
-
-        {aba === "registrar" && <Registrar key={reg.n} itens={itens} hoje={hoje} inicial={reg.item} tipoInicial={reg.tipo} onPronto={carregar} />}
-
-        {aba === "movimentos" && <Movimentos movs={movs} itens={itens} hoje={hoje} socio={socio} userId={userId} onPronto={carregar} />}
-
-        {aba === "pessoas" && socio && <QuemRegistra />}
       </main>
 
       {itemAberto && (
         <Painel it={itemAberto} hoje={hoje} movs={movs.filter((m) => m.item_id === itemAberto.item_id && !m.removido).slice(0, 12)}
-          onFechar={() => setAberto(null)} onRegistrar={(t) => registrar(itemAberto.item_id, t)} />
+          onFechar={() => setAberto(null)} />
       )}
     </div>
   );
 }
 
-// Uma linha do estoque: nome, total, barra dos lotes e um selo por validade
-function Linha({ it, hoje, onAbrir }: { it: Item; hoje: string; onAbrir: () => void }) {
+// Cartão de um item: nome, total, barra das validades e quanto tem de cada uma
+function Cartao({ it, hoje, onAbrir }: { it: Item; hoje: string; onAbrir: () => void }) {
   const total = qtd(it, it.saldo);
-  const positivos = it.lotes.filter((l) => l.quantidade > 0);
-  const soma = positivos.reduce((t, l) => t + l.quantidade, 0) || 1;
-  const baixo = it.minimo != null && it.saldo < it.minimo;
+  const soma = it.lotes.reduce((t, l) => t + l.quantidade, 0) || 1;
+  const venc = it.saldo > 0 && it.lotes.some((l) => prazo(l.validade, hoje).cls === "vencido");
+  const logo = it.saldo > 0 && !venc && it.lotes.some((l) => prazo(l.validade, hoje).cls === "logo");
+  const MAX = 4;
   return (
-    <li>
-      <button className="cm-item" onClick={onAbrir}>
-        <span className="cm-item-nome">
-          <strong>{it.nome}</strong>
-          <small>{it.lotes.length} {it.lotes.length === 1 ? "validade" : "validades"}{it.minimo != null && ` · mínimo ${num(it.minimo)}`}</small>
-          {baixo && <em className="cm-selo-min">abaixo do mínimo</em>}
-        </span>
-        <span className="cm-item-total">
-          <b>{total.pri}</b>{total.sec && <small>{total.sec}</small>}
-          <span className="cm-barra" aria-hidden="true">
-            {positivos.map((l) => <i key={l.validade ?? "sem"} className={prazo(l.validade, hoje).cls} style={{ flexGrow: l.quantidade / soma }} />)}
+    <button className={`cm-card ${venc ? "vencido" : logo ? "logo" : ""} ${it.saldo <= 0 ? "zerado" : ""}`} onClick={onAbrir}>
+      <span className="cm-card-topo">
+        <strong>{it.nome}</strong>
+        {venc ? <em className="cm-selo vencido">vencido</em> : logo ? <em className="cm-selo logo">vence logo</em> : null}
+      </span>
+      <span className="cm-card-total">
+        <b>{it.saldo > 0 ? total.pri : "Sem estoque"}</b>
+        <small>{it.saldo > 0 ? (total.sec || `${it.lotes.length} ${it.lotes.length === 1 ? "validade" : "validades"}`) : `contado em ${diaCurto(it.contada_em)}`}</small>
+      </span>
+      {it.lotes.length > 0 && (
+        <>
+          <span className="cm-card-barra" aria-hidden="true">
+            {it.lotes.map((l) => <i key={l.validade ?? "sem"} className={prazo(l.validade, hoje).cls} style={{ flexGrow: l.quantidade / soma }} />)}
           </span>
-        </span>
-        <span className="cm-lotes">
-          {it.lotes.map((l) => {
-            const p = prazo(l.validade, hoje);
-            return (
-              <span key={l.validade ?? "sem"} className={`cm-lote ${p.cls}`} title={p.txt}>
-                <b>{qtd(it, l.quantidade).pri}</b><span>{p.curto}</span>
-              </span>
-            );
-          })}
-        </span>
-      </button>
-    </li>
+          <span className="cm-card-lotes">
+            {it.lotes.slice(0, MAX).map((l) => {
+              const p = prazo(l.validade, hoje);
+              return (
+                <span key={l.validade ?? "sem"} className={p.cls} title={p.txt}>
+                  <span><i aria-hidden="true" />{l.validade ? dataVal(l.validade) : "sem validade"}</span>
+                  <b>{qtd(it, l.quantidade).pri}</b>
+                </span>
+              );
+            })}
+            {it.lotes.length > MAX && <span className="mais">+ {it.lotes.length - MAX} validades</span>}
+          </span>
+        </>
+      )}
+    </button>
   );
 }
 
-// Painel lateral de um item: lotes por validade, ações e últimos movimentos
-function Painel({ it, hoje, movs, onFechar, onRegistrar }: { it: Item; hoje: string; movs: Mov[]; onFechar: () => void; onRegistrar: (t: Tipo) => void }) {
+// Saídas, entradas e contagens por pedido, cada um abre e fecha
+function Pedidos({ pedidos, itens, socio, userId, onPronto }: { pedidos: Pedido[]; itens: Item[]; socio: boolean; userId: string; onPronto: () => void }) {
+  const [abertos, setAbertos] = useState<Set<string>>(() => new Set(pedidos[0] ? [pedidos[0].chave] : []));
+  const [mostrar, setMostrar] = useState(15);
+  const [tipo, setTipo] = useState<"todos" | Tipo>("todos");
+  useEffect(() => { if (pedidos[0]) setAbertos((a) => (a.size ? a : new Set([pedidos[0].chave]))); }, [pedidos]);
+  const nomes = Object.fromEntries(itens.map((s) => [s.item_id, s]));
+  const lista = pedidos.filter((p) => tipo === "todos" || p.m.tipo === tipo);
+  const visiveis = lista.slice(0, mostrar);
+  const todosAbertos = visiveis.length > 0 && visiveis.every((p) => abertos.has(p.chave));
+  const alternar = (k: string) => setAbertos((a) => { const n = new Set(a); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  return (
+    <section className="cm-peds" id="saidas">
+      <header className="cm-peds-topo">
+        <div><h2>Saídas e entradas</h2><span>clique num pedido para abrir ou fechar</span></div>
+        <div className="cm-peds-acoes">
+          <div className="cm-chips">
+            {([["todos", "Tudo"], ["saida", "Saídas"], ["entrada", "Entradas"], ["contagem", "Contagens"]] as const).map(([k, t]) => (
+              <button key={k} className={tipo === k ? "on" : ""} onClick={() => setTipo(k)}>{t}</button>
+            ))}
+          </div>
+          <button className="ghost small" onClick={() => setAbertos(todosAbertos ? new Set() : new Set(visiveis.map((p) => p.chave)))}>{todosAbertos ? "Fechar todos" : "Abrir todos"}</button>
+        </div>
+      </header>
+      {!visiveis.length && <p className="muted">Nenhum movimento ainda.</p>}
+      <div className="cm-peds-lista">
+        {visiveis.map((p) => {
+          const ativos = p.itens.filter((x) => !x.removido);
+          const aberto = abertos.has(p.chave);
+          const sinal = p.m.tipo === "entrada" ? "+" : p.m.tipo === "saida" ? "−" : "=";
+          const titulo = p.m.tipo === "saida" ? `Saída para ${nomeDestino(p.m.destino) || "—"}` : p.m.tipo === "entrada" ? "Entrada na câmara" : "Contagem";
+          // contagem: um item pode ter várias validades na mesma contagem; junta por item
+          const porItem = new Map<string, Mov[]>();
+          for (const x of p.itens) porItem.set(x.item_id, [...(porItem.get(x.item_id) ?? []), x]);
+          const nomesItens = [...porItem.keys()].map((k) => nomes[k]?.nome ?? "—");
+          return (
+            <article key={p.chave} className={`cm-ped ${p.m.tipo} ${aberto ? "aberto" : ""} ${!ativos.length ? "desfeito" : ""}`}>
+              <button className="cm-ped-cabeca" aria-expanded={aberto} onClick={() => alternar(p.chave)}>
+                <span className="cm-ped-sinal" aria-hidden="true">{sinal}</span>
+                <span className="cm-ped-titulo">
+                  <strong>{titulo}</strong>
+                  <small>{diaCurto(p.m.quando)} · {porItem.size} {porItem.size === 1 ? "item" : "itens"}{!ativos.length ? " · desfeito" : ""}
+                    {!aberto && <span className="cm-ped-resumo"> · {nomesItens.slice(0, 4).join(", ")}{nomesItens.length > 4 ? "…" : ""}</span>}</small>
+                </span>
+                <span className="cm-ped-seta" aria-hidden="true" />
+              </button>
+              <div className="cm-ped-corpo" hidden={!aberto}>
+                <ul>
+                  {[...porItem.entries()].sort((a, b) => (nomes[a[0]]?.nome ?? "").localeCompare(nomes[b[0]]?.nome ?? "")).map(([itemId, ms]) => {
+                    const s = nomes[itemId];
+                    const vivos = ms.filter((x) => !x.removido);
+                    const soma = (vivos.length ? vivos : ms).reduce((t, x) => t + x.quantidade, 0);
+                    const validades = ms.map((x) => x.validade).filter(Boolean) as string[];
+                    const primeiro = ms[0];
+                    return (
+                      <li key={itemId} className={!vivos.length ? "desfeito" : ""}>
+                        <span className="cm-ped-item">{s?.nome ?? "—"}</span>
+                        <span className="cm-ped-val">{validades.length ? `val. ${validades.map((v) => dataVal(v).slice(0, 5)).join(", ")}` : p.m.tipo === "saida" ? "o que vence primeiro" : ""}</span>
+                        <b className="cm-ped-qtd">{sinal}{s ? (soma === 0 && p.m.tipo === "contagem" ? "zerado" : qtd(s, soma).pri) : num(soma)}</b>
+                        {vivos.length > 0 && (socio || primeiro.registrado_por === userId) ? <Desfazer id={primeiro.id} onPronto={onPronto} /> : <span />}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="cm-ped-rodape">{quando(p.m.quando)} · {ORIGENS[p.m.origem] ?? p.m.origem}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {lista.length > mostrar && <button className="ghost cm-peds-mais" onClick={() => setMostrar((n) => n + 15)}>Mostrar mais ({lista.length - mostrar})</button>}
+      <p className="muted es-nota">Desfazer não apaga: o movimento fica riscado e sai da conta. Numa contagem, desfaz todas as validades daquele item.</p>
+    </section>
+  );
+}
+
+// Painel lateral de um item: lotes por validade e últimos movimentos
+function Painel({ it, hoje, movs, onFechar }: { it: Item; hoje: string; movs: Mov[]; onFechar: () => void }) {
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onFechar(); };
     window.addEventListener("keydown", esc);
@@ -322,13 +380,8 @@ function Painel({ it, hoje, movs, onFechar, onRegistrar }: { it: Item; hoje: str
           <button className="ghost small" onClick={onFechar} aria-label="Fechar">✕</button>
         </header>
         <div className="cm-painel-total">
-          <b>{total.pri}</b>{total.sec && <span>{total.sec}</span>}
-          <small>contado em {diaCurto(it.contada_em)}{(it.entradas > 0 || it.saidas > 0) && ` · depois: +${num(it.entradas)} / −${num(it.saidas)}`}</small>
-        </div>
-        <div className="cm-acoes">
-          <button onClick={() => onRegistrar("entrada")}>+ Entrada</button>
-          <button className="ghost" onClick={() => onRegistrar("saida")}>− Saída</button>
-          <button className="ghost" onClick={() => onRegistrar("contagem")}>= Contar</button>
+          <b>{it.saldo > 0 ? total.pri : "Sem estoque"}</b>{it.saldo > 0 && total.sec && <span>{total.sec}</span>}
+          <small>contado em {diaCurto(it.contada_em)}{(it.entradas > 0 || it.saidas > 0) && ` · depois: +${qtd(it, it.entradas).pri} / −${qtd(it, it.saidas).pri}`}</small>
         </div>
         <h3>Por validade</h3>
         {it.lotes.length ? (
@@ -357,7 +410,7 @@ function Painel({ it, hoje, movs, onFechar, onRegistrar }: { it: Item; hoje: str
               {movs.map((m) => (
                 <li key={m.id}>
                   <span className={`cm-sinal ${m.tipo}`} aria-hidden="true">{m.tipo === "entrada" ? "+" : m.tipo === "saida" ? "−" : "="}</span>
-                  <span>{TIPOS[m.tipo]}{m.validade && ` · validade ${dataVal(m.validade)}`}<small>{quando(m.quando)}{m.destino ? ` · ${DESTINOS[m.destino] ?? m.destino}` : ""}</small></span>
+                  <span>{TIPOS[m.tipo]}{m.validade && ` · validade ${dataVal(m.validade)}`}<small>{quando(m.quando)}{m.destino ? ` · ${nomeDestino(m.destino)}` : ""}</small></span>
                   <b>{qtd(it, m.quantidade).pri}</b>
                 </li>
               ))}
@@ -366,286 +419,6 @@ function Painel({ it, hoje, movs, onFechar, onRegistrar }: { it: Item; hoje: str
         )}
       </aside>
     </div>
-  );
-}
-
-type LinhaLote = { qtd: string; validade: string };
-
-function Registrar({ itens, hoje, inicial, tipoInicial, onPronto }: { itens: Item[]; hoje: string; inicial: string; tipoInicial: Tipo; onPronto: () => void }) {
-  const supabase = useMemo(() => createClient(), []);
-  const [tipo, setTipo] = useState<Tipo>(tipoInicial);
-  const [itemId, setItemId] = useState(inicial);
-  const [emPacotes, setEmPacotes] = useState(true);
-  const [qtdTxt, setQtdTxt] = useState("");
-  const [validade, setValidade] = useState("");
-  const [lote, setLote] = useState(""); // saída: "" = o que vence primeiro
-  const [destino, setDestino] = useState("");
-  const [obs, setObs] = useState("");
-  const [linhas, setLinhas] = useState<LinhaLote[]>([]);
-  const [msg, setMsg] = useState("");
-  const [ok, setOk] = useState("");
-  const [enviando, setEnviando] = useState(false);
-  const item = itens.find((s) => s.item_id === itemId);
-  const pac = !!item && temPacote(item) && emPacotes;
-  const fator = pac ? Number(item!.pacote_tamanho) : 1;
-  const nomeQtd = pac ? `${pct(item!)}` : item ? unid(item, 2) : "";
-  const ler = (t: string) => { const n = Number(t.replace(",", ".")); return t.trim() && !Number.isNaN(n) ? n * fator : null; };
-
-  // Contagem: começa com os lotes que o item tem hoje
-  const preencher = useCallback((it: Item | undefined, emPac: boolean) => {
-    if (!it) return setLinhas([{ qtd: "", validade: "" }]);
-    let f = temPacote(it) && emPac ? Number(it.pacote_tamanho) : 1;
-    // lote que não fecha pacote inteiro: preenche na unidade, para não aparecer número quebrado
-    if (f !== 1 && it.lotes.some((l) => l.quantidade > 0 && Math.abs(l.quantidade / f - Math.round(l.quantidade / f)) > 1e-9)) { f = 1; setEmPacotes(false); }
-    const ls = it.lotes.filter((l) => l.quantidade > 0).map((l) => ({ qtd: String(Number((l.quantidade / f).toFixed(2))).replace(".", ","), validade: l.validade ?? "" }));
-    setLinhas(ls.length ? ls : [{ qtd: "", validade: "" }]);
-  }, []);
-  useEffect(() => { if (tipo === "contagem") preencher(item, emPacotes); }, [tipo, itemId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const total = tipo === "contagem" ? linhas.reduce((t, l) => t + (ler(l.qtd) ?? 0), 0) : ler(qtdTxt);
-  const depois = item && total != null ? (tipo === "contagem" ? total : item.saldo + (tipo === "entrada" ? total : -total)) : null;
-  const loteEscolhido = item?.lotes.find((l) => (l.validade ?? "") === lote && lote !== "");
-
-  function trocarPacotes(v: boolean) {
-    if (tipo === "contagem" && item && temPacote(item)) {
-      const f = Number(item.pacote_tamanho);
-      setLinhas((ls) => ls.map((l) => {
-        const n = Number(l.qtd.replace(",", "."));
-        if (!l.qtd.trim() || Number.isNaN(n)) return l;
-        return { ...l, qtd: String(Number((v ? n / f : n * f).toFixed(2))).replace(".", ",") };
-      }));
-    }
-    setEmPacotes(v);
-  }
-
-  async function registrar() {
-    setMsg(""); setOk("");
-    if (!item) return setMsg("Escolha o item.");
-    setEnviando(true);
-    let error: { message: string } | null = null;
-    // Só número inteiro (pacotes, porções, unidades). Em kg/L, pode ter gramas (ex.: 5,5 kg).
-    const aceitaQuebrado = !pac && (item.unidade === "kg" || item.unidade === "L");
-    const textos = tipo === "contagem" ? linhas.map((l) => l.qtd).filter((t) => t.trim()) : [qtdTxt];
-    if (!aceitaQuebrado && textos.some((t) => { const n = Number(t.replace(",", ".")); return !Number.isNaN(n) && !Number.isInteger(n); })) {
-      setEnviando(false);
-      return setMsg(`Use só número inteiro de ${nomeQtd}.${pac ? ` Se sobrou pacote aberto, desmarque "Contar em ${item.pacote_nome}s" e informe em ${unid(item, 2)}.` : ""}`);
-    }
-    if (tipo === "contagem") {
-      const lotes = linhas.filter((l) => l.qtd.trim()).map((l) => ({ quantidade: ler(l.qtd), validade: l.validade || null }));
-      if (lotes.some((l) => l.quantidade == null || l.quantidade < 0)) { setEnviando(false); return setMsg("Confira as quantidades."); }
-      if (lotes.some((l) => !l.validade) && !confirm("Há lote sem validade. Gravar assim mesmo?")) { setEnviando(false); return; }
-      const datas = lotes.map((l) => l.validade ?? "");
-      if (new Set(datas).size !== datas.length) { setEnviando(false); return setMsg("Duas linhas com a mesma validade: some as quantidades numa linha só."); }
-      ({ error } = await supabase.rpc("estoque_contar", { p_item: item.item_id, p_lotes: lotes, p_observacao: obs }));
-    } else {
-      if (total == null || total <= 0) { setEnviando(false); return setMsg("Informe a quantidade."); }
-      if (tipo === "entrada" && !validade) { setEnviando(false); return setMsg("Informe a validade que está na etiqueta."); }
-      if (tipo === "saida" && !destino) { setEnviando(false); return setMsg("Escolha para onde foi."); }
-      ({ error } = await supabase.rpc("estoque_registrar_lote", { p_item: item.item_id, p_tipo: tipo, p_quantidade: total,
-        p_validade: tipo === "entrada" ? validade : lote || null, p_destino: tipo === "saida" ? destino : "", p_observacao: obs }));
-    }
-    setEnviando(false);
-    if (error) return setMsg(error.message);
-    setOk(`${TIPOS[tipo]} registrada: ${qtd(item, total ?? 0).pri} de ${item.nome}.`);
-    setQtdTxt(""); setObs(""); setValidade(""); setLote("");
-    onPronto();
-  }
-
-  return (
-    <div className="av cf-registro cm-registro">
-      <div className="av-principal">
-        <section className="av-bloco">
-          <header className="av-bloco-cabeca"><span className="av-passo">1</span><div><h3>O que aconteceu</h3><p className="muted">guardou, tirou ou contou</p></div></header>
-          <div className="et-tipos" role="radiogroup" aria-label="Tipo de movimento">
-            {(Object.keys(TIPOS) as Tipo[]).map((t) => (
-              <button key={t} type="button" role="radio" aria-checked={tipo === t} className={tipo === t ? `on ${t}` : t} onClick={() => setTipo(t)}>
-                <span className="et-tipo-sinal" aria-hidden="true">{t === "entrada" ? "+" : t === "saida" ? "−" : "="}</span>
-                {TIPOS[t]}<small>{t === "entrada" ? "guardei na câmara" : t === "saida" ? "tirei da câmara" : "contei o que tem"}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="av-bloco">
-          <header className="av-bloco-cabeca"><span className="av-passo">2</span><div><h3>O item</h3><p className="muted">{tipo === "contagem" ? "uma linha para cada validade" : "quantidade e validade da etiqueta"}</p></div></header>
-          <div className="av-campos">
-            <label className="av-largo">Item
-              <select value={itemId} onChange={(v) => { setItemId(v.target.value); setLote(""); }}>
-                <option value="">Escolha…</option>
-                {itens.map((s) => <option key={s.item_id} value={s.item_id}>{s.nome} · hoje {qtd(s, s.saldo).pri}</option>)}
-              </select>
-            </label>
-            {item && temPacote(item) && (
-              <label className="et-check av-largo"><input type="checkbox" checked={emPacotes} onChange={(v) => trocarPacotes(v.target.checked)} />
-                Contar em {item.pacote_nome}s ({num(item.pacote_tamanho)} {unid(item, Number(item.pacote_tamanho))} cada)</label>
-            )}
-
-            {tipo !== "contagem" && (
-              <>
-                <label>Quantidade{nomeQtd && ` (${nomeQtd})`}
-                  <input inputMode="decimal" value={qtdTxt} onChange={(v) => setQtdTxt(v.target.value)} placeholder="0" />
-                </label>
-                {tipo === "entrada" ? (
-                  <label>Validade (da etiqueta)
-                    <input type="date" value={validade} min={hoje} onChange={(v) => setValidade(v.target.value)} />
-                  </label>
-                ) : (
-                  <label>De qual validade
-                    <select value={lote} onChange={(v) => setLote(v.target.value)}>
-                      <option value="">A que vence primeiro (automático)</option>
-                      {item?.lotes.filter((l) => l.quantidade > 0 && l.validade).map((l) => (
-                        <option key={l.validade!} value={l.validade!}>{dataVal(l.validade!)} · {qtd(item, l.quantidade).pri}</option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {tipo === "saida" && (
-                  <label>Para onde foi
-                    <select value={destino} onChange={(v) => setDestino(v.target.value)}>
-                      <option value="">Escolha…</option>
-                      {Object.entries(DESTINOS).filter(([k]) => !DESTINOS_ENCERRADOS.has(k)).map(([k, d]) => <option key={k} value={k}>{d}</option>)}
-                    </select>
-                  </label>
-                )}
-              </>
-            )}
-
-            {tipo === "contagem" && item && (
-              <div className="av-largo cm-linhas">
-                <div className="cm-linha cm-linha-cabeca" aria-hidden="true"><span>Quantidade ({nomeQtd})</span><span>Validade</span><span /></div>
-                {linhas.map((l, i) => {
-                  const p = l.validade ? prazo(l.validade, hoje) : null;
-                  return (
-                    <div key={i} className="cm-linha">
-                      <input inputMode="decimal" value={l.qtd} placeholder="0" aria-label={`Quantidade do lote ${i + 1}`}
-                        onChange={(v) => setLinhas((ls) => ls.map((x, j) => (j === i ? { ...x, qtd: v.target.value } : x)))} />
-                      <span className="cm-linha-val">
-                        <input type="date" value={l.validade} aria-label={`Validade do lote ${i + 1}`}
-                          onChange={(v) => setLinhas((ls) => ls.map((x, j) => (j === i ? { ...x, validade: v.target.value } : x)))} />
-                        {p && p.cls !== "ok" && <small className={`cm-situacao ${p.cls}`}>{p.curto}</small>}
-                      </span>
-                      <button type="button" className="ghost small" aria-label="Tirar esta linha"
-                        onClick={() => setLinhas((ls) => (ls.length > 1 ? ls.filter((_, j) => j !== i) : [{ qtd: "", validade: "" }]))}>✕</button>
-                    </div>
-                  );
-                })}
-                <button type="button" className="ghost small cm-mais" onClick={() => setLinhas((ls) => [...ls, { qtd: "", validade: "" }])}>+ Outra validade</button>
-                <p className="muted cm-nota">A contagem substitui tudo o que o sistema tinha deste item. Deixe em branco ou tire as linhas que acabaram.</p>
-              </div>
-            )}
-
-            <label className="av-largo">Observação<input value={obs} onChange={(v) => setObs(v.target.value)} placeholder="opcional" /></label>
-          </div>
-        </section>
-      </div>
-      <aside className="av-lado">
-        <section className="av-bloco av-resumo">
-          <div className="av-total"><span>{item ? item.nome : "Escolha um item"}</span><b>{item ? qtd(item, item.saldo).pri : "—"}</b></div>
-          {item && total != null && depois != null && (
-            <p className="cf-depois">
-              {tipo === "contagem" ? "O total passa a ser" : tipo === "entrada" ? `Entram ${qtd(item, total).pri} e o total fica` : `Saem ${qtd(item, total).pri} e o total fica`}
-              <b className={depois < 0 ? "es-ruim" : ""}>{qtd(item, depois).pri}</b>
-            </p>
-          )}
-          {tipo === "saida" && loteEscolhido && total != null && total > loteEscolhido.quantidade && (
-            <p className="tv-alerta">Esse lote tem só {qtd(item!, loteEscolhido.quantidade).pri}.</p>
-          )}
-          {tipo === "entrada" && validade && prazo(validade, hoje).cls !== "ok" && (
-            <p className="tv-alerta">Atenção: {prazo(validade, hoje).txt}.</p>
-          )}
-          {msg && <p className="tv-alerta">{msg}</p>}
-          {ok && <p className="es-aviso">{ok}</p>}
-          <button onClick={registrar} disabled={enviando}>{enviando ? "Registrando…" : `Registrar ${TIPOS[tipo].toLowerCase()}`}</button>
-          <p className="muted av-nota">Errou? Em Movimentos dá para desfazer: o registro fica riscado e sai da conta.</p>
-        </section>
-      </aside>
-    </div>
-  );
-}
-
-// Movimentos: a contagem aparece numa linha só, com cada validade
-function Movimentos({ movs, itens, hoje, socio, userId, onPronto }: { movs: Mov[]; itens: Item[]; hoje: string; socio: boolean; userId: string; onPronto: () => void }) {
-  const nomes = Object.fromEntries(itens.map((s) => [s.item_id, s]));
-  const blocos: { chave: string; m: Mov; lotes: Mov[] }[] = [];
-  const pedidos: { chave: string; m: Mov; itens: Mov[] }[] = [];
-  // Entradas e saídas viram um pedido: mesmo tipo, mesmo destino, mesma pessoa, lançadas em até 15 min
-  const DEZ = 15 * 60 * 1000;
-  for (const m of movs) {
-    if (m.tipo === "contagem") {
-      const chave = `c|${m.item_id}|${m.quando}`;
-      const b = blocos.find((x) => x.chave === chave);
-      if (b) b.lotes.push(m); else blocos.push({ chave, m, lotes: [m] });
-      continue;
-    }
-    const p = pedidos.find((x) => x.m.tipo === m.tipo && (x.m.destino ?? "") === (m.destino ?? "") && x.m.registrado_por === m.registrado_por
-      && Math.abs(Date.parse(x.m.quando) - Date.parse(m.quando)) <= DEZ);
-    if (p) p.itens.push(m);
-    else { const novo = { chave: `p|${m.id}`, m, itens: [m] }; pedidos.push(novo); blocos.push({ chave: novo.chave, m, lotes: novo.itens }); }
-  }
-  return (
-    <section className="sf-andamento cf-movs">
-      <h3>Últimos movimentos</h3>
-      {!blocos.length ? <p className="muted">Nenhum movimento ainda.</p> : (
-        <ol className="sf-linha-tempo">
-          {blocos.map(({ chave, m, lotes }) => {
-            if (m.tipo !== "contagem") {
-              const ativos = lotes.filter((x) => !x.removido);
-              const sinal = m.tipo === "entrada" ? "+" : "−";
-              const itensOrd = lotes.slice().sort((a, b) => (nomes[a.item_id]?.nome ?? "").localeCompare(nomes[b.item_id]?.nome ?? ""));
-              return (
-                <li key={chave} className={`cf-mov ${m.tipo} ${!ativos.length ? "desfeito" : ""}`}>
-                  <span className="cf-mov-sinal" aria-hidden="true">{sinal}</span>
-                  <div className="cf-mov-corpo cm-pedido">
-                    <div>
-                      <strong>{m.tipo === "saida" ? `Saída${m.destino ? ` para ${DESTINOS[m.destino] ?? m.destino}` : ""}` : "Entrada na câmara"}</strong>
-                      <small>{quando(m.quando)} · {ORIGENS[m.origem] ?? m.origem} · {ativos.length} {ativos.length === 1 ? "item" : "itens"}{!ativos.length ? " · desfeito" : ""}</small>
-                      <ul className="cm-pedido-itens">
-                        {itensOrd.map((x) => {
-                          const s = nomes[x.item_id];
-                          return (
-                            <li key={x.id} className={x.removido ? "desfeito" : ""}>
-                              <span className="cm-pedido-nome">{s?.nome ?? "—"}</span>
-                              <span className="cm-pedido-val">{x.validade ? `val. ${dataVal(x.validade)}` : x.tipo === "saida" ? "vence primeiro" : ""}{x.removido ? " · desfeito" : ""}</span>
-                              <b className="cm-pedido-qtd">{sinal}{s ? qtd(s, x.quantidade).pri : num(x.quantidade)}</b>
-                              {!x.removido && (socio || x.registrado_por === userId) ? <Desfazer id={x.id} onPronto={onPronto} /> : <span />}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  </div>
-                </li>
-              );
-            }
-            const s = nomes[m.item_id];
-            const soma = lotes.reduce((t, x) => t + x.quantidade, 0);
-            return (
-              <li key={chave} className={`cf-mov ${m.tipo} ${m.removido ? "desfeito" : ""}`}>
-                <span className="cf-mov-sinal" aria-hidden="true">=</span>
-                <div className="cf-mov-corpo">
-                  <div>
-                    <strong>{TIPOS[m.tipo]} · {s?.nome ?? "—"}</strong>
-                    <small>{quando(m.quando)} · {ORIGENS[m.origem] ?? m.origem}{m.destino ? ` · para ${DESTINOS[m.destino] ?? m.destino}` : ""}
-                      {m.tipo !== "contagem" && (m.validade ? ` · validade ${dataVal(m.validade)}` : m.tipo === "saida" ? " · da que vence primeiro" : "")}{m.removido ? " · desfeito" : ""}</small>
-                    {m.tipo === "contagem" && s && lotes.some((x) => x.validade) && (
-                      <span className="cm-lotes cm-lotes-mov">
-                        {lotes.slice().sort((a, b) => (a.validade ?? "9").localeCompare(b.validade ?? "9")).map((x) => {
-                          const p = prazo(x.validade, hoje);
-                          return <span key={x.id} className={`cm-lote ${p.cls}`}><b>{qtd(s, x.quantidade).pri}</b><span>{x.validade ? dataVal(x.validade).slice(0, 5) : "sem validade"}</span></span>;
-                        })}
-                      </span>
-                    )}
-                    {m.observacao && lotes.length === 1 && <small className="cf-obs">{m.observacao}</small>}
-                  </div>
-                  <span className="cf-mov-qtd">={s ? qtd(s, soma).pri : num(soma)}</span>
-                  {!m.removido && (socio || m.registrado_por === userId) && <Desfazer id={m.id} onPronto={onPronto} />}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-      <p className="muted es-nota">Desfazer não apaga: o movimento fica riscado e sai da conta. Numa contagem, desfaz todas as validades dela.</p>
-    </section>
   );
 }
 
