@@ -566,10 +566,20 @@ function Registrar({ itens, hoje, inicial, tipoInicial, onPronto }: { itens: Ite
 function Movimentos({ movs, itens, hoje, socio, userId, onPronto }: { movs: Mov[]; itens: Item[]; hoje: string; socio: boolean; userId: string; onPronto: () => void }) {
   const nomes = Object.fromEntries(itens.map((s) => [s.item_id, s]));
   const blocos: { chave: string; m: Mov; lotes: Mov[] }[] = [];
+  const pedidos: { chave: string; m: Mov; itens: Mov[] }[] = [];
+  // Entradas e saídas viram um pedido: mesmo tipo, mesmo destino, mesma pessoa, lançadas em até 15 min
+  const DEZ = 15 * 60 * 1000;
   for (const m of movs) {
-    const chave = m.tipo === "contagem" ? `c|${m.item_id}|${m.quando}` : `m|${m.id}`;
-    const b = blocos.find((x) => x.chave === chave);
-    if (b) b.lotes.push(m); else blocos.push({ chave, m, lotes: [m] });
+    if (m.tipo === "contagem") {
+      const chave = `c|${m.item_id}|${m.quando}`;
+      const b = blocos.find((x) => x.chave === chave);
+      if (b) b.lotes.push(m); else blocos.push({ chave, m, lotes: [m] });
+      continue;
+    }
+    const p = pedidos.find((x) => x.m.tipo === m.tipo && (x.m.destino ?? "") === (m.destino ?? "") && x.m.registrado_por === m.registrado_por
+      && Math.abs(Date.parse(x.m.quando) - Date.parse(m.quando)) <= DEZ);
+    if (p) p.itens.push(m);
+    else { const novo = { chave: `p|${m.id}`, m, itens: [m] }; pedidos.push(novo); blocos.push({ chave: novo.chave, m, lotes: novo.itens }); }
   }
   return (
     <section className="sf-andamento cf-movs">
@@ -577,11 +587,40 @@ function Movimentos({ movs, itens, hoje, socio, userId, onPronto }: { movs: Mov[
       {!blocos.length ? <p className="muted">Nenhum movimento ainda.</p> : (
         <ol className="sf-linha-tempo">
           {blocos.map(({ chave, m, lotes }) => {
+            if (m.tipo !== "contagem") {
+              const ativos = lotes.filter((x) => !x.removido);
+              const sinal = m.tipo === "entrada" ? "+" : "−";
+              const itensOrd = lotes.slice().sort((a, b) => (nomes[a.item_id]?.nome ?? "").localeCompare(nomes[b.item_id]?.nome ?? ""));
+              return (
+                <li key={chave} className={`cf-mov ${m.tipo} ${!ativos.length ? "desfeito" : ""}`}>
+                  <span className="cf-mov-sinal" aria-hidden="true">{sinal}</span>
+                  <div className="cf-mov-corpo cm-pedido">
+                    <div>
+                      <strong>{m.tipo === "saida" ? `Saída${m.destino ? ` para ${DESTINOS[m.destino] ?? m.destino}` : ""}` : "Entrada na câmara"}</strong>
+                      <small>{quando(m.quando)} · {ORIGENS[m.origem] ?? m.origem} · {ativos.length} {ativos.length === 1 ? "item" : "itens"}{!ativos.length ? " · desfeito" : ""}</small>
+                      <ul className="cm-pedido-itens">
+                        {itensOrd.map((x) => {
+                          const s = nomes[x.item_id];
+                          return (
+                            <li key={x.id} className={x.removido ? "desfeito" : ""}>
+                              <span className="cm-pedido-nome">{s?.nome ?? "—"}</span>
+                              <span className="cm-pedido-val">{x.validade ? `val. ${dataVal(x.validade)}` : x.tipo === "saida" ? "vence primeiro" : ""}{x.removido ? " · desfeito" : ""}</span>
+                              <b className="cm-pedido-qtd">{sinal}{s ? qtd(s, x.quantidade).pri : num(x.quantidade)}</b>
+                              {!x.removido && (socio || x.registrado_por === userId) ? <Desfazer id={x.id} onPronto={onPronto} /> : <span />}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                </li>
+              );
+            }
             const s = nomes[m.item_id];
             const soma = lotes.reduce((t, x) => t + x.quantidade, 0);
             return (
               <li key={chave} className={`cf-mov ${m.tipo} ${m.removido ? "desfeito" : ""}`}>
-                <span className="cf-mov-sinal" aria-hidden="true">{m.tipo === "entrada" ? "+" : m.tipo === "saida" ? "−" : "="}</span>
+                <span className="cf-mov-sinal" aria-hidden="true">=</span>
                 <div className="cf-mov-corpo">
                   <div>
                     <strong>{TIPOS[m.tipo]} · {s?.nome ?? "—"}</strong>
@@ -597,7 +636,7 @@ function Movimentos({ movs, itens, hoje, socio, userId, onPronto }: { movs: Mov[
                     )}
                     {m.observacao && lotes.length === 1 && <small className="cf-obs">{m.observacao}</small>}
                   </div>
-                  <span className="cf-mov-qtd">{m.tipo === "entrada" ? "+" : m.tipo === "saida" ? "−" : "="}{s ? qtd(s, soma).pri : num(soma)}</span>
+                  <span className="cf-mov-qtd">={s ? qtd(s, soma).pri : num(soma)}</span>
                   {!m.removido && (socio || m.registrado_por === userId) && <Desfazer id={m.id} onPronto={onPronto} />}
                 </div>
               </li>
