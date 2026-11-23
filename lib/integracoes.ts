@@ -40,6 +40,7 @@ export type Painel = {
 export type Contrato = {
   id: string; fornecedor: string; servico: string; valor: number; moeda: "BRL" | "USD"; periodo: "mês" | "ano";
   proxima_cobranca: string | null; renova_sozinho: boolean; observacao: string | null; conferido_em: string;
+  reserva?: boolean; // sem uso, mantida de propósito (cinza no painel)
 };
 // Estado da Evolution (WhatsApp) lido a cada 5 min (wa_evolution_ler)
 export type EvolutionEstado = {
@@ -443,9 +444,11 @@ export function montarIntegracoes(p: Painel): Integracao[] {
       const renova = proximaCobranca(proxy, agora);
       lista.push({
         id: "iproyal", nome: "IPRoyal", quem: "Proxy residencial · 1 IP fixo no Brasil", grupo: "servidores",
-        oQueFaz: "Proxy comprado em 17/11/2026 para o WhatsApp conectar por um IP de casa. Sem uso desde 20/11/2026, quando a Evolution foi desligada de vez: se não for voltar a usar, cancele a renovação no site da IPRoyal.",
-        estado: emUso ? "ok" : "atencao",
-        frase: emUso ? `em uso pela Evolution${ev?.proxy_local ? ` · ${ev.proxy_local}` : ""}` : `pago e sem uso · renova em ${renova.slice(0, 5)}`,
+        oQueFaz: proxy.reserva
+          ? "Proxy comprado em 17/11/2026 para o WhatsApp conectar por um IP de casa. Sem uso desde 20/11/2026 (Evolution desligada); mantido de reserva por decisão do dono em 23/11/2026."
+          : "Proxy comprado em 17/11/2026 para o WhatsApp conectar por um IP de casa. Sem uso desde 20/11/2026, quando a Evolution foi desligada de vez: se não for voltar a usar, cancele a renovação no site da IPRoyal.",
+        estado: emUso ? "ok" : proxy.reserva ? "pausa" : "atencao",
+        frase: emUso ? `em uso pela Evolution${ev?.proxy_local ? ` · ${ev.proxy_local}` : ""}` : `${proxy.reserva ? "de reserva, sem uso" : "pago e sem uso"} · renova em ${renova.slice(0, 5)}`,
         numeros: [
           { rotulo: "Custo", valor: valorContrato(proxy) },
           { rotulo: "Próxima cobrança", valor: renova },

@@ -158,6 +158,13 @@ test("Hostinger no ar com a Evolution desligada de propósito; IPRoyal pago e se
   assert.deepEqual(montarIntegracoes(p).filter((x) => x.estado !== "ok").map((x) => x.id), ["iproyal"]);
 });
 
+test("IPRoyal mantido de reserva fica cinza (sem uso de propósito)", () => {
+  const p = painel((x) => { x.fontes.servidores = { contratos: CONTRATOS.map((c) => (c.id === "iproyal_proxy" ? { ...c, reserva: true } : c)), evolution: evo() }; });
+  assert.equal(de(p, "iproyal").estado, "pausa");
+  assert.match(de(p, "iproyal").frase, /de reserva/);
+  assert.ok(montarIntegracoes(p).every((x) => x.estado === "ok" || x.estado === "pausa"));
+});
+
 test("custo fixo soma por período", async () => {
   const { totalContratos } = await import("../lib/integracoes.ts");
   assert.equal(totalContratos(CONTRATOS).replace(/\s/g, " "), "Custo fixo: R$ 136,00 por mês + R$ 64,99 por ano");
