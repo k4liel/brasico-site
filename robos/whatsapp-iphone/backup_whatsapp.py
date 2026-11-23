@@ -42,6 +42,23 @@ async def espaco_informado(self, _message):
 
 
 device_link.DeviceLink.get_free_disk_space = espaco_informado
+
+# Andamento real: o "%" do iPhone só muda de vez em quando (fica em 0% por muitos minutos); conta os bytes recebidos
+recebidos = {"bytes": 0, "ultimo_gb": -1}
+_receber = device_link.DeviceLink._recvall
+
+
+async def contar_recebidos(self, size):
+    dados = await _receber(self, size)
+    recebidos["bytes"] += len(dados)
+    gb = recebidos["bytes"] // (2 * 1024**3)
+    if gb != recebidos["ultimo_gb"]:
+        recebidos["ultimo_gb"] = gb
+        print(f"recebido {recebidos['bytes'] / 1024**3:.1f} GB", flush=True)
+    return dados
+
+
+device_link.DeviceLink._recvall = contar_recebidos
 # Os arquivos descartados ficam como marcas vazias (0 byte). Sem elas o iPhone acha o backup incompleto e manda
 # tudo de novo (~45 min); com elas o próximo backup é incremental (só o que mudou).
 device_link.DeviceLink.cleanup_discarded_files = lambda self: self._discarded_files.clear()
@@ -81,8 +98,16 @@ def backup_completo(pasta_aparelho):
     return all(f in existentes for f in ids)
 
 
+async def conectar():
+    # Cabo primeiro (bem mais rápido); sem cabo, Wi-Fi
+    try:
+        return await create_using_usbmux(connection_type="USB")
+    except Exception:
+        return await create_using_usbmux(connection_type="Network")
+
+
 async def main():
-    lockdown = await create_using_usbmux()
+    lockdown = await conectar()
     pelo_wifi = getattr(getattr(lockdown, "service", None), "mux_device", None)
     pelo_wifi = getattr(pelo_wifi, "connection_type", "") == "Network"
     if pelo_wifi and not backup_completo(os.path.join(pasta, lockdown.udid)):
@@ -123,7 +148,7 @@ async def main():
                 raise
             print(f"iPhone bloqueado: desbloqueie e digite o código (tentativa {tentativa} de {TENTATIVAS})", flush=True)
             await asyncio.sleep(30)
-            lockdown = await create_using_usbmux()
+            lockdown = await conectar()
     print(f"FIM: guardados {contagem['guardados']}, descartados {contagem['descartados']}", flush=True)
 
 
