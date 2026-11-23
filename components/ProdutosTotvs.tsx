@@ -137,6 +137,111 @@ function RegrasTotvs() {
   );
 }
 
+// Cadastro completo dos produtos no Chef Web (lido do navegador do sócio; supabase/totvs_cadastro_conferencia.sql)
+type CadProduto = {
+  loja_codigo: number; casa: string; codigo: string; nome: string; grupo: string | null; subgrupo?: string | null; preco?: number | null; ncm: string | null;
+  cest: string | null; cfop: string | null; imposto: number | null; pis: number | null; cofins: number | null; regra_imposto: number | null;
+  regra_cst?: string | null; regra_cfop?: string | null; regra_cclasstrib?: string | null; tem_regra?: boolean; vendas_valor: number | null; vendas_ultima: string | null;
+};
+type CadAchado = CadProduto & { regra: string; sev: "erro" | "atencao" };
+type Cadastro = { lido_em: string | null; lojas: { loja_codigo: number; loja_nome: string; produtos: number; ativos: number }[]; achados: CadAchado[]; produtos: CadProduto[] };
+const CAD_TITULO: Record<string, string> = {
+  sem_ncm: "Produto ativo sem NCM", sem_regra: "NCM sem regra fiscal na loja", pis: "PIS do produto fora de 0,65%", cofins: "Cofins do produto fora de 3%",
+  monofasico: "Bebida monofásica com PIS/Cofins no produto", icms_regra: "ICMS do produto diferente da regra do NCM", cfop_regra: "CFOP do produto diferente da regra do NCM",
+  ncm_casas: "Mesmo produto com NCM diferente entre as casas",
+};
+const CAD_RESOLVER: Record<string, string> = {
+  sem_ncm: "Abrir o produto em Cadastro › Produtos › Dados Fiscais e informar o NCM de 8 dígitos.",
+  sem_regra: "Cadastrar a regra fiscal desse NCM na loja (Cadastro › NCM) ou trocar o NCM do produto por um que já tem regra.",
+  pis: "Em Dados Fiscais do produto, PIS 0,65% (ou deixar a regra do NCM decidir, como a contabilidade orientar).",
+  cofins: "Em Dados Fiscais do produto, Cofins 3,00% (ou deixar a regra do NCM decidir, como a contabilidade orientar).",
+  monofasico: "Água, refrigerante e cerveja: PIS e Cofins zerados no produto (CST 04 na regra do NCM).",
+  icms_regra: "Igualar o Imposto (%) do produto ao da regra fiscal do NCM na loja (a regra é a referência; confirmar com a contabilidade).",
+  cfop_regra: "Igualar o CFOP do produto ao da regra do NCM (5102 tributado; 5405 substituição tributária).",
+  ncm_casas: "Usar o mesmo NCM para o mesmo produto em todas as casas.",
+};
+
+function CadastroTotvs() {
+  const supabase = useMemo(() => createClient(), []);
+  const [c, setC] = useState<Cadastro | null>(null);
+  const [aberta, setAberta] = useState("");
+  const [ver, setVer] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [loja, setLoja] = useState(0);
+  useEffect(() => { supabase.rpc("totvs_cadastro_conferencia").then(({ data }) => setC((data ?? null) as Cadastro | null)); }, [supabase]);
+  if (!c) return <p className="muted">Lendo o cadastro dos produtos no Chef Web…</p>;
+  if (!c.lojas.length) return null;
+  const grupos = Object.keys(CAD_TITULO).map((id) => ({ id, itens: c.achados.filter((a) => a.regra === id) })).filter((g) => g.itens.length);
+  const t = busca.trim().toLowerCase();
+  const lista = c.produtos.filter((p) => (!loja || p.loja_codigo === loja) && (!t || p.nome?.toLowerCase().includes(t) || p.codigo.includes(t) || (p.ncm ?? "").includes(t)));
+  const linha = (a: CadProduto) => (
+    <>
+      <td>{a.casa}</td>
+      <td><strong>{a.nome}</strong><small>cód. {a.codigo}{a.grupo ? ` · ${a.grupo}` : ""}{a.vendas_valor ? ` · vendeu ${brl(Number(a.vendas_valor))} em 120 dias` : " · sem venda em 120 dias"}</small></td>
+      <td>{a.ncm || "—"}{a.cest ? <small>CEST {a.cest}</small> : null}</td>
+      <td>{a.cfop || "—"}</td>
+      <td className="n">{a.imposto == null ? "—" : `${num(a.imposto)}%`}{a.regra_imposto != null && a.regra_imposto !== a.imposto ? <small>regra: {num(a.regra_imposto)}%</small> : null}</td>
+      <td>{a.pis == null ? "—" : num(a.pis)} / {a.cofins == null ? "—" : num(a.cofins)}</td>
+    </>
+  );
+  return (
+    <section className="pt-regras">
+      <div className="nc-barra">
+        <h2>Cadastro dos produtos no Chef Web</h2>
+        <div className="cf-acoes"><button className="ghost small" onClick={() => setVer((x) => !x)}>{ver ? "Esconder a lista" : "Ver todos os produtos ativos"}</button></div>
+      </div>
+      <p className="nc-explica cf-escopo">
+        {c.lojas.map((l) => `${l.loja_nome}: ${num(l.ativos)} ativos de ${num(l.produtos)}`).join(" · ")}. Lido do Chef Web
+        {c.lido_em ? ` em ${new Date(c.lido_em).toLocaleDateString("pt-BR")}` : ""}; quando o cadastro mudar, peça ao Claude para buscar de novo.
+      </p>
+      {grupos.map((g) => {
+        const sev = g.itens.some((a) => a.sev === "erro") ? "erro" : "atencao";
+        const esta = aberta === g.id;
+        const vendidos = g.itens.filter((a) => a.vendas_valor).length;
+        return (
+          <section key={g.id} className={`cf-regra cf-${sev}${esta ? " aberta" : ""}`}>
+            <button className="cf-regra-cabeca" onClick={() => setAberta(esta ? "" : g.id)} aria-expanded={esta}>
+              <span className="cf-sev">{sev === "erro" ? "Erro" : "Atenção"}</span>
+              <span className="cf-regra-titulo"><strong>{CAD_TITULO[g.id]}</strong><small>{num(g.itens.length)} produto{g.itens.length === 1 ? "" : "s"} ativos · {num(vendidos)} vendidos nos últimos 120 dias</small></span>
+              <span className="cf-regra-imp" />
+              <span className="ip-seta" aria-hidden="true" />
+            </button>
+            {esta && (
+              <div className="cf-regra-corpo">
+                <p className="cf-resolver"><b>Como resolver:</b> {CAD_RESOLVER[g.id]}</p>
+                <div className="nf-tabela-wrap">
+                  <table className="nf-tabela cf-tabela pt-tabela">
+                    <thead><tr><th>Casa</th><th>Produto</th><th>NCM</th><th>CFOP</th><th className="n">ICMS</th><th>PIS / Cofins</th></tr></thead>
+                    <tbody>{g.itens.map((a, k) => <tr key={k}>{linha(a)}</tr>)}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {ver && (
+        <>
+          <div className="cf-acoes">
+            <select value={loja} onChange={(e) => setLoja(Number(e.target.value))} aria-label="Loja">
+              <option value={0}>Todas as lojas</option>
+              {c.lojas.map((l) => <option key={l.loja_codigo} value={l.loja_codigo}>{l.loja_nome}</option>)}
+            </select>
+            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Produto, código ou NCM" aria-label="Buscar no cadastro" />
+          </div>
+          <div className="nf-tabela-wrap">
+            <table className="nf-tabela cf-tabela pt-tabela">
+              <thead><tr><th>Casa</th><th>Produto</th><th>NCM</th><th>CFOP</th><th className="n">ICMS</th><th>PIS / Cofins</th></tr></thead>
+              <tbody>{lista.slice(0, 600).map((a, k) => <tr key={k}>{linha(a)}</tr>)}</tbody>
+            </table>
+          </div>
+          {lista.length > 600 && <p className="muted">Mostrando 600 de {num(lista.length)}: use a busca.</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function ProdutosTotvs({ mes, fimMes, unidade, nomeUnidade }: {
   mes: string; fimMes: string; unidade: string; nomeUnidade: Record<string, string>;
 }) {
@@ -229,6 +334,7 @@ export default function ProdutosTotvs({ mes, fimMes, unidade, nomeUnidade }: {
       </p>
 
       <RegrasTotvs />
+      <CadastroTotvs />
 
       <div className="nc-barra">
         <h2>Cadastro dos produtos</h2>
