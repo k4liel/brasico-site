@@ -29,6 +29,114 @@ const TITULO: Record<string, string> = {
   cclass_gorjeta: "Taxa fora do 410019",
 };
 
+// Regras fiscais do Chef Web (por NCM, loja, UF e regime; supabase/totvs_regras_fiscais.sql) e a conferência delas
+type RegraAchado = { regra: string; sev: "erro" | "atencao"; loja_codigo: number; casa: string; ncm: string; cest: string; campo: string; atual: string; esperado: string };
+type Regras = { lido_em: string | null; regras: number; achados: RegraAchado[]; lista: Record<string, string | number | null>[] };
+const REGRA_TITULO: Record<string, string> = {
+  uf: "Regra fiscal com UF errada", pis: "PIS com alíquota errada", cofins: "Cofins com alíquota errada",
+  monofasico: "Bebida monofásica pagando PIS/Cofins", sem_regra: "Produto vendido sem regra fiscal do NCM",
+  casas: "Mesmo NCM com regra diferente entre as casas", regime: "Regra do Simples Nacional (a empresa é do regime normal)",
+  monofasico_cst: "CST de PIS/Cofins diferente entre as casas", ibscbs: "Regra sem IBS/CBS", tipo_item: "Regra sem tipo do item",
+  st_sem_cest: "Substituição tributária sem CEST",
+};
+const REGRA_RESOLVER: Record<string, string> = {
+  uf: "Apagar (ou corrigir para RN) a regra da UF errada no cadastro do NCM, na loja.",
+  pis: "Corrigir o PIS da regra do NCM para 0,65% (CST 01), como no restante.",
+  cofins: "Corrigir a Cofins da regra do NCM para 3,00% (CST 01, por percentual), como no restante.",
+  monofasico: "Na regra do NCM, PIS e Cofins com CST 04 (monofásico), sem alíquota.",
+  sem_regra: "Cadastrar a regra fiscal desse NCM na loja (ou trocar o NCM do produto para um que já tem regra).",
+  casas: "Igualar a regra do NCM nas casas, na versão que a contabilidade confirmar (alíquota, CST, PIS/Cofins, cClassTrib).",
+  regime: "A Brasico77 é do regime normal: a regra do Simples não é usada e pode ser removida (confirmar com a contabilidade).",
+  monofasico_cst: "Usar o mesmo CST de PIS/Cofins nas duas casas (04 para bebida monofásica).",
+  ibscbs: "Preencher o CST e o cClassTrib do IBS/CBS na regra do NCM (vale a partir de 2027).",
+  tipo_item: "Preencher o tipo do item (00 = mercadoria para revenda).",
+  st_sem_cest: "Informar o CEST do produto com substituição tributária.",
+};
+
+function RegrasTotvs() {
+  const supabase = useMemo(() => createClient(), []);
+  const [r, setR] = useState<Regras | null>(null);
+  const [aberta, setAberta] = useState("");
+  const [verTodas, setVerTodas] = useState(false);
+  useEffect(() => {
+    supabase.rpc("totvs_regras_conferencia").then(({ data }) => setR((data ?? null) as Regras | null));
+  }, [supabase]);
+  if (!r) return <p className="muted">Lendo as regras fiscais da TOTVS…</p>;
+  if (!r.regras) return null;
+  const grupos = Object.keys(REGRA_TITULO).map((id) => ({ id, itens: r.achados.filter((a) => a.regra === id) })).filter((g) => g.itens.length);
+  const erros = r.achados.filter((a) => a.sev === "erro").length;
+  return (
+    <section className="pt-regras">
+      <div className="nc-barra">
+        <h2>Regras fiscais da TOTVS</h2>
+        <div className="cf-acoes"><button className="ghost small" onClick={() => setVerTodas((x) => !x)}>{verTodas ? "Esconder as regras" : `Ver as ${num(r.regras)} regras`}</button></div>
+      </div>
+      <p className="nc-explica cf-escopo">
+        No Chef Web cada produto pega a tributação da regra fiscal do NCM dele, por loja. {num(r.regras)} regras lidas
+        {r.lido_em ? ` em ${new Date(r.lido_em).toLocaleDateString("pt-BR")}` : ""} (Relatórios › Fiscal › Regras Fiscais):
+        {erros ? ` ${num(erros)} com erro.` : " nenhuma com erro."} A correção é feita em Cadastro › NCM, na regra da loja.
+      </p>
+      {grupos.map((g) => {
+        const sev = g.itens.some((a) => a.sev === "erro") ? "erro" : "atencao";
+        const esta = aberta === g.id;
+        return (
+          <section key={g.id} className={`cf-regra cf-${sev}${esta ? " aberta" : ""}`}>
+            <button className="cf-regra-cabeca" onClick={() => setAberta(esta ? "" : g.id)} aria-expanded={esta}>
+              <span className="cf-sev">{sev === "erro" ? "Erro" : "Atenção"}</span>
+              <span className="cf-regra-titulo"><strong>{REGRA_TITULO[g.id]}</strong><small>{num(g.itens.length)} regra{g.itens.length === 1 ? "" : "s"}</small></span>
+              <span className="cf-regra-imp" />
+              <span className="ip-seta" aria-hidden="true" />
+            </button>
+            {esta && (
+              <div className="cf-regra-corpo">
+                <p className="cf-resolver"><b>Como resolver:</b> {REGRA_RESOLVER[g.id]}</p>
+                <div className="nf-tabela-wrap">
+                  <table className="nf-tabela cf-tabela">
+                    <thead><tr><th>Casa</th><th>NCM</th><th>Como está</th><th>Esperado</th></tr></thead>
+                    <tbody>
+                      {g.itens.map((a, k) => (
+                        <tr key={k}>
+                          <td>{a.casa}</td>
+                          <td>{a.ncm}{a.cest ? <small>CEST {a.cest}</small> : null}</td>
+                          <td><small className="muted">{a.campo}</small>{a.atual}</td>
+                          <td>{a.esperado}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        );
+      })}
+      {verTodas && (
+        <div className="nf-tabela-wrap">
+          <table className="nf-tabela cf-tabela">
+            <thead><tr><th>Loja</th><th>UF · regime</th><th>NCM</th><th>CEST</th><th>ICMS</th><th>CFOP</th><th>CST</th><th>PIS</th><th>Cofins</th><th>IBS/CBS</th></tr></thead>
+            <tbody>
+              {r.lista.map((x, k) => (
+                <tr key={k}>
+                  <td>{String(x.loja_nome ?? x.loja_codigo)}</td>
+                  <td>{String(x.uf)} · {String(x.regime)}</td>
+                  <td>{String(x.ncm)}</td>
+                  <td>{String(x.cest ?? "") || "—"}</td>
+                  <td>{x.imposto == null ? "—" : `${x.imposto}%`}</td>
+                  <td>{String(x.cfop ?? "—")}</td>
+                  <td>{String(x.cst ?? "—")}</td>
+                  <td>{String(x.pis_cst ?? "—")} · {x.pis_valor ?? "—"}</td>
+                  <td>{String(x.cofins_cst ?? "—")} · {x.cofins_valor ?? "—"}</td>
+                  <td>{String(x.ibscbs_cst ?? "—")} · {String(x.cclasstrib ?? "—")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function ProdutosTotvs({ mes, fimMes, unidade, nomeUnidade }: {
   mes: string; fimMes: string; unidade: string; nomeUnidade: Record<string, string>;
 }) {
@@ -114,10 +222,12 @@ export default function ProdutosTotvs({ mes, fimMes, unidade, nomeUnidade }: {
         <div><dt>Mudaram de classificação</dt><dd>{num(conta.mudou)}</dd><small>saíram de jeitos diferentes</small></div>
       </dl>
       <p className="nc-explica cf-escopo">
-        A classificação de cada produto como ele sai na NFC-e (o que a TOTVS aplica na venda), atualizada a cada venda. A lista de produtos da API da
-        TOTVS ainda não está liberada para o Brasico; quando for, o cadastro completo (inclusive o que não vendeu) entra aqui. Os problemas vêm da
+        A classificação de cada produto como ele sai na NFC-e (o que a TOTVS aplica na venda), atualizada a cada venda. As regras fiscais de cada NCM
+        vêm do próprio Chef Web (bloco abaixo). Os problemas vêm da
         conferência fiscal do mês. O Brasico só lê: a correção é feita no cadastro do produto no Chef Web.
       </p>
+
+      <RegrasTotvs />
 
       <div className="nc-barra">
         <h2>Cadastro dos produtos</h2>
