@@ -46,7 +46,7 @@ const ler = (s: string) => (s.trim() === "" ? null : Number(s.replace(/\./g, "")
 const diaSemana = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 const fimSemana = (iso: string) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + 6); return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }); };
 
-type Aba = "painel" | "andamento" | "final" | "fornecedores" | "pessoas" | "avulsa";
+type Aba = "painel" | "andamento" | "final" | "fornecedores" | "avulsa";
 
 export default function Compras({ userEmail }: { userEmail: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -110,8 +110,7 @@ export default function Compras({ userEmail }: { userEmail: string }) {
         {!semana ? <p className="muted">Carregando a semana…</p> : gestor ? (
           <>
             <div className="cp-abas" role="tablist">
-              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista Geral"], ["fornecedores", "Fornecedores"], ["avulsa", "Nota avulsa"],
-                 ...(papel === "socio" ? [["pessoas", "Pessoas e acesso"]] : [])] as [Aba, string][]).map(([k, t]) => (
+              {([["painel", "Painel"], ["andamento", "Listas"], ["final", "Lista Geral"], ["fornecedores", "Fornecedores"], ["avulsa", "Nota avulsa"]] as [Aba, string][]).map(([k, t]) => (
                 <button key={k} role="tab" aria-selected={aba === k} className={aba === k ? "on" : ""} onClick={() => setAba(k)}>{t}</button>
               ))}
             </div>
@@ -121,7 +120,6 @@ export default function Compras({ userEmail }: { userEmail: string }) {
             {aba === "final" && <ListaUnica semana={semana} />}
             {aba === "fornecedores" && <Fornecedores />}
             {aba === "avulsa" && <NotaAvulsa empresas={[]} onPronto={() => {}} />}
-            {aba === "pessoas" && papel === "socio" && <Pessoas />}
           </>
         ) : eu ? (
           <>
@@ -1756,62 +1754,5 @@ function FichaFornecedor({ forn, onFechar, onSalvo }: { forn: Forn | null; onFec
         </footer>
       </form>
     </div>
-  );
-}
-
-function Pessoas() {
-  const supabase = useMemo(() => createClient(), []);
-  const [pessoas, setPessoas] = useState<Pessoa[]>([]);
-  const [msg, setMsg] = useState("");
-  const carregar = useCallback(async () => {
-    const { data } = await supabase.from("operacao_pessoas").select("*").order("papel").order("unidade").order("setor");
-    setPessoas((data ?? []) as Pessoa[]);
-  }, [supabase]);
-  useEffect(() => { carregar(); }, [carregar]);
-
-  async function salvar(p: Pessoa, m: Partial<Pessoa>) {
-    setMsg("");
-    const x = { ...p, ...m };
-    const { error } = await supabase.rpc("operacao_pessoa_salvar", { p_id: p.id, p_nome: x.nome, p_unidade: x.unidade ?? "", p_setor: x.setor ?? "",
-      p_papel: x.papel, p_email: x.email ?? "", p_wa_nome: x.wa_nome ?? "", p_ativo: x.ativo });
-    if (error) setMsg(error.message);
-    carregar();
-  }
-  async function darAcesso(p: Pessoa) {
-    setMsg("");
-    const { data, error } = await supabase.functions.invoke("operacao-convidar", { body: { pessoa: p.id } });
-    const r = (data ?? {}) as { ok?: boolean; erro?: string; ja_tinha?: boolean };
-    if (error || !r.ok) {
-      let texto = r.erro ?? error?.message ?? "Não deu certo.";
-      try { texto = (await (error as { context?: Response }).context?.json())?.erro ?? texto; } catch {}
-      return setMsg(texto);
-    }
-    setMsg(`${p.nome} tem o login criado. A equipe entra só em brasico.vercel.app/colaboradores, com usuário e senha (peça aos sócios).`);
-    carregar();
-  }
-
-  return (
-    <section className="av-bloco">
-      <header className="av-bloco-cabeca"><div><h3>Pessoas e acesso</h3><p className="muted">quem pede no grupo e a Fernanda</p></div></header>
-      <p className="muted cp-ajuda">Cadastre o e-mail e clique em Dar acesso. A equipe entra só pela área dos colaboradores (brasico.vercel.app/colaboradores), com usuário e senha, e só vê a área dela.
-        O nome no WhatsApp é como ela aparece no grupo COMPRAS, para o pedido cair na lista certa.</p>
-      {msg && <p className="es-aviso">{msg}</p>}
-      <div className="nf-tabela-wrap">
-        <table className="nf-tabela cp-tabela">
-          <thead><tr><th>Pessoa</th><th>E-mail</th><th>Nome no WhatsApp</th><th>Acesso</th><th /></tr></thead>
-          <tbody>
-            {pessoas.map((p) => (
-              <tr key={p.id} className={p.ativo ? "" : "cp-tirado"}>
-                <td><strong>{p.nome}</strong><small>{p.papel === "compras" ? "Setor de compras" : p.papel === "estoque" ? "Câmara fria" : `${SETORES[p.setor ?? ""] ?? ""} · ${UNIDADES[p.unidade ?? ""] ?? ""}`}</small></td>
-                <td><input type="email" defaultValue={p.email ?? ""} onBlur={(v) => v.target.value !== (p.email ?? "") && salvar(p, { email: v.target.value })} placeholder="nome@email.com" aria-label={`E-mail de ${p.nome}`} /></td>
-                <td><input defaultValue={p.wa_nome ?? ""} onBlur={(v) => v.target.value !== (p.wa_nome ?? "") && salvar(p, { wa_nome: v.target.value })} placeholder="Como aparece no grupo" aria-label={`Nome no WhatsApp de ${p.nome}`} /></td>
-                <td>{p.user_id ? <span className="estado tv-ok">com acesso</span> : <span className="estado">sem acesso</span>}</td>
-                <td>{!p.user_id && <button className="ghost small" disabled={!p.email} onClick={() => darAcesso(p)}>Dar acesso</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }

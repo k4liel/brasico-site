@@ -488,7 +488,7 @@ function QuemRegistra() {
               <input type="checkbox" checked={p.registra_estoque} disabled={p.papel === "estoque"} onChange={(v) => ligar(p, v.target.checked)} />
               <span className="sf-chave-trilho" aria-hidden="true" /><span>Registra</span>
             </label>
-            {!p.user_id ? <button className="ghost small" disabled={!p.email} title={p.email ? "" : "Cadastre o e-mail em Compras → Pessoas e acesso"} onClick={() => darAcesso(p)}>Dar acesso</button> : <span />}
+            {!p.user_id ? <button className="ghost small" disabled={!p.email} title={p.email ? "" : "Cadastre o e-mail na página Usuários"} onClick={() => darAcesso(p)}>Dar acesso</button> : <span />}
           </li>
         ))}
       </ul>
