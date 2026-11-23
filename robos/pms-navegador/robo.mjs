@@ -10,6 +10,7 @@
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 const BASE = "https://gestaopms.totvshospitalidade.com";
 const DISPONIBILIDADE = "https://group05.totvshospitalidade.com/availability/api";
@@ -800,10 +801,26 @@ async function rodada() {
   } catch (e) { log(`não gravou: ${e.message}`); }
 }
 
+// Leitura diária do Chef Web (TOTVS) com login próprio (22/11/2026; supabase/chefweb_robo.sql): o módulo vem do GitHub a
+// cada vez (robos/chefweb/chefweb.mjs), então mudar a leitura do Chef Web não exige reiniciar o robô. O banco decide se já
+// leu hoje (chefweb_robo_comecar); uma falha aqui nunca derruba o robô do PMS.
+async function passoChefWeb() {
+  try {
+    const r = await fetch("https://api.github.com/repos/k4liel/brasico-site/contents/robos/chefweb/chefweb.mjs?ref=main",
+      { headers: { Accept: "application/vnd.github.raw", "User-Agent": "brasico-pms-robo" } });
+    if (!r.ok) throw new Error(`GitHub ${r.status}`);
+    const arquivo = "/tmp/chefweb.mjs";
+    writeFileSync(arquivo, await r.text());
+    const m = await import(`${pathToFileURL(arquivo).href}?v=${Date.now()}`);
+    await m.lerChefWeb({ chromium, rpc, segredo: SEGREDO, log });
+  } catch (e) { log(`[chefweb] falhou: ${e.message.split(/\r?\n/)[0]}`); }
+}
+
 if (!SUPABASE_URL || !ANON || !SEGREDO) { console.error("Faltam SUPABASE_URL, SUPABASE_ANON_KEY ou PMS_ROBO_SEGREDO"); process.exit(1); }
 log(`robô do PMS ligado (a cada ${INTERVALO_MIN} min)`);
 do {
   await rodada();
+  await passoChefWeb();
   if (process.env.UMA_VEZ) break;
   // Intervalo variável entre as rodadas (75% a 125% do intervalo; com 30 min, entre 22 e 38 min).
   // O intervalo vem do banco a cada rodada (pms_robo_intervalo); sem resposta, vale o INTERVALO_MIN do ambiente.
