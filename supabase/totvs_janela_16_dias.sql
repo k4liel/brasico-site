@@ -3,7 +3,7 @@
 -- nas duas lojas e no Ponta Negra. Em outubro o histórico de 2025 ainda abria: a limitação é nova.
 -- Pedir mais (ou em paralelo) não adianta: o histórico das NFC-e e a releitura do Ponta Negra passam a pedir só dias
 -- dentro da janela. A ao vivo (a cada minuto) e o histórico dos últimos 15 dias deixam tudo completo daqui para frente;
--- as NFC-e antigas têm de vir dos XML (exportação do Chef Web ou do contador).
+-- as NFC-e antigas vêm por ListPorDataIntegracaoChefweb (supabase/nfce_historico_integracao.sql).
 do $$ declare d text; begin
   d := pg_get_functiondef('public.nfce_historico_passo'::regproc);
   d := replace(d, 'where d.unidade_id = u.id and d.vendas > 0 and d.dia < v_hoje', 'where d.unidade_id = u.id and d.vendas > 0 and d.dia < v_hoje and d.dia >= v_hoje - 15');

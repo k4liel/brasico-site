@@ -38,6 +38,26 @@ const REGRAS: { id: string; titulo: string; explica: string; ok?: string }[] = [
   { id: "cclass_gorjeta", titulo: "Taxa de serviço fora do 410019", explica: "Na reforma, a gorjeta no fornecimento de alimentação tem classificação própria (410019) para ficar fora da base do IBS/CBS.", ok: "Taxa de serviço no 410019" },
 ];
 
+// Como resolver cada achado: o que mudar no cadastro do produto no Chef Web (parte de tributação / regra fiscal).
+// Onde a decisão é da contabilidade, a instrução diz isso: o Brasico só lê a TOTVS, não altera o cadastro.
+export const COMO_RESOLVER: Record<string, string> = {
+  taxa_tributada: "No cadastro da taxa de serviço, deixar o ICMS não tributado e o PIS/Cofins sem incidência, como a contabilidade definir (a gorjeta é dos empregados, Lei 13.419/2017).",
+  taxa_ncm: "Tirar da taxa o NCM de mercadoria; usar o código que a contabilidade indicar para serviço.",
+  aliq_casas: "Igualar a alíquota de ICMS da bebida alcoólica nas duas casas, na alíquota que a contabilidade confirmar.",
+  aliq_cafe: "Usar no café e no chá a mesma alíquota de ICMS da comida, se a contabilidade confirmar.",
+  ncm_casas: "Usar o mesmo NCM para o mesmo produto nas duas casas.",
+  ncm_prato: "Trocar o NCM de ingrediente pelo NCM de prato pronto que a contabilidade indicar.",
+  unidade: "Trocar a unidade CX (caixa) por UN ou porção.",
+  cst_cfop: "Ajustar o CFOP ao CST: tributado (CST 000) com CFOP 5102; substituição tributária (CST 060) com CFOP 5405.",
+  icms_conta: "Revisar a regra fiscal do produto: base × alíquota não bate com o ICMS que sai na nota.",
+  pis_monofasico: "Água, refrigerante e cerveja: PIS/Cofins com CST 04 (monofásico), sem imposto na venda.",
+  variacao: "O produto sai com classificações diferentes em vendas diferentes: deixar uma só no cadastro (e conferir regra fiscal por caixa).",
+  cclass_vazio: "Preencher o CST e o cClassTrib do IBS/CBS no cadastro do produto (vale a partir de 2027).",
+  cclass_restaurante: "Comida: cClassTrib 200047 (bares e restaurantes), a confirmar com a contabilidade.",
+  cclass_casas: "Usar o mesmo cClassTrib para o mesmo produto nas duas casas.",
+  cclass_gorjeta: "Taxa de serviço: cClassTrib 410019 (gorjeta fora da base do IBS/CBS).",
+};
+
 export default function ConferenciaFiscal({ mes, fimMes, unidade, nomeUnidade }: {
   mes: string; fimMes: string; unidade: string; nomeUnidade: Record<string, string>;
 }) {
@@ -139,6 +159,7 @@ export default function ConferenciaFiscal({ mes, fimMes, unidade, nomeUnidade }:
             {aberta && (
               <div className="cf-regra-corpo">
                 <p className="cf-explica">{g.explica}</p>
+                {COMO_RESOLVER[g.id] && <p className="cf-resolver"><b>Como resolver:</b> {COMO_RESOLVER[g.id]}</p>}
                 <div className="nf-tabela-wrap">
                   <table className="nf-tabela cf-tabela">
                     <thead><tr><th>Casa</th><th>Produto</th><th>Como está</th><th>Esperado</th><th className="n">Itens</th><th className="n">Vendido</th><th className="n">Impacto</th><th className="n">Nota exemplo</th></tr></thead>

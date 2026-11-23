@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import JanelaPdfNota from "./JanelaPdfNota";
 import ConferenciaFiscal from "./ConferenciaFiscal";
+import ProdutosTotvs from "./ProdutosTotvs";
 
 // NFC-e da página Notas: as notas fiscais de consumidor das vendas dos restaurantes, que a TOTVS manda junto
 // com cada venda (supabase/nfce.sql). Atualiza sozinho: a leitura ao vivo da TOTVS roda a cada minuto.
@@ -101,7 +102,7 @@ export default function NotasConsumidor() {
   const [unidade, setUnidade] = useState("");
   const [grupo, setGrupo] = useState("autorizada");
   // Duas visões: as vendas (por grupo e dia) ou a conferência fiscal dos itens (components/ConferenciaFiscal.tsx)
-  const [modo, setModo] = useState<"vendas" | "conferencia">("vendas");
+  const [modo, setModo] = useState<"vendas" | "conferencia" | "produtos">("vendas");
   const [busca, setBusca] = useState("");
   const [termo, setTermo] = useState("");
   const [pagina, setPagina] = useState(0);
@@ -226,10 +227,12 @@ export default function NotasConsumidor() {
         <div className="nc-modos" role="tablist" aria-label="Visão">
           <button role="tab" aria-selected={modo === "vendas"} className={modo === "vendas" ? "on" : ""} onClick={() => setModo("vendas")}>Vendas</button>
           <button role="tab" aria-selected={modo === "conferencia"} className={modo === "conferencia" ? "on" : ""} onClick={() => setModo("conferencia")}>Conferência fiscal</button>
+          <button role="tab" aria-selected={modo === "produtos"} className={modo === "produtos" ? "on" : ""} onClick={() => setModo("produtos")}>Produtos</button>
         </div>
       </div>
 
-      {modo === "conferencia" ? <ConferenciaFiscal mes={mes} fimMes={fimMes} unidade={unidade} nomeUnidade={nomeUnidade} /> : (<>
+      {modo === "produtos" ? <ProdutosTotvs mes={mes} fimMes={fimMes} unidade={unidade} nomeUnidade={nomeUnidade} />
+        : modo === "conferencia" ? <ConferenciaFiscal mes={mes} fimMes={fimMes} unidade={unidade} nomeUnidade={nomeUnidade} /> : (<>
       {!unidade && pdvSv && pdvSv.total > 0 && (
         <div className="nc-aviso">
           <span className="nc-aviso-marca" aria-hidden="true">!</span>

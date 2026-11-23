@@ -5468,6 +5468,25 @@ body:has(.mp) { background: #f6f2ea; }
 .ap-entra.parte { color: var(--gold); border-color: var(--gold); }
 .ap .cf-tabela td small { display: block; color: var(--muted); font-size: 11.5px; }
 @media (max-width: 760px) { .ap .nc-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Conferência fiscal: como resolver; cadastro dos produtos da TOTVS (components/ProdutosTotvs.tsx) */
+.cf-resolver { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--bg); border: 1px dashed var(--gold); font-size: 13px; line-height: 1.5; color: var(--text); }
+.pt-casa { display: flex; gap: 10px; align-items: baseline; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.pt-casa strong { font-size: 15px; color: var(--strong); }
+.pt-casa small { color: var(--muted); font-size: 12px; }
+.pt-tabela td small { display: block; color: var(--muted); font-size: 11.5px; }
+.pt-linha { cursor: pointer; }
+.pt-linha:hover td, .pt-linha.aberta td { background: var(--bg); }
+.pt-sit { display: inline-block; margin: 0 4px 2px 0; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; color: var(--ok); }
+.pt-sit.erro { color: var(--danger); border-color: var(--danger); }
+.pt-sit.atencao { color: var(--gold); border-color: var(--gold); }
+.pt-sit.mudou { color: var(--muted); }
+.pt-detalhe td { background: var(--bg); }
+.pt-problemas { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 8px; }
+.pt-problemas li { display: grid; gap: 2px; padding: 8px 12px; border-radius: 10px; border-left: 3px solid var(--gold); background: var(--panel); font-size: 13px; }
+.pt-problemas li.erro { border-left-color: var(--danger); }
+.pt-problemas li b { color: var(--strong); }
+.pt-problemas li small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.pt-sub { margin: 10px 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .cf { display: grid; gap: 16px; }
 .cf-ruim { color: var(--danger) !important; }
 .cf-escopo { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }
