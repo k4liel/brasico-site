@@ -63,8 +63,32 @@ async def pastas_do_whatsapp(lockdown):
     return tuple(c[c.index("Containers/"):].rstrip("/") + "/" for c in caminhos)
 
 
+def backup_completo(pasta_aparelho):
+    """O backup anterior tem todos os arquivos do índice (o WhatsApp de verdade e as marcas vazias do resto)?
+    Se não tiver, o iPhone refaz o backup INTEIRO (~57 GB): pelo cabo leva ~45 min, pelo Wi-Fi horas."""
+    import sqlite3
+    indice = os.path.join(pasta_aparelho, "Manifest.db")
+    if not os.path.isfile(indice):
+        return False
+    with sqlite3.connect(f"file:{indice}?mode=ro", uri=True) as db:
+        ids = [r[0] for r in db.execute("select fileID from Files where flags = 1")]
+    existentes = set()
+    for sub in {f[:2] for f in ids}:
+        try:
+            existentes.update(e.name for e in os.scandir(os.path.join(pasta_aparelho, sub)))
+        except FileNotFoundError:
+            pass
+    return all(f in existentes for f in ids)
+
+
 async def main():
     lockdown = await create_using_usbmux()
+    pelo_wifi = getattr(getattr(lockdown, "service", None), "mux_device", None)
+    pelo_wifi = getattr(pelo_wifi, "connection_type", "") == "Network"
+    if pelo_wifi and not backup_completo(os.path.join(pasta, lockdown.udid)):
+        print("PRECISA DO CABO: o backup deste computador está incompleto e o iPhone mandaria tudo de novo "
+              "(~57 GB) pelo Wi-Fi. Ligue o cabo uma vez; depois disso o Wi-Fi só passa o que mudou.", flush=True)
+        sys.exit(4)
     caminhos = await pastas_do_whatsapp(lockdown)
     print("Pastas do WhatsApp normal:", *caminhos, sep="\n  ", flush=True)
 

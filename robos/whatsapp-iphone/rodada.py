@@ -42,6 +42,9 @@ def main():
             b = subprocess.run([PY, os.path.join(AQUI, "backup_whatsapp.py"), os.path.join(BASE, "backup")],
                                stdout=saida, stderr=subprocess.STDOUT, timeout=3 * 3600,
                                env={**os.environ, "WA_TENTATIVAS": "6"})  # ~3 min esperando o código
+        if b.returncode == 4:
+            registrar("backup incompleto: precisa ligar o iPhone no cabo uma vez (pelo Wi-Fi levaria horas)")
+            return 4
         if b.returncode != 0:
             registrar(f"backup falhou (código {b.returncode}); veja backup.log")
             return 1
