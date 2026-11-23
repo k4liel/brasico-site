@@ -150,8 +150,9 @@ export default function ProdutosTotvs({ mes, fimMes, unidade, nomeUnidade }: {
   const [aberto, setAberto] = useState("");
 
   useEffect(() => {
+    if (!mes || !fimMes) return; // o mês ainda não carregou
     setProdutos(null); setErro("");
-    const ultimo = new Date(new Date(`${fimMes}T12:00:00`).getTime() - 86400000).toISOString().slice(0, 10);
+    const ultimo =new Date(new Date(`${fimMes}T12:00:00`).getTime() - 86400000).toISOString().slice(0, 10);
     Promise.all([
       supabase.rpc("nfce_produtos", { p_unidade: unidade || null, p_dias: 120 }),
       supabase.rpc("nfce_conferencia", { p_de: `${mes}-01`, p_ate: ultimo, p_unidade: unidade || null }),
