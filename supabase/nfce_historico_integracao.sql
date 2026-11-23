@@ -5,7 +5,7 @@
 -- mesmo dia: CapaVenda/ListPorDataIntegracaoChefweb (vendas pelo dia em que chegaram à nuvem da TOTVS) responde o
 -- histórico (01/10/2026 trouxe 29 vendas com itens e impostos). A Edge Function totvs-nfce-historico lê um dia de
 -- integração e grava cada venda no seu dia de movimento (nfce_gravar).
--- Ritmo: a cada minuto, até 3 dias por unidade ao mesmo tempo (em paralelo), do mais novo para trás, até o primeiro
+-- Ritmo: a cada minuto, até 6 dias por unidade ao mesmo tempo (cada dia leva 1 a 4 s na TOTVS) (em paralelo), do mais novo para trás, até o primeiro
 -- dia com venda da unidade (totvs_dias). Dia que falha é tentado de novo depois de 20 min, no máximo 4 vezes.
 -- =====================================================================
 
@@ -50,7 +50,7 @@ begin
     continue when v_inicio is null;
     select count(*) into v_rodando from public.totvs_execucoes
     where unidade_id = u.id and origem = 'nfce_int' and status in ('na_fila', 'rodando');
-    for k in 1 .. greatest(0, 3 - v_rodando) loop
+    for k in 1 .. greatest(0, 6 - v_rodando) loop
       select g.d::date into v_dia
       from generate_series(v_hoje - 1, v_inicio, interval '-1 day') g(d)
       where not exists (select 1 from public.totvs_execucoes x where x.unidade_id = u.id and x.origem = 'nfce_int' and x.dia = g.d::date
