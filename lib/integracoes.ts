@@ -24,7 +24,8 @@ export type Painel = {
     totvs: Exec & { unidades: { nome: string; ultimo_dia: string | null; ontem: string | null }[]; nfce_7d?: number; nfce_pendentes_7d?: number };
     cicchetti: { ultima: string | null; ultima_ok: string | null; ultima_falha: string | null; ok_24h: number; falha_24h: number; ultimo_erro: string | null; horas?: Hora[] };
     pms: Exec & { intervalo_min: number | null; hoteis: { nome: string; ultima_leitura: string | null }[] };
-    whatsapp: { ultima_mensagem: string | null; mensagens_24h: number; grupos_24h: number; envios_24h: number; envios_falha_24h: number; horas?: Hora[] };
+    // ultimo_recebimento = quando a última mensagem chegou ao banco (envio do backup do iPhone); ultima_mensagem = hora da conversa
+    whatsapp: { ultima_mensagem: string | null; ultimo_recebimento?: string | null; recebidas_24h?: number; mensagens_24h: number; grupos_24h: number; envios_24h: number; envios_falha_24h: number; horas?: Hora[] };
     gemini: Exec;
     claude: { ultimo_resumo: string | null; resumo_ontem: boolean };
     conector: { links: number; ultimo_uso: string | null };
@@ -61,8 +62,8 @@ export type Integracao = {
 export const GRUPOS: { id: Grupo; titulo: string; explica: string }[] = [
   { id: "governo", titulo: "Governo", explica: "Receita, eSocial, notas fiscais e os certificados que abrem essas portas." },
   { id: "casas", titulo: "Sistemas das casas", explica: "Caixa dos restaurantes, gestão do Cicchetti, PMS dos hotéis e relógios de ponto." },
-  { id: "comunicacao", titulo: "Comunicação e inteligência", explica: "WhatsApp, as IAs que leem as compras e resumem o dia, e o conector do Claude." },
-  { id: "servidores", titulo: "Servidores e contas pagas", explica: "Onde rodam o WhatsApp e o robô dos hotéis, o proxy do WhatsApp e quanto custa cada um." },
+  { id: "comunicacao", titulo: "Comunicação e inteligência", explica: "WhatsApp (pelo backup do iPhone), as IAs que leem as compras e resumem o dia, e o conector do Claude." },
+  { id: "servidores", titulo: "Servidores e contas pagas", explica: "Onde roda o robô dos hotéis, o domínio, o proxy que era do WhatsApp e quanto custa cada um." },
 ];
 
 // ---------- tempo ----------
@@ -110,6 +111,9 @@ export function situacaoEvolution(ev: EvolutionEstado | null, agora: string): "c
   if (!ev.vps_no_ar) return "sem_resposta";
   return horaFortaleza(agora) < 7 || minutos(ev.evolution_ok_em, agora) <= 75 ? "pausa" : "sem_resposta";
 }
+// A Evolution (WhatsApp não oficial) foi desligada de vez em 20/11/2026, depois do 2º bloqueio (decisão do dono): as
+// conversas vêm do backup do iPhone. Desligada é o normal (cinza); se ela voltar a conectar o número, o painel avisa.
+export const EVOLUTION_DESLIGADA_EM = "2026-11-20";
 export const valorContrato = (c: Contrato) =>
   `${Number(c.valor).toLocaleString("pt-BR", { style: "currency", currency: c.moeda })} por ${c.periodo}`;
 // "Custo fixo: R$ 136,00 por mês + R$ 64,99 por ano" (soma por moeda e período)
@@ -123,13 +127,22 @@ export function totalContratos(lista: Contrato[]) {
   });
   return partes.length ? `Custo fixo: ${partes.join(" + ")}` : "";
 }
+// Conta que renova sozinha e cuja data já passou: mostra a data seguinte do mesmo período (não fica no passado)
 export function proximaCobranca(c: Contrato, agora: string) {
   if (!c.proxima_cobranca) return c.renova_sozinho ? "renova sozinho" : "—";
-  const [a, m, d] = c.proxima_cobranca.slice(0, 10).split("-");
-  const hoje = fort(agora);
-  const dias = Math.round((Date.UTC(+a, +m - 1, +d) - Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())) / 86400000);
+  let a = Number(c.proxima_cobranca.slice(0, 4)), m = Number(c.proxima_cobranca.slice(5, 7));
+  const d = Number(c.proxima_cobranca.slice(8, 10));
+  const h = fort(agora);
+  const hoje = Date.UTC(h.getUTCFullYear(), h.getUTCMonth(), h.getUTCDate());
+  if (c.renova_sozinho) {
+    for (let i = 0; i < 120 && Date.UTC(a, m - 1, d) < hoje; i++) {
+      if (c.periodo === "mês") { m += 1; if (m > 12) { m = 1; a += 1; } } else a += 1;
+    }
+  }
+  const dias = Math.round((Date.UTC(a, m - 1, d) - hoje) / 86400000);
   const falta = dias === 0 ? "hoje" : dias === 1 ? "amanhã" : dias > 1 && dias <= 31 ? `em ${dias} dias` : "";
-  return `${d}/${m}/${a}${falta ? ` (${falta})` : ""}${c.renova_sozinho ? "" : " · não renova"}`;
+  const dd = (n: number) => String(n).padStart(2, "0");
+  return `${dd(d)}/${dd(m)}/${a}${falta ? ` (${falta})` : ""}${c.renova_sozinho ? "" : " · não renova"}`;
 }
 
 // ---------- regras de cada integração ----------
@@ -257,6 +270,8 @@ export function montarIntegracoes(p: Painel): Integracao[] {
   {
     const t = f.totvs;
     const linhas = t.unidades.map((u) => {
+      // unidade que nunca mandou venda (ex.: Cicchetti Ponta Negra: o caixa não manda as vendas à nuvem da TOTVS)
+      if (!u.ultimo_dia) return { nome: u.nome, estado: "atencao" as Estado, texto: "nenhuma venda chegou ainda: confira se o caixa manda as vendas à nuvem da TOTVS" };
       const veio = u.ontem && u.ontem !== "falha";
       const estado: Estado = veio ? (u.ontem === "revisar" ? "atencao" : "ok") : h >= 13 ? "erro" : "atencao";
       const texto = veio
@@ -328,27 +343,23 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     });
   }
 
-  // WhatsApp (Evolution API na VPS): mensagens dos grupos chegam pelo webhook
+  // WhatsApp: desde 23/11/2026 as conversas vêm do backup do iPhone (robos/whatsapp-iphone), mandado ao mesmo webhook.
+  // O que vale é quando o último envio chegou; a Evolution fica desligada (se ela reconectar o número, avisa).
   {
     const w = f.whatsapp;
-    const ev = f.servidores?.evolution ?? null;
-    const dia = h >= 8 && h <= 23;
-    let estado = dia ? frescor(w.ultima_mensagem, agora, 3 * 60, 12 * 60) : frescor(w.ultima_mensagem, agora, 12 * 60, 24 * 60);
-    if (w.envios_falha_24h) estado = pior(estado, "atencao");
-    let frase = `última mensagem ${quando(w.ultima_mensagem, agora)}`;
-    const conexao = situacaoEvolution(ev, agora);
-    if (conexao === "desconectado") {
-      estado = "erro";
-      frase = `número desconectado do WhatsApp${ev?.caiu_em ? ` ${quando(ev.caiu_em, agora)}` : ""}${ev?.motivo_queda ? ` (código ${ev.motivo_queda})` : ""}`;
-    } else if (conexao === "pausa") frase = `em pausa (rotina de usuário comum) · ${frase}`;
+    const conexao = situacaoEvolution(f.servidores?.evolution ?? null, agora);
+    const chegou = w.ultimo_recebimento ?? w.ultima_mensagem;
+    let estado = frescor(chegou, agora, 26 * 60, 72 * 60);
+    let frase = `backup do iPhone ${quando(chegou, agora)}`;
+    if (conexao === "conectado") { estado = pior(estado, "atencao"); frase = "a Evolution voltou a conectar o número (não devia)"; }
     lista.push({
-      id: "whatsapp", nome: "WhatsApp", quem: "Evolution API · VPS da Hostinger", grupo: "comunicacao", pagina: "/whatsapp",
-      oQueFaz: "Recebe as mensagens e mídias dos grupos da companhia (o pedido de compras sai daqui).",
+      id: "whatsapp", nome: "WhatsApp", quem: "Backup do iPhone · sem conexão ao WhatsApp", grupo: "comunicacao", pagina: "/whatsapp",
+      oQueFaz: "As mensagens e mídias dos grupos da companhia chegam pelo backup do iPhone (WhatsApp normal), sem nada conectado ao WhatsApp. O pedido de compras sai daqui. Envio pelo site desligado.",
       estado, frase,
       numeros: [
-        { rotulo: "Mensagens em 24 h", valor: String(w.mensagens_24h) },
-        { rotulo: "Grupos com conversa", valor: String(w.grupos_24h) },
-        { rotulo: "Envios pelo site", valor: w.envios_24h ? `${w.envios_24h}${w.envios_falha_24h ? ` · ${w.envios_falha_24h} falha` : ""}` : "nenhum" },
+        { rotulo: "Conversas até", valor: quando(w.ultima_mensagem, agora) },
+        { rotulo: "Mensagens chegadas em 24 h", valor: String(w.recebidas_24h ?? w.mensagens_24h) },
+        { rotulo: "Grupos com conversa em 24 h", valor: String(w.grupos_24h) },
       ],
     });
   }
@@ -390,11 +401,11 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     });
   }
 
-  // Hostinger (VPS e domínio) e IPRoyal (proxy do WhatsApp): se está no ar e quanto custa
+  // Hostinger (VPS e domínio) e IPRoyal (proxy que era do WhatsApp): se está no ar e quanto custa
   if (f.servidores) {
     const { contratos, evolution: ev } = f.servidores;
     const c = (id: string) => contratos.find((x) => x.id === id);
-    const conexao = situacaoEvolution(ev, agora);
+    const voltou = situacaoEvolution(ev, agora) === "conectado"; // a Evolution não devia mais conectar o número
     const lidoHa = minutos(ev?.lido_em ?? null, agora);
 
     const vps = c("hostinger_vps"), dominio = c("hostinger_dominio");
@@ -404,16 +415,17 @@ export function montarIntegracoes(p: Painel): Integracao[] {
       if (lidoHa > 20) { estado = "atencao"; frase = `servidor sem conferir desde ${quando(ev?.lido_em ?? null, agora)}`; }
       else if (ev?.vps_no_ar === false) { estado = "erro"; frase = "o servidor não respondeu"; }
       else { estado = "ok"; frase = `servidor no ar · conferido ${quando(ev?.lido_em ?? null, agora)}`; }
-      const evoEstado: Estado = conexao === "conectado" ? "ok" : conexao === "pausa" ? "pausa" : conexao === "desconectado" ? "erro" : "atencao";
-      const evoTexto = conexao === "conectado" ? "conectada" : conexao === "pausa" ? "em pausa pela rotina" : conexao === "desconectado" ? "número desconectado" : "sem resposta";
+      if (voltou) estado = pior(estado, "atencao");
       lista.push({
         id: "hostinger", nome: "Hostinger", quem: "VPS KVM 2 · domínio brasico.com.br", grupo: "servidores",
-        oQueFaz: "Servidor alugado onde rodam a Evolution (o WhatsApp da Brasico), o robô do PMS dos hotéis e a rotina de pausas do WhatsApp. Também guarda o domínio brasico.com.br.",
+        oQueFaz: "Servidor alugado onde roda o robô do PMS dos hotéis (e o do Chef Web, quando ligado). A Evolution (WhatsApp) e a rotina de pausas estão desligadas desde 20/11/2026. Também guarda o domínio brasico.com.br.",
         estado, frase,
         linhas: [
-          { nome: "Evolution (WhatsApp)", estado: evoEstado, texto: evoTexto },
           { nome: "Robô do PMS dos hotéis", estado: pmsMin <= 90 ? "ok" : pmsMin <= 240 ? "atencao" : "erro", texto: `última rodada ${quando(f.pms.ultima_ok, agora)}` },
-          { nome: "Rotina de pausas", estado: "ok", texto: "desliga o WhatsApp de madrugada e em 2 ou 3 pausas curtas por dia" },
+          voltou
+            ? { nome: "Evolution (WhatsApp)", estado: "atencao", texto: "conectou o número de novo: pela decisão de 20/11/2026 ela não deve mais usá-lo" }
+            : { nome: "Evolution (WhatsApp)", estado: "pausa", texto: "desligada de propósito desde 20/11/2026" },
+          { nome: "Rotina de pausas do WhatsApp", estado: "pausa", texto: "parada desde 20/11/2026" },
         ],
         numeros: [
           { rotulo: "Servidor (VPS)", valor: valorContrato(vps) },
@@ -425,21 +437,18 @@ export function montarIntegracoes(p: Painel): Integracao[] {
 
     const proxy = c("iproyal_proxy");
     if (proxy) {
-      let estado: Estado; let frase: string;
-      if (lidoHa > 20) { estado = "atencao"; frase = `sem conferir desde ${quando(ev?.lido_em ?? null, agora)}`; }
-      else if (ev?.proxy_ligado === false) { estado = "atencao"; frase = "proxy desligado: o WhatsApp sai pelo IP do servidor"; }
-      else if (conexao === "desconectado") { estado = "erro"; frase = "WhatsApp desconectado (veja se o proxy venceu)"; }
-      else if (conexao === "pausa") { estado = "pausa"; frase = "WhatsApp em pausa pela rotina · volta sozinho"; }
-      else if (conexao !== "conectado") { estado = "atencao"; frase = `a Evolution não responde desde ${quando(ev?.evolution_ok_em ?? null, agora)}`; }
-      else { estado = "ok"; frase = `WhatsApp conectado pelo proxy${ev?.proxy_local ? ` · ${ev.proxy_local}` : ""}`; }
+      // Sem a Evolution o proxy não é usado por nada: é conta paga parada
+      const emUso = voltou && ev?.proxy_ligado !== false;
+      const renova = proximaCobranca(proxy, agora);
       lista.push({
         id: "iproyal", nome: "IPRoyal", quem: "Proxy residencial · 1 IP fixo no Brasil", grupo: "servidores",
-        oQueFaz: "O WhatsApp da Brasico conecta por um IP de internet de casa, no Brasil, e não pelo IP do servidor — assim não parece robô (proteção depois do bloqueio de 16/11/2026).",
-        estado, frase,
+        oQueFaz: "Proxy comprado em 17/11/2026 para o WhatsApp conectar por um IP de casa. Sem uso desde 20/11/2026, quando a Evolution foi desligada de vez: se não for voltar a usar, cancele a renovação no site da IPRoyal.",
+        estado: emUso ? "ok" : "atencao",
+        frase: emUso ? `em uso pela Evolution${ev?.proxy_local ? ` · ${ev.proxy_local}` : ""}` : `pago e sem uso · renova em ${renova.slice(0, 5)}`,
         numeros: [
           { rotulo: "Custo", valor: valorContrato(proxy) },
-          { rotulo: "Próxima cobrança", valor: proximaCobranca(proxy, agora) },
-          { rotulo: "De onde o WhatsApp conecta", valor: ev?.proxy_local ?? "—" },
+          { rotulo: "Próxima cobrança", valor: renova },
+          { rotulo: "Uso", valor: emUso ? "WhatsApp (Evolution)" : "nenhum desde 20/11/2026" },
         ],
       });
     }
@@ -528,6 +537,14 @@ export function horarioLegivel(cron: string): string {
     return `${dm !== "*" ? "todo mês" : "todo dia"} às ${lista.join(", ")}${dia}`;
   }
   return s;
+}
+
+// Motivo da última falha de uma agenda, em português (o pg_cron responde em inglês)
+export function motivoAgenda(msg: string | null): string | null {
+  if (!msg) return null;
+  if (/job startup timeout/i.test(msg)) return "não chegou a começar: o banco estava sobrecarregado";
+  if (/statement timeout|canceling statement/i.test(msg)) return "passou do tempo-limite e foi interrompida";
+  return msg;
 }
 
 export function estadoAgenda(a: Painel["agendas"][number]): Estado {

@@ -49,11 +49,10 @@ const DESTINOS: Record<string, string[]> = {
 };
 
 // Servidores no caminho, da fonte até o Brasico (17/11/2026, pedido do dono: "mostrando como o whatsapp opera com eles
-// e brasico"): a mensagem sai do WhatsApp, passa pelo proxy (IPRoyal, IP de casa no Brasil), chega à Evolution no
-// servidor (Hostinger) e vai ao Brasico pelo webhook. O robô do PMS também roda na Hostinger.
-const RELES: Record<string, string[]> = { whatsapp: ["iproyal", "hostinger"], pms: ["hostinger"] };
+// e brasico"). Desde 20/11/2026 o WhatsApp não passa mais pela Evolution (Hostinger) nem pelo proxy (IPRoyal): as
+// conversas chegam direto pelo backup do iPhone. Hoje só o robô do PMS roda na Hostinger.
+const RELES: Record<string, string[]> = { pms: ["hostinger"] };
 const PAPEL: Record<string, Record<string, string>> = {
-  whatsapp: { iproyal: "IPRoyal · IP de casa", hostinger: "Hostinger · Evolution" },
   pms: { hostinger: "Hostinger · robô do PMS" },
 };
 // Quem acende junto ao passar o mouse: a fonte e os servidores do caminho dela (e, num servidor, as fontes que passam por ele)
@@ -84,7 +83,7 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
   useEffect(() => { const el = rolar.current; if (el && el.scrollWidth > el.clientWidth) el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2; }, [vista]);
   const trocar = (v: Vista) => { setVista(v); setFoco(null); setPagina(null); try { localStorage.setItem(CHAVE, v); } catch { /* ok */ } };
 
-  // os servidores (Hostinger, IPRoyal) não são fontes de dados: aparecem no caminho de quem passa por eles
+  // os servidores (Hostinger, IPRoyal) não são fontes de dados: aparecem no caminho de quem passa por eles (IPRoyal, sem uso, fica só nos cartões)
   const fontes = lista.filter((i) => i.grupo !== "servidores");
   const reles = Object.fromEntries(lista.filter((i) => i.grupo === "servidores").map((i) => [i.id, i])) as Record<string, Integracao>;
   const temRele = new Set(Object.keys(reles));

@@ -14,7 +14,7 @@ import Topo from "./Topo";
 import Gaveta from "./Gaveta";
 import MapaConexoes from "./MapaConexoes";
 import {
-  GRUPOS, NOME_FONTE, STATUS_TEXTO, atividadeGeral, estadoAgenda, estadoEvento, estadoHora, fonteDaAgenda, horaDaPosicao,
+  GRUPOS, NOME_FONTE, STATUS_TEXTO, atividadeGeral, estadoAgenda, motivoAgenda, estadoEvento, estadoHora, fonteDaAgenda, horaDaPosicao,
   horarioLegivel, montarIntegracoes, quando, totalContratos, type Estado, type Hora, type Integracao, type Painel,
 } from "@/lib/integracoes";
 
@@ -449,7 +449,7 @@ function Agendas({ painel, agora }: { painel: Painel; agora: string }) {
                     <td>{k === 0 ? f : ""}</td>
                     <td><span className="ig-ponto" aria-hidden="true" /><code>{a.nome}</code>{!a.ativa && <small> · desligada</small>}</td>
                     <td>{horarioLegivel(a.horario)}</td>
-                    <td title={a.ultima_msg ?? ""}>{a.ultima ? `${quando(a.ultima, agora)}${a.ultima_status === "failed" ? " · falhou" : ""}` : "—"}</td>
+                    <td title={motivoAgenda(a.ultima_msg) ?? ""}>{a.ultima ? `${quando(a.ultima, agora)}${a.ultima_status === "failed" ? ` · falhou${/startup timeout/i.test(a.ultima_msg ?? "") ? " (banco sobrecarregado)" : ""}` : ""}` : "—"}</td>
                     <td className="ig-num">{a.rodadas_24h ? `${a.rodadas_24h}×${a.falhas_24h ? ` · ${a.falhas_24h} falha${a.falhas_24h === 1 ? "" : "s"}` : ""}` : "—"}</td>
                   </tr>
                 );

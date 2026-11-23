@@ -137,22 +137,25 @@ const CONTRATOS = [
   { id: "hostinger_dominio", fornecedor: "Hostinger", servico: "Domínio", valor: 64.99, moeda: "BRL" as const, periodo: "ano" as const, proxima_cobranca: "2027-09-23", renova_sozinho: true, observacao: null, conferido_em: AGORA },
   { id: "iproyal_proxy", fornecedor: "IPRoyal", servico: "Proxy", valor: 26, moeda: "BRL" as const, periodo: "mês" as const, proxima_cobranca: "2026-12-17", renova_sozinho: true, observacao: null, conferido_em: AGORA },
 ];
+// Desde 20/11/2026 a Evolution fica desligada: o normal é ela responder com o número fechado (conexao "close")
 const evo = (extra = {}) => ({
-  respondeu: true, vps_no_ar: true, http_status: 200, evolution_ok_em: antes(2), conexao: "open", motivo_queda: null, caiu_em: null,
+  respondeu: true, vps_no_ar: true, http_status: 200, evolution_ok_em: antes(2), conexao: "close", motivo_queda: "403", caiu_em: antes(4 * 24 * 60),
   proxy_ligado: true, proxy_local: "Rio de Janeiro · ML Telecom", lido_em: antes(2), erro: null, ...extra,
 });
 const comServidores = (e = evo(), agora = AGORA) => painel((x) => { x.fontes.servidores = { contratos: CONTRATOS, evolution: e }; }, agora);
 
-test("Hostinger e IPRoyal: verdes, com o valor pago e a próxima cobrança", () => {
+test("Hostinger no ar com a Evolution desligada de propósito; IPRoyal pago e sem uso pede atenção", () => {
   const p = comServidores();
-  const h = de(p, "hostinger"), i = de(p, "iproyal");
+  const h = de(p, "hostinger"), i = de(p, "iproyal"), w = de(p, "whatsapp");
   assert.equal(h.estado, "ok");
   assert.equal(h.numeros[0].valor.replace(/\s/g, " "), "R$ 110,00 por mês");
   assert.equal(h.numeros[1].valor, "20/11/2026 (em 7 dias)");
-  assert.equal(i.estado, "ok");
-  assert.match(i.frase, /Rio de Janeiro/);
+  assert.equal(h.linhas?.find((l) => l.nome.startsWith("Evolution"))?.estado, "pausa");
+  assert.equal(i.estado, "atencao");
+  assert.match(i.frase, /sem uso/);
   assert.equal(i.numeros[0].valor.replace(/\s/g, " "), "R$ 26,00 por mês");
-  assert.ok(montarIntegracoes(p).every((x) => x.estado === "ok"));
+  assert.equal(w.estado, "ok"); // o WhatsApp vem do backup do iPhone: o número fechado na Evolution não é problema
+  assert.deepEqual(montarIntegracoes(p).filter((x) => x.estado !== "ok").map((x) => x.id), ["iproyal"]);
 });
 
 test("custo fixo soma por período", async () => {
@@ -160,31 +163,43 @@ test("custo fixo soma por período", async () => {
   assert.equal(totalContratos(CONTRATOS).replace(/\s/g, " "), "Custo fixo: R$ 136,00 por mês + R$ 64,99 por ano");
 });
 
-test("rotina de pausas: Evolution calada com o servidor no ar é pausa, não queda", () => {
-  // de dia, calada há 20 min
-  const dia = comServidores(evo({ respondeu: false, http_status: 502, evolution_ok_em: antes(20) }));
-  assert.equal(de(dia, "hostinger").estado, "ok");
-  assert.equal(de(dia, "iproyal").estado, "pausa");
-  assert.match(de(dia, "whatsapp").frase, /em pausa/);
-  // de madrugada (3h de Fortaleza = 6h UTC), calada há 2 h
-  const mad = "2026-11-14T06:00:00.000Z";
-  const noite = comServidores(evo({ respondeu: false, http_status: 502, evolution_ok_em: antes(120, mad), lido_em: antes(2, mad) }), mad);
-  assert.equal(de(noite, "iproyal").estado, "pausa");
-  // de dia, calada há 3 h: não é mais pausa
-  const longa = comServidores(evo({ respondeu: false, http_status: 502, evolution_ok_em: antes(180) }));
-  assert.equal(de(longa, "iproyal").estado, "atencao");
-  assert.match(de(longa, "iproyal").frase, /não responde/);
+test("próxima cobrança que já passou e renova sozinha vai para o próximo período", async () => {
+  const { proximaCobranca } = await import("../lib/integracoes.ts");
+  assert.equal(proximaCobranca(CONTRATOS[0], "2026-11-23T19:00:00.000Z"), "20/12/2026 (em 27 dias)");
+  assert.equal(proximaCobranca({ ...CONTRATOS[0], renova_sozinho: false }, "2026-11-23T19:00:00.000Z"), "20/11/2026 · não renova");
+  assert.equal(proximaCobranca({ ...CONTRATOS[0], proxima_cobranca: "2026-12-20" }, "2027-01-05T15:00:00.000Z"), "20/01/2027 (em 15 dias)");
 });
 
-test("número desconectado (como no bloqueio de 16/11) deixa WhatsApp e IPRoyal vermelhos", () => {
-  const p = comServidores(evo({ conexao: "close", motivo_queda: "403", caiu_em: antes(60) }));
-  assert.equal(de(p, "whatsapp").estado, "erro");
-  assert.match(de(p, "whatsapp").frase, /desconectado.*403/);
-  assert.equal(de(p, "iproyal").estado, "erro");
-  assert.equal(de(p, "hostinger").estado, "ok"); // o servidor continua no ar
+test("se a Evolution reconectar o número (não devia, decisão de 20/11), o painel avisa", () => {
+  const p = comServidores(evo({ conexao: "open", motivo_queda: null }));
+  assert.equal(de(p, "whatsapp").estado, "atencao");
+  assert.match(de(p, "whatsapp").frase, /Evolution voltou/);
+  assert.equal(de(p, "hostinger").estado, "atencao");
+  assert.equal(de(p, "iproyal").estado, "ok");
 });
 
-test("servidor fora do ar e proxy desligado", () => {
+test("WhatsApp: vale quando o último envio do iPhone chegou; mais de 3 dias sem envio = parado", () => {
+  const ok = painel((x) => { x.fontes.whatsapp.ultima_mensagem = antes(30 * 60); x.fontes.whatsapp.ultimo_recebimento = antes(60); });
+  assert.equal(de(ok, "whatsapp").estado, "ok"); // conversas de ontem, mas o envio chegou há 1 h
+  const meio = painel((x) => { x.fontes.whatsapp.ultimo_recebimento = antes(30 * 60); });
+  assert.equal(de(meio, "whatsapp").estado, "atencao");
+  const parado = painel((x) => { x.fontes.whatsapp.ultimo_recebimento = antes(4 * 24 * 60); });
+  assert.equal(de(parado, "whatsapp").estado, "erro");
+});
+
+test("servidor fora do ar", () => {
   assert.equal(de(comServidores(evo({ respondeu: false, vps_no_ar: false, http_status: null })), "hostinger").estado, "erro");
-  assert.equal(de(comServidores(evo({ proxy_ligado: false })), "iproyal").estado, "atencao");
+});
+
+test("TOTVS: unidade que nunca mandou venda pede atenção", () => {
+  const p = painel((x) => { x.fontes.totvs.unidades.push({ nome: "Cicchetti Ponta Negra", ultimo_dia: null, ontem: "sem_movimento" }); });
+  const t = de(p, "totvs");
+  assert.equal(t.estado, "atencao");
+  assert.match(t.linhas!.find((l) => l.nome === "Cicchetti Ponta Negra")!.texto, /nenhuma venda/);
+});
+
+test("motivo da falha das agendas em português", async () => {
+  const { motivoAgenda } = await import("../lib/integracoes.ts");
+  assert.match(motivoAgenda("job startup timeout")!, /sobrecarregado/);
+  assert.equal(motivoAgenda(null), null);
 });
