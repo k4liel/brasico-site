@@ -28,9 +28,16 @@ def iphone_por_perto():
     return '"ConnectionType"' in r.stdout
 
 
+ULTIMA_OK = os.path.join(BASE, "ultima_ok.txt")
+
+
 def main():
+    agora = datetime.datetime.now().timestamp()
+    # 3 horários por dia, cada um tentando a cada 15 min por 1 h: deu certo há menos de 2 h = este horário já foi
+    if os.path.exists(ULTIMA_OK) and agora - os.path.getmtime(ULTIMA_OK) < 2 * 3600:
+        return 0
     # Uma rodada por vez (uma trava com mais de 3 h é de uma rodada que caiu)
-    if os.path.exists(TRAVA) and (datetime.datetime.now().timestamp() - os.path.getmtime(TRAVA)) < 3 * 3600:
+    if os.path.exists(TRAVA) and (agora - os.path.getmtime(TRAVA)) < 3 * 3600:
         return 0
     open(TRAVA, "w").close()
     try:
@@ -52,6 +59,8 @@ def main():
                            encoding="utf-8", errors="replace", timeout=2 * 3600)
         fim = [l for l in e.stdout.splitlines() if l.startswith(("Grupos:", "FIM"))]
         registrar("envio: " + " | ".join(fim) if e.returncode == 0 else f"envio falhou: {e.stdout[-300:]} {e.stderr[-300:]}")
+        if e.returncode == 0:
+            open(ULTIMA_OK, "w").close()
         return e.returncode
     finally:
         os.remove(TRAVA)
