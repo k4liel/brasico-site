@@ -28,6 +28,8 @@ DOMINIOS = ("AppDomain-net.whatsapp.WhatsApp", *(f"AppDomainGroup-{g}" for g in 
 MINIMO_REAL = 3 * 1024**3
 INFORMADO = 4 * 1024**4
 
+# Quantas vezes pedir o código se o iPhone estiver bloqueado (a cada 30 s). Na rotina automática: poucas.
+TENTATIVAS = int(os.environ.get("WA_TENTATIVAS", "30"))
 pasta = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.abspath("backup")
 os.makedirs(pasta, exist_ok=True)
 amostra = open(os.path.join(pasta, "nomes-amostra.txt"), "w", encoding="utf-8")
@@ -40,6 +42,9 @@ async def espaco_informado(self, _message):
 
 
 device_link.DeviceLink.get_free_disk_space = espaco_informado
+# Os arquivos descartados ficam como marcas vazias (0 byte). Sem elas o iPhone acha o backup incompleto e manda
+# tudo de novo (~45 min); com elas o próximo backup é incremental (só o que mudou).
+device_link.DeviceLink.cleanup_discarded_files = lambda self: self._discarded_files.clear()
 
 
 def vigia():
@@ -54,8 +59,8 @@ async def pastas_do_whatsapp(lockdown):
     async with InstallationProxyService(lockdown=lockdown) as ip:
         app = (await ip.get_apps(bundle_identifiers=[APP]))[APP]
     caminhos = [app["Container"]] + [app["GroupContainers"][g] for g in GRUPOS if g in app.get("GroupContainers", {})]
-    # o iPhone às vezes escreve /private/var/... e às vezes /var/...
-    return tuple({c.rstrip("/") + "/" for c in caminhos} | {c.replace("/private", "", 1).rstrip("/") + "/" for c in caminhos})
+    # No backup o iPhone escreve "/.b/<n>/Containers/Data/Application/<código>/...": vale o trecho a partir de Containers/
+    return tuple(c[c.index("Containers/"):].rstrip("/") + "/" for c in caminhos)
 
 
 async def main():
@@ -68,7 +73,7 @@ async def main():
         if arq.domain:  # verificação pelo Manifest.db
             ok = arq.domain in DOMINIOS
         else:
-            ok = nome.startswith(caminhos) or any(nome.startswith(d + "/") or nome.startswith(d + "-") for d in DOMINIOS)
+            ok = any(c in nome for c in caminhos) or any(nome.startswith(d + "/") or nome.startswith(d + "-") for d in DOMINIOS)
         contagem["guardados" if ok else "descartados"] += 1
         if contagem["guardados"] + contagem["descartados"] <= 40 or (ok and contagem["guardados"] <= 20):
             amostra.write(f"{'GUARDA' if ok else 'fora  '} {nome}\n")
@@ -83,8 +88,18 @@ async def main():
             ultimo[0] = p
             print(f"{p}%  (guardados {contagem['guardados']}, descartados {contagem['descartados']})", flush=True)
 
-    async with Mobilebackup2Service(lockdown) as mb:
-        await mb.backup(full=False, backup_directory=pasta, filter_callback=guardar, progress_callback=andamento)
+    # Se o iPhone estiver bloqueado quando pedir o código, ele recusa (erro 208): tenta de novo por ~15 min
+    for tentativa in range(1, TENTATIVAS + 1):
+        try:
+            async with Mobilebackup2Service(lockdown) as mb:
+                await mb.backup(full=False, backup_directory=pasta, filter_callback=guardar, progress_callback=andamento)
+            break
+        except Exception as e:
+            if "208" not in str(e) or tentativa == TENTATIVAS:
+                raise
+            print(f"iPhone bloqueado: desbloqueie e digite o código (tentativa {tentativa} de {TENTATIVAS})", flush=True)
+            await asyncio.sleep(30)
+            lockdown = await create_using_usbmux()
     print(f"FIM: guardados {contagem['guardados']}, descartados {contagem['descartados']}", flush=True)
 
 
