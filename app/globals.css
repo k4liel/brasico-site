@@ -5449,6 +5449,8 @@ body:has(.mp) { background: #f6f2ea; }
 .nc-modos button { all: unset; box-sizing: border-box; cursor: pointer; padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--muted); }
 .nc-modos button.on { background: var(--gold); color: #1a1a1a; font-weight: 600; }
 .nc-modos button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.nf-modos { display: flex; justify-content: flex-end; margin: 0 0 12px; }
+.nf-modos .nc-modos { margin-left: 0; }
 .cf { display: grid; gap: 16px; }
 .cf-ruim { color: var(--danger) !important; }
 .cf-escopo { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }

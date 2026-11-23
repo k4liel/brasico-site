@@ -7,6 +7,7 @@ import { TopoSimples } from "./Compras";
 import NotasServico, { LeituraNfse } from "./NotasServico";
 import NotasConsumidor, { LeituraNfce } from "./NotasConsumidor";
 import NotasFrete, { LeituraCte } from "./NotasFrete";
+import ConferenciaCompras from "./ConferenciaCompras";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
 // Abas: NF-e (produtos: por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
@@ -106,7 +107,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
           {!compras && <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>}
         </div>
 
-        {aba === "notas" && <ListaNotas empresas={empresas} />}
+        {aba === "notas" && <ListaNotas empresas={empresas} podeConferir={!compras} />}
         {aba === "nfse" && !compras && <NotasServico />}
         {aba === "nfce" && !compras && <NotasConsumidor />}
         {aba === "cte" && !compras && <NotasFrete />}
@@ -120,8 +121,10 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
 // ---------------------------------------------------------------------
 // Aba Notas: escolha do mês, da empresa e busca; lista por mês e CNPJ, com páginas
 // ---------------------------------------------------------------------
-function ListaNotas({ empresas }: { empresas: Empresa[] }) {
+function ListaNotas({ empresas, podeConferir }: { empresas: Empresa[]; podeConferir: boolean }) {
   const supabase = useMemo(() => createClient(), []);
+  // Notas (a lista) ou Conferência fiscal (só sócios: lê os campos fiscais do XML, components/ConferenciaCompras.tsx)
+  const [modo, setModo] = useState<"notas" | "conferencia">("notas");
   const [meses, setMeses] = useState<Mes[]>([]);
   const [mes, setMes] = useState("");
   const [mesesProntos, setMesesProntos] = useState(false);
@@ -205,13 +208,23 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
   }
   const totalMes = (m: string, cnpj?: string) => meses.filter((x) => x.mes === m && (!cnpj || x.empresa_cnpj === cnpj));
 
+  const conferir = podeConferir && modo === "conferencia";
+
   return (
     <>
-      <div className="es-numeros">
+      {podeConferir && (
+        <div className="nf-modos">
+          <div className="nc-modos" role="tablist" aria-label="Visão">
+            <button role="tab" aria-selected={modo === "notas"} className={modo === "notas" ? "on" : ""} onClick={() => setModo("notas")}>Notas</button>
+            <button role="tab" aria-selected={modo === "conferencia"} className={modo === "conferencia" ? "on" : ""} onClick={() => setModo("conferencia")}>Conferência fiscal</button>
+          </div>
+        </div>
+      )}
+      {!conferir && <div className="es-numeros">
         <div className="es-numero"><span className="tv-cartao-rotulo">Notas</span><span className="es-numero-valor">{resumo.notas.toLocaleString("pt-BR")}</span><span className="tv-cartao-detalhe">{mes ? nomeMes(mes) : "todos os meses"}</span></div>
         <div className="es-numero"><span className="tv-cartao-rotulo">Valor</span><span className="es-numero-valor">{brl(resumo.valor)}</span><span className="tv-cartao-detalhe">sem as canceladas</span></div>
         <div className="es-numero"><span className="tv-cartao-rotulo">Só em resumo</span><span className="es-numero-valor">{resumo.resumo}</span><span className="tv-cartao-detalhe">os itens e o PDF chegam depois</span></div>
-      </div>
+      </div>}
 
       <div className="ft-barra nf-barra">
         <div className="nf-escolha">
@@ -219,14 +232,14 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
             {!meses.length && <option value="">Sem notas ainda</option>}
             {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
           </select>
-          <select value={situacao} onChange={(e) => { setSituacao(e.target.value); setPagina(0); }} aria-label="Situação">
+          {!conferir && <><select value={situacao} onChange={(e) => { setSituacao(e.target.value); setPagina(0); }} aria-label="Situação">
             <option value="">Todas as notas</option>
             <option value="completa">Completas (com itens e PDF)</option>
             <option value="resumo">Só em resumo</option>
             <option value="cancelada">Canceladas</option>
             <option value="avulsa">Notas avulsas</option>
           </select>
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Fornecedor, CNPJ, número ou item" aria-label="Buscar nota" />
+          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Fornecedor, CNPJ, número ou item" aria-label="Buscar nota" /></>}
         </div>
       </div>
       <div className="ft-chips nf-empresas" role="tablist" aria-label="Empresa">
@@ -241,7 +254,7 @@ function ListaNotas({ empresas }: { empresas: Empresa[] }) {
         })}
       </div>
 
-      {notas === null ? <p className="muted">Carregando as notas…</p> : !notas.length ? (
+      {conferir ? <ConferenciaCompras mes={mes} empresa={empresa} nomeEmpresa={curto} /> : notas === null ? <p className="muted">Carregando as notas…</p> : !notas.length ? (
         <p className="muted vazio">Nenhuma nota com esses filtros.</p>
       ) : (
         <>
