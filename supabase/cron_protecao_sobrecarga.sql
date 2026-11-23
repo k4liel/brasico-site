@@ -22,3 +22,14 @@ select cron.alter_job((select jobid from cron.job where jobname = 'totvs-ao-vivo
 --    (antes: a cada 30 min).
 select cron.alter_job((select jobid from cron.job where jobname = 'totvs-produtos-vendas'),
   schedule := '15 * * * *');
+
+-- 4) Religadas no mesmo dia (tinham sido desligadas às 8h29, no meio da crise), com limite de tempo:
+--    totvs-historico (o histórico de todas as casas já terminou; ela só confere e para) e
+--    nfce-historico (relê só os últimos 15 dias, dentro da janela da TOTVS).
+select cron.alter_job((select jobid from cron.job where jobname = 'totvs-historico'), active := true,
+  command := $$set statement_timeout = '25s'; select public.totvs_historico_passo()$$);
+select cron.alter_job((select jobid from cron.job where jobname = 'nfce-historico'), active := true,
+  command := $$set statement_timeout = '50s'; select public.nfce_historico_passo()$$);
+
+-- Continuam desligadas de propósito: precos-coleta (notas vêm da SEFAZ desde 13/11),
+-- pms-diario e pms-fecha-dia (a TOTVS recusa a Edge Function; quem lê é o robô na VPS).
