@@ -14,7 +14,7 @@ import ProdutosTotvs from "./ProdutosTotvs";
 //    cada um com quantidade e valor do mês; embaixo, as vendas daquele grupo por dia (50 por página), a nota abre no lugar
 //    com itens, impostos e PDF. Visual num bloco só em globals.css ("NFC-e", classes nc-*).
 //  - LeituraNfce: bloco da aba "Leituras" (andamento do histórico por casa).
-type Unidade = { id: string; nome: string };
+type Unidade = { id: string; nome: string; ativa?: boolean; loja?: number | null; encerrada_em?: string | null };
 type Mes = {
   mes: string; unidade_id: string; emitente_cnpj: string | null; notas: number; canceladas: number; pendentes: number; sem_nota: number;
   valor: number; valor_sem_nota: number; valor_pendente: number; servico: number; icms: number; pis: number; cofins: number; cbs: number; ibs: number;
@@ -84,7 +84,7 @@ function useBase(supabase: ReturnType<typeof createClient>) {
   const [pronto, setPronto] = useState(false);
   const carregar = useCallback(async () => {
     const [u, m] = await Promise.all([
-      supabase.from("totvs_unidades").select("id,nome").order("ordem"),
+      supabase.from("totvs_unidades").select("id,nome,ativa,loja,encerrada_em").order("ordem"),
       supabase.from("nfce_meses").select("*").order("mes", { ascending: false }),
     ]);
     setUnidades((u.data ?? []) as Unidade[]);
@@ -196,7 +196,8 @@ export default function NotasConsumidor() {
     }, {})).sort((a, b) => b.valor - a.valor);
   const listaMeses = [...new Set(meses.map((m) => m.mes))];
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
-  const casas = unidades.filter((u) => meses.some((m) => m.unidade_id === u.id));
+  // Todas as casas em operação com caixa TOTVS (mesmo sem NFC-e ainda, como o Ponta Negra) e as que já têm notas
+  const casas = unidades.filter((u) => meses.some((m) => m.unidade_id === u.id) || (u.ativa && u.loja != null && !u.encerrada_em));
   const info = GRUPOS.find((g) => g.id === grupo)!;
 
   // A página agrupada por dia (data de movimento do caixa)
@@ -214,7 +215,7 @@ export default function NotasConsumidor() {
   return (
     <div className="nc">
       <div className="nc-filtros">
-        <select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
+        {modo !== "produtos" && <><select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
           {!listaMeses.length && <option value="">Sem notas ainda</option>}
           {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
         </select>
@@ -223,7 +224,7 @@ export default function NotasConsumidor() {
           {casas.map((u) => (
             <button key={u.id} role="tab" aria-selected={unidade === u.id} className={unidade === u.id ? "on" : ""} onClick={() => setUnidade(u.id)}>{u.nome}</button>
           ))}
-        </div>
+        </div></>}
         <div className="nc-modos" role="tablist" aria-label="Visão">
           <button role="tab" aria-selected={modo === "vendas"} className={modo === "vendas" ? "on" : ""} onClick={() => setModo("vendas")}>Vendas</button>
           <button role="tab" aria-selected={modo === "conferencia"} className={modo === "conferencia" ? "on" : ""} onClick={() => setModo("conferencia")}>Conferência fiscal</button>
@@ -231,7 +232,7 @@ export default function NotasConsumidor() {
         </div>
       </div>
 
-      {modo === "produtos" ? <ProdutosTotvs mes={mes} fimMes={fimMes} unidade={unidade} nomeUnidade={nomeUnidade} />
+      {modo === "produtos" ? <ProdutosTotvs />
         : modo === "conferencia" ? <ConferenciaFiscal mes={mes} fimMes={fimMes} unidade={unidade} nomeUnidade={nomeUnidade} /> : (<>
       {!unidade && pdvSv && pdvSv.total > 0 && (
         <div className="nc-aviso">

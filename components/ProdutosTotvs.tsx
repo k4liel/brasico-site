@@ -2,34 +2,405 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { COMO_RESOLVER } from "./ConferenciaFiscal";
+import Gaveta from "./Gaveta";
 
-// Cadastro fiscal dos produtos da TOTVS (aba NFC-e → "Produtos"; supabase/nfce_produtos.sql, 22/11/2026).
-// A lista de produtos da API da TOTVS não está liberada para o Brasico (código 20); o cadastro vem de cada item vendido,
-// que traz o produto e a tributação aplicada na nota. Cada produto mostra a classificação atual, as variações e o que a
-// conferência fiscal (nfce_conferencia) achou, com como resolver no cadastro do Chef Web.
-type Classe = {
-  ncm: string | null; cfop: string | null; cst: string | null; aliquota: number | null; pis: string | null; cofins: string | null;
-  ibscbs: string | null; cclasstrib: string | null; unidade: string | null; cest: string | null; itens?: number; ultima?: string;
+// Página de produtos (aba NFC-e › Produtos), refeita em 23/11/2026 a pedido do dono: "organizada, fluida, listas que
+// recolhem, cada produto detalhado com tudo o que temos, e o Ponta Negra no filtro".
+// Lista: totvs_produtos_lista (cadastro do Chef Web lido do navegador + regra fiscal do NCM + vendas de 120 dias + problemas).
+// Ficha: totvs_produto_detalhe (cadastro inteiro, regra do NCM nesta e nas outras casas, o mesmo produto nas outras casas,
+// como sai na NFC-e e vendas por mês). Regras fiscais por NCM: totvs_regras_conferencia. SQL em supabase/totvs_produtos_painel.sql.
+type Problema = { regra: string; sev: "erro" | "atencao" };
+type Prod = {
+  l: number; c: string; n: string; g: string | null; sg: string | null; pr: number | null; a: boolean;
+  ncm: string | null; cest: string | null; cfop: string | null; icms: number | null; pis: number | null; cof: number | null;
+  r_icms: number | null; r_cst: string | null; r_pis: number | null; r_cof: number | null; r_ibs: string | null; r_cc: string | null; reg: boolean;
+  v_val: number | null; v_qtd: number | null; v_ult: string | null;
+  nota: { cst: string | null; aliquota: number | null; cfop: string | null; cclasstrib: string | null; ibscbs_cst: string | null } | null;
+  pb: Problema[];
 };
-type Produto = {
-  unidade_id: string; cod: string; nome: string; grupo: string | null; ultima: string; itens: number; valor: number; icms: number;
-  atual: Classe; variacoes: Classe[];
-};
-type Achado = { regra: string; sev: "erro" | "atencao"; unidade_id: string; cod: string | null; nome: string; campo: string; atual: string | null; esperado: string | null };
+type Casa = { loja_codigo: number; casa: string; unidade_id: string | null; produtos: number; ativos: number };
+type Lista = { lido_em: string | null; casas: Casa[]; produtos: Prod[] };
 
-const brl = (v: number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-const num = (v: number) => Number(v).toLocaleString("pt-BR");
-const dataBr = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("pt-BR");
-const TITULO: Record<string, string> = {
-  taxa_tributada: "Taxa de serviço tributada", taxa_ncm: "Taxa com NCM de mercadoria", aliq_casas: "Alíquota diferente entre as casas",
-  aliq_cafe: "Café/chá com alíquota diferente da comida", ncm_casas: "NCM diferente entre as casas", ncm_prato: "Prato com NCM de ingrediente",
-  unidade: "Unidade CX", cst_cfop: "CST não combina com o CFOP", icms_conta: "Conta do ICMS errada", pis_monofasico: "PIS/Cofins em bebida monofásica",
-  variacao: "Classificação variando", cclass_vazio: "Sem cClassTrib", cclass_restaurante: "Comida fora do 200047", cclass_casas: "cClassTrib diferente entre as casas",
-  cclass_gorjeta: "Taxa fora do 410019",
+const brl = (v: number | null | undefined) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+const brl0 = (v: number | null | undefined) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }));
+const num = (v: number | null | undefined) => (v == null ? "—" : Number(v).toLocaleString("pt-BR"));
+const pct = (v: number | null | undefined) => (v == null ? "—" : `${Number(v).toLocaleString("pt-BR")}%`);
+const dataBr = (d: string | null | undefined) => (d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR") : "—");
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const mesCurto = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]}/${m.slice(2, 4)}`;
+
+// Cada problema: rótulo curto (na lista), título e como resolver (na ficha)
+const PROBLEMAS: Record<string, { curto: string; titulo: string; resolver: string }> = {
+  sem_ncm: { curto: "sem NCM", titulo: "Produto sem NCM", resolver: "Em Cadastro › Produtos › Dados Fiscais, informar o NCM de 8 dígitos." },
+  sem_regra: { curto: "NCM sem regra", titulo: "O NCM não tem regra fiscal nesta casa", resolver: "Cadastrar a regra fiscal do NCM na loja (Cadastro › NCM) ou trocar o NCM do produto por um que já tem regra." },
+  pis: { curto: "PIS", titulo: "PIS do produto fora de 0,65%", resolver: "Em Dados Fiscais do produto, PIS 0,65% (cumulativo do Lucro Presumido)." },
+  cofins: { curto: "Cofins", titulo: "Cofins do produto fora de 3%", resolver: "Em Dados Fiscais do produto, Cofins 3,00% (cumulativo do Lucro Presumido). Com 0,65% a nota sai recolhendo Cofins a menos." },
+  monofasico: { curto: "monofásico", titulo: "Bebida monofásica com PIS/Cofins", resolver: "Água, refrigerante e cerveja já têm PIS/Cofins pago pelo fabricante: zerar no produto e usar CST 04 na regra do NCM." },
+  regra_pis: { curto: "PIS da regra", titulo: "A regra do NCM tem PIS fora de 0,65%", resolver: "Em Cadastro › NCM, na regra desta loja, PIS 0,65% (CST 01)." },
+  regra_cofins: { curto: "Cofins da regra", titulo: "A regra do NCM tem Cofins fora de 3%", resolver: "Em Cadastro › NCM, na regra desta loja, Cofins 3,00% (CST 01, por percentual)." },
+  icms_regra: { curto: "ICMS ≠ regra", titulo: "ICMS do produto diferente da regra do NCM", resolver: "Igualar o Imposto (%) do produto ao da regra do NCM nesta loja (confirmar com a contabilidade qual é o certo)." },
+  cfop_regra: { curto: "CFOP ≠ regra", titulo: "CFOP do produto diferente da regra do NCM", resolver: "Igualar o CFOP do produto ao da regra (5102 tributado; 5405 substituição tributária)." },
+  regra_ibscbs: { curto: "sem IBS/CBS", titulo: "A regra do NCM não tem IBS/CBS", resolver: "Preencher o CST e o cClassTrib do IBS/CBS na regra do NCM (vale a partir de 2027)." },
+  nota_varia: { curto: "nota varia", titulo: "Saiu nas NFC-e com classificações diferentes", resolver: "O mesmo produto saiu com CST, alíquota, CFOP ou cClassTrib diferentes em vendas diferentes: conferir a regra do NCM e o cadastro." },
+  ncm_casas: { curto: "NCM entre casas", titulo: "O mesmo produto tem NCM diferente em outra casa", resolver: "Usar o mesmo NCM para o mesmo produto em todas as casas (ver a tabela abaixo)." },
 };
 
-// Regras fiscais do Chef Web (por NCM, loja, UF e regime; supabase/totvs_regras_fiscais.sql) e a conferência delas
+// Nomes legíveis dos campos do cadastro (o resto aparece com o nome do Chef Web)
+const ROTULO: Record<string, string> = {
+  TextoFiscal: "Texto fiscal", CodNCM: "NCM", CodCEST: "CEST", Imposto: "ICMS (%)", Tributo: "Tributo", CFOPVendaID: "CFOP de venda", CSTVenda: "CST de venda",
+  CSTPIS: "CST do PIS", PIS: "PIS (%)", PISValor: "PIS (valor)", PISTipoCalculo: "Cálculo do PIS", CSTCOFINS: "CST da Cofins", COFINS: "Cofins (%)",
+  COFINSValor: "Cofins (valor)", COFINSTipoCalculo: "Cálculo da Cofins", Produto_CST_IBS_CBS_VI: "CST IBS/CBS", Produto_ClassTribIBSCBS_VI: "cClassTrib",
+  PercentualCBS: "CBS (%)", PercentualIBSUF: "IBS UF (%)", PercentualIBSMun: "IBS município (%)", PerReducaoBCICMS: "Redução da base do ICMS (%)",
+  CodigoBeneficioFiscal: "Benefício fiscal", ReducaoIcmsEfetivo: "Redução ICMS efetivo (%)", AliquotaIcmsEfetivo: "Alíquota ICMS efetivo (%)",
+  AliquotaICMSST: "Alíquota ICMS ST (%)", CodigoCreditoPresumido: "Crédito presumido", CFOP: "CFOP de compra", CST: "CST de compra", ReducaoICMS: "Redução do ICMS",
+  TributoCompra: "Tributo na compra", IndicadorIncentivoFiscal: "Incentivo fiscal", CodigoGTIN: "GTIN (código de barras)", IAT: "IAT (arredondamento)",
+  IPPT: "IPPT (produção)", TipoItem: "Tipo do item", UtilizaCodigoBarras: "Usa código de barras",
+};
+
+export default function ProdutosTotvs() {
+  const supabase = useMemo(() => createClient(), []);
+  const [lista, setLista] = useState<Lista | null>(null);
+  const [erro, setErro] = useState("");
+  const [insumos, setInsumos] = useState(false);
+  const [inativos, setInativos] = useState(false);
+  const [casa, setCasa] = useState(0);
+  const [situacao, setSituacao] = useState<"" | "erro" | "atencao" | "ok" | "vendidos">("");
+  const [grupo, setGrupo] = useState("");
+  const [busca, setBusca] = useState("");
+  const [fechadas, setFechadas] = useState<Record<string, boolean>>({});
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+  const [ficha, setFicha] = useState<Prod | null>(null);
+  const [regrasAbertas, setRegrasAbertas] = useState(false);
+
+  useEffect(() => {
+    setLista(null); setErro("");
+    supabase.rpc("totvs_produtos_lista", { p_insumos: insumos }).then(({ data, error }) => {
+      if (error) setErro(error.message); else setLista(data as Lista);
+    });
+  }, [supabase, insumos]);
+
+  const t = busca.trim().toLowerCase();
+  const filtrando = !!(t || situacao || grupo);
+  const sit = (p: Prod) => (p.pb.some((x) => x.sev === "erro") ? "erro" : p.pb.length ? "atencao" : "ok");
+  const visiveis = useMemo(() => (lista?.produtos ?? []).filter((p) =>
+    (inativos || p.a) && (!casa || p.l === casa) && (!grupo || (p.g ?? "Sem grupo") === grupo)
+    && (!situacao || (situacao === "vendidos" ? !!p.v_val : sit(p) === situacao))
+    && (!t || p.n.toLowerCase().includes(t) || p.c === t || (p.ncm ?? "").includes(t))), [lista, inativos, casa, grupo, situacao, t]);
+
+  if (erro) return <p className="es-aviso">Não deu para carregar os produtos: {erro}</p>;
+  if (!lista) return <p className="muted">Carregando os produtos…</p>;
+  if (!lista.casas.length) return <p className="muted">O cadastro do Chef Web ainda não foi lido. Abra o Chef Web no navegador do app e peça ao Claude para buscar.</p>;
+
+  const base = lista.produtos.filter((p) => (inativos || p.a) && (!casa || p.l === casa));
+  const conta = { total: base.length, erro: base.filter((p) => sit(p) === "erro").length, atencao: base.filter((p) => sit(p) === "atencao").length, vendidos: base.filter((p) => p.v_val).length };
+  const grupos = [...new Set(lista.produtos.map((p) => p.g ?? "Sem grupo"))].sort();
+  const nomeCasa = (l: number) => lista.casas.find((c) => c.loja_codigo === l)?.casa ?? String(l);
+
+  // Casa → grupo › subgrupo → produtos
+  const arvore = lista.casas.filter((c) => !casa || c.loja_codigo === casa).map((c) => {
+    const ps = visiveis.filter((p) => p.l === c.loja_codigo);
+    const blocos = new Map<string, Prod[]>();
+    for (const p of ps) {
+      const k = `${p.g ?? "Sem grupo"} › ${p.sg ?? "Sem subgrupo"}`;
+      if (!blocos.has(k)) blocos.set(k, []);
+      blocos.get(k)!.push(p);
+    }
+    return { c, ps, blocos: [...blocos.entries()] };
+  }).filter((x) => x.ps.length);
+
+  const todasChaves = arvore.flatMap((x) => x.blocos.map(([k]) => `${x.c.loja_codigo}|${k}`));
+  const abrirTudo = () => { setFechadas({}); setAbertos(Object.fromEntries(todasChaves.map((k) => [k, true]))); };
+  const recolherTudo = () => { setAbertos({}); setFechadas(Object.fromEntries(arvore.map((x) => [String(x.c.loja_codigo), true]))); };
+
+  function planilha() {
+    const linhas = [["Casa", "Código", "Produto", "Grupo", "Subgrupo", "Situação", "Preço", "NCM", "CEST", "CFOP", "ICMS produto", "ICMS regra", "PIS", "Cofins",
+      "CST regra", "CST IBS/CBS", "cClassTrib", "Vendido 120 dias", "Última venda", "Problemas"]];
+    for (const p of visiveis) {
+      linhas.push([nomeCasa(p.l), p.c, p.n, p.g ?? "", p.sg ?? "", p.a ? "ativo" : "inativo", p.pr == null ? "" : String(p.pr).replace(".", ","), p.ncm ?? "",
+        p.cest ?? "", p.cfop ?? "", p.icms == null ? "" : String(p.icms).replace(".", ","), p.r_icms == null ? "" : String(p.r_icms).replace(".", ","),
+        p.pis == null ? "" : String(p.pis).replace(".", ","), p.cof == null ? "" : String(p.cof).replace(".", ","), p.r_cst ?? "", p.r_ibs ?? "", p.r_cc ?? "",
+        p.v_val == null ? "" : String(p.v_val).replace(".", ","), p.v_ult ?? "", p.pb.map((x) => PROBLEMAS[x.regra]?.titulo ?? x.regra).join(" | ")]);
+    }
+    const csv = "﻿" + linhas.map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = "produtos-totvs.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="pd">
+      <p className="pd-intro">
+        Todos os produtos do cadastro do Chef Web, com a regra fiscal do NCM de cada casa, as vendas dos últimos 120 dias (NFC-e) e o que precisa
+        corrigir. Clique num produto para ver a ficha completa. Lido do Chef Web em {dataBr(lista.lido_em)}; quando o cadastro mudar, peça ao Claude para buscar de novo.
+      </p>
+
+      <div className="pd-numeros">
+        <button className={!situacao ? "on" : ""} onClick={() => setSituacao("")}><span>Produtos</span><b>{num(conta.total)}</b><small>{inativos ? "ativos e inativos" : "ativos"}{insumos ? ", com insumos" : ""}</small></button>
+        <button className={situacao === "erro" ? "on ruim" : "ruim"} onClick={() => setSituacao(situacao === "erro" ? "" : "erro")}><span>Com erro</span><b>{num(conta.erro)}</b><small>a corrigir no Chef Web</small></button>
+        <button className={situacao === "atencao" ? "on atencao" : "atencao"} onClick={() => setSituacao(situacao === "atencao" ? "" : "atencao")}><span>Com atenção</span><b>{num(conta.atencao)}</b><small>a conferir</small></button>
+        <button className={situacao === "vendidos" ? "on" : ""} onClick={() => setSituacao(situacao === "vendidos" ? "" : "vendidos")}><span>Vendidos</span><b>{num(conta.vendidos)}</b><small>nos últimos 120 dias</small></button>
+      </div>
+
+      <div className="pd-filtros">
+        <div className="pd-casas" role="tablist" aria-label="Casa">
+          <button role="tab" aria-selected={!casa} className={!casa ? "on" : ""} onClick={() => setCasa(0)}>Todas as casas</button>
+          {lista.casas.map((c) => (
+            <button key={c.loja_codigo} role="tab" aria-selected={casa === c.loja_codigo} className={casa === c.loja_codigo ? "on" : ""} onClick={() => setCasa(c.loja_codigo)}>
+              {c.casa}<span>{num(inativos ? c.produtos : c.ativos)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="pd-linha">
+          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto, código ou NCM" aria-label="Buscar produto" />
+          <select value={situacao} onChange={(e) => setSituacao(e.target.value as typeof situacao)} aria-label="Situação">
+            <option value="">Todas as situações</option>
+            <option value="erro">Com erro</option>
+            <option value="atencao">Com atenção</option>
+            <option value="ok">Sem problema</option>
+            <option value="vendidos">Vendidos em 120 dias</option>
+          </select>
+          <select value={grupo} onChange={(e) => setGrupo(e.target.value)} aria-label="Grupo">
+            <option value="">Todos os grupos</option>
+            {grupos.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <label className="pd-check"><input type="checkbox" checked={inativos} onChange={(e) => setInativos(e.target.checked)} /> Inativos</label>
+          <label className="pd-check"><input type="checkbox" checked={insumos} onChange={(e) => setInsumos(e.target.checked)} /> Insumos (estoque)</label>
+          <span className="pd-acoes">
+            <button className="ghost small" onClick={abrirTudo}>Abrir tudo</button>
+            <button className="ghost small" onClick={recolherTudo}>Recolher tudo</button>
+            <button className="ghost small" onClick={planilha}>Planilha</button>
+          </span>
+        </div>
+      </div>
+
+      {!arvore.length && <p className="muted">Nenhum produto com esses filtros.</p>}
+
+      {arvore.map(({ c, ps, blocos }) => {
+        const kc = String(c.loja_codigo);
+        const casaAberta = !fechadas[kc];
+        const erros = ps.filter((p) => sit(p) === "erro").length;
+        const atencoes = ps.filter((p) => sit(p) === "atencao").length;
+        return (
+          <section key={kc} className={`pd-casa${casaAberta ? " aberta" : ""}`}>
+            <button className="pd-casa-cabeca" onClick={() => setFechadas((x) => ({ ...x, [kc]: casaAberta }))} aria-expanded={casaAberta}>
+              <span className="pd-casa-nome"><strong>{c.casa}</strong><small>loja {c.loja_codigo} no Chef Web · {num(ps.length)} produtos</small></span>
+              <span className="pd-contas">{erros > 0 && <i className="erro">{num(erros)} com erro</i>}{atencoes > 0 && <i className="atencao">{num(atencoes)} com atenção</i>}</span>
+              <span className="ip-seta" aria-hidden="true" />
+            </button>
+            {casaAberta && (
+              <div className="pd-casa-corpo">
+                {blocos.map(([nomeBloco, itens]) => {
+                  const kb = `${kc}|${nomeBloco}`;
+                  const aberto = abertos[kb] ?? filtrando;
+                  const e = itens.filter((p) => sit(p) === "erro").length;
+                  const a = itens.filter((p) => sit(p) === "atencao").length;
+                  const vendido = itens.reduce((s, p) => s + Number(p.v_val ?? 0), 0);
+                  return (
+                    <div key={kb} className={`pd-bloco${aberto ? " aberto" : ""}`}>
+                      <button className="pd-bloco-cabeca" onClick={() => setAbertos((x) => ({ ...x, [kb]: !aberto }))} aria-expanded={aberto}>
+                        <span className="pd-bloco-nome">{nomeBloco}</span>
+                        <span className="pd-bloco-info">{num(itens.length)} produto{itens.length === 1 ? "" : "s"}{vendido ? ` · ${brl0(vendido)} em 120 dias` : ""}</span>
+                        <span className="pd-contas">{e > 0 && <i className="erro">{num(e)}</i>}{a > 0 && <i className="atencao">{num(a)}</i>}</span>
+                        <span className="ip-seta" aria-hidden="true" />
+                      </button>
+                      {aberto && (
+                        <div className="nf-tabela-wrap">
+                          <table className="nf-tabela pd-tabela">
+                            <thead><tr><th>Produto</th><th>NCM</th><th className="n">ICMS</th><th className="n">PIS · Cofins</th><th>IBS/CBS</th><th className="n">Vendido</th><th>O que corrigir</th></tr></thead>
+                            <tbody>
+                              {itens.map((p) => (
+                                <tr key={p.c} className={`pd-item ${sit(p)}${p.a ? "" : " inativo"}`} onClick={() => setFicha(p)} tabIndex={0}
+                                  onKeyDown={(ev) => { if (ev.key === "Enter") setFicha(p); }}>
+                                  <td><strong>{p.n}</strong><small>cód. {p.c}{p.pr ? ` · ${brl(p.pr)}` : ""}{p.a ? "" : " · inativo"}</small></td>
+                                  <td>{p.ncm || "—"}{p.cest ? <small>CEST {p.cest}</small> : null}</td>
+                                  <td className="n">{pct(p.icms)}{p.r_icms != null && p.icms != null && p.r_icms !== p.icms ? <small>regra {pct(p.r_icms)}</small> : null}</td>
+                                  <td className="n">{p.pis == null ? "—" : num(p.pis)} · {p.cof == null ? "—" : num(p.cof)}</td>
+                                  <td>{p.r_ibs ?? "—"}{p.r_cc ? <small>{p.r_cc}</small> : null}</td>
+                                  <td className="n">{p.v_val ? brl0(p.v_val) : "—"}{p.v_ult ? <small>{dataBr(p.v_ult)}</small> : null}</td>
+                                  <td>{p.pb.length ? p.pb.map((x) => <span key={x.regra} className={`pd-chip ${x.sev}`}>{PROBLEMAS[x.regra]?.curto ?? x.regra}</span>) : <span className="pd-chip ok">ok</span>}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })}
+
+      <section className={`pd-casa${regrasAbertas ? " aberta" : ""}`}>
+        <button className="pd-casa-cabeca" onClick={() => setRegrasAbertas((x) => !x)} aria-expanded={regrasAbertas}>
+          <span className="pd-casa-nome"><strong>Regras fiscais por NCM</strong><small>a tributação que cada produto herda do NCM, em cada casa (Chef Web › Cadastro › NCM)</small></span>
+          <span className="pd-contas" />
+          <span className="ip-seta" aria-hidden="true" />
+        </button>
+        {regrasAbertas && <div className="pd-casa-corpo"><RegrasTotvs /></div>}
+      </section>
+
+      {ficha && <Ficha p={ficha} casa={nomeCasa(ficha.l)} fechar={() => setFicha(null)} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Ficha do produto (painel lateral)
+type Detalhe = {
+  produto: Record<string, unknown> & { campos?: Record<string, string> };
+  regra: Record<string, unknown> | null;
+  regras_ncm: { loja: string; uf: string; regime: string; cest: string; icms: number | null; cst: string | null; cfop: string | null; pis: string; cofins: string; ibscbs: string }[] | null;
+  outras_casas: { casa: string; codigo: string; nome: string; situacao: string; ncm: string | null; cfop: string | null; icms: number | null; pis: number | null; cofins: number | null; preco: number | null }[] | null;
+  nota: { cst: string | null; aliquota: number | null; cfop: string | null; ncm: string | null; pis_cst: string | null; pis: number | null; cofins_cst: string | null; cofins: number | null; ibscbs_cst: string | null; cclasstrib: string | null; itens: number; ultima: string; primeira: string }[] | null;
+  vendas_mes: { mes: string; itens: number; qtd: number; valor: number; icms: number }[] | null;
+};
+
+function Ficha({ p, casa, fechar }: { p: Prod; casa: string; fechar: () => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [d, setD] = useState<Detalhe | null>(null);
+  const [erro, setErro] = useState("");
+  useEffect(() => {
+    setD(null); setErro("");
+    supabase.rpc("totvs_produto_detalhe", { p_loja: p.l, p_codigo: p.c }).then(({ data, error }) => { if (error) setErro(error.message); else setD(data as Detalhe); });
+  }, [supabase, p.l, p.c]);
+
+  const campos = (d?.produto?.campos ?? {}) as Record<string, string>;
+  const r = d?.regra as Record<string, string | number | null> | null;
+  const total = (d?.vendas_mes ?? []).reduce((s, v) => s + Number(v.valor), 0);
+
+  return (
+    <Gaveta titulo={p.n} sub={`${casa} · código ${p.c} · ${p.g ?? "sem grupo"} › ${p.sg ?? "sem subgrupo"}`} fechar={fechar}>
+      <div className="pd-ficha">
+        <dl className="pd-resumo">
+          <div><dt>Situação</dt><dd>{p.a ? "Ativo" : "Inativo"}</dd></div>
+          <div><dt>Preço</dt><dd>{brl(p.pr)}</dd></div>
+          <div><dt>Vendido em 120 dias</dt><dd>{p.v_val ? brl(p.v_val) : "—"}</dd></div>
+          <div><dt>Última venda</dt><dd>{dataBr(p.v_ult)}</dd></div>
+        </dl>
+
+        <section className="pd-sec">
+          <h3>O que precisa corrigir</h3>
+          {p.pb.length ? (
+            <ul className="pd-problemas">
+              {p.pb.map((x) => (
+                <li key={x.regra} className={x.sev}>
+                  <b>{PROBLEMAS[x.regra]?.titulo ?? x.regra}</b>
+                  <span>{PROBLEMAS[x.regra]?.resolver}</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="pd-ok">Nenhum problema encontrado neste produto.</p>}
+        </section>
+
+        {erro && <p className="es-aviso">Não deu para carregar a ficha: {erro}</p>}
+        {!d && !erro && <p className="muted">Carregando a ficha…</p>}
+
+        {d && (
+          <>
+            <section className="pd-sec">
+              <h3>Cadastro no Chef Web</h3>
+              <dl className="pd-campos">
+                {Object.keys(ROTULO).filter((k) => k in campos).concat(Object.keys(campos).filter((k) => !(k in ROTULO))).map((k) => (
+                  <div key={k}><dt>{ROTULO[k] ?? k}</dt><dd>{campos[k] === "" || campos[k] == null ? "—" : campos[k]}</dd></div>
+                ))}
+              </dl>
+              <p className="pd-nota">Campos em branco no produto (como CST e IBS/CBS) vêm da regra fiscal do NCM, abaixo.</p>
+            </section>
+
+            <section className="pd-sec">
+              <h3>Regra fiscal do NCM {p.ncm ?? ""} nesta casa</h3>
+              {r ? (
+                <dl className="pd-campos">
+                  <div><dt>Tributo</dt><dd>{r.tributo ?? "—"}</dd></div>
+                  <div><dt>ICMS</dt><dd>{pct(r.imposto as number)}</dd></div>
+                  <div><dt>CST</dt><dd>{r.cst ?? "—"}</dd></div>
+                  <div><dt>CFOP</dt><dd>{r.cfop ?? "—"}</dd></div>
+                  <div><dt>Tipo do item</dt><dd>{r.tipo_item ?? "—"}</dd></div>
+                  <div><dt>CEST</dt><dd>{r.cest || "—"}</dd></div>
+                  <div><dt>Redução da base</dt><dd>{pct(r.red_bc as number)}</dd></div>
+                  <div><dt>FCP</dt><dd>{pct(r.fcp as number)}</dd></div>
+                  <div><dt>PIS</dt><dd>{r.pis_cst ?? "—"} · {pct(r.pis_valor as number)}</dd></div>
+                  <div><dt>Cofins</dt><dd>{r.cofins_cst ?? "—"} · {pct(r.cofins_valor as number)}</dd></div>
+                  <div><dt>CST IBS/CBS</dt><dd>{r.ibscbs_cst ?? "—"}</dd></div>
+                  <div><dt>cClassTrib</dt><dd>{r.cclasstrib ?? "—"}</dd></div>
+                  <div><dt>CBS · IBS UF · IBS mun.</dt><dd>{pct(r.cbs as number)} · {pct(r.ibs_uf as number)} · {pct(r.ibs_mun as number)}</dd></div>
+                  <div><dt>Redução CBS · IBS</dt><dd>{pct(r.red_cbs as number)} · {pct(r.red_ibs as number)}</dd></div>
+                  <div><dt>Benefício fiscal</dt><dd>{r.cod_beneficio ?? "—"}</dd></div>
+                  <div><dt>Incentivo fiscal</dt><dd>{r.incentivo ?? "—"}</dd></div>
+                </dl>
+              ) : <p className="pd-nota">Este NCM não tem regra fiscal nesta casa.</p>}
+              {(d.regras_ncm?.length ?? 0) > 1 && (
+                <>
+                  <h4>O mesmo NCM em todas as casas</h4>
+                  <div className="nf-tabela-wrap">
+                    <table className="nf-tabela pd-tabela">
+                      <thead><tr><th>Casa</th><th>UF · regime</th><th className="n">ICMS</th><th>CST</th><th>CFOP</th><th>PIS</th><th>Cofins</th><th>IBS/CBS</th></tr></thead>
+                      <tbody>{d.regras_ncm!.map((x, k) => (
+                        <tr key={k}><td>{x.loja}</td><td>{x.uf} · {x.regime}</td><td className="n">{pct(x.icms)}</td><td>{x.cst ?? "—"}</td><td>{x.cfop ?? "—"}</td><td>{x.pis}</td><td>{x.cofins}</td><td>{x.ibscbs}</td></tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+
+            {(d.outras_casas?.length ?? 0) > 0 && (
+              <section className="pd-sec">
+                <h3>O mesmo produto nas outras casas</h3>
+                <div className="nf-tabela-wrap">
+                  <table className="nf-tabela pd-tabela">
+                    <thead><tr><th>Casa</th><th>Código</th><th>NCM</th><th>CFOP</th><th className="n">ICMS</th><th className="n">PIS · Cofins</th><th className="n">Preço</th></tr></thead>
+                    <tbody>{d.outras_casas!.map((x, k) => (
+                      <tr key={k} className={x.ncm !== p.ncm ? "pd-dif" : ""}><td>{x.casa}<small>{x.situacao}</small></td><td>{x.codigo}</td><td>{x.ncm ?? "—"}</td><td>{x.cfop ?? "—"}</td>
+                        <td className="n">{pct(x.icms)}</td><td className="n">{num(x.pis)} · {num(x.cofins)}</td><td className="n">{brl(x.preco)}</td></tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            <section className="pd-sec">
+              <h3>Como sai na NFC-e</h3>
+              {d.nota?.length ? (
+                <div className="nf-tabela-wrap">
+                  <table className="nf-tabela pd-tabela">
+                    <thead><tr><th>Período</th><th className="n">Itens</th><th>NCM</th><th>CST</th><th className="n">ICMS</th><th>CFOP</th><th>PIS</th><th>Cofins</th><th>IBS/CBS</th></tr></thead>
+                    <tbody>{d.nota.map((x, k) => (
+                      <tr key={k}><td>{dataBr(x.primeira)} a {dataBr(x.ultima)}</td><td className="n">{num(x.itens)}</td><td>{x.ncm ?? "—"}</td><td>{x.cst ?? "—"}</td><td className="n">{pct(x.aliquota)}</td>
+                        <td>{x.cfop ?? "—"}</td><td>{x.pis_cst ?? "—"} · {pct(x.pis)}</td><td>{x.cofins_cst ?? "—"} · {pct(x.cofins)}</td><td>{x.ibscbs_cst ?? "—"} · {x.cclasstrib ?? "—"}</td></tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ) : <p className="pd-nota">Nenhuma NFC-e deste produto nesta casa.</p>}
+            </section>
+
+            <section className="pd-sec">
+              <h3>Vendas por mês</h3>
+              {d.vendas_mes?.length ? (
+                <div className="nf-tabela-wrap">
+                  <table className="nf-tabela pd-tabela">
+                    <thead><tr><th>Mês</th><th className="n">Quantidade</th><th className="n">Vendido</th><th className="n">ICMS na nota</th></tr></thead>
+                    <tbody>
+                      {d.vendas_mes.map((v) => <tr key={v.mes}><td>{mesCurto(v.mes)}</td><td className="n">{num(v.qtd)}</td><td className="n">{brl(v.valor)}</td><td className="n">{brl(v.icms)}</td></tr>)}
+                      <tr className="pd-total"><td>Total</td><td className="n">{num(d.vendas_mes.reduce((s, v) => s + Number(v.qtd), 0))}</td><td className="n">{brl(total)}</td><td className="n">{brl(d.vendas_mes.reduce((s, v) => s + Number(v.icms), 0))}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : <p className="pd-nota">Sem vendas com NFC-e.</p>}
+            </section>
+          </>
+        )}
+      </div>
+    </Gaveta>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Regras fiscais do Chef Web por NCM (supabase/totvs_regras_fiscais.sql)
 type RegraAchado = { regra: string; sev: "erro" | "atencao"; loja_codigo: number; casa: string; ncm: string; cest: string; campo: string; atual: string; esperado: string };
 type Regras = { lido_em: string | null; regras: number; achados: RegraAchado[]; lista: Record<string, string | number | null>[] };
 const REGRA_TITULO: Record<string, string> = {
@@ -58,377 +429,62 @@ function RegrasTotvs() {
   const [r, setR] = useState<Regras | null>(null);
   const [aberta, setAberta] = useState("");
   const [verTodas, setVerTodas] = useState(false);
-  useEffect(() => {
-    supabase.rpc("totvs_regras_conferencia").then(({ data }) => setR((data ?? null) as Regras | null));
-  }, [supabase]);
-  if (!r) return <p className="muted">Lendo as regras fiscais da TOTVS…</p>;
-  if (!r.regras) return null;
+  useEffect(() => { supabase.rpc("totvs_regras_conferencia").then(({ data }) => setR((data ?? null) as Regras | null)); }, [supabase]);
+  if (!r) return <p className="muted">Lendo as regras fiscais…</p>;
+  if (!r.regras) return <p className="muted">As regras fiscais ainda não foram lidas.</p>;
   const grupos = Object.keys(REGRA_TITULO).map((id) => ({ id, itens: r.achados.filter((a) => a.regra === id) })).filter((g) => g.itens.length);
-  const erros = r.achados.filter((a) => a.sev === "erro").length;
   return (
-    <section className="pt-regras">
-      <div className="nc-barra">
-        <h2>Regras fiscais da TOTVS</h2>
-        <div className="cf-acoes"><button className="ghost small" onClick={() => setVerTodas((x) => !x)}>{verTodas ? "Esconder as regras" : `Ver as ${num(r.regras)} regras`}</button></div>
-      </div>
-      <p className="nc-explica cf-escopo">
-        No Chef Web cada produto pega a tributação da regra fiscal do NCM dele, por loja. {num(r.regras)} regras lidas
-        {r.lido_em ? ` em ${new Date(r.lido_em).toLocaleDateString("pt-BR")}` : ""} (Relatórios › Fiscal › Regras Fiscais):
-        {erros ? ` ${num(erros)} com erro.` : " nenhuma com erro."} A correção é feita em Cadastro › NCM, na regra da loja.
-      </p>
+    <div className="pd-regras">
+      <p className="pd-nota">{num(r.regras)} regras lidas em {r.lido_em ? new Date(r.lido_em).toLocaleDateString("pt-BR") : "—"}. Cada produto pega a tributação da regra do NCM dele na casa.</p>
       {grupos.map((g) => {
         const sev = g.itens.some((a) => a.sev === "erro") ? "erro" : "atencao";
         const esta = aberta === g.id;
         return (
-          <section key={g.id} className={`cf-regra cf-${sev}${esta ? " aberta" : ""}`}>
-            <button className="cf-regra-cabeca" onClick={() => setAberta(esta ? "" : g.id)} aria-expanded={esta}>
-              <span className="cf-sev">{sev === "erro" ? "Erro" : "Atenção"}</span>
-              <span className="cf-regra-titulo"><strong>{REGRA_TITULO[g.id]}</strong><small>{num(g.itens.length)} regra{g.itens.length === 1 ? "" : "s"}</small></span>
-              <span className="cf-regra-imp" />
+          <div key={g.id} className={`pd-bloco${esta ? " aberto" : ""}`}>
+            <button className="pd-bloco-cabeca" onClick={() => setAberta(esta ? "" : g.id)} aria-expanded={esta}>
+              <span className="pd-bloco-nome">{REGRA_TITULO[g.id]}</span>
+              <span className="pd-bloco-info">{num(g.itens.length)} regra{g.itens.length === 1 ? "" : "s"}</span>
+              <span className="pd-contas"><i className={sev}>{sev === "erro" ? "erro" : "atenção"}</i></span>
               <span className="ip-seta" aria-hidden="true" />
             </button>
             {esta && (
-              <div className="cf-regra-corpo">
+              <div className="pd-bloco-corpo">
                 <p className="cf-resolver"><b>Como resolver:</b> {REGRA_RESOLVER[g.id]}</p>
                 <div className="nf-tabela-wrap">
-                  <table className="nf-tabela cf-tabela">
+                  <table className="nf-tabela pd-tabela">
                     <thead><tr><th>Casa</th><th>NCM</th><th>Como está</th><th>Esperado</th></tr></thead>
-                    <tbody>
-                      {g.itens.map((a, k) => (
-                        <tr key={k}>
-                          <td>{a.casa}</td>
-                          <td>{a.ncm}{a.cest ? <small>CEST {a.cest}</small> : null}</td>
-                          <td><small className="muted">{a.campo}</small>{a.atual}</td>
-                          <td>{a.esperado}</td>
-                        </tr>
-                      ))}
-                    </tbody>
+                    <tbody>{g.itens.map((a, k) => (
+                      <tr key={k}><td>{a.casa}</td><td>{a.ncm}{a.cest ? <small>CEST {a.cest}</small> : null}</td><td><small>{a.campo}</small>{a.atual}</td><td>{a.esperado}</td></tr>
+                    ))}</tbody>
                   </table>
                 </div>
               </div>
             )}
-          </section>
-        );
-      })}
-      {verTodas && (
-        <div className="nf-tabela-wrap">
-          <table className="nf-tabela cf-tabela">
-            <thead><tr><th>Loja</th><th>UF · regime</th><th>NCM</th><th>CEST</th><th>ICMS</th><th>CFOP</th><th>CST</th><th>PIS</th><th>Cofins</th><th>IBS/CBS</th></tr></thead>
-            <tbody>
-              {r.lista.map((x, k) => (
-                <tr key={k}>
-                  <td>{String(x.loja_nome ?? x.loja_codigo)}</td>
-                  <td>{String(x.uf)} · {String(x.regime)}</td>
-                  <td>{String(x.ncm)}</td>
-                  <td>{String(x.cest ?? "") || "—"}</td>
-                  <td>{x.imposto == null ? "—" : `${x.imposto}%`}</td>
-                  <td>{String(x.cfop ?? "—")}</td>
-                  <td>{String(x.cst ?? "—")}</td>
-                  <td>{String(x.pis_cst ?? "—")} · {x.pis_valor ?? "—"}</td>
-                  <td>{String(x.cofins_cst ?? "—")} · {x.cofins_valor ?? "—"}</td>
-                  <td>{String(x.ibscbs_cst ?? "—")} · {String(x.cclasstrib ?? "—")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-// Cadastro completo dos produtos no Chef Web (lido do navegador do sócio; supabase/totvs_cadastro_conferencia.sql)
-type CadProduto = {
-  loja_codigo: number; casa: string; codigo: string; nome: string; grupo: string | null; subgrupo?: string | null; preco?: number | null; ncm: string | null;
-  cest: string | null; cfop: string | null; imposto: number | null; pis: number | null; cofins: number | null; regra_imposto: number | null;
-  regra_cst?: string | null; regra_cfop?: string | null; regra_cclasstrib?: string | null; tem_regra?: boolean; vendas_valor: number | null; vendas_ultima: string | null;
-};
-type CadAchado = CadProduto & { regra: string; sev: "erro" | "atencao" };
-type Cadastro = { lido_em: string | null; lojas: { loja_codigo: number; loja_nome: string; produtos: number; ativos: number }[]; achados: CadAchado[]; produtos: CadProduto[] };
-const CAD_TITULO: Record<string, string> = {
-  sem_ncm: "Produto ativo sem NCM", sem_regra: "NCM sem regra fiscal na loja", pis: "PIS do produto fora de 0,65%", cofins: "Cofins do produto fora de 3%",
-  monofasico: "Bebida monofásica com PIS/Cofins no produto", icms_regra: "ICMS do produto diferente da regra do NCM", cfop_regra: "CFOP do produto diferente da regra do NCM",
-  ncm_casas: "Mesmo produto com NCM diferente entre as casas",
-};
-const CAD_RESOLVER: Record<string, string> = {
-  sem_ncm: "Abrir o produto em Cadastro › Produtos › Dados Fiscais e informar o NCM de 8 dígitos.",
-  sem_regra: "Cadastrar a regra fiscal desse NCM na loja (Cadastro › NCM) ou trocar o NCM do produto por um que já tem regra.",
-  pis: "Em Dados Fiscais do produto, PIS 0,65% (ou deixar a regra do NCM decidir, como a contabilidade orientar).",
-  cofins: "Em Dados Fiscais do produto, Cofins 3,00% (ou deixar a regra do NCM decidir, como a contabilidade orientar).",
-  monofasico: "Água, refrigerante e cerveja: PIS e Cofins zerados no produto (CST 04 na regra do NCM).",
-  icms_regra: "Igualar o Imposto (%) do produto ao da regra fiscal do NCM na loja (a regra é a referência; confirmar com a contabilidade).",
-  cfop_regra: "Igualar o CFOP do produto ao da regra do NCM (5102 tributado; 5405 substituição tributária).",
-  ncm_casas: "Usar o mesmo NCM para o mesmo produto em todas as casas.",
-};
-
-function CadastroTotvs() {
-  const supabase = useMemo(() => createClient(), []);
-  const [c, setC] = useState<Cadastro | null>(null);
-  const [aberta, setAberta] = useState("");
-  const [ver, setVer] = useState(false);
-  const [busca, setBusca] = useState("");
-  const [loja, setLoja] = useState(0);
-  useEffect(() => { supabase.rpc("totvs_cadastro_conferencia").then(({ data }) => setC((data ?? null) as Cadastro | null)); }, [supabase]);
-  if (!c) return <p className="muted">Lendo o cadastro dos produtos no Chef Web…</p>;
-  if (!c.lojas.length) return null;
-  const grupos = Object.keys(CAD_TITULO).map((id) => ({ id, itens: c.achados.filter((a) => a.regra === id) })).filter((g) => g.itens.length);
-  const t = busca.trim().toLowerCase();
-  const lista = c.produtos.filter((p) => (!loja || p.loja_codigo === loja) && (!t || p.nome?.toLowerCase().includes(t) || p.codigo.includes(t) || (p.ncm ?? "").includes(t)));
-  const linha = (a: CadProduto) => (
-    <>
-      <td>{a.casa}</td>
-      <td><strong>{a.nome}</strong><small>cód. {a.codigo}{a.grupo ? ` · ${a.grupo}` : ""}{a.vendas_valor ? ` · vendeu ${brl(Number(a.vendas_valor))} em 120 dias` : " · sem venda em 120 dias"}</small></td>
-      <td>{a.ncm || "—"}{a.cest ? <small>CEST {a.cest}</small> : null}</td>
-      <td>{a.cfop || "—"}</td>
-      <td className="n">{a.imposto == null ? "—" : `${num(a.imposto)}%`}{a.regra_imposto != null && a.regra_imposto !== a.imposto ? <small>regra: {num(a.regra_imposto)}%</small> : null}</td>
-      <td>{a.pis == null ? "—" : num(a.pis)} / {a.cofins == null ? "—" : num(a.cofins)}</td>
-    </>
-  );
-  return (
-    <section className="pt-regras">
-      <div className="nc-barra">
-        <h2>Cadastro dos produtos no Chef Web</h2>
-        <div className="cf-acoes"><button className="ghost small" onClick={() => setVer((x) => !x)}>{ver ? "Esconder a lista" : "Ver todos os produtos ativos"}</button></div>
-      </div>
-      <p className="nc-explica cf-escopo">
-        {c.lojas.map((l) => `${l.loja_nome}: ${num(l.ativos)} ativos de ${num(l.produtos)}`).join(" · ")}. Lido do Chef Web
-        {c.lido_em ? ` em ${new Date(c.lido_em).toLocaleDateString("pt-BR")}` : ""}; quando o cadastro mudar, peça ao Claude para buscar de novo.
-      </p>
-      {grupos.map((g) => {
-        const sev = g.itens.some((a) => a.sev === "erro") ? "erro" : "atencao";
-        const esta = aberta === g.id;
-        const vendidos = g.itens.filter((a) => a.vendas_valor).length;
-        return (
-          <section key={g.id} className={`cf-regra cf-${sev}${esta ? " aberta" : ""}`}>
-            <button className="cf-regra-cabeca" onClick={() => setAberta(esta ? "" : g.id)} aria-expanded={esta}>
-              <span className="cf-sev">{sev === "erro" ? "Erro" : "Atenção"}</span>
-              <span className="cf-regra-titulo"><strong>{CAD_TITULO[g.id]}</strong><small>{num(g.itens.length)} produto{g.itens.length === 1 ? "" : "s"} ativos · {num(vendidos)} vendidos nos últimos 120 dias</small></span>
-              <span className="cf-regra-imp" />
-              <span className="ip-seta" aria-hidden="true" />
-            </button>
-            {esta && (
-              <div className="cf-regra-corpo">
-                <p className="cf-resolver"><b>Como resolver:</b> {CAD_RESOLVER[g.id]}</p>
-                <div className="nf-tabela-wrap">
-                  <table className="nf-tabela cf-tabela pt-tabela">
-                    <thead><tr><th>Casa</th><th>Produto</th><th>NCM</th><th>CFOP</th><th className="n">ICMS</th><th>PIS / Cofins</th></tr></thead>
-                    <tbody>{g.itens.map((a, k) => <tr key={k}>{linha(a)}</tr>)}</tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
-        );
-      })}
-      {ver && (
-        <>
-          <div className="cf-acoes">
-            <select value={loja} onChange={(e) => setLoja(Number(e.target.value))} aria-label="Loja">
-              <option value={0}>Todas as lojas</option>
-              {c.lojas.map((l) => <option key={l.loja_codigo} value={l.loja_codigo}>{l.loja_nome}</option>)}
-            </select>
-            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Produto, código ou NCM" aria-label="Buscar no cadastro" />
           </div>
+        );
+      })}
+      <div className={`pd-bloco${verTodas ? " aberto" : ""}`}>
+        <button className="pd-bloco-cabeca" onClick={() => setVerTodas((x) => !x)} aria-expanded={verTodas}>
+          <span className="pd-bloco-nome">Todas as regras</span>
+          <span className="pd-bloco-info">{num(r.regras)} regras</span>
+          <span className="pd-contas" />
+          <span className="ip-seta" aria-hidden="true" />
+        </button>
+        {verTodas && (
           <div className="nf-tabela-wrap">
-            <table className="nf-tabela cf-tabela pt-tabela">
-              <thead><tr><th>Casa</th><th>Produto</th><th>NCM</th><th>CFOP</th><th className="n">ICMS</th><th>PIS / Cofins</th></tr></thead>
-              <tbody>{lista.slice(0, 600).map((a, k) => <tr key={k}>{linha(a)}</tr>)}</tbody>
+            <table className="nf-tabela pd-tabela">
+              <thead><tr><th>Loja</th><th>UF · regime</th><th>NCM</th><th>CEST</th><th className="n">ICMS</th><th>CFOP</th><th>CST</th><th>PIS</th><th>Cofins</th><th>IBS/CBS</th></tr></thead>
+              <tbody>{r.lista.map((x, k) => (
+                <Fragment key={k}>
+                  <tr><td>{String(x.loja_nome ?? x.loja_codigo)}</td><td>{String(x.uf)} · {String(x.regime)}</td><td>{String(x.ncm)}</td><td>{String(x.cest ?? "") || "—"}</td>
+                    <td className="n">{x.imposto == null ? "—" : `${x.imposto}%`}</td><td>{String(x.cfop ?? "—")}</td><td>{String(x.cst ?? "—")}</td>
+                    <td>{String(x.pis_cst ?? "—")} · {x.pis_valor ?? "—"}</td><td>{String(x.cofins_cst ?? "—")} · {x.cofins_valor ?? "—"}</td><td>{String(x.ibscbs_cst ?? "—")} · {String(x.cclasstrib ?? "—")}</td></tr>
+                </Fragment>
+              ))}</tbody>
             </table>
           </div>
-          {lista.length > 600 && <p className="muted">Mostrando 600 de {num(lista.length)}: use a busca.</p>}
-        </>
-      )}
-    </section>
-  );
-}
-
-export default function ProdutosTotvs({ mes, fimMes, unidade, nomeUnidade }: {
-  mes: string; fimMes: string; unidade: string; nomeUnidade: Record<string, string>;
-}) {
-  const supabase = useMemo(() => createClient(), []);
-  const [produtos, setProdutos] = useState<Produto[] | null>(null);
-  const [achados, setAchados] = useState<Achado[]>([]);
-  const [erro, setErro] = useState("");
-  const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<"" | "erro" | "atencao" | "ok" | "mudou">("");
-  const [grupo, setGrupo] = useState("");
-  const [aberto, setAberto] = useState("");
-
-  useEffect(() => {
-    if (!mes || !fimMes) return; // o mês ainda não carregou
-    setProdutos(null); setErro("");
-    const ultimo =new Date(new Date(`${fimMes}T12:00:00`).getTime() - 86400000).toISOString().slice(0, 10);
-    Promise.all([
-      supabase.rpc("nfce_produtos", { p_unidade: unidade || null, p_dias: 120 }),
-      supabase.rpc("nfce_conferencia", { p_de: `${mes}-01`, p_ate: ultimo, p_unidade: unidade || null }),
-    ]).then(([p, c]) => {
-      if (p.error) { setErro(p.error.message); return; }
-      setProdutos((p.data ?? []) as Produto[]);
-      setAchados(((c.data as { achados?: Achado[] } | null)?.achados ?? []) as Achado[]);
-    });
-  }, [supabase, mes, fimMes, unidade]);
-
-  const porProduto = useMemo(() => {
-    const m = new Map<string, Achado[]>();
-    for (const a of achados) {
-      const k = `${a.unidade_id}|${a.cod ?? a.nome}`;
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(a);
-    }
-    return m;
-  }, [achados]);
-
-  if (erro) return <p className="es-aviso">Não deu para montar o cadastro: {erro}</p>;
-  if (!produtos) return <p className="muted">Montando o cadastro dos produtos a partir das vendas…</p>;
-
-  const situacao = (p: Produto) => {
-    const a = porProduto.get(`${p.unidade_id}|${p.cod}`) ?? [];
-    return a.some((x) => x.sev === "erro") ? "erro" : a.length ? "atencao" : "ok";
-  };
-  const grupos = [...new Set(produtos.map((p) => p.grupo ?? "Sem grupo"))].sort();
-  const t = busca.trim().toLowerCase();
-  const lista = produtos.filter((p) => {
-    if (grupo && (p.grupo ?? "Sem grupo") !== grupo) return false;
-    if (t && !p.nome.toLowerCase().includes(t) && !p.cod.includes(t) && !(p.atual?.ncm ?? "").includes(t)) return false;
-    if (filtro === "mudou") return p.variacoes.length > 1;
-    if (filtro) return situacao(p) === filtro;
-    return true;
-  });
-  const conta = { erro: 0, atencao: 0, mudou: 0 };
-  for (const p of produtos) {
-    const s = situacao(p);
-    if (s === "erro") conta.erro++; else if (s === "atencao") conta.atencao++;
-    if (p.variacoes.length > 1) conta.mudou++;
-  }
-  const casas = [...new Set(lista.map((p) => p.unidade_id))];
-
-  function planilha() {
-    const linhas = [["Casa", "Código", "Produto", "Grupo", "NCM", "CFOP", "CST", "ICMS %", "PIS", "Cofins", "CST IBS/CBS", "cClassTrib", "Unidade", "Última venda", "Itens", "Vendido", "Situação", "Problemas", "Como resolver"]];
-    for (const p of lista) {
-      const a = porProduto.get(`${p.unidade_id}|${p.cod}`) ?? [];
-      const c = p.atual ?? ({} as Classe);
-      linhas.push([nomeUnidade[p.unidade_id] ?? p.unidade_id, p.cod, p.nome, p.grupo ?? "", c.ncm ?? "", c.cfop ?? "", c.cst ?? "", c.aliquota == null ? "" : String(c.aliquota),
-        c.pis ?? "", c.cofins ?? "", c.ibscbs ?? "", c.cclasstrib ?? "", c.unidade ?? "", p.ultima, String(p.itens), String(p.valor).replace(".", ","),
-        situacao(p), a.map((x) => `${TITULO[x.regra] ?? x.regra}: ${x.atual ?? ""} → ${x.esperado ?? ""}`).join(" | "),
-        [...new Set(a.map((x) => COMO_RESOLVER[x.regra]).filter(Boolean))].join(" | ")]);
-    }
-    const csv = "﻿" + linhas.map((l) => l.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(";")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = `produtos-totvs${unidade ? `-${unidade}` : ""}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <div className="cf pt">
-      <dl className="nc-numeros">
-        <div><dt>Produtos vendidos</dt><dd>{num(produtos.length)}</dd><small>nos últimos 120 dias</small></div>
-        <div><dt>Com erro</dt><dd className={conta.erro ? "cf-ruim" : ""}>{num(conta.erro)}</dd><small>a corrigir no cadastro</small></div>
-        <div><dt>Com atenção</dt><dd>{num(conta.atencao)}</dd><small>a conferir com a contabilidade</small></div>
-        <div><dt>Mudaram de classificação</dt><dd>{num(conta.mudou)}</dd><small>saíram de jeitos diferentes</small></div>
-      </dl>
-      <p className="nc-explica cf-escopo">
-        A classificação de cada produto como ele sai na NFC-e (o que a TOTVS aplica na venda), atualizada a cada venda. As regras fiscais de cada NCM
-        vêm do próprio Chef Web (bloco abaixo). Os problemas vêm da
-        conferência fiscal do mês. O Brasico só lê: a correção é feita no cadastro do produto no Chef Web.
-      </p>
-
-      <RegrasTotvs />
-      <CadastroTotvs />
-
-      <div className="nc-barra">
-        <h2>Cadastro dos produtos</h2>
-        <div className="cf-acoes">
-          <select value={filtro} onChange={(e) => setFiltro(e.target.value as typeof filtro)} aria-label="Situação">
-            <option value="">Todos</option>
-            <option value="erro">Com erro</option>
-            <option value="atencao">Com atenção</option>
-            <option value="ok">Sem problema</option>
-            <option value="mudou">Mudaram de classificação</option>
-          </select>
-          <select value={grupo} onChange={(e) => setGrupo(e.target.value)} aria-label="Grupo">
-            <option value="">Todos os grupos</option>
-            {grupos.map((g) => <option key={g} value={g}>{g}</option>)}
-          </select>
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Produto, código ou NCM" aria-label="Buscar" />
-          <button className="ghost small" onClick={planilha}>Baixar planilha</button>
-        </div>
+        )}
       </div>
-
-      {!lista.length && <p className="muted">Nenhum produto com esses filtros.</p>}
-
-      {casas.map((casa) => {
-        const daCasa = lista.filter((p) => p.unidade_id === casa);
-        return (
-          <section key={casa} className="cf-regra cf-info aberta">
-            <div className="pt-casa"><strong>{nomeUnidade[casa] ?? casa}</strong><small>{num(daCasa.length)} produtos</small></div>
-            <div className="nf-tabela-wrap">
-              <table className="nf-tabela cf-tabela pt-tabela">
-                <thead><tr><th>Produto</th><th>NCM</th><th>CFOP</th><th>CST</th><th className="n">ICMS</th><th>PIS/Cofins</th><th>IBS/CBS</th><th className="n">Vendido</th><th>Situação</th></tr></thead>
-                <tbody>
-                  {daCasa.map((p) => {
-                    const k = `${p.unidade_id}|${p.cod}`;
-                    const a = porProduto.get(k) ?? [];
-                    const s = situacao(p);
-                    const c = p.atual ?? ({} as Classe);
-                    const esta = aberto === k;
-                    return (
-                      <Fragment key={k}>
-                        <tr className={`pt-linha${esta ? " aberta" : ""}`} onClick={() => setAberto(esta ? "" : k)}>
-                          <td><strong>{p.nome}</strong><small>cód. {p.cod}{p.grupo ? ` · ${p.grupo}` : ""} · última venda {dataBr(p.ultima)}</small></td>
-                          <td>{c.ncm ?? "—"}</td>
-                          <td>{c.cfop ?? "—"}</td>
-                          <td>{c.cst ?? "—"}</td>
-                          <td className="n">{c.aliquota == null ? "—" : `${num(c.aliquota)}%`}</td>
-                          <td>{c.pis ?? "—"} / {c.cofins ?? "—"}</td>
-                          <td>{c.ibscbs ?? "—"}{c.cclasstrib ? ` · ${c.cclasstrib}` : ""}</td>
-                          <td className="n">{brl(p.valor)}</td>
-                          <td>
-                            <span className={`pt-sit ${s}`}>{s === "erro" ? `${a.filter((x) => x.sev === "erro").length} erro${a.filter((x) => x.sev === "erro").length === 1 ? "" : "s"}` : s === "atencao" ? "atenção" : "ok"}</span>
-                            {p.variacoes.length > 1 && <span className="pt-sit mudou">mudou</span>}
-                          </td>
-                        </tr>
-                        {esta && (
-                          <tr className="pt-detalhe"><td colSpan={9}>
-                            {a.length ? (
-                              <ul className="pt-problemas">
-                                {a.map((x, i) => (
-                                  <li key={i} className={x.sev}>
-                                    <b>{TITULO[x.regra] ?? x.regra}</b>
-                                    <span>{x.campo}: {x.atual ?? "—"} → {x.esperado ?? "—"}</span>
-                                    {COMO_RESOLVER[x.regra] && <small>Como resolver: {COMO_RESOLVER[x.regra]}</small>}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : <p className="muted">Nenhum problema na conferência deste mês.</p>}
-                            {p.variacoes.length > 1 && (
-                              <>
-                                <p className="pt-sub">Classificações com que o produto saiu (mais recente primeiro)</p>
-                                <table className="nf-tabela cf-tabela">
-                                  <thead><tr><th>Última venda</th><th className="n">Itens</th><th>NCM</th><th>CFOP</th><th>CST</th><th className="n">ICMS</th><th>PIS/Cofins</th><th>IBS/CBS</th><th>Unid.</th></tr></thead>
-                                  <tbody>
-                                    {p.variacoes.map((v, i) => (
-                                      <tr key={i}>
-                                        <td>{v.ultima ? dataBr(v.ultima) : "—"}</td><td className="n">{num(v.itens ?? 0)}</td><td>{v.ncm ?? "—"}</td><td>{v.cfop ?? "—"}</td>
-                                        <td>{v.cst ?? "—"}</td><td className="n">{v.aliquota == null ? "—" : `${num(v.aliquota)}%`}</td>
-                                        <td>{v.pis ?? "—"} / {v.cofins ?? "—"}</td><td>{v.ibscbs ?? "—"}{v.cclasstrib ? ` · ${v.cclasstrib}` : ""}</td><td>{v.unidade ?? "—"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </>
-                            )}
-                          </td></tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        );
-      })}
     </div>
   );
 }
