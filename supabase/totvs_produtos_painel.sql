@@ -63,3 +63,26 @@ returns jsonb language sql stable set search_path = public as $$
 $$;
 revoke execute on function public.totvs_produto_detalhe(int, text) from public, anon;
 grant execute on function public.totvs_produto_detalhe(int, text) to authenticated;
+
+-- =====================================================================
+-- Ficha rápida (23/11/2026): com o histórico completo das NFC-e (22 mil notas na Pipa) a ficha varria todas as notas
+-- (38 s na TX SERVIÇO). Agora lê o resumo por produto, mês e classificação, atualizado a cada 30 min (0,4 s).
+-- =====================================================================
+create materialized view if not exists public.nfce_produtos_mes as
+  select n.unidade_id, i->>'codigo' codigo, to_char(n.dia, 'YYYY-MM') mes,
+    coalesce(i->>'cst', i->>'csosn') cst, (i->'icms'->>'aliquota')::numeric aliquota, i->>'cfop' cfop, i->>'ncm' ncm,
+    i->'pis'->>'cst' pis_cst, (i->'pis'->>'aliquota')::numeric pis, i->'cofins'->>'cst' cofins_cst, (i->'cofins'->>'aliquota')::numeric cofins,
+    i->'ibscbs'->>'cst' ibscbs_cst, i->'ibscbs'->>'cclasstrib' cclasstrib,
+    count(*) itens, round(sum((i->>'quantidade')::numeric), 3) qtd, round(sum((i->>'valor_total')::numeric), 2) valor,
+    round(sum(coalesce((i->'icms'->>'valor')::numeric, 0)), 2) icms, min(n.dia) primeira, max(n.dia) ultima
+  from public.nfce_notas n, jsonb_array_elements(n.itens) i
+  where n.situacao = 'autorizada' and not coalesce((i->>'cancelado')::boolean, false)
+  group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13;
+create unique index if not exists nfce_produtos_mes_chave on public.nfce_produtos_mes
+  (unidade_id, codigo, mes, cst, aliquota, cfop, ncm, pis_cst, pis, cofins_cst, cofins, ibscbs_cst, cclasstrib) nulls not distinct;
+create index if not exists nfce_produtos_mes_produto on public.nfce_produtos_mes (unidade_id, codigo);
+revoke all on public.nfce_produtos_mes from public, anon, authenticated;
+-- select cron.schedule('nfce-produtos-mes', '7,37 * * * *', $$refresh materialized view concurrently public.nfce_produtos_mes$$);
+create index if not exists nfce_notas_itens_gin on public.nfce_notas using gin (itens jsonb_path_ops);
+-- totvs_produto_detalhe passou a plpgsql security definer (confere notas_pode_ver) e lê 'nota' e 'vendas_mes' de nfce_produtos_mes
+-- (corpo aplicado pela migração nfce_produtos_mes_mv).
