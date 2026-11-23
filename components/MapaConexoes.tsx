@@ -87,6 +87,7 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
   const fontes = lista.filter((i) => i.grupo !== "servidores");
   const reles = Object.fromEntries(lista.filter((i) => i.grupo === "servidores").map((i) => [i.id, i])) as Record<string, Integracao>;
   const temRele = new Set(Object.keys(reles));
+  const noCaminho = new Set(Object.values(RELES).flat().filter((r) => temRele.has(r)));
   const daPagina = pagina ? fontes.filter((i) => DESTINOS[i.id]?.includes(pagina)).map((i) => i.id) : null;
   const ligados = foco ? relacionados(foco, temRele) : daPagina;
   const d = (id: string) => `ig-mc-d ${ligados?.includes(id) ? "on" : ""}`;
@@ -105,7 +106,7 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
   return (
     <div className={`ig-caixa ig-mc ig-entra ${ligados ? "com-foco" : ""}`} style={{ "--i": 1 } as React.CSSProperties}>
       <div className="ig-caixa-cabeca ig-mc-cabeca">
-        <div><h2>Mapa das conexões</h2><span>{fontes.length} sistemas{temRele.size ? ` · ${temRele.size} servidores no caminho` : ""} · {mil(leituras)} leituras em 24 h</span></div>
+        <div><h2>Mapa das conexões</h2><span>{fontes.length} sistemas{noCaminho.size ? ` · ${noCaminho.size} servidor${noCaminho.size === 1 ? "" : "es"} no caminho` : ""} · {mil(leituras)} leituras em 24 h</span></div>
         <div className="ig-segmento" role="group" aria-label="Jeito de ver o mapa">
           {VISTAS.map(([v, t]) => <button key={v} className={vista === v ? "on" : ""} onClick={() => trocar(v)} aria-pressed={vista === v}>{t}</button>)}
         </div>
@@ -132,7 +133,7 @@ export default function MapaConexoes({ lista, novos, onAbrir }: { lista: Integra
           <div className="ig-legenda">
             {(["ok", "atencao", "erro", "pausa"] as Estado[]).map((e) => <span key={e} className={e}><i />{TEXTO_ESTADO[e]}</span>)}
             <span className="ig-mc-dica">{vista === "orbita" ? "cada ligação: 24 h, do centro (há 24 h) até o sistema (agora)" : "linha mais grossa = mais leituras"}</span>
-            {temRele.size > 0 && <span className="ig-mc-dica">caixas redondas = servidores por onde o dado passa (WhatsApp → IPRoyal → Hostinger → Brasico)</span>}
+            {noCaminho.size > 0 && <span className="ig-mc-dica">caixas redondas = servidores por onde o dado passa (PMS → Hostinger → Brasico; o WhatsApp chega direto pelo backup do iPhone)</span>}
           </div>
         )}
       </div>
