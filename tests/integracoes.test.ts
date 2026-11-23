@@ -196,6 +196,7 @@ test("TOTVS: unidade que nunca mandou venda pede atenção", () => {
   const t = de(p, "totvs");
   assert.equal(t.estado, "atencao");
   assert.match(t.linhas!.find((l) => l.nome === "Cicchetti Ponta Negra")!.texto, /nenhuma venda/);
+  assert.match(t.frase, /^Cicchetti Ponta Negra: nenhuma venda/);
 });
 
 test("motivo da falha das agendas em português", async () => {

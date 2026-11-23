@@ -285,7 +285,8 @@ export function montarIntegracoes(p: Painel): Integracao[] {
     lista.push({
       id: "totvs", nome: "TOTVS Chef Web", quem: "Caixa dos restaurantes", grupo: "casas", pagina: "/vendas",
       oQueFaz: "Vendas, pagamentos, sangrias e fechamentos de cada dia, por unidade, e a NFC-e de cada venda.",
-      estado, frase: `última leitura ${quando(t.ultima_ok, agora)}`, erro, linhas,
+      // a frase diz a unidade que pede atenção (senão o cartão fica amarelo sem dizer por quê)
+      estado, frase: (() => { const u = linhas.find((l) => l.estado !== "ok"); return u ? `${u.nome}: ${u.texto}` : `última leitura ${quando(t.ultima_ok, agora)}`; })(), erro, linhas,
       numeros: [
         { rotulo: "Leituras em 24 h", valor: `${t.ok_24h} ok · ${t.falha_24h} falha` },
         ...(t.nfce_7d != null ? [{ rotulo: "NFC-e em 7 dias", valor: `${t.nfce_7d}${t.nfce_pendentes_7d ? ` · ${t.nfce_pendentes_7d} pendentes na SEFAZ` : ""}` }] : []),
