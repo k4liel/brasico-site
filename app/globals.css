@@ -5451,6 +5451,23 @@ body:has(.mp) { background: #f6f2ea; }
 .nc-modos button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .nf-modos { display: flex; justify-content: flex-end; margin: 0 0 12px; }
 .nf-modos .nc-modos { margin-left: 0; }
+/* Apuração do ICMS (aba da página Notas; components/ApuracaoIcms.tsx) */
+.ap-empresa { display: grid; gap: 12px; padding: 16px; border-radius: 16px; border: 1px solid var(--border); background: var(--bg); }
+.ap-cabeca { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.ap-cabeca h3 { margin: 0; font-size: 18px; color: var(--strong); }
+.ap-cabeca small { color: var(--muted); font-size: 12.5px; }
+.ap-cob { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--ok); }
+.ap-cob.falta { color: var(--gold); border-color: var(--gold); }
+.ap-aviso { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text); border-color: var(--gold); }
+.ap-nota { margin: -4px 0 0; font-size: 12.5px; color: var(--muted); }
+.ap-bom { color: var(--ok) !important; }
+.ap-blocos { display: grid; gap: 8px; }
+.ap-bloco-cabeca { grid-template-columns: minmax(0, 1fr) 14px !important; }
+.ap-entra { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+.ap-entra.sim { color: var(--ok); border-color: var(--ok); }
+.ap-entra.parte { color: var(--gold); border-color: var(--gold); }
+.ap .cf-tabela td small { display: block; color: var(--muted); font-size: 11.5px; }
+@media (max-width: 760px) { .ap .nc-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cf { display: grid; gap: 16px; }
 .cf-ruim { color: var(--danger) !important; }
 .cf-escopo { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }

@@ -8,6 +8,7 @@ import NotasServico, { LeituraNfse } from "./NotasServico";
 import NotasConsumidor, { LeituraNfce } from "./NotasConsumidor";
 import NotasFrete, { LeituraCte } from "./NotasFrete";
 import ConferenciaCompras from "./ConferenciaCompras";
+import ApuracaoIcms from "./ApuracaoIcms";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
 // Abas: NF-e (produtos: por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
@@ -54,7 +55,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   const [compras, setCompras] = useState(false); // setor de compras: só NF-e, índice e nota avulsa
   const [nome, setNome] = useState("");
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [aba, setAba] = useState<"notas" | "nfse" | "nfce" | "cte" | "avulsa" | "sefaz">("notas");
+  const [aba, setAba] = useState<"notas" | "nfse" | "nfce" | "cte" | "icms" | "avulsa" | "sefaz">("notas");
 
   const carregarEmpresas = useCallback(async () => {
     const { data } = await supabase.from("notas_empresas").select("*").order("nome");
@@ -103,6 +104,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
           {!compras && <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>}
           {!compras && <button role="tab" aria-selected={aba === "nfce"} className={aba === "nfce" ? "on" : ""} onClick={() => setAba("nfce")}>NFC-e (vendas)</button>}
           {!compras && <button role="tab" aria-selected={aba === "cte"} className={aba === "cte" ? "on" : ""} onClick={() => setAba("cte")}>CT-e (fretes)</button>}
+          {!compras && <button role="tab" aria-selected={aba === "icms"} className={aba === "icms" ? "on" : ""} onClick={() => setAba("icms")}>Apuração ICMS</button>}
           <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
           {!compras && <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>}
         </div>
@@ -111,6 +113,7 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
         {aba === "nfse" && !compras && <NotasServico />}
         {aba === "nfce" && !compras && <NotasConsumidor />}
         {aba === "cte" && !compras && <NotasFrete />}
+        {aba === "icms" && !compras && <ApuracaoIcms />}
         {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
         {aba === "sefaz" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /><LeituraCte /><LeituraNfce /></>}
       </main>
