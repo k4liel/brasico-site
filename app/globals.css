@@ -2504,6 +2504,11 @@ body.pe-arrastando, body.pe-arrastando * { cursor: grabbing !important; user-sel
 /* Contratados sem ponto (09/11/2026): lista para pôr na escala e o aviso "fora do ponto" ao lado do nome */
 .pe-obs { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 999px; font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .02em;
   background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
+/* Equipe de origem (Ponta Negra, 23/11/2026): C = Cicchetti, I = Illusion, antes do nome e na legenda */
+.pe-equipe { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; margin-right: 5px; border-radius: 5px; vertical-align: middle;
+  font-style: normal; font-size: 10px; font-weight: 800; line-height: 1; color: #fff; }
+.pe-equipe.e-cicchetti { background: #a8461e; }
+.pe-equipe.e-illusion { background: #2f5bd3; }
 .ep-contratados { margin: 0 0 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
 .ep-contratados.aberto { border-color: color-mix(in srgb, var(--gold) 50%, var(--border)); }
 .ep-contratados-cabeca { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; width: 100%; padding: 12px 16px; font-size: 14px; }

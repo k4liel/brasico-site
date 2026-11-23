@@ -30,7 +30,10 @@ export type PessoaEscala = {
   obs?: string;
   // Nome completo, quando a linha mostra o apelido (aparece ao passar o mouse)
   completo?: string;
+  // De qual equipe vem (Ponta Negra, 23/11/2026: "Illusion" ou "Cicchetti"): marca colorida antes do nome, com legenda
+  equipe?: string;
 };
+const classeEquipe = (e: string) => `e-${e.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()}`;
 export type ModoEscala = "real" | "planejada" | "comparar";
 export type Celula = { chave: string; dia: string };
 export type ColunaExtra = { titulo: string; dica: string; valor: (p: PessoaEscala) => ReactNode; detalhe?: (p: PessoaEscala) => Detalhe[] };
@@ -647,6 +650,9 @@ export default function PontoEscala({
         {[...new Set([...turnosDe.values()].flat().map((t) => t.posto).filter((x): x is string => !!x))].sort().map((x) => (
           <span key={x}><i className="pe-posto pe-posto-legenda">{x[0]}</i><b>{x}</b></span>
         ))}
+        {[...new Set(pessoas.map((p) => p.equipe).filter((x): x is string => !!x))].sort().map((x) => (
+          <span key={`eq-${x}`}><i className={`pe-equipe ${classeEquipe(x)}`}>{x[0]}</i><b>Equipe {x}</b></span>
+        ))}
         {plan && <>
           <span><i className="pe-alerta erro" /><b>Fora da lei</b></span>
           <span><i className="pe-alerta aviso" /><b>Atenção</b></span>
@@ -737,7 +743,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
             className={`pe-pessoa${organizar ? " organizando" : ""}${levando === p.chave ? " levando" : ""}${soltarEm && "chave" in soltarEm && soltarEm.chave === p.chave ? ` soltar-${soltarEm.lado}` : ""}`}>
             <th className="pe-nome" scope="row" onPointerDown={organizar ? (e) => pegar(e, p) : undefined}
               title={organizar ? "Segure e arraste para mudar de lugar"
-                : [p.completo && p.completo !== p.nome ? `${p.nome} · ${p.completo}` : p.nome, p.cargo, p.obs ? `Observação: ${p.obs}` : "", p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : "", ...meus.map((a) => `⚠ ${a.titulo}: ${a.texto}`)].filter(Boolean).join("\n")}>
+                : [p.completo && p.completo !== p.nome ? `${p.nome} · ${p.completo}` : p.nome, p.equipe ? `Equipe ${p.equipe}` : "", p.cargo, p.obs ? `Observação: ${p.obs}` : "", p.hoje && dias.includes(agora) ? `Hoje: ${p.hoje.texto}` : "", ...meus.map((a) => `⚠ ${a.titulo}: ${a.texto}`)].filter(Boolean).join("\n")}>
               {organizar ? (
                 <button className="pe-pega" aria-label={`Mover ${p.nome}: use as setas para cima e para baixo`}
                   onKeyDown={(e) => {
@@ -749,6 +755,7 @@ function SetorLinhas({ setor, mostrarSetor, pessoas, dias, agora, visao, turnosD
                   <svg width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="3" r="1.5" /><circle cx="9" cy="3" r="1.5" /><circle cx="3" cy="8" r="1.5" /><circle cx="9" cy="8" r="1.5" /><circle cx="3" cy="13" r="1.5" /><circle cx="9" cy="13" r="1.5" /></g></svg>
                 </button>
               ) : p.hoje && dias.includes(agora) && <i className={`pe-agora ${p.hoje.classe}`} aria-label={`Hoje: ${p.hoje.texto}`} />}
+              {p.equipe && <i className={`pe-equipe ${classeEquipe(p.equipe)}`} aria-label={`Equipe ${p.equipe}`}>{p.equipe[0]}</i>}
               {onAbrir && !organizar
                 ? <button className="esc-pessoa pe-pessoa-botao" onClick={() => onAbrir(p.ficha ?? p.chave)} aria-label={p.nome}>{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</button>
                 : <span className="esc-pessoa">{nomeCurto(p.nome, visao === "mes" ? 19 : 22)}</span>}

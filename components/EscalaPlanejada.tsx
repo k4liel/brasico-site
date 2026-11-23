@@ -25,6 +25,8 @@ type PessoaDado = {
   afastado?: string | null;
   // Contratado do RH sem cadastro no relógio (escala_extras, cliente_id = 0)
   fora_do_ponto?: boolean;
+  // De qual equipe vem (Ponta Negra: Illusion ou Cicchetti; escala_extras.equipe): marca ao lado do nome, com legenda
+  equipe?: string | null;
   // Apelido na escala (escala_apelidos): a linha mostra só ele
   apelido?: string | null;
 };
@@ -259,7 +261,9 @@ export default function EscalaPlanejada({ supabase, modo, casa, sincronizar, onA
       // Espelho do Ponto: quem o RHiD afasta hoje fica na área "Afastados" no fim do local
       local: g?.local ?? "", setor: p.afastado ? AFASTADOS : g?.setor ?? "", dias: realDe.get(chaveDe(p.cliente_id, p.id)) ?? new Map(),
       hoje: p.afastado ? { texto: `Afastado (${p.afastado})`, classe: "afastado" } : undefined,
-      obs: p.fora_do_ponto ? "fora do ponto" : undefined,
+      // Quem tem equipe (Ponta Negra, casa ainda sem ponto) mostra a equipe no lugar do "fora do ponto"
+      obs: p.fora_do_ponto && !p.equipe ? "fora do ponto" : undefined,
+      equipe: p.equipe ?? undefined,
     };
   });
 
