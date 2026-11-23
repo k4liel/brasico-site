@@ -815,9 +815,9 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
   const pincelSplit = (s: Split): Pincel => ({ codigo: "T", entrada: s.e1, saida: s.s2, intervalo: `${s.s1}-${s.e2}`, rotulo: `Split ${rotuloSplit(s)}`, posto: posto || undefined });
   const igual = (h: Pincel) => atual?.codigo === "T" && atual.entrada === h.entrada && atual.saida === h.saida && (atual.intervalo ?? undefined) === h.intervalo && (atual.posto ?? "") === posto;
   // Abas da janelinha (14/11/2026, pedido do dono: "organizar, deixar mais fluido"): abre na do que o dia já é
-  const foraCodigos = new Set(CODIGOS.filter((c) => c.trabalha).map((c) => c.codigo as string));
+  const foraCodigos = new Set(CODIGOS.filter((c) => c.trabalha && !c.flexivel).map((c) => c.codigo as string));
   const [aba, setAba] = useState<"trabalha" | "fora" | "nao">(
-    !atual?.codigo || atual.codigo === "T" ? "trabalha" : foraCodigos.has(atual.codigo) ? "fora" : "nao");
+    !atual?.codigo || atual.codigo === "T" || atual.codigo === "FX" ? "trabalha" : foraCodigos.has(atual.codigo) ? "fora" : "nao");
   const normais = horarios.filter((x) => !partesSplit(x));
   // O editor de horário abre sozinho quando o horário do dia não está entre os prontos
   const mesmoHorario = (x: Pincel) => atual?.codigo === "T" && atual.entrada === x.entrada && atual.saida === x.saida && (atual.intervalo ?? undefined) === x.intervalo;
@@ -929,6 +929,11 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
             ))}
           </div>
 
+          {/* Flexível (23/11/2026, pedido do dono): trabalha no dia, mas sem horário certo */}
+          <button className={`ep-ed-codigo ep-ed-flex c-FX${atual?.codigo === "FX" ? " on" : ""}`} onClick={() => onEscolher({ codigo: "FX", rotulo: "Flexível", posto: posto || undefined })}>
+            <b>FX</b><span>Flexível</span><small>Trabalha, sem horário certo</small>
+          </button>
+
           <button className={`ep-ed-outro-botao${editando ? " on" : ""}`} onClick={() => setEditando((v) => !v)} aria-expanded={editando}>
             <span>{editando ? "▾" : "▸"}</span> Outro horário
           </button>
@@ -991,7 +996,7 @@ function EditorDia({ celulas, x, y, horarios, outro, setOutro, atual, nome, onEs
       {aba === "fora" && (
         <div className="ep-ed-painel">
           <div className="ep-ed-codigos">
-            {CODIGOS.filter((c) => c.trabalha).map((c) => (
+            {CODIGOS.filter((c) => c.trabalha && !c.flexivel).map((c) => (
               <button key={c.codigo} className={`ep-ed-codigo c-${c.codigo}${atual?.codigo === c.codigo ? " on" : ""}`} onClick={() => onEscolher({ codigo: c.codigo, rotulo: c.nome })}>
                 <b>{c.curto}</b><span>{c.nome}</span>
               </button>

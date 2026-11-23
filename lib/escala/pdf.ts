@@ -54,6 +54,7 @@ const CODIGO: Record<string, { cor: string; linhas: string[]; legenda: string }>
   CC: { cor: "#a8461e", linhas: ["CICCHETTI", "CENTRO"], legenda: "Cicchetti Centro" },
   FL: { cor: "#7a3f8f", linhas: ["FILHA", "DA LUA"], legenda: "Filha da Lua" },
   SV: { cor: "#8a6a2c", linhas: ["SEMPRE", "VIVO"], legenda: "Sempre Vivo" },
+  FX: { cor: "#c2185b", linhas: ["FLEXÍVEL"], legenda: "Flexível (sem horário certo)" },
 };
 // Turnos de trabalho: tom claro com o horário na cor escura
 const TURNOS = [
