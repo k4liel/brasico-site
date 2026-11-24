@@ -23,9 +23,13 @@ def registrar(texto):
 
 
 def iphone_por_perto():
-    r = subprocess.run([os.path.join(BASE, "venv", "Scripts", "pymobiledevice3.exe"), "usbmux", "list"],
-                       capture_output=True, text=True, timeout=60)
-    return '"ConnectionType"' in r.stdout
+    pmd = os.path.join(BASE, "venv", "Scripts", "pymobiledevice3.exe")
+    r = subprocess.run([pmd, "usbmux", "list"], capture_output=True, text=True, timeout=60)
+    if '"ConnectionType"' in r.stdout:
+        return True
+    # O serviço da Apple às vezes não vê o iPhone pelo Wi-Fi (depois que ele religa); procura direto na rede
+    r = subprocess.run([pmd, "bonjour", "mobdev2"], capture_output=True, text=True, timeout=60)
+    return '"UniqueDeviceID"' in r.stdout
 
 
 ULTIMA_OK = os.path.join(BASE, "ultima_ok.txt")

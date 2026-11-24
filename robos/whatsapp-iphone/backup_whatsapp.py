@@ -99,17 +99,27 @@ def backup_completo(pasta_aparelho):
 
 
 async def conectar():
-    # Cabo primeiro (bem mais rápido); sem cabo, Wi-Fi
+    # Cabo primeiro (bem mais rápido); sem cabo, Wi-Fi pelo serviço da Apple; se o serviço da Apple ainda não
+    # "pegou" o iPhone (acontece depois que ele religa), direto pela rede (bonjour mobdev2, com o pareamento já feito)
     try:
         return await create_using_usbmux(connection_type="USB")
     except Exception:
+        pass
+    try:
         return await create_using_usbmux(connection_type="Network")
+    except Exception:
+        from pymobiledevice3.lockdown import create_using_mobdev2
+        return await create_using_mobdev2()
+
+
+def eh_cabo(lockdown):
+    return getattr(getattr(getattr(lockdown, "service", None), "mux_device", None), "connection_type", "") == "USB"
 
 
 async def main():
     lockdown = await conectar()
-    pelo_wifi = getattr(getattr(lockdown, "service", None), "mux_device", None)
-    pelo_wifi = getattr(pelo_wifi, "connection_type", "") == "Network"
+    pelo_wifi = not eh_cabo(lockdown)
+    print("Conectado pelo", "Wi-Fi" if pelo_wifi else "cabo", flush=True)
     if pelo_wifi and not backup_completo(os.path.join(pasta, lockdown.udid)):
         print("PRECISA DO CABO: o backup deste computador está incompleto e o iPhone mandaria tudo de novo "
               "(~57 GB) pelo Wi-Fi. Ligue o cabo uma vez; depois disso o Wi-Fi só passa o que mudou.", flush=True)
