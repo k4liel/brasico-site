@@ -6,7 +6,7 @@ import { NOMES } from "@/lib/esocial/nomes";
 import {
   cpfVisivel, dataBR, diasEntre, ehAssociacao, nomeCurto, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
   montarAusencias, montarCalendario, montarCobertura, montarLeitura, montarMovimentacoes, montarPessoas, nomeMes, ROTULO_SITUACAO, somarDias, tempoDeCasa,
-  type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type PagamentoRH, type SalarioFolhaRH, type Pessoa, type Situacao,
+  type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type PagamentoRH, type SalarioFolhaRH, type ExtraEscala, pessoasSemRegistro, semRepetidos, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
@@ -116,6 +116,8 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   const [visaoHoras, setVisaoHoras] = useState<VisaoHoras>("ponto");
   const [pagamentos, setPagamentos] = useState<PagamentoRH[]>([]);
   const [salariosFolha, setSalariosFolha] = useState<SalarioFolhaRH[]>([]);
+  // Quem está na escala do Brasico sem registro no eSocial (entra em Pessoas e Salários: "tem que aparecer todo mundo")
+  const [extrasEscala, setExtrasEscala] = useState<ExtraEscala[]>([]);
   const [saude, setSaude] = useState<SaudeRH | null>(null);
   // A seção fica no endereço (#pessoas, #folha…) para dar para voltar e compartilhar
   useEffect(() => {
@@ -155,13 +157,14 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   const carregar = useCallback(async () => {
     const sb: Sb = supabase;
     let ev: Evento[] = [], tr: Trabalhador[] = [], pg: PagamentoRH[] = [], sf: SalarioFolhaRH[] = [];
-    const [em, ex, sd] = await Promise.all([
+    const [em, ex, sd, xe] = await Promise.all([
       sb.from("esocial_empresas")
         .select("id,nome,cnpj,leitura_automatica,limite_diario,historico_desde,cert_validade,cert_emissor,cert_atualizado_em,falhas_contam,aviso_acessos")
         .order("ordem").order("nome"),
       sb.from("esocial_execucoes").select("id,empresa_id,ambiente,tipo,parametros,origem,status,cd_resposta,desc_resposta,resultado,erro,created_at")
         .order("created_at", { ascending: false }).limit(300),
       sb.rpc("rh_saude"),
+      sb.from("escala_extras").select("id,nome,cargo,local,setor").eq("empresa_id", "terceiro").eq("situacao", "na_escala").order("nome"),
       (async () => {
         try {
           [ev, tr, pg, sf] = await Promise.all([
@@ -182,6 +185,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
     setTrabalhadores(tr);
     setPagamentos(pg.map((g) => ({ ...g, vr_liq: Number(g.vr_liq) })));
     setSalariosFolha(sf);
+    setExtrasEscala((xe.data ?? []) as ExtraEscala[]);
     setExecucoes((ex.data ?? []) as Execucao[]);
     setSaude((sd.data as SaudeRH) ?? null);
     const { data: cs } = await supabase.from("esocial_consultas").select("id,user_id,origem,ferramenta,parametros,quantidade,created_at")
@@ -246,7 +250,8 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   // Tudo o que a página mostra sai destes cálculos (lib/esocial/rh.ts)
   const daEmpresa = <T extends { empresa_id: string }>(l: T[]) => (filtroEmpresa === "todas" ? l : l.filter((x) => x.empresa_id === filtroEmpresa));
   const empresasVistas = filtroEmpresa === "todas" ? empresas : empresas.filter((e) => e.id === filtroEmpresa);
-  const pessoas = useMemo(() => montarPessoas(eventos, trabalhadores, pagamentos, salariosFolha), [eventos, trabalhadores, pagamentos, salariosFolha]);
+  const pessoas = useMemo(() => semRepetidos([...montarPessoas(eventos, trabalhadores, pagamentos, salariosFolha), ...pessoasSemRegistro(extrasEscala)]),
+    [eventos, trabalhadores, pagamentos, salariosFolha, extrasEscala]);
   const pessoasVistas = daEmpresa(pessoas);
   const cobertura = montarCobertura(pessoasVistas);
   const competencias = [mesAnterior(), mesAnterior(hoje(), 2)];
@@ -744,7 +749,7 @@ function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFech
           {p.dtAdm && <div><dt>Admissão</dt><dd>{dataBR(p.dtAdm)} · {tempoDeCasa(p.dtAdm, p.dtDeslig ?? agora)}{p.dtDeslig ? " de casa" : ""}</dd></div>}
           {p.dtDeslig && <div><dt>Saída</dt><dd>{dataBR(p.dtDeslig)}{p.motivoSaida ? ` · ${p.motivoSaida}` : ""}</dd></div>}
           {p.vinculo && <div><dt>Vínculo</dt><dd>{p.vinculo}</dd></div>}
-          <div><dt>CPF</dt><dd>{cpfVisivel(p.cpf, verCpf)} <button className="es-olho-mini" onClick={alternarCpf} aria-label={verCpf ? "Esconder CPF" : "Mostrar CPF"}><Olho aberto={verCpf} /></button></dd></div>
+          <div><dt>CPF</dt><dd>{p.cpf ? cpfVisivel(p.cpf, verCpf) : "sem registro no eSocial"} <button className="es-olho-mini" onClick={alternarCpf} aria-label={verCpf ? "Esconder CPF" : "Mostrar CPF"}><Olho aberto={verCpf} /></button></dd></div>
           {p.matricula && <div><dt>Matrícula</dt><dd>{p.matricula}</dd></div>}
           <div><dt>Leitura do governo</dt><dd>{p.leitura.ate ? `${dataBR(p.leitura.desde)} a ${dataBR(p.leitura.ate)} · ${p.leitura.eventos} evento${p.leitura.eventos === 1 ? "" : "s"}` : "ainda não lida"}</dd></div>
           <div><dt>Salário</dt><dd>{p.salario ? <>{verSalario ? reais(p.salario) : "R$ •••••"} <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button>

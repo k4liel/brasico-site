@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  faltandoNaFicha, liquidoDoUltimoMes, montarCobertura, montarNumeros, montarPessoas, somarDias, hoje,
+  faltandoNaFicha, liquidoDoUltimoMes, montarCobertura, montarNumeros, montarPessoas, pessoasSemRegistro, semRepetidos, somarDias, hoje,
   type EventoRH, type PagamentoRH, type TrabalhadorRH,
 } from "../lib/esocial/rh.ts";
 
@@ -121,4 +121,31 @@ test("quem só está no cadastro do contador (sem eventos) aparece aguardando, c
   assert.equal(ps.length, 1);
   assert.equal(ps[0].situacao, "aguardando");
   assert.equal(ps[0].cargo, "Cozinheiro");
+});
+
+test("desligado que voltou a receber na folha da mesma empresa conta como trabalhando (readmitido)", () => {
+  const ps = montarPessoas([
+    ev("S-2200", "301", { dtAdm: "2021-10-15", nome: "ELILDE" }),
+    ev("S-2299", "301", { dtDeslig: "2025-02-28", mtvDeslig: "11" }),
+    ev("S-1200", "301", {}, { per_apur: "2026-10" }),
+  ], [trab("301")]);
+  assert.equal(ps[0].situacao, "trabalhando");
+  assert.equal(ps[0].dtDeslig, null);
+});
+
+test("quem está na escala sem registro no eSocial entra na lista com a casa da escala", () => {
+  const ps = pessoasSemRegistro([{ id: 54, nome: "ANDRINA", cargo: null, local: "Cicchetti Ponta Negra", setor: "Salão" }]);
+  assert.equal(ps[0].situacao, "sem_registro");
+  assert.equal(ps[0].unidade, "Cicchetti Ponta Negra");
+  assert.deepEqual(faltandoNaFicha(ps[0]), ["registro no eSocial"]);
+  assert.equal(montarCobertura(ps).ativos, 1);
+});
+
+test("a mesma pessoa em duas empresas fica só no registro com eventos do governo", () => {
+  const base = montarPessoas([ev("S-1200", "401", { nome: "REGINALDO" }, { per_apur: "2026-10", empresa_id: "B77" })],
+    [trab("401", { empresa_id: "B77" }), trab("401", { empresa_id: "LAIF" })]);
+  assert.equal(base.length, 2);
+  const unico = semRepetidos(base);
+  assert.equal(unico.length, 1);
+  assert.equal(unico[0].empresa_id, "B77");
 });

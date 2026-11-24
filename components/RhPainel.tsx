@@ -21,10 +21,10 @@ export const nomeProprio = (s: string) =>
 const titulo = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase().replace(/\b(i{1,3}|iv)$/, (m) => m.toUpperCase()) : "");
 const iniciais = (s: string) => s.split(/\s+/).filter((p) => p && !MINUSCULAS.has(p.toLowerCase())).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "?";
 export const CORES_CASAS = ["#c9a463", "#7fa7c9", "#8cbf9a", "#b49ad6", "#d99a7c", "#7fc1bd", "#c98fa8"];
-const NA_EQUIPE: Situacao[] = ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"];
+const NA_EQUIPE: Situacao[] = ["trabalhando", "experiencia", "afastado", "ferias", "aguardando", "sem_registro"];
 const COR_SITUACAO: Record<Situacao, string> = {
   trabalhando: "var(--rp-ok)", experiencia: "var(--rp-amber)", ferias: "var(--rp-azul)", afastado: "var(--rp-roxo)",
-  aguardando: "var(--line-strong)", saiu_ponto: "var(--rp-ruim)", saiu: "var(--line-strong)",
+  aguardando: "var(--line-strong)", saiu_ponto: "var(--rp-ruim)", saiu: "var(--line-strong)", sem_registro: "var(--muted)",
 };
 const FICHA = [["salário", "salário"], ["pagamento", "pagamento"], ["leitura do eSocial", "leitura"], ["cadastro no ponto", "ponto"]] as const;
 
@@ -246,7 +246,7 @@ export function EquipeRH({ pessoas, empresas, verCpf, casa, onCasa, filtro, onFi
     .filter((p) => !termo || p.nome.toLowerCase().includes(termo) || p.cargo.toLowerCase().includes(termo) || (termo.replace(/\D/g, "") && p.cpf.includes(termo.replace(/\D/g, ""))));
   const grupos = [...new Set(vistas.map((p) => localDe(p, empresas)))]
     .sort((a, b) => { const ia = casas.findIndex((c) => c.nome === a), ib = casas.findIndex((c) => c.nome === b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b); });
-  const ordem: Record<Situacao, number> = { experiencia: 0, trabalhando: 1, aguardando: 2, ferias: 3, afastado: 4, saiu_ponto: 5, saiu: 6 };
+  const ordem: Record<Situacao, number> = { experiencia: 0, trabalhando: 1, aguardando: 2, ferias: 3, afastado: 4, sem_registro: 5, saiu_ponto: 6, saiu: 7 };
   const varias = empresas.length > 1;
 
   if (!pessoas.length) return <>{vazio}</>;
@@ -262,7 +262,7 @@ export function EquipeRH({ pessoas, empresas, verCpf, casa, onCasa, filtro, onFi
               <span className="fs-casa-cab"><b>{c.nome}</b><span>{c.pessoas.length} pessoa{c.pessoas.length === 1 ? "" : "s"}</span></span>
               <strong>{n("trabalhando") + n("experiencia")} <small className="rp-casa-sub">trabalhando</small></strong>
               <span className="rp-mix" aria-hidden="true">
-                {(["trabalhando", "experiencia", "ferias", "afastado", "aguardando"] as Situacao[]).map((s) => n(s) ? <i key={s} style={{ flex: n(s), background: COR_SITUACAO[s] }} /> : null)}
+                {(["trabalhando", "experiencia", "ferias", "afastado", "aguardando", "sem_registro"] as Situacao[]).map((s) => n(s) ? <i key={s} style={{ flex: n(s), background: COR_SITUACAO[s] }} /> : null)}
               </span>
               <small>{[n("experiencia") && `${n("experiencia")} em experiência`, (n("ferias") + n("afastado")) && `${n("ferias") + n("afastado")} fora`, `ficha ${Math.round((completas / c.pessoas.length) * 100)}%`].filter(Boolean).join(" · ")}</small>
             </button>
@@ -305,13 +305,13 @@ export function EquipeRH({ pessoas, empresas, verCpf, casa, onCasa, filtro, onFi
                     <button key={p.chave} type="button" className="rp-row" onClick={() => onPessoa(p.chave)} title="Abrir a ficha">
                       <span className="fs-av" style={{ color: corDe(g) }}>{iniciais(p.nome || "?")}</span>
                       <span className="fs-nm"><b>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}{p.alertas.length > 0 && <em className="rp-alerta-mini" title={p.alertas[0].texto}>!</em>}</b>
-                        <small>{[cpfVisivel(p.cpf, verCpf), varias ? nomeCurto(empresas.find((e) => e.id === p.empresa_id)?.nome ?? "") : ""].filter(Boolean).join(" · ")}</small></span>
+                        <small>{p.situacao === "sem_registro" ? ["na escala do Brasico", p.setorEscala].filter(Boolean).join(" · ") : [cpfVisivel(p.cpf, verCpf), varias ? nomeCurto(empresas.find((e) => e.id === p.empresa_id)?.nome ?? "") : ""].filter(Boolean).join(" · ")}</small></span>
                       <span className="fs-cargo">{titulo(p.cargo) || "—"}</span>
                       <span className="rp-adm">{p.dtAdm ? <>{dataBR(p.dtAdm)}<small>{tempoDeCasa(p.dtAdm, p.dtDeslig ?? undefined)}{p.dtDeslig ? ` · saiu ${dataBR(p.dtDeslig)}` : ""}</small></> : <span className="muted">—</span>}</span>
                       <span className="rp-ficha" title={p.faltando.length ? `Falta: ${p.faltando.join(", ")}` : "Ficha completa"}>
                         {p.situacao === "saiu" ? <small className="muted">—</small> : <>
                           <span className="rp-ficha-barras">{FICHA.map(([k, r]) => <i key={k} className={p.faltando.includes(k) ? "" : "on"} title={`${r}: ${p.faltando.includes(k) ? "falta" : "ok"}`} />)}</span>
-                          <small className={p.faltando.length ? "rp-amber" : "rp-ok"}>{p.faltando.length ? `falta ${p.faltando.map((f) => FICHA.find(([k]) => k === f)?.[1] ?? f).join(", ")}` : "completa"}</small>
+                          <small className={p.faltando.length ? "rp-amber" : "rp-ok"}>{p.situacao === "sem_registro" ? "sem registro no eSocial" : p.faltando.length ? `falta ${p.faltando.map((f) => FICHA.find(([k]) => k === f)?.[1] ?? f).join(", ")}` : "completa"}</small>
                         </>}
                       </span>
                       <span><span className={`rp-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span></span>

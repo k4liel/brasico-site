@@ -28,7 +28,9 @@ export type ExecucaoRH = {
 };
 
 // saiu_ponto = inativo no relógio de ponto e o desligamento ainda não chegou do eSocial (quase sempre já saiu)
-export type Situacao = "trabalhando" | "experiencia" | "afastado" | "ferias" | "saiu" | "saiu_ponto" | "aguardando";
+// sem_registro = está na escala do Brasico, mas não existe no eSocial de nenhuma empresa lida (ex.: equipe nova do
+// Ponta Negra, terceirizado): aparece em Pessoas e Salários para a lista ficar completa (pessoasSemRegistro)
+export type Situacao = "trabalhando" | "experiencia" | "afastado" | "ferias" | "saiu" | "saiu_ponto" | "aguardando" | "sem_registro";
 
 export type Pessoa = {
   chave: string; empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; unidade: string; vinculo: string;
@@ -46,6 +48,8 @@ export type Pessoa = {
   faltando: string[];
   // Até onde o governo já foi lido para esta pessoa (datas de recepção dos eventos)
   leitura: { desde: string | null; ate: string | null; eventos: number };
+  // Setor na escala do Brasico (só para quem está sem registro no eSocial)
+  setorEscala?: string;
 };
 
 export type Alerta = { nivel: "erro" | "atencao" | "info"; texto: string; detalhe: string; empresa_id: string; pessoa?: string; acao?: string };
@@ -179,7 +183,11 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
     // Sem evento de admissão ainda, vale o cadastro da planilha (nome, cargo, admissão, unidade)
     const dtAdm = adm?.resumo.dtAdm || adm?.resumo.dtInicio || t?.admissao || null;
     const fimContrato = adm?.resumo.dtTerm || null;
-    const saiu = !!saida && !(reintegrado && dataDoFato(reintegrado) > dataDoFato(saida));
+    // Readmitido: desligado e depois recebeu na folha da mesma empresa (S-1200 de mês posterior à saída) — ex.: os
+    // transferidos da Brasico77 em 28/02/2025 que voltaram e seguem na folha. Sem isso apareciam como "Saiu".
+    const mesSaida = saida ? (saida.resumo.dtDeslig || saida.resumo.dtTerm || dataDoFato(saida)).slice(0, 7) : "";
+    const folhaDepois = !!saida && evs.some((e) => e.tipo === "S-1200" && !!e.per_apur && e.per_apur.length === 7 && e.per_apur > mesSaida);
+    const saiu = !!saida && !(reintegrado && dataDoFato(reintegrado) > dataDoFato(saida)) && !folhaDepois;
     let situacao: Situacao = "aguardando";
     if (saiu) situacao = "saiu";
     else if (afastamento) situacao = afastamento.motivo === "15" ? "ferias" : "afastado";
@@ -218,6 +226,7 @@ export function liquidoDoUltimoMes(pagamentos: PagamentoRH[]): { mes: string; va
 // O que ainda falta na ficha de quem está na equipe (quem já saiu não conta)
 export function faltandoNaFicha(p: Pessoa): string[] {
   if (p.situacao === "saiu") return [];
+  if (p.situacao === "sem_registro") return ["registro no eSocial"];
   const f: string[] = [];
   if (!p.salario) f.push("salário");
   if (!p.liquido) f.push("pagamento");
@@ -231,7 +240,34 @@ export type Cobertura = {
   ativos: number; comSalario: number; comLiquido: number; lidos: number; noPonto: number;
   semSalario: Pessoa[]; semLiquido: Pessoa[]; saiuPonto: Pessoa[]; semPonto: Pessoa[];
 };
-export const NA_EQUIPE: Situacao[] = ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"];
+export const NA_EQUIPE: Situacao[] = ["trabalhando", "experiencia", "afastado", "ferias", "aguardando", "sem_registro"];
+
+// Quem está na escala do Brasico sem registro no eSocial (escala_extras de terceiro / cpf "a-confirmar"): entra na lista
+// de Pessoas e de Salários com a casa e o setor da escala, para ninguém que trabalha ficar de fora
+export type ExtraEscala = { id: number; nome: string; cargo: string | null; local: string | null; setor: string | null };
+export function pessoasSemRegistro(extras: ExtraEscala[]): Pessoa[] {
+  return extras.map((x) => ({
+    chave: `escala:${x.id}`, empresa_id: "terceiro", cpf: "", nome: x.nome, matricula: "", cargo: x.cargo ?? "", unidade: x.local ?? "",
+    vinculo: "", dtAdm: null, dtDeslig: null, motivoSaida: null, codSaida: null, fimContrato: null, afastamento: null,
+    salario: null, salarioContrato: null, salarioContratoDesde: null, salarioFonte: null, situacao: "sem_registro", eventos: [], alertas: [],
+    pagamentos: [], liquido: null, pontoSituacao: null, faltando: ["registro no eSocial"],
+    leitura: { desde: null, ate: null, eventos: 0 }, setorEscala: x.setor ?? "",
+  }));
+}
+
+// A mesma pessoa em duas empresas (o relógio põe numa, o eSocial paga na outra, ex.: Reginaldo): fica só o registro
+// que tem eventos do governo, se houver; quem saiu de uma empresa e está ativo em outra continua nas duas
+export function semRepetidos(pessoas: Pessoa[]): Pessoa[] {
+  const porCpf = new Map<string, Pessoa[]>();
+  for (const p of pessoas) if (p.cpf) porCpf.set(p.cpf, [...(porCpf.get(p.cpf) ?? []), p]);
+  const tirar = new Set<string>();
+  for (const ps of porCpf.values()) {
+    const ativos = ps.filter((p) => p.situacao !== "saiu");
+    if (ativos.length < 2 || !ativos.some((p) => p.eventos.length)) continue;
+    for (const p of ativos) if (!p.eventos.length && !p.salario) tirar.add(p.chave);
+  }
+  return tirar.size ? pessoas.filter((p) => !tirar.has(p.chave)) : pessoas;
+}
 export function montarCobertura(pessoas: Pessoa[]): Cobertura {
   const ativos = pessoas.filter((p) => NA_EQUIPE.includes(p.situacao));
   return {
@@ -630,7 +666,7 @@ export function montarAusencias(pessoas: Pessoa[]): Ausencia[] {
 
 export const ROTULO_SITUACAO: Record<Situacao, string> = {
   trabalhando: "Trabalhando", experiencia: "Em experiência", afastado: "Afastado", ferias: "De férias", saiu: "Saiu", aguardando: "Aguardando leitura",
-  saiu_ponto: "Saiu do ponto",
+  saiu_ponto: "Saiu do ponto", sem_registro: "Sem registro no eSocial",
 };
 
 export const cpfVisivel = (cpf: string, ver: boolean) =>
