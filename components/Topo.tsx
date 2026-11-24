@@ -139,7 +139,7 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
           {/* Hotéis e restaurantes → cada hotel → Gestão (dados do PMS, /hoteis/<id>) e Operação (área de criação, /hoteis/<id>/operacao);
               cada restaurante → Cardápios (/restaurantes/<id>/cardapios) */}
           {HOTEIS.some((h) => ve("hoteis") || ve(opArea(h.id))) && (<>
-            <Pasta id="menu-hoteis" on={/^((op)?hotel|rest):/.test(ativo ?? "")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotéis e restaurantes</Pasta>
+            <Pasta id="menu-hoteis" on={/^((op)?hotel|rest):/.test(ativo ?? "")} aberta={hotAberta} alternar={() => setHotAberta((o) => !o)} vis={aberto} icone={I.hoteis}>Hotels &amp; Restaurants</Pasta>
             <div id="menu-hoteis" className={hotAberta ? "menu-sub aberto" : "menu-sub"}><div>
               {HOTEIS.filter((h) => ve("hoteis") || ve(opArea(h.id))).map((h) => {
                 const vis = aberto && hotAberta;
