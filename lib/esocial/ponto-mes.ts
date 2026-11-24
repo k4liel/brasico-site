@@ -87,7 +87,7 @@ export function classificarDia(dia: string, hoje: string, r: DiaRelogio | undefi
   if (r?.folga) return { ...base, tipo: "fol", rotulo: "Folga" };
   if (codigo === "T") return { ...base, tipo: "fal", rotulo: "Falta" };
   if (r?.falta) return temEscalaNoMes
-    ? { ...base, tipo: "fol", rotulo: "Sem escala neste dia" }
+    ? { ...base, tipo: "fol", rotulo: "Sem escala" }
     : { ...base, tipo: "falc", rotulo: "Falta pelo relógio (conferir: pode ser a folga)" };
   return { ...base, tipo: "vazio", rotulo: r ? "Sem batida" : "" };
 }

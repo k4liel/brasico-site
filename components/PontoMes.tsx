@@ -36,7 +36,7 @@ function DicaDia({ dica }: { dica: Dica }) {
   const left = Math.min(Math.max(8, dica.x - largura / 2), (typeof window !== "undefined" ? window.innerWidth : 1200) - largura - 8);
   const acima = dica.y > 260;
   return (
-    <div className={`pm-dica pm-t-${d.tipo}`} role="tooltip" style={{ left, top: acima ? dica.y - 10 : dica.y + 26, transform: acima ? "translateY(-100%)" : undefined, width: largura }}>
+    <div className={`pm-dica pm-dica-${d.tipo}`} role="tooltip" style={{ left, top: acima ? dica.y - 10 : dica.y + 26, transform: acima ? "translateY(-100%)" : undefined, width: largura }}>
       <b className="pm-dica-titulo">{dataLonga(d.dia)}</b>
       <span className="pm-dica-nome">{dica.nome}</span>
       {d.previsto && <span className="pm-dica-prev">Previsto {d.previsto}{d.descanso ? ` · desc. ${d.descanso}` : ""}<small>{d.origemEscala === "brasico" ? "escala do Brasico" : "horário do relógio"}</small></span>}
@@ -152,9 +152,13 @@ export function PontoMes({ ponto, verCpf, chavesRH, onAbrirPessoa }: { ponto: Po
   const naEquipe = todas.filter((l) => !l.afastadoGrupo && (!casa || (l.local || "Sem local") === casa));
   const soma = (f: (l: Linha) => number) => naEquipe.reduce((t, l) => t + f(l), 0);
   const ehMesAtual = mes === agora.slice(0, 7);
-  const trabalhando = naEquipe.filter((l) => l.estado === "Trabalhando" || l.estado === "Já saiu").length;
-  const comEscalaHoje = naEquipe.filter((l) => !["Folga", "Sem escala", "Afastado"].includes(l.estado)).length;
-  const atrasadosAgora = naEquipe.filter((l) => l.estado === "Atrasado").length;
+  // Hoje pela mesma regra do mês (relógio × escala do Brasico): quem bateu, quem tinha de trabalhar e quem passou da entrada
+  const deHoje = naEquipe.map((l) => l.mes.find((d) => d.dia === agora)).filter((d): d is DiaMes => !!d);
+  const trabalhando = deHoje.filter((d) => d.tipo === "trab" || d.tipo === "atr").length;
+  const comEscalaHoje = deHoje.filter((d) => d.tipo === "trab" || d.tipo === "atr" || d.tipo === "hoje").length;
+  const passouDaEntrada = (d: DiaMes) => { const m = d.previsto.match(/^(\d{2}):(\d{2})/); if (!m) return false;
+    const [h, mi] = ponto.relogio.split(":").map(Number); return h * 60 + mi >= Number(m[1]) * 60 + Number(m[2]) + 10; };
+  const atrasadosAgora = deHoje.filter((d) => d.tipo === "hoje" && passouDaEntrada(d)).length;
   const afastadosHoje = todas.filter((l) => l.afastadoGrupo).length;
   const diasAtraso = soma((l) => l.r.atrasos);
   const aConferir = soma((l) => l.r.aConferir);
