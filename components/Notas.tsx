@@ -56,10 +56,13 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   const [compras, setCompras] = useState(false); // setor de compras: só NF-e, índice e nota avulsa
   const [nome, setNome] = useState("");
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  // Menu lateral (23/11/2026, prévia "A · lateral"): a visão fica no endereço (#nfce-geral, #nfe-notas…)
+  // Duas partes (23/11/2026, pedido do dono): Notas (abas por tipo de nota, como antes) e Informações (menu lateral com
+  // visão geral, pendências, produtos, impostos, reforma). A visão fica no endereço (#nfe-notas, #nfce-geral…).
   const [vista, setVistaEstado] = useState<string>("");
+  const ultima = useRef<{ notas: string; info: string }>({ notas: "nfe:notas", info: "nfce:geral" });
   const setVista = useCallback((v: string) => {
     setVistaEstado(v);
+    ultima.current[ABAS.some((a) => a.id === v) ? "notas" : "info"] = v;
     try { history.replaceState(null, "", `#${v.replace(":", "-")}`); } catch { /* sem histórico */ }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
@@ -81,8 +84,8 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
       setAcesso(true);
       carregarEmpresas();
       const h = window.location.hash.replace("#", "").replace("-", ":");
-      const ok = MENU.flatMap((g) => g.itens).find((i) => i.id === h && (papel !== "compras" || i.compras));
-      setVistaEstado(ok ? h : papel === "compras" ? "nfe:notas" : "nfce:geral");
+      const ok = [...ABAS, ...MENU.flatMap((g) => g.itens)].find((i) => i.id === h && (papel !== "compras" || i.compras));
+      setVistaEstado(ok ? h : "nfe:notas");
     })();
   }, [supabase, userId, carregarEmpresas]);
 
@@ -95,74 +98,108 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
     );
   }
 
-  const menu = MENU.map((g) => ({ ...g, itens: g.itens.filter((i) => !compras || i.compras) })).filter((g) => g.itens.length);
+  const abas = ABAS.filter((a) => !compras || a.compras);
+  const parte: "notas" | "info" = ABAS.some((a) => a.id === vista) ? "notas" : "info";
   const atual = MENU.flatMap((g) => g.itens.map((i) => ({ ...i, grupo: g.grupo }))).find((i) => i.id === vista);
 
   return (
     <div className="pagina">
       {compras ? <TopoSimples email={userEmail} nome={nome} area="Notas fiscais" outra={[{ href: "/compras", nome: "Compras" }, { href: "/precos", nome: "Índice de preços" }]} />
         : <Topo email={userEmail} ativo="notas" />}
-      <main className="miolo tv es nf nf-larga nt">
-        <aside className="nt-menu" aria-label="Notas fiscais">
-          <div className="nt-menu-titulo"><span>Fiscal e Contábil</span><b>Notas fiscais</b></div>
-          {menu.map((g) => (
-            <nav key={g.grupo} className="nt-grupo">
-              <span className="nt-grupo-nome">{g.grupo}</span>
-              {g.itens.map((i) => (
-                <button key={i.id} className={vista === i.id ? "on" : ""} aria-current={vista === i.id ? "page" : undefined} onClick={() => setVista(i.id)}>{i.nome}</button>
+      <main className="miolo tv es nf nf-larga">
+        <div className="es-topo">
+          <div>
+            <span className="es-sobre">Fiscal e Contábil</span>
+            <h1>Notas fiscais</h1>
+            <p>{compras ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."
+              : "Em Notas, cada tipo de nota numa aba, como sempre. Em Informações, a visão geral das vendas, o que precisa corrigir, os produtos, os impostos e a reforma."}</p>
+          </div>
+        </div>
+
+        {!compras && (
+          <div className="nt-partes" role="tablist" aria-label="Parte">
+            <button role="tab" aria-selected={parte === "notas"} className={parte === "notas" ? "on" : ""} onClick={() => setVista(ultima.current.notas)}>
+              <b>Notas</b><small>NF-e, NFS-e, NFC-e, CT-e e notas avulsas</small>
+            </button>
+            <button role="tab" aria-selected={parte === "info"} className={parte === "info" ? "on" : ""} onClick={() => setVista(ultima.current.info)}>
+              <b>Informações</b><small>visão geral, pendências, produtos, impostos e reforma</small>
+            </button>
+          </div>
+        )}
+
+        {parte === "notas" && (
+          <>
+            <div className="cp-abas" role="tablist">
+              {abas.map((a) => (
+                <button key={a.id} role="tab" aria-selected={vista === a.id} className={vista === a.id ? "on" : ""} onClick={() => setVista(a.id)}>{a.nome}</button>
               ))}
-            </nav>
-          ))}
-        </aside>
-        <section className="nt-conteudo">
-          {atual && (
-            <header className="nt-cab">
-              <span className="es-sobre">{atual.grupo}</span>
-              <h1>{atual.titulo ?? atual.nome}</h1>
-              <p>{compras && atual.id === "nfe:notas" ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Clique numa nota para ver os detalhes." : atual.explica}</p>
-            </header>
-          )}
-          {vista === "nfce:geral" && !compras && <VisaoGeralNfce irPara={setVista} />}
-          {vista === "nfce:notas" && !compras && <NotasConsumidor />}
-          {vista === "nfce:produtos" && !compras && <ProdutosTotvs />}
-          {vista === "nfce:impostos" && !compras && <ImpostosNfce />}
-          {vista === "nfce:pendencias" && !compras && <PendenciasNfce irPara={setVista} />}
-          {vista === "nfce:reforma" && !compras && <ReformaNfce />}
-          {vista === "nfe:notas" && <ListaNotas empresas={empresas} podeConferir={!compras} modoFixo="notas" />}
-          {vista === "nfe:conferencia" && !compras && <ListaNotas empresas={empresas} podeConferir modoFixo="conferencia" />}
-          {vista === "nfse:notas" && !compras && <NotasServico />}
-          {vista === "cte:notas" && !compras && <NotasFrete />}
-          {vista === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setVista("nfe:notas")} />}
-          {vista === "leituras" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /><LeituraCte /><LeituraNfce /></>}
-        </section>
+            </div>
+            {vista === "nfe:notas" && <ListaNotas empresas={empresas} podeConferir={!compras} modoFixo="notas" />}
+            {vista === "nfse:notas" && !compras && <NotasServico />}
+            {vista === "nfce:notas" && !compras && <NotasConsumidor />}
+            {vista === "cte:notas" && !compras && <NotasFrete />}
+            {vista === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setVista("nfe:notas")} />}
+          </>
+        )}
+
+        {parte === "info" && !compras && (
+          <div className="nt">
+            <aside className="nt-menu" aria-label="Informações">
+              {MENU.map((g) => (
+                <nav key={g.grupo} className="nt-grupo">
+                  <span className="nt-grupo-nome">{g.grupo}</span>
+                  {g.itens.map((i) => (
+                    <button key={i.id} className={vista === i.id ? "on" : ""} aria-current={vista === i.id ? "page" : undefined} onClick={() => setVista(i.id)}>{i.nome}</button>
+                  ))}
+                </nav>
+              ))}
+            </aside>
+            <section className="nt-conteudo">
+              {atual && (
+                <header className="nt-cab">
+                  <span className="es-sobre">{atual.grupo}</span>
+                  <h2>{atual.titulo ?? atual.nome}</h2>
+                  <p>{atual.explica}</p>
+                </header>
+              )}
+              {vista === "nfce:geral" && <VisaoGeralNfce irPara={setVista} />}
+              {vista === "nfce:produtos" && <ProdutosTotvs />}
+              {vista === "nfce:impostos" && <ImpostosNfce />}
+              {vista === "nfce:pendencias" && <PendenciasNfce irPara={setVista} />}
+              {vista === "nfce:reforma" && <ReformaNfce />}
+              {vista === "nfe:conferencia" && <ListaNotas empresas={empresas} podeConferir modoFixo="conferencia" />}
+              {vista === "leituras" && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /><LeituraCte /><LeituraNfce /></>}
+            </section>
+          </div>
+        )}
       </main>
     </div>
   );
 }
 
-// Menu lateral da página de notas: grupos e visões (compras = o que o setor de compras vê)
+// Parte "Notas": uma aba por tipo de nota (compras = o que o setor de compras vê)
 type ItemMenu = { id: string; nome: string; titulo?: string; explica: string; compras?: boolean };
+const ABAS: ItemMenu[] = [
+  { id: "nfe:notas", nome: "NF-e (produtos)", explica: "", compras: true },
+  { id: "nfse:notas", nome: "NFS-e (serviços)", explica: "" },
+  { id: "nfce:notas", nome: "NFC-e (vendas)", explica: "" },
+  { id: "cte:notas", nome: "CT-e (fretes)", explica: "" },
+  { id: "avulsa", nome: "Nota avulsa", explica: "", compras: true },
+];
+
+// Parte "Informações": menu lateral com as análises (só sócios)
 const MENU: { grupo: string; itens: ItemMenu[] }[] = [
   { grupo: "Vendas · NFC-e", itens: [
-    { id: "nfce:geral", nome: "Visão geral", titulo: "Vendas e impostos", explica: "As notas das vendas dos restaurantes (NFC-e do caixa TOTVS): quanto foi vendido com nota, os impostos destacados, o que precisa corrigir e cada casa. Atualiza a cada minuto." },
-    { id: "nfce:notas", nome: "Notas", titulo: "NFC-e emitidas", explica: "Cada venda com a nota fiscal: autorizadas, canceladas, sem autorização, sem nota (assinadas) e vendas canceladas, por dia. Clique numa nota para ver os itens e o PDF." },
-    { id: "nfce:produtos", nome: "Produtos", titulo: "Produtos e regras fiscais", explica: "O cadastro de cada produto no Chef Web, a regra fiscal do NCM em cada casa, as vendas e o que corrigir." },
-    { id: "nfce:impostos", nome: "Impostos do mês", titulo: "Impostos das vendas", explica: "ICMS, PIS, Cofins e o teste da CBS/IBS destacados nas NFC-e, mês a mês, e a apuração do ICMS (vendas menos o crédito das compras)." },
+    { id: "nfce:geral", nome: "Visão geral", titulo: "Vendas e impostos", explica: "Quanto foi vendido com nota, os impostos destacados, o que precisa corrigir e cada casa. Atualiza a cada minuto." },
     { id: "nfce:pendencias", nome: "Pendências", titulo: "O que precisa ser corrigido", explica: "Tudo o que a conferência achou nas notas, no cadastro do Chef Web e nas regras fiscais, separado por quem resolve." },
+    { id: "nfce:produtos", nome: "Produtos e regras fiscais", titulo: "Produtos e regras fiscais", explica: "O cadastro de cada produto no Chef Web, a regra fiscal do NCM em cada casa, as vendas e o que corrigir." },
+    { id: "nfce:impostos", nome: "Impostos e apuração", titulo: "Impostos das vendas", explica: "ICMS, PIS, Cofins e o teste da CBS/IBS destacados nas NFC-e, mês a mês, e a apuração do ICMS (vendas menos o crédito das compras)." },
     { id: "nfce:reforma", nome: "Reforma 2027", titulo: "Reforma tributária", explica: "Como os itens vendidos saem na classificação da reforma (cClassTrib) e uma simulação da CBS de 2027 com a regra oficial de bares e restaurantes." },
   ] },
   { grupo: "Compras · NF-e", itens: [
-    { id: "nfe:notas", nome: "Notas de compra", titulo: "NF-e de compra", explica: "As notas de compra (NF-e) recebidas por todas as empresas do grupo, da SEFAZ, por mês e por CNPJ. Clique numa nota para ver os itens e o PDF.", compras: true },
-    { id: "nfe:conferencia", nome: "Conferência fiscal", titulo: "Conferência das notas de compra", explica: "Os campos fiscais do XML de cada nota conferidos com regras fixas: total, CFOP, NCM, ICMS, ST, IBS/CBS, notas em dobro e canceladas." },
+    { id: "nfe:conferencia", nome: "Conferência das compras", titulo: "Conferência das notas de compra", explica: "Os campos fiscais do XML de cada nota conferidos com regras fixas: total, CFOP, NCM, ICMS, ST, IBS/CBS, notas em dobro e canceladas." },
   ] },
-  { grupo: "Serviços · NFS-e", itens: [
-    { id: "nfse:notas", nome: "Notas de serviço", titulo: "NFS-e emitidas e tomadas", explica: "As notas de serviço do Portal Nacional: as que as empresas do grupo emitiram e as que receberam, com ISS e retenções." },
-  ] },
-  { grupo: "Fretes · CT-e", itens: [
-    { id: "cte:notas", nome: "Fretes", titulo: "CT-e (fretes)", explica: "Os conhecimentos de transporte em que uma empresa do grupo aparece, do Ambiente Nacional do CT-e, ligados às NF-e transportadas." },
-  ] },
-  { grupo: "Outros", itens: [
-    { id: "avulsa", nome: "Nota avulsa", titulo: "Lançar nota avulsa", explica: "Compra sem NF-e (cupom, recibo), lançada com foto e itens.", compras: true },
+  { grupo: "Sistema", itens: [
     { id: "leituras", nome: "Leituras", titulo: "Leituras automáticas", explica: "De onde vem cada nota e quando foi a última leitura: SEFAZ (NF-e), Portal Nacional (NFS-e), caixa TOTVS (NFC-e) e CT-e." },
   ] },
 ];

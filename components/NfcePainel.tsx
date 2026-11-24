@@ -257,13 +257,14 @@ export function PendenciasNfce({ irPara }: { irPara: IrPara }) {
   if (!p) return <p className="muted">Juntando as pendências…</p>;
   const aDefinir = p.decisoes.filter((d) => !d.valor);
   const definidas = p.decisoes.filter((d) => d.valor);
-  const nChef = p.chefweb_produtos.filter((x) => x.sev === "erro").reduce((s, x) => s + x.produtos, 0) + p.chefweb_regras.filter((x) => x.sev === "erro").reduce((s, x) => s + x.regras, 0);
+  // Conta as tarefas (cada cartão é um tipo de problema numa casa), não os produtos: o mesmo produto pode ter mais de um problema
+  const nChef = p.chefweb_produtos.filter((x) => x.sev === "erro").length + p.chefweb_regras.filter((x) => x.sev === "erro").length;
   const fim = (() => { const d = new Date(Number(mesConf.slice(0, 4)), Number(mesConf.slice(5, 7)), 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; })();
   return (
     <div className="nx">
       <div className="nx-colunas">
         <section className="nx-col">
-          <header><h3>Corrigir no Chef Web</h3><span className="pd-chip erro">{num(nChef)} com erro</span></header>
+          <header><h3>Corrigir no Chef Web</h3><span className="pd-chip erro">{num(nChef)} tarefa{nChef === 1 ? "" : "s"} com erro</span></header>
           {p.chefweb_produtos.map((x, i) => (
             <article key={`p${i}`} className={`nx-tarefa ${x.sev}`}>
               <b>{PROD_TITULO[x.regra] ?? x.regra}</b>
