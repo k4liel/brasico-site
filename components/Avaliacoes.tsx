@@ -226,7 +226,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="avaliacoes" />
-      <main className="miolo av">
+      <main className="miolo av-pagina">
         <header className="fx-topo">
           <div>
             <h1>Avaliações</h1>
@@ -428,14 +428,14 @@ function CartaoAvaliacao({ a, f, abrir }: { a: Avaliacao; f?: Fonte; abrir: () =
     : a.texto;
   const ruim = (a.nota5 ?? 5) <= 3;
   return (
-    <article className={`av-item${ruim ? " ruim" : ""}`} onClick={abrir} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && abrir()}>
+    <article className={`av-card${ruim ? " ruim" : ""}`} onClick={abrir} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && abrir()}>
       <header>
         <Selo site={f?.site ?? ""} />
-        <div className="av-item-quem"><b>{a.autor ?? "Anônimo"}</b><span className="muted">{nomeCasa(f?.casa ?? "")}{f?.tipo === "restaurante" && f.casa === "sempre_vivo" ? " · restaurante" : ""} · {dataCurta(a)}</span></div>
-        <div className="av-item-nota"><Estrelas n={a.nota5} tam={13} />{a.escala === 10 && <small>{fmt(a.nota, 1)}</small>}</div>
+        <div className="av-card-quem"><b>{a.autor ?? "Anônimo"}</b><span className="muted">{nomeCasa(f?.casa ?? "")}{f?.tipo === "restaurante" && f.casa === "sempre_vivo" ? " · restaurante" : ""} · {dataCurta(a)}</span></div>
+        <div className="av-card-nota"><Estrelas n={a.nota5} tam={13} />{a.escala === 10 && <small>{fmt(a.nota, 1)}</small>}</div>
       </header>
       {a.titulo && <h4>{a.titulo}</h4>}
-      {texto ? <p className="av-item-texto">{texto}</p> : <p className="av-item-texto muted">(só a nota, sem texto)</p>}
+      {texto ? <p className="av-card-texto">{texto}</p> : <p className="av-card-texto muted">(só a nota, sem texto)</p>}
       <footer>
         {a.resposta ? <span className="av-respondida">✓ respondida</span> : <span className={ruim ? "av-pilula" : "muted"}>sem resposta</span>}
         {a.perfil && <span className="muted">{a.perfil}</span>}
