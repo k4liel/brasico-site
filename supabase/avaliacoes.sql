@@ -4,7 +4,7 @@
 -- De onde vêm (pesquisa de 24/11/2026; detalhes em CLAUDE.md, seção Avaliações):
 --   google_busca   restaurantes: caixa "Ver todos os comentários do Google" da Busca (ordenada por Mais recentes, sem login)
 --                  — o Google Maps sem login mostra só 5 ("visualização limitada").
---   google_viagens hotéis: página do hotel no Google Viagens, aba Avaliações (Mais recentes; mistura Google e TripAdvisor,
+--   google_viagens hotéis: na Busca, o link "avaliações no Google" leva à página do hotel no Google Viagens, aba Avaliações (Mais recentes; mistura Google e TripAdvisor,
 --                  guardamos só as do Google).
 --   tripadvisor    página pública, "Mais recentes", 10 por página.
 --   booking        página do hotel, janela "Ler todas as avaliações", "Mais recentes primeiro".
@@ -244,7 +244,7 @@ grant execute on function public.avaliacoes_robo_fim(text, uuid, text) to anon;
 -- Fontes (24/11/2026). Ponta Negra ainda não tem página em nenhum site: fica cadastrada, desligada, com o aviso.
 insert into public.avaliacoes_fontes (id, casa, site, tipo, nome_no_site, url, leitor, escala, ativa, ordem, observacao) values
  ('google_filha_da_lua', 'filha_da_lua', 'google', 'hotel', 'Filha da Lua - Eco Lodge Pipa',
-  'https://www.google.com/travel/search?q=Filha%20da%20Lua%20Eco%20Lodge%20Pipa&hl=pt-BR&gl=br', 'google_viagens', 5, true, 10, null),
+  'https://www.google.com/search?q=Filha+da+Lua+Eco+Lodge+Pipa&hl=pt-BR&gl=br', 'google_viagens', 5, true, 10, null),
  ('tripadvisor_filha_da_lua', 'filha_da_lua', 'tripadvisor', 'hotel', 'Filha Da Lua - Eco Lodge',
   'https://www.tripadvisor.com.br/Hotel_Review-g303522-d23033693-Reviews-Filha_Da_Lua_Eco_Lodge-Praia_da_Pipa_Tibau_do_Sul_State_of_Rio_Grande_do_Norte.html', 'tripadvisor', 5, true, 11, null),
  ('booking_filha_da_lua', 'filha_da_lua', 'booking', 'hotel', 'Filha Da Lua Ecolodge',
@@ -253,7 +253,7 @@ insert into public.avaliacoes_fontes (id, casa, site, tipo, nome_no_site, url, l
   'https://www.expedia.com/Tibau-Do-Sul-Hotels-Filha-Da-Lua-Ecolodge.h76145811.Hotel-Information', 'expedia', 10, true, 13,
   'Mesmas avaliações na Hoteis.com, Travelocity e Orbitz (grupo Expedia).'),
  ('google_sempre_vivo', 'sempre_vivo', 'google', 'hotel', 'Sempre Vivo Hotel & Cicchetti Restaurante',
-  'https://www.google.com/travel/search?q=Sempre%20Vivo%20Hotel%20%26%20Cicchetti%20Restaurante%20Pipa&hl=pt-BR&gl=br', 'google_viagens', 5, true, 20,
+  'https://www.google.com/search?q=Sempre+Vivo+Hotel+%26+Cicchetti+Restaurante+Pipa&hl=pt-BR&gl=br', 'google_viagens', 5, true, 20,
   'No Google o hotel e o restaurante Cicchetti de dentro dele são um perfil só.'),
  ('tripadvisor_sempre_vivo', 'sempre_vivo', 'tripadvisor', 'hotel', 'Sempre Vivo Hotel',
   'https://www.tripadvisor.com.br/Hotel_Review-g303522-d28912825-Reviews-Sempre_Vivo_Hotel-Praia_da_Pipa_Tibau_do_Sul_State_of_Rio_Grande_do_Norte.html', 'tripadvisor', 5, true, 21, null),

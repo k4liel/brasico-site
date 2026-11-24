@@ -27,10 +27,15 @@
     else if (u.startsWith("ano")) d.setFullYear(d.getFullYear() - n);
     return iso(d);
   }
-  // "18 de setembro de 2026", "9 de nov.", "9 de nov. de 2025"
+  // "18 de setembro de 2026", "9 de nov.", "9 de nov. de 2025", "(jun. de 2026)" (só mês e ano → dia 1)
   function dataPt(t) {
-    const m = String(t || "").toLowerCase().match(/(\d{1,2})\s+de\s+([a-zç]+)\.?(?:\s+de\s+(\d{4}))?/);
-    if (!m || MESES[m[2]] === undefined) return null;
+    const s = String(t || "").toLowerCase();
+    const m = s.match(/(\d{1,2})\s+de\s+([a-zç]+)\.?(?:\s+de\s+(\d{4}))?/);
+    if (!m) {
+      const mm = s.match(/([a-zç]+)\.?\s+de\s+(\d{4})/);
+      return mm && MESES[mm[1]] !== undefined ? iso(new Date(Number(mm[2]), MESES[mm[1]], 1)) : null;
+    }
+    if (MESES[m[2]] === undefined) return null;
     let ano = m[3] ? Number(m[3]) : hoje().getFullYear();
     let d = new Date(ano, MESES[m[2]], Number(m[1]));
     if (!m[3] && d > hoje()) d = new Date(ano - 1, MESES[m[2]], Number(m[1]));
@@ -113,7 +118,7 @@
     const resumo = {};
     const r = document.body.innerText.match(/Resumo de avalia[çc][õo]es do Google\n(\d,\d)\n([\d.]+) avalia/);
     if (r) { resumo.nota = numero(r[1]); resumo.total = inteiro(r[2]); }
-    if (clicarTexto("Mais recentes")) await dormir(2500);
+    // "Mais recentes": no Google Viagens só um clique de verdade funciona (o robô clica antes, pelo Playwright)
     const lerItens = () => [...document.querySelectorAll("div.Svr5cf")].map((c) => {
       const autor = c.querySelector("a.DHIhE")?.textContent.trim() || null;
       const contrib = (c.querySelector("a.DHIhE")?.getAttribute("href") || "").match(/contrib\/(\d+)/)?.[1] || null;
@@ -132,20 +137,38 @@
     while (parado < 4) {
       const lidos = lerItens().filter((x) => x.site === "google");
       if (lidos.length >= max || lidos.some((x) => visto.has(x.id))) break;
-      window.scrollTo(0, document.body.scrollHeight);
-      document.querySelectorAll("div.Svr5cf").forEach((e, i, a) => i === a.length - 1 && e.scrollIntoView());
-      await dormir(1600);
+      // quem rola é o <body> (window.scrollTo não carrega mais)
+      document.body.scrollTop = document.body.scrollHeight;
+      [...document.querySelectorAll("div.Svr5cf")].pop()?.scrollIntoView({ block: "end" });
+      await dormir(1800);
       const n = document.querySelectorAll("div.Svr5cf").length;
       if (n === ult) parado++; else { parado = 0; ult = n; }
     }
     return { resumo, itens: lerItens().filter((x) => x.site === "google").slice(0, max).map(({ site, ...x }) => x) };
   }
 
-  // ---------- TripAdvisor: uma página (10 avaliações; o robô troca a página pelo endereço, -or10-, -or20-…) ----------
-  async function tripadvisor() {
+  // ---------- TripAdvisor: a página aberta e, pelas mesmas regras, as seguintes (10 avaliações por página, -or10-, -or20-…),
+  // baixadas com fetch dentro da própria página (o HTML já vem com as avaliações) ----------
+  async function tripadvisor({ paginas = 1, conhecidos = [] } = {}) {
     for (let k = 1; k <= 8; k++) { window.scrollTo(0, (document.body.scrollHeight * k) / 8); await dormir(500); }
     for (let i = 0; i < 20 && !document.querySelector('[data-test-target="HR_CC_CARD"], [data-automation="reviewCard"]'); i++) await dormir(500);
-    const t = document.body.innerText;
+    const visto = new Set(conhecidos);
+    const r = lerTripadvisor(document, document.body.innerText);
+    const base = location.href.replace(/-Reviews-or\d+-/, "-Reviews-").split("#")[0];
+    for (let p = 1; p < paginas; p++) {
+      if (!r.itens.length || r.itens.some((x) => visto.has(x.id))) break;
+      await dormir(1200 + Math.random() * 1500);
+      const resp = await fetch(base.replace(/-Reviews-/, `-Reviews-or${p * 10}-`), { credentials: "include" });
+      if (!resp.ok) break;
+      const doc = new DOMParser().parseFromString(await resp.text(), "text/html");
+      const r2 = lerTripadvisor(doc, doc.body?.textContent || "");
+      const novos = r2.itens.filter((x) => !r.itens.some((y) => y.id === x.id));
+      if (!novos.length) break;
+      r.itens.push(...novos);
+    }
+    return r;
+  }
+  function lerTripadvisor(raiz, t) {
     const resumo = {};
     const nota = t.match(/(\d,\d)\s*\n?\s*\d,\d de 5 c[íi]rculos/) || t.match(/(\d,\d)\s*de 5 c[íi]rculos/);
     if (nota) resumo.nota = numero(nota[1]);
@@ -153,11 +176,14 @@
     if (total) resumo.total = inteiro(total[1]);
     const pos = t.match(/N[ºo°]\s*\d+ de [\d.]+ [^\n]+/);
     if (pos) resumo.posicao = pos[0].trim();
-    const cards = [...document.querySelectorAll('[data-test-target="HR_CC_CARD"], [data-automation="reviewCard"]')];
+    const cards = [...raiz.querySelectorAll('[data-test-target="HR_CC_CARD"], [data-automation="reviewCard"]')];
     const itens = cards.map((c) => {
       const link = [...c.querySelectorAll("a[href*='ShowUserReviews']")].map((a) => a.getAttribute("href"))[0] || null;
       const id = link?.match(/-r(\d+)-/)?.[1] || null;
-      const linhas = c.innerText.split("\n").map((l) => l.trim()).filter(Boolean);
+      // no HTML baixado não há innerText com quebras: monta as linhas pelos blocos de texto
+      const linhas = (c.innerText !== undefined && raiz === document ? c.innerText.split("\n")
+        : [...c.querySelectorAll("*")].filter((e) => e.childElementCount === 0 || [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()))
+            .map((e) => [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(" "))).map((l) => l.trim()).filter(Boolean);
       const bolhas = [...c.querySelectorAll("svg title, [aria-label]")].map((e) => e.textContent || e.getAttribute("aria-label")).find((x) => /de 5 c[íi]rculos/.test(x || ""));
       const feita = linhas.find((l) => /fez uma avalia[çc][ãa]o|escreveu uma avalia[çc][ãa]o/i.test(l)) || null;
       const iEst = linhas.findIndex((l) => /^Data da (estadia|visita|hospedagem):?$/i.test(l));
@@ -166,7 +192,7 @@
       const corpo = c.querySelector('[data-test-target="review-body"], [data-automation="reviewText"]');
       return { id, autor: linhas[0] || null, autor_info: linhas.find((l) => /contribui[çc]/.test(l)) || null,
         nota: numero(bolhas), titulo: c.querySelector('[data-test-target="review-title"]')?.innerText.trim() || null,
-        texto: limpa(corpo?.innerText.replace(/\s*Leia mais$/, "")), data: dataPt(feita), aproximada: false, data_texto: feita,
+        texto: limpa((corpo?.innerText ?? corpo?.textContent)?.replace(/\s*Leia mais$/, "")), data: dataPt(feita), aproximada: !/\(\d{1,2} de /.test(feita || ""), data_texto: feita,
         estadia: iEst >= 0 ? linhas[iEst + 1] : null, perfil: iTipo >= 0 ? linhas[iTipo + 1] : null,
         resposta: iResp >= 0 ? limpa(linhas.slice(iResp + 1).join("\n").replace(/\n?Leia mais$/, "")) : null,
         resposta_data: iResp >= 0 ? linhas[iResp] : null,
