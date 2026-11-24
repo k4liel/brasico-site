@@ -27,3 +27,9 @@ reports/
 
 # Permissões locais do Claude Code (de cada pessoa)
 .claude/settings.local.json
+
+# Planos do plugin planning-with-files (podem ter dados de clientes; nunca no GitHub)
+task_plan.md
+findings.md
+progress.md
+.planning/
