@@ -230,7 +230,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
         <header className="fx-topo">
           <div>
             <h1>Avaliações</h1>
-            <p className="muted">Google, Tripadvisor, Booking e Expedia das casas, num lugar só. Lidas sozinhas a cada 6 horas · última leitura {haQuanto(ultimaLeitura)}.</p>
+            <p className="muted">Google, Tripadvisor, Booking e Expedia das casas, num lugar só. Google lido a cada hora, os outros sites a cada 3 horas · última leitura {haQuanto(ultimaLeitura)}.</p>
           </div>
           <div className="av-seg" role="tablist" aria-label="Período">
             {PERIODOS.map((p) => (

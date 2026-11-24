@@ -23,7 +23,7 @@ create table if not exists public.avaliacoes_fontes (
   leitor text,                         -- google_busca · google_viagens · tripadvisor · booking · expedia
   escala int not null default 5,       -- nota máxima no site (5 ou 10)
   ativa boolean not null default true,
-  intervalo_horas int not null default 6,
+  intervalo_horas int not null default 3,         -- Google: 1 h (24/11/2026, pedido do dono: "quero mais rápido")
   observacao text,
   nota numeric,                        -- nota geral mostrada pelo site
   total int,                           -- nº de avaliações mostrado pelo site
@@ -275,3 +275,6 @@ insert into public.avaliacoes_fontes (id, casa, site, tipo, nome_no_site, url, l
  ('tripadvisor_cicchetti_ponta_negra', 'cicchetti_ponta_negra', 'tripadvisor', 'restaurante', 'Cicchetti Ponta Negra', null, 'tripadvisor', 5, false, 41,
   'Ainda não existe página no TripAdvisor.')
 on conflict (id) do nothing;
+
+-- 24/11/2026, pedido do dono ("quero mais rápido"): Google a cada 1 h, os outros a cada 3 h
+update public.avaliacoes_fontes set intervalo_horas = case when site = 'google' then 1 else 3 end;
