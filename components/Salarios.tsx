@@ -4,7 +4,7 @@
 // Folha do mês da prévia B). O salário de cada pessoa é o de hoje: o da folha do último mês (S-1200, rubrica 8781;
 // view rh_salario_folha) quando é mais novo que o contrato (S-2200/S-2206), senão o de contrato (montarPessoas em
 // lib/esocial/rh.ts). Líquido = S-1210 (view rh_pagamentos). Dado sensível: CPF e valores vêm escondidos e se mostram
-// na barra "Privacidade" (os dois interruptores juntos, pedido do dono); o valor nunca sai desta tela (não vai para o conector).
+// na barra "Privacidade" do topo do RH (RhPainel.tsx, os dois interruptores juntos); o valor nunca sai desta tela.
 // CSS num bloco só em globals.css ("Folha e salários", classes fs-*).
 import { useMemo, useState } from "react";
 import { cpfVisivel, dataBR, hoje, mesAnterior, nomeCurto, nomeMes, type EmpresaRH, type Folha, type Pessoa } from "@/lib/esocial/rh";
@@ -29,27 +29,14 @@ const FAIXAS: { rotulo: string; ate: number }[] = [
 
 type Linha = { p: Pessoa; local: string; salario: number | null };
 
-function Interruptor({ ligado, onClick, rotulo, icone }: { ligado: boolean; onClick: () => void; rotulo: string; icone: "olho" | "real" }) {
-  return (
-    <button type="button" className={`fs-tg ${ligado ? "on" : ""}`} onClick={onClick} aria-pressed={ligado} title={ligado ? `Esconder ${rotulo}` : `Mostrar ${rotulo}`}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        {icone === "olho" ? <><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></>
-          : <path d="M12 2v20M17 6.5a4 4 0 0 0-4-2.5H11a3.5 3.5 0 0 0 0 7h2a3.5 3.5 0 0 1 0 7h-2a4 4 0 0 1-4-2.5" />}
-      </svg>
-      {rotulo}<i className="fs-sw" aria-hidden="true" />
-    </button>
-  );
-}
-
 function Etapa({ ok, espera, texto }: { ok: boolean; espera?: boolean; texto: string }) {
   return <span className={`fs-st ${ok ? "ok" : espera ? "espera" : ""}`}><i>{ok ? "✓" : espera ? "…" : "·"}</i>{texto}</span>;
 }
 
-export default function Salarios({ pessoas, empresas, folhas, verCpf, onAlternarCpf, onAbrirPessoa, nomeEmpresa }: {
-  pessoas: Pessoa[]; empresas: EmpresaRH[]; folhas: Folha[]; verCpf: boolean; onAlternarCpf: () => void;
+export default function Salarios({ pessoas, empresas, folhas, verCpf, ver, onAbrirPessoa, nomeEmpresa }: {
+  pessoas: Pessoa[]; empresas: EmpresaRH[]; folhas: Folha[]; verCpf: boolean; ver: boolean;
   onAbrirPessoa: (chave: string) => void; nomeEmpresa: (id: string) => string;
 }) {
-  const [ver, setVer] = useState(false);
   const [busca, setBusca] = useState("");
   const [local, setLocal] = useState("");
   const termo = busca.trim().toLowerCase();
@@ -97,11 +84,6 @@ export default function Salarios({ pessoas, empresas, folhas, verCpf, onAlternar
 
   return (
     <div className="fs">
-      <div className="fs-priv" role="group" aria-label="Privacidade">
-        <span className="fs-priv-rot">Privacidade</span>
-        <Interruptor ligado={verCpf} onClick={onAlternarCpf} rotulo="CPF" icone="olho" />
-        <Interruptor ligado={ver} onClick={() => setVer((x) => !x)} rotulo="Valores" icone="real" />
-      </div>
 
       {/* Topo: soma dos salários, líquido, média, folhas fechadas e a divisão por casa · faixas salariais */}
       <div className="fs-hero">

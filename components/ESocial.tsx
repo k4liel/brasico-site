@@ -10,11 +10,12 @@ import {
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
-import { HojeNoPonto, Justificativas, PontoGoverno } from "./Ponto";
+import { Justificativas, PontoGoverno } from "./Ponto";
 import { BancoPonto, PontoMes } from "./PontoMes";
+import { EquipeRH, PainelRH, Privacidade, type Filtro } from "./RhPainel";
 import { usePonto } from "./PontoDados";
 import Salarios from "./Salarios";
-import { Conferencia, SaudeFaixa, type SaudeRH } from "./RhDados";
+import { Conferencia, type SaudeRH } from "./RhDados";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // O banco devolve no máximo 1000 linhas por pedido: lê em páginas até acabar (antes os eventos mais antigos
@@ -35,19 +36,6 @@ type Consulta = { id: string; user_id: string | null; origem: string; ferramenta
 
 const ABAS = ["Eventos", "Trabalhadores", "Pedidos"] as const;
 type Aba = (typeof ABAS)[number];
-const FILTROS = ["Na equipe", "Em experiência", "Afastados", "Saíram do ponto", "Saíram", "Todos"] as const;
-type Filtro = (typeof FILTROS)[number];
-const NO_FILTRO: Record<Filtro, (s: Situacao) => boolean> = {
-  "Na equipe": (s) => ["trabalhando", "experiencia", "afastado", "ferias", "aguardando"].includes(s),
-  "Em experiência": (s) => s === "experiencia",
-  Afastados: (s) => s === "afastado" || s === "ferias",
-  "Saíram do ponto": (s) => s === "saiu_ponto",
-  Saíram: (s) => s === "saiu",
-  Todos: () => true,
-};
-// Segundo filtro: a ficha está completa? (salário, pagamento, leitura do eSocial, ponto)
-const LEITURAS = ["Todas", "Ficha completa", "Falta algo"] as const;
-type FiltroLeitura = (typeof LEITURAS)[number];
 // A Escala é página própria (/escala, item do menu logo abaixo do RH, 09/11/2026); #escala e #ponto levam até ela.
 // Seções do RH (refeitas em 10/11/2026, revisão pedida pelo dono): cinco abas no topo — Painel, Pessoas,
 // Horas (ponto e banco), Folha e salários, Dados (conferência e leitura do governo). Os endereços antigos
@@ -119,9 +107,10 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtro, setFiltro] = useState<Filtro>("Na equipe");
   const [busca, setBusca] = useState("");
-  const [mostrarTodos, setMostrarTodos] = useState(false);
-  const [filtroLeitura, setFiltroLeitura] = useState<FiltroLeitura>("Todas");
-  const [filtroUnidade, setFiltroUnidade] = useState("");
+  // Casa escolhida na aba Pessoas (os cartões das casas e a legenda do Painel filtram por ela)
+  const [casaPessoas, setCasaPessoas] = useState("");
+  // Privacidade: os valores (salário, líquido) ficam escondidos até ligar no topo do RH
+  const [verValores, setVerValores] = useState(false);
   const [secao, setSecao] = useState<Secao>(SECAO_PADRAO);
   const [visaoPessoas, setVisaoPessoas] = useState<VisaoPessoas>("lista");
   const [visaoHoras, setVisaoHoras] = useState<VisaoHoras>("ponto");
@@ -244,7 +233,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
 
   function escolherEmpresa(id: string) {
     setFiltroEmpresa(id);
-    setFiltroUnidade("");
+    setCasaPessoas("");
     gravarLocal("brasico-esocial-empresa", id);
   }
   function alternarCpf() {
@@ -278,14 +267,6 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   const bloqueado = diaDoMes() <= 7;
   const ponto = usePonto(supabase, filtroEmpresa);
 
-  const termo = busca.trim().toLowerCase();
-  const unidades = [...new Set(pessoasVistas.map((p) => p.unidade).filter(Boolean))].sort();
-  const equipe = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao))
-    .filter((p) => !filtroUnidade || p.unidade === filtroUnidade)
-    .filter((p) => filtroLeitura === "Todas" || (filtroLeitura === "Ficha completa") === (p.faltando.length === 0))
-    .filter((p) => !termo || p.nome.toLowerCase().includes(termo) || p.cpf.includes(termo.replace(/\D/g, "") || "#") || p.cargo.toLowerCase().includes(termo));
-  // Lista longa: mostra 30 e um botão para ver o resto (a busca mostra tudo)
-  const visiveis = mostrarTodos || termo ? equipe : equipe.slice(0, 30);
   // Listas das outras seções (lib/esocial/rh.ts)
   const foraAgora = pessoasVistas.filter((p) => p.situacao === "ferias" || p.situacao === "afastado");
   const emExperiencia = pessoasVistas.filter((p) => p.situacao === "experiencia" && p.fimContrato).sort((a, b) => a.fimContrato!.localeCompare(b.fimContrato!));
@@ -375,6 +356,8 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
               <Ajuda texto="Os dados vêm do eSocial, o sistema do governo onde o contador informa tudo sobre os funcionários. Aqui só lemos; nada é enviado ao governo." />
             </p>
           </div>
+          <div className="rp-topo-direita">
+          <Privacidade verCpf={verCpf} onCpf={alternarCpf} verValores={verValores} onValores={() => setVerValores((v) => !v)} />
           {empresas.length > 1 && (
             <div className="tv-unidades" role="tablist" aria-label="Empresa">
               {[{ id: "todas", nome: "Todas" }, ...empresas].map((x) => (
@@ -385,6 +368,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
               ))}
             </div>
           )}
+          </div>
         </div>
 
         {bloqueado && <p className="es-aviso">Do dia 1 ao dia 7 o governo não libera a leitura. Voltamos no dia 8; os dados são da última leitura.</p>}
@@ -424,8 +408,10 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
               {/* ===================== Painel ===================== */}
               {secao === "painel" && (
                 <>
-                  <SaudeFaixa saude={saude} cobertura={cobertura} onVer={() => irPara("dados")} />
-                  {proximo && (
+                  <PainelRH pessoas={pessoasVistas} empresas={empresas} numeros={numeros} alertas={alertas} emExperiencia={emExperiencia}
+                    calendario={calendario} movimentacoes={movimentacoes} saude={saude} comSalario={cobertura.comSalario} comLiquido={cobertura.comLiquido}
+                    ponto={ponto} rotatividadeNota={numeros.rotatividade != null && empresasVistas.every((e) => !ehAssociacao(e.nome)) ? "restaurantes 73% a 78%" : ""}
+                    primeiros={proximo ? (
                     <section className="es-bloco">
                       <div className="es-bloco-cabeca">
                         <h2><Icone nome="passos" />Primeiros passos</h2>
@@ -444,70 +430,9 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
                       {painelCpfs}
                       {painelHistorico}
                     </section>
-                  )}
-
-                  <section className="es-bloco">
-                    <div className="es-bloco-cabeca"><h2><Icone nome="atencao" />Precisa de atenção</h2>{alertas.length > 5 && <span className="muted">5 de {alertas.length}</span>}</div>
-                    {alertas.length === 0 ? (
-                      <p className="es-tudo-certo">✓ Nada pendente. Olhamos contratos de experiência, afastamentos, prazos de admissão e desligamento, fechamento da folha e certificados.</p>
-                    ) : (
-                      <ul className="es-alertas">
-                        {alertas.slice(0, 5).map((a, i) => (
-                          <li key={i} className={`es-alerta ${a.nivel}`}>
-                            <span className="es-alerta-icone" aria-hidden="true">{a.nivel === "info" ? "i" : "!"}</span>
-                            <div><strong>{a.texto}</strong><span className="muted">{a.detalhe}</span></div>
-                            {(a.pessoa || a.acao) && <button className="ghost small" onClick={() => agirAlerta(a)}>{a.pessoa ? "Ver ficha" : a.acao === "leitura" ? "Ligar" : a.acao === "dados" ? "Ver quem" : "Ver"}</button>}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-
-                  <HojeNoPonto ponto={ponto} icone={(n) => <Icone nome={n} />} onAbrirEscala={() => (window.location.href = "/escala")} />
-
-                  <div className="es-numeros">
-                    <Numero rotulo="Na equipe" valor={String(numeros.ativos)} detalhe={`+${numeros.entraram} entraram · −${numeros.sairam} saíram neste mês`}
-                      ajuda="Pessoas com admissão e sem desligamento, incluindo férias e afastados. Quem já saiu do relógio de ponto e está só esperando o desligamento no eSocial fica fora." onClick={() => { setFiltro("Na equipe"); irPara("pessoas", "lista"); }} />
-                    <Numero rotulo="Fora hoje" valor={String(foraAgora.length)} detalhe={`${numeros.ferias} de férias · ${numeros.afastados} afastados`}
-                      ajuda="Férias, licenças e afastamentos por saúde que ainda não terminaram." onClick={() => irPara("pessoas", "ausencias")} />
-                    <Numero rotulo="Em experiência" valor={String(emExperiencia.length)} detalhe={emExperiencia[0] ? `próximo acaba ${dataBR(emExperiencia[0].fimContrato)}` : "nenhum contrato a vencer"}
-                      ajuda="Contratos de experiência em andamento. Antes de acabar é preciso decidir se a pessoa fica." onClick={() => irPara("pessoas", "experiencia")} />
-                    <Numero rotulo="Rotatividade em 12 meses" valor={numeros.rotatividade == null ? "—" : `${numeros.rotatividade}%`}
-                      detalhe={numeros.rotatividade != null ? (empresasVistas.every((e) => !ehAssociacao(e.nome)) ? "Restaurantes: 73% a 78% ao ano" : "Troca da equipe no último ano") : numeros.mesesLidos < 12 ? `Precisa de 12 meses de histórico; temos ${numeros.mesesLidos}` : "Aparece quando lermos as saídas no governo"}
-                      ajuda="Quanto da equipe foi trocada nos últimos 12 meses: (entradas + saídas) ÷ 2 ÷ pessoas na equipe hoje. Falecimento, transferência e aposentadoria não contam. Em bares e restaurantes fica perto de 75% ao ano (Abrasel/Caged)." />
-                  </div>
-
-                  <div className="es-duas">
-                    <section className="es-bloco">
-                      <div className="es-bloco-cabeca"><h2><Icone nome="calendario" />Próximos prazos</h2><button className="ghost small" onClick={() => irPara("folha")}>Ver o mês</button></div>
-                      <ol className="es-calendario compacto">
-                        {calendario.filter((c) => c.estado !== "feito").slice(0, 3).map((c, i) => (
-                          <li key={i} className={`es-cal-item ${c.estado}`}>
-                            <span className="es-cal-dia"><b>{c.dia}</b><small>{nomeMes(c.data.slice(0, 7)).slice(0, 3)}</small></span>
-                            <div><strong>{c.titulo}</strong><span className="muted">{c.detalhe}</span></div>
-                          </li>
-                        ))}
-                        {calendario.every((c) => c.estado === "feito") && <li className="muted">Nada pendente neste mês.</li>}
-                      </ol>
-                    </section>
-                    <section className="es-bloco">
-                      <div className="es-bloco-cabeca"><h2><Icone nome="movimentacoes" />Movimentações recentes</h2><button className="ghost small" onClick={() => irPara("pessoas", "movimentos")}>Ver todas</button></div>
-                      {movimentacoes.length === 0 ? (
-                        <p className="muted tv-nada">Nenhuma admissão ou saída lida nos últimos 3 meses.</p>
-                      ) : (
-                        <ul className="es-lista">
-                          {movimentacoes.slice(0, 5).map((m, i) => (
-                            <li key={i}><button className="es-linha-botao" onClick={() => setAberta(m.pessoa.chave)}>
-                              <span className={`es-ponto-mov ${m.tipo}`} aria-hidden="true" />
-                              <span className="es-lista-texto"><strong>{nomeProprio(m.pessoa.nome)}</strong><span className="muted">{m.texto}</span></span>
-                              <span className="muted">{dataBR(m.quando)}</span>
-                            </button></li>
-                          ))}
-                        </ul>
-                      )}
-                    </section>
-                  </div>
-
+                  ) : null}
+                    onAlerta={agirAlerta} onPessoa={setAberta} onIr={(sec, v) => irPara(sec, v as VisaoPessoas | VisaoHoras | undefined)}
+                    onCasa={(c) => { setCasaPessoas(c); setFiltro("Na equipe"); irPara("pessoas", "lista"); }} />
                 </>
               )}
 
@@ -519,85 +444,17 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
                       <button key={v} role="tab" aria-selected={visaoPessoas === v} className={visaoPessoas === v ? "on" : ""} onClick={() => setVisaoPessoas(v)}>{r}</button>
                     ))}
                   </div>
-                  <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
-                    <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
-                  </button>
                 </div>
               )}
               {secao === "pessoas" && visaoPessoas === "lista" && (
-                <section className="es-bloco" id="es-equipe">
-                  <div className="es-bloco-cabeca">
-                    <h2><Icone nome="equipe" />Pessoas <span className="muted">{pessoasVistas.length}</span></h2>
-                  </div>
-                  <div className="es-filtros">
-                    <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome, cargo ou CPF" aria-label="Buscar na equipe" />
-                    <div className="tv-unidades">
-                      {FILTROS.map((f) => {
-                        const n = pessoasVistas.filter((p) => NO_FILTRO[f](p.situacao)).length;
-                        return (
-                          <button key={f} className={f === filtro ? "botao-painel on" : "botao-painel"} onClick={() => setFiltro(f)}>{f} <span className="muted">{n}</span></button>
-                        );
-                      })}
-                    </div>
-                    {unidades.length > 1 && (
-                      <div className="tv-unidades" role="group" aria-label="Unidade">
-                        <button className={filtroUnidade === "" ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroUnidade("")}>Todas as unidades</button>
-                        {unidades.map((u) => (
-                          <button key={u} className={filtroUnidade === u ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroUnidade(u)}>
-                            {u} <span className="muted">{pessoasVistas.filter((p) => p.unidade === u).length}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div className="tv-unidades es-filtro-leitura" role="group" aria-label="Ficha completa ou não">
-                      {LEITURAS.map((f) => {
-                        const daSituacao = pessoasVistas.filter((p) => NO_FILTRO[filtro](p.situacao));
-                        const n = f === "Todas" ? daSituacao.length : daSituacao.filter((p) => (f === "Ficha completa") === (p.faltando.length === 0)).length;
-                        return (
-                          <button key={f} className={f === filtroLeitura ? "botao-painel on" : "botao-painel"} onClick={() => setFiltroLeitura(f)}>{f} <span className="muted">{n}</span></button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  {pessoasVistas.length === 0 ? (
-                    <div className="es-vazio">
+                <EquipeRH pessoas={pessoasVistas} empresas={empresas} verCpf={verCpf} casa={casaPessoas} onCasa={setCasaPessoas}
+                  filtro={filtro} onFiltro={setFiltro} onPessoa={setAberta}
+                  vazio={<div className="es-vazio">
                       <p><strong>Nenhum funcionário ainda.</strong></p>
                       <p className="muted">O governo entrega os dados de cada pessoa pelo CPF. Adicione os CPFs da equipe e a leitura automática traz admissões, férias e saídas.</p>
                       <button className="small" onClick={() => setPainel("cpfs")}>Adicionar CPFs</button>
                       {painelCpfs}
-                    </div>
-                  ) : equipe.length === 0 ? (
-                    <p className="muted tv-nada">Ninguém neste filtro.</p>
-                  ) : (
-                    <ul className="es-equipe">
-                      {visiveis.map((p) => (
-                        <li key={p.chave}>
-                          <button className="es-pessoa" onClick={() => setAberta(p.chave)}>
-                            <span className="es-avatar" aria-hidden="true">{iniciais(p.nome)}</span>
-                            <span className="es-pessoa-nome">
-                              <strong>{p.nome ? nomeProprio(p.nome) : "Nome ainda não lido"}</strong>
-                              <span className="muted">
-                                {p.unidade && <span className="es-unidade">{p.unidade}</span>}
-                                {[titulo(p.cargo), filtroEmpresa === "todas" && empresas.length > 1 ? nomeEmpresa(p.empresa_id) : "", cpfVisivel(p.cpf, verCpf)].filter(Boolean).join(" · ")}
-                              </span>
-                            </span>
-                            <span className="es-pessoa-desde muted">
-                              {p.dtAdm ? `desde ${dataBR(p.dtAdm)}` : ""}
-                              {p.situacao !== "saiu" && (p.faltando.length
-                                ? <small className="es-nao-lida" title={`Falta: ${p.faltando.join(", ")}`}>falta {p.faltando[0]}{p.faltando.length > 1 ? ` +${p.faltando.length - 1}` : ""}</small>
-                                : <small className="es-lida">ficha completa ✓</small>)}
-                            </span>
-                            <span className={`es-selo ${p.situacao}`}>{ROTULO_SITUACAO[p.situacao]}</span>
-                            {p.alertas.length > 0 && <span className="es-pessoa-alerta" title={p.alertas[0].texto}>!</span>}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {visiveis.length < equipe.length && (
-                    <p className="es-mais"><button className="ghost small" onClick={() => setMostrarTodos(true)}>Mostrar as outras {equipe.length - visiveis.length} pessoas</button></p>
-                  )}
-                </section>
+                    </div>} />
               )}
 
               {/* ===================== Ponto e banco de horas ===================== */}
@@ -706,7 +563,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
               {/* ===================== Folha e salários ===================== */}
               {secao === "folha" && (
                 <>
-                  <Salarios pessoas={pessoasVistas} empresas={empresas} folhas={folhas} verCpf={verCpf} onAlternarCpf={alternarCpf}
+                  <Salarios pessoas={pessoasVistas} empresas={empresas} folhas={folhas} verCpf={verCpf} ver={verValores}
                     onAbrirPessoa={setAberta} nomeEmpresa={nomeEmpresa} />
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
@@ -850,15 +707,6 @@ function Ajuda({ texto }: { texto: string }) {
   );
 }
 
-function Numero({ rotulo, valor, detalhe, ajuda, onClick }: { rotulo: string; valor: string; detalhe: string; ajuda: string; onClick?: () => void }) {
-  return (
-    <div className={onClick ? "es-numero clicavel" : "es-numero"}>
-      <span className="tv-cartao-rotulo">{rotulo} <Ajuda texto={ajuda} /></span>
-      <button className="es-numero-valor" onClick={onClick} disabled={!onClick} aria-label={`${rotulo}: ${valor}`}>{valor}</button>
-      <span className="tv-cartao-detalhe">{detalhe}</span>
-    </div>
-  );
-}
 
 const PONTO_SIT: Record<string, string> = {
   batendo: "batendo ponto", parou: "parou de bater há alguns dias", inativo: "inativo no RHiD", afastado: "afastado (justificativa no RHiD)", sem_ponto: "não bate ponto (fora do RHiD)",
