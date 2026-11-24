@@ -5670,7 +5670,7 @@ body:has(.mp) { background: #f6f2ea; }
 .fs-hist-r { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
 /* Cartões das casas */
-.fs-casas { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.fs-casas { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
 .fs-casa { all: unset; box-sizing: border-box; cursor: pointer; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 2px;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--fs-r); padding: 18px 18px 16px;
   transition: border-color .2s, transform .2s var(--menu-curva, ease), box-shadow .2s; animation: fs-entra .45s var(--menu-curva, ease) both; }
@@ -5691,9 +5691,9 @@ body:has(.mp) { background: #f6f2ea; }
 .fs-sec-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 14px; }
 .fs-sec-cab h3, .fs-lista-cab h3 { font-family: var(--font-serif), Georgia, serif; font-size: 20px; font-weight: 600; color: var(--strong); margin: 0; }
 .fs-sec-cab small { font-size: 12.5px; flex: 1; min-width: 260px; }
-.fs-emps { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.fs-emps { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
 .fs-emp { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; background: var(--fs-suave); }
-.fs-emp-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fs-emp-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 10px; }
 .fs-emp-cab b { font-size: 13.5px; font-weight: 600; color: var(--strong); } .fs-emp-cab small, .fs-emp > small { font-size: 12px; }
 .fs-emp-ant { border-top: 1px solid var(--fs-linha); padding-top: 7px; }
 .fs-steps { display: flex; align-items: center; margin: 2px 0; }
@@ -5727,8 +5727,8 @@ body:has(.mp) { background: #f6f2ea; }
 .fs-liq { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fs-liq small { margin-left: 4px; font-size: 11px; }
 .fs-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line-strong); color: var(--muted); white-space: nowrap; }
-.fs-tag.folha { color: var(--fs-ouro-txt); border-color: var(--soft-line); background: var(--soft); }
-.fs-tag.contrato { color: #6f8bc0; border-color: color-mix(in srgb, #6f8bc0 45%, var(--border)); background: color-mix(in srgb, #6f8bc0 10%, var(--panel)); }
+.fs-tag-folha { color: var(--fs-ouro-txt); border-color: var(--soft-line); background: var(--soft); }
+.fs-tag-contrato { color: #6f8bc0; border-color: color-mix(in srgb, #6f8bc0 45%, var(--border)); background: color-mix(in srgb, #6f8bc0 10%, var(--panel)); }
 .fs-grupo-cab { display: flex; justify-content: space-between; gap: 12px; padding: 9px 22px; background: var(--fs-suave); border-bottom: 1px solid var(--fs-linha);
   font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .fs-grupo-cab span:first-child { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }

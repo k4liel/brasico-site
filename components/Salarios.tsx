@@ -235,7 +235,7 @@ export default function Salarios({ pessoas, empresas, folhas, verCpf, onAlternar
                         <span className="fs-liq" title={x.p.liquido ? `Líquido de ${nomeMes(x.p.liquido.mes)}` : "Nenhum pagamento lido"}>
                           {v(x.p.liquido?.valor ?? null)}{x.p.liquido && <small>{nomeMes(x.p.liquido.mes).slice(0, 3)}</small>}
                         </span>
-                        <span>{f ? <span className={`fs-tag ${f.fonte}`} title={f.fonte === "folha" ? `Salário da folha de ${nomeMes(f.mes!)}${f.proporcional ? " (mês incompleto, levado a 30 dias)" : ""}` : `Salário de contrato${x.p.salarioContratoDesde ? ` desde ${dataBR(x.p.salarioContratoDesde)}` : ""}`}>
+                        <span>{f ? <span className={`fs-tag fs-tag-${f.fonte}`} title={f.fonte === "folha" ? `Salário da folha de ${nomeMes(f.mes!)}${f.proporcional ? " (mês incompleto, levado a 30 dias)" : ""}` : `Salário de contrato${x.p.salarioContratoDesde ? ` desde ${dataBR(x.p.salarioContratoDesde)}` : ""}`}>
                           {f.fonte === "folha" ? `folha ${mesCurto(f.mes!)}` : "contrato"}</span> : <span className="fs-tag">não lido</span>}</span>
                       </button>
                     );

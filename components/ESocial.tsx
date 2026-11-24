@@ -56,7 +56,7 @@ const SECOES = [
   { id: "painel", rotulo: "Painel", icone: "inicio", titulo: "Painel", texto: "Se os dados estão em dia, o que pede atenção hoje, quem está trabalhando agora e os próximos prazos." },
   { id: "pessoas", rotulo: "Pessoas", icone: "equipe", titulo: "Pessoas", texto: "A equipe inteira com a ficha de cada um, os contratos de experiência, as entradas e saídas e quem está fora." },
   { id: "horas", rotulo: "Ponto e banco de horas", icone: "ponto", titulo: "Ponto e banco de horas", texto: "Faltas, atrasos e horas do mês pelo relógio de ponto, e o saldo do banco de horas de cada pessoa." },
-  { id: "folha", rotulo: "Folha e salários", icone: "salario", titulo: "Folha e salários", texto: "Salário de contrato e líquido pago de cada pessoa, o fechamento da folha pelo contador e o calendário do mês." },
+  { id: "folha", rotulo: "Folha e salários", icone: "salario", titulo: "Folha e salários", texto: "O salário de hoje e o líquido pago de cada pessoa, por casa, o fechamento da folha pelo contador e o calendário do mês." },
   { id: "dados", rotulo: "Dados", icone: "leitura", titulo: "Dados", texto: "De onde vem cada informação, se está atualizada, o que falta e o andamento da leitura do governo." },
 ] as const;
 type Secao = (typeof SECOES)[number]["id"];
