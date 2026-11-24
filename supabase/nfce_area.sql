@@ -155,3 +155,7 @@ begin
 end $$;
 revoke execute on function public.nfce_reforma(int) from public, anon;
 grant execute on function public.nfce_reforma(int) to authenticated;
+
+-- Mais rápido (23/11/2026): totvs_regras_conferencia lia 120 dias de itens das NFC-e (2,8 s) para o "NCM vendido sem regra";
+-- passou a ler o resumo mensal nfce_produtos_mes e virou security definer (com where notas_pode_ver no fim, porque a vista
+-- não é aberta a authenticated). A visão geral caiu de ~5 s para 1,7 s. (Aplicado no banco por troca no corpo da função.)
