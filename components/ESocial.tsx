@@ -10,9 +10,9 @@ import {
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
-import { HojeNoPonto, Justificativas, PontoGoverno, PontoMes } from "./Ponto";
+import { HojeNoPonto, Justificativas, PontoGoverno } from "./Ponto";
+import { BancoPonto, PontoMes } from "./PontoMes";
 import { usePonto } from "./PontoDados";
-import BancoHoras from "./BancoHoras";
 import Salarios from "./Salarios";
 import { Conferencia, SaudeFaixa, type SaudeRH } from "./RhDados";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -611,9 +611,9 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
                   <a className="ghost small es-olho" href="/escala">Abrir a escala →</a>
                 </div>
               )}
-              {secao === "horas" && visaoHoras === "ponto" && <PontoMes ponto={ponto} verCpf={verCpf} />}
+              {secao === "horas" && visaoHoras === "ponto" && <PontoMes ponto={ponto} verCpf={verCpf} chavesRH={chavesRH} onAbrirPessoa={setAberta} />}
               {secao === "horas" && visaoHoras === "banco" && (
-                <BancoHoras supabase={supabase} filtroEmpresa={filtroEmpresa} chavesRH={chavesRH} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
+                <BancoPonto ponto={ponto} chavesRH={chavesRH} onAbrirPessoa={setAberta} />
               )}
 
               {secao === "pessoas" && visaoPessoas === "experiencia" && (

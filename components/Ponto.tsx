@@ -258,60 +258,6 @@ export function HojeNoPonto({ ponto, icone, onAbrirEscala }: { ponto: Ponto; ico
 // =====================================================================
 // Equipe › Ponto do mês: dias, horas, faltas, atrasos e banco de horas de cada pessoa (30 dias)
 // =====================================================================
-export function PontoMes({ ponto, verCpf }: { ponto: Ponto; verCpf: boolean }) {
-  const [busca, setBusca] = useState("");
-  const [local, setLocal] = useState("");
-  if (!pronto(ponto)) return <Aguarde ponto={ponto} />;
-  const { vistas } = ponto;
-  const locais = [...new Set(vistas.map((l) => l.local || "Sem local"))].sort();
-  const termo = busca.trim().toLowerCase();
-  const linhas = vistas.filter((l) => !local || (l.local || "Sem local") === local)
-    .filter((l) => !termo || l.p.nome.toLowerCase().includes(termo) || l.cargo.toLowerCase().includes(termo))
-    .sort((a, b) => b.faltas - a.faltas || b.atraso - a.atraso || a.p.nome.localeCompare(b.p.nome));
-  const faltas = linhas.reduce((t, l) => t + l.faltas, 0);
-  const atrasos = linhas.reduce((t, l) => t + l.atraso, 0);
-  return (
-    <section className="es-bloco">
-      <div className="es-numeros">
-        <Cartao rotulo="Faltas em 30 dias" valor={`${faltas}`} detalhe="sem justificativa no RHiD" />
-        <Cartao rotulo="Atrasos em 30 dias" valor={horas(atrasos)} detalhe="somando quem está na lista" />
-        <Cartao rotulo="Pessoas no relógio" valor={`${linhas.length}`} detalhe="ativas no RHiD" />
-      </div>
-      <div className="es-filtros">
-        <input type="search" value={busca} onChange={(v) => setBusca(v.target.value)} placeholder="Buscar por nome ou cargo" aria-label="Buscar no ponto do mês" />
-        {locais.length > 1 && (
-          <div className="tv-unidades" role="group" aria-label="Local">
-            <button className={local === "" ? "botao-painel on" : "botao-painel"} onClick={() => setLocal("")}>Todos os locais</button>
-            {locais.map((u) => <button key={u} className={local === u ? "botao-painel on" : "botao-painel"} onClick={() => setLocal(u)}>{u}</button>)}
-          </div>
-        )}
-      </div>
-      <div className="tv-rolagem">
-        <table className="tv-tabela pt-tabela">
-          <thead><tr><th>Pessoa</th><th>Cargo</th><th>Local</th><th>Setor</th><th>Escala</th><th>Dias</th><th>Horas</th><th>Faltas</th><th>Atrasos</th><th>Banco de horas</th></tr></thead>
-          <tbody>
-            {linhas.map((l) => (
-              <tr key={l.k}>
-                <td>{nomeProprio(l.p.nome)}{verCpf && l.p.cpf ? <small className="muted"> · {cpfVisivel(l.p.cpf, true)}</small> : null}</td>
-                <td>{l.cargo || "—"}</td>
-                <td>{l.local}</td>
-                <td>{l.setor}</td>
-                <td className="pt-escala-nome" title={l.escala}>{l.escala || "—"}</td>
-                <td>{l.diasTrabalhados}</td>
-                <td>{horas(l.minutos)}</td>
-                <td className={l.faltas ? "es-ruim" : ""}>{l.faltas}</td>
-                <td>{l.atraso ? horas(l.atraso) : "—"}</td>
-                <td className={l.saldo != null && l.saldo < 0 ? "es-ruim" : ""}>{l.saldo == null ? "—" : horas(l.saldo)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="muted pt-nota">Contas do RHiD (apuração do ponto), dos últimos 30 dias sem contar hoje. Banco de horas: saldo no último dia lido.</p>
-    </section>
-  );
-}
-
 // =====================================================================
 // Ausências e contratos › Justificativas do RHiD (afastados hoje e as últimas lançadas)
 // =====================================================================

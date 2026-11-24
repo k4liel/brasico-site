@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hoje, somarDias } from "@/lib/esocial/rh";
 import { localESetor } from "@/lib/esocial/locais";
+import type { Afastamento, DiaEscala } from "@/lib/esocial/ponto-mes";
 
 export type PessoaPonto = {
   cliente_id: number; id: number; nome: string; cpf: string; empresa_id: number | null; departamento_id: number | null;
@@ -86,6 +87,8 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
   const [execucoes, setExecucoes] = useState<Execucao[]>([]);
   const [cruzamento, setCruzamento] = useState<Cruzamento[]>([]);
   const [ordem, setOrdem] = useState<Map<string, Ordem>>(new Map());
+  // Escala do Brasico (escala_planejada) por "cliente:pessoa:dia": a folga de verdade (o RHiD não sabe a folga)
+  const [planejada, setPlanejada] = useState<Map<string, DiaEscala>>(new Map());
   const [carregado, setCarregado] = useState(false);
   const [erro, setErro] = useState("");
   const [relogio, setRelogio] = useState(agoraHM());
@@ -95,11 +98,18 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
   const lerDias = useCallback((de: string, ate: string) =>
     tudo<DiaPonto>((a, b) => supabase.from("rhid_dias").select(CAMPOS_DIA).gte("dia", de).lte("dia", ate).order("dia").range(a, b)).then(limparDias),
   [supabase]);
+  type LinhaEscala = DiaEscala & { cliente_id: number; pessoa_id: number; dia: string };
+  const lerEscala = useCallback((de: string, ate: string) =>
+    tudo<LinhaEscala>((a, b) => supabase.from("escala_planejada").select("cliente_id,pessoa_id,dia,codigo,entrada,saida,intervalo")
+      .gte("dia", de).lte("dia", ate).neq("cliente_id", 0).neq("codigo", "").order("dia").range(a, b))
+      .then((l) => l.map((x) => [`${x.cliente_id}:${x.pessoa_id}:${x.dia}`, { codigo: x.codigo, entrada: x.entrada, saida: x.saida, intervalo: x.intervalo }] as const))
+      .catch(() => [] as (readonly [string, DiaEscala])[]),
+  [supabase]);
 
   const carregar = useCallback(async () => {
     try {
       const { de, ate } = cobertura.current;
-      const [pe, em, dp, cg, cc, es, tj, ju, re, ex, cr, di, or] = await Promise.all([
+      const [pe, em, dp, cg, cc, es, tj, ju, re, ex, cr, di, or, ep] = await Promise.all([
         tudo<PessoaPonto>((a, b) => supabase.from("rhid_pessoas").select("cliente_id,id,nome,cpf,empresa_id,departamento_id,cargo_id,centro_custo_id,escala_id")
           .eq("situacao", 1).eq("presente", true).order("nome").range(a, b)),
         supabase.from("rhid_empresas").select("cliente_id,id,cnpj"),
@@ -109,13 +119,14 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
         supabase.from("rhid_escalas").select("cliente_id,id,nome"),
         supabase.from("rhid_justificativa_tipos").select("cliente_id,id,nome"),
         supabase.from("rhid_justificativas").select("cliente_id,id,pessoa_id,tipo_id,texto,descricao,inicio,fim,aprovacao,tem_arquivo,inserido_em")
-          .gte("fim", `${somarDias(hoje(), -60)}T00:00:00`).order("inicio", { ascending: false }).limit(1500),
+          .gte("fim", `${somarDias(hoje(), -400)}T00:00:00`).order("inicio", { ascending: false }).limit(5000),
         supabase.from("rhid_relogios").select("cliente_id,id,nome,situacao,ultima_conexao,rep_p").order("nome"),
         supabase.from("rhid_execucoes").select("id,tipo,status,created_at,fim,erro").in("tipo", ["batidas", "agora"]).order("created_at", { ascending: false }).limit(6),
         tudo<Cruzamento>((a, b) => supabase.from("esocial_trabalhadores").select("empresa_id,cpf,nome,unidade,ponto_situacao,ponto_ultima_batida,ativo")
           .eq("ativo", true).order("nome").range(a, b)),
         lerDias(de, ate),
         supabase.from("rhid_escala_ordem").select("cliente_id,pessoa_id,local,setor,posicao,fora_da_escala"),
+        lerEscala(de, ate),
       ]);
       // Cadastros sem departamento nem cargo e sem nenhuma batida (ex.: "ADM", "TESTE") são contas do relógio, não pessoas
       const comPonto = new Set(di.filter((d) => d.batidas.length).map((d) => chave(d.cliente_id, d.pessoa_id)));
@@ -134,6 +145,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
       setExecucoes((ex.data ?? []) as Execucao[]);
       setCruzamento(cr);
       setDias(di);
+      setPlanejada(new Map(ep));
       setOrdem(new Map(((or.data ?? []) as (Ordem & { cliente_id: number; pessoa_id: number })[])
         .map((o) => [chave(o.cliente_id, o.pessoa_id), { local: o.local, setor: o.setor, posicao: o.posicao }])));
       setRelogio(agoraHM());
@@ -142,7 +154,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
       setErro(e instanceof Error ? e.message : "Não deu para ler o ponto.");
     }
     setCarregado(true);
-  }, [supabase, lerDias]);
+  }, [supabase, lerDias, lerEscala]);
 
   // A escala pede um trecho de dias: lê do banco só o que ainda falta
   const garantir = useCallback(async (de: string, ate: string) => {
@@ -153,12 +165,16 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
     if (!faltam.length) return;
     cobertura.current = { de: de < c.de ? de : c.de, ate: ate > c.ate ? ate : c.ate };
     try {
-      const novos = (await Promise.all(faltam.map(([a, b]) => lerDias(a, b)))).flat();
+      const [novos, escala] = await Promise.all([
+        Promise.all(faltam.map(([a, b]) => lerDias(a, b))).then((l) => l.flat()),
+        Promise.all(faltam.map(([a, b]) => lerEscala(a, b))).then((l) => l.flat()),
+      ]);
       setDias((v) => [...v, ...novos]);
+      setPlanejada((m) => new Map([...m, ...escala]));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não deu para ler esses dias.");
     }
-  }, [lerDias]);
+  }, [lerDias, lerEscala]);
 
   useEffect(() => {
     (async () => {
@@ -244,6 +260,18 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
     return m;
   }, [justificativas, n, agora]);
 
+  // Justificativas aprovadas de cada pessoa (as que afastam e as demais), para o ponto do mês
+  const afastamentosDe = useMemo(() => {
+    const m = new Map<string, Afastamento[]>();
+    for (const j of justificativas) {
+      if (j.pessoa_id == null || (j.aprovacao ?? 2) !== 2) continue;
+      const tipo = j.tipo_id != null ? n.tipo.get(chave(j.cliente_id, j.tipo_id)) ?? "" : "";
+      const k = chave(j.cliente_id, j.pessoa_id);
+      m.set(k, [...(m.get(k) ?? []), { inicio: diaFortaleza(j.inicio), fim: diaFortaleza(j.fim), tipo: tipo || j.texto, afasta: afasta(tipo || j.texto) }]);
+    }
+    return m;
+  }, [justificativas, n]);
+
   const linhas = useMemo(() => pessoas.map((p) => {
     const k = chave(p.cliente_id, p.id);
     const raiz = p.empresa_id != null ? raizDe.get(chave(p.cliente_id, p.empresa_id)) ?? "" : "";
@@ -320,7 +348,7 @@ export function usePonto(supabase: SupabaseClient, filtroEmpresa: string) {
 
   return {
     acesso, carregado, erro, lendo, ultima, atualizar, garantir, ordenar, linhas, vistas,
-    relogiosVistos, relogiosOk, cruz, just, agora, relogio,
+    relogiosVistos, relogiosOk, cruz, just, agora, relogio, planejada, afastamentosDe,
   };
 }
 
