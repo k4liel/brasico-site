@@ -251,41 +251,6 @@ function useListas(semanaId: string, pessoaId: string | null) {
   return { listas, itens, sit, carregar };
 }
 
-// Juntar duas listas da mesma pessoa numa só (os itens vão para a primeira; a segunda fica guardada como juntada)
-function JuntarListas({ listas, onMudou }: { listas: Lista[]; onMudou: () => void }) {
-  const supabase = useMemo(() => createClient(), []);
-  const abertas = listas.filter((l) => l.status !== "aprovada");
-  const [destino, setDestino] = useState("");
-  const [origem, setOrigem] = useState("");
-  const [erro, setErro] = useState("");
-  if (abertas.length < 2) return null;
-  const nome = (l: Lista) => l.titulo || `Lista de ${new Date(l.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
-  async function juntar(ev: React.FormEvent) {
-    ev.preventDefault();
-    setErro("");
-    const { error } = await supabase.rpc("compras_listas_juntar", { p_destino: destino, p_origem: origem });
-    if (error) return setErro(error.message);
-    setDestino(""); setOrigem("");
-    onMudou();
-  }
-  return (
-    <form className="cp-juntar" onSubmit={juntar}>
-      <span className="cp-juntar-rotulo">Juntar listas</span>
-      <select value={destino} onChange={(v) => setDestino(v.target.value)} aria-label="Lista que fica">
-        <option value="">Lista que fica…</option>
-        {abertas.map((l) => <option key={l.id} value={l.id}>{nome(l)}</option>)}
-      </select>
-      <span aria-hidden="true">+</span>
-      <select value={origem} onChange={(v) => setOrigem(v.target.value)} aria-label="Lista que entra nela">
-        <option value="">Lista que entra nela…</option>
-        {abertas.filter((l) => l.id !== destino).map((l) => <option key={l.id} value={l.id}>{nome(l)}</option>)}
-      </select>
-      <button className="ghost small" disabled={!destino || !origem}>Juntar</button>
-      {erro && <p className="tv-alerta">{erro}</p>}
-    </form>
-  );
-}
-
 function Listas({ semana, listas, itens, sit, carregar, gestor }: { semana: Semana; listas: Lista[]; itens: Item[]; sit: Record<string, SitLista>; carregar: () => void; gestor: boolean }) {
   const aberta = semana.status === "aberta";
   // total de todas as listas da pessoa na semana (itens que ficaram, quantidade × preço)
@@ -302,9 +267,8 @@ function Listas({ semana, listas, itens, sit, carregar, gestor }: { semana: Sema
         <div className={compradas ? "cp-soma-ok" : ""}><span className="cp-soma-rotulo">Já compradas</span><b>{compradas}<small> de {listas.length}</small></b></div>
       </div>
       {listas.length > 1 && (
-        <p className="muted cp-listas-resumo">Confira e aprove cada uma; se preferir, junte duas numa só ou mande uma lista para outra semana.</p>
+        <p className="muted cp-listas-resumo">Confira e aprove cada uma; se precisar, mande uma lista para outra semana.</p>
       )}
-      {aberta && <JuntarListas listas={listas} onMudou={carregar} />}
       {listas.map((l) => (
         <EditorLista key={l.id} lista={l} itens={itens.filter((i) => i.lista_id === l.id)} abertaInicial={listas.length === 1 && !compra(sit[l.id])}
           podeEditar={aberta && (gestor || l.status !== "aprovada")} onMudou={carregar} gestor={gestor} sit={sit[l.id]} semanaAberta={aberta} semanaInicio={semana.inicio} />
