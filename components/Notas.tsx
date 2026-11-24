@@ -8,7 +8,8 @@ import NotasServico, { LeituraNfse } from "./NotasServico";
 import NotasConsumidor, { LeituraNfce } from "./NotasConsumidor";
 import NotasFrete, { LeituraCte } from "./NotasFrete";
 import ConferenciaCompras from "./ConferenciaCompras";
-import ApuracaoIcms from "./ApuracaoIcms";
+import ProdutosTotvs from "./ProdutosTotvs";
+import { VisaoGeralNfce, ImpostosNfce, PendenciasNfce, ReformaNfce } from "./NfcePainel";
 
 // Notas fiscais (Operação · fase 1): as NF-e recebidas pelas empresas (SEFAZ) e as notas avulsas.
 // Abas: NF-e (produtos: por mês e por CNPJ, com a nota aberta e o PDF), NFS-e (serviços emitidos e tomados, do
@@ -55,7 +56,13 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
   const [compras, setCompras] = useState(false); // setor de compras: só NF-e, índice e nota avulsa
   const [nome, setNome] = useState("");
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [aba, setAba] = useState<"notas" | "nfse" | "nfce" | "cte" | "icms" | "avulsa" | "sefaz">("notas");
+  // Menu lateral (23/11/2026, prévia "A · lateral"): a visão fica no endereço (#nfce-geral, #nfe-notas…)
+  const [vista, setVistaEstado] = useState<string>("");
+  const setVista = useCallback((v: string) => {
+    setVistaEstado(v);
+    try { history.replaceState(null, "", `#${v.replace(":", "-")}`); } catch { /* sem histórico */ }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const carregarEmpresas = useCallback(async () => {
     const { data } = await supabase.from("notas_empresas").select("*").order("nome");
@@ -73,6 +80,9 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
       }
       setAcesso(true);
       carregarEmpresas();
+      const h = window.location.hash.replace("#", "").replace("-", ":");
+      const ok = MENU.flatMap((g) => g.itens).find((i) => i.id === h && (papel !== "compras" || i.compras));
+      setVistaEstado(ok ? h : papel === "compras" ? "nfe:notas" : "nfce:geral");
     })();
   }, [supabase, userId, carregarEmpresas]);
 
@@ -85,49 +95,87 @@ export default function Notas({ userId, userEmail }: { userId: string; userEmail
     );
   }
 
+  const menu = MENU.map((g) => ({ ...g, itens: g.itens.filter((i) => !compras || i.compras) })).filter((g) => g.itens.length);
+  const atual = MENU.flatMap((g) => g.itens.map((i) => ({ ...i, grupo: g.grupo }))).find((i) => i.id === vista);
+
   return (
     <div className="pagina">
       {compras ? <TopoSimples email={userEmail} nome={nome} area="Notas fiscais" outra={[{ href: "/compras", nome: "Compras" }, { href: "/precos", nome: "Índice de preços" }]} />
         : <Topo email={userEmail} ativo="notas" />}
-      <main className="miolo tv es nf nf-larga">
-        <div className="es-topo">
-          <div>
-            <span className="es-sobre">Fiscal e Contábil</span>
-            <h1>Notas fiscais</h1>
-            <p>{compras ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Nota avulsa é a compra sem nota, lançada com foto. Clique numa nota para ver os detalhes."
-              : "NF-e são as notas de produtos (compras), que chegam da SEFAZ. NFS-e são as notas de serviço emitidas e tomadas, do Portal Nacional. NFC-e são as notas das vendas dos restaurantes, do caixa TOTVS. CT-e são os fretes, da SEFAZ. Nota avulsa é a compra sem nota, lançada com foto. Tudo se atualiza sozinho. Clique numa nota para ver os detalhes."}</p>
-          </div>
-        </div>
-
-        <div className="cp-abas" role="tablist">
-          <button role="tab" aria-selected={aba === "notas"} className={aba === "notas" ? "on" : ""} onClick={() => setAba("notas")}>NF-e (produtos)</button>
-          {!compras && <button role="tab" aria-selected={aba === "nfse"} className={aba === "nfse" ? "on" : ""} onClick={() => setAba("nfse")}>NFS-e (serviços)</button>}
-          {!compras && <button role="tab" aria-selected={aba === "nfce"} className={aba === "nfce" ? "on" : ""} onClick={() => setAba("nfce")}>NFC-e (vendas)</button>}
-          {!compras && <button role="tab" aria-selected={aba === "cte"} className={aba === "cte" ? "on" : ""} onClick={() => setAba("cte")}>CT-e (fretes)</button>}
-          {!compras && <button role="tab" aria-selected={aba === "icms"} className={aba === "icms" ? "on" : ""} onClick={() => setAba("icms")}>Apuração ICMS</button>}
-          <button role="tab" aria-selected={aba === "avulsa"} className={aba === "avulsa" ? "on" : ""} onClick={() => setAba("avulsa")}>Nota avulsa</button>
-          {!compras && <button role="tab" aria-selected={aba === "sefaz"} className={aba === "sefaz" ? "on" : ""} onClick={() => setAba("sefaz")}>Leituras</button>}
-        </div>
-
-        {aba === "notas" && <ListaNotas empresas={empresas} podeConferir={!compras} />}
-        {aba === "nfse" && !compras && <NotasServico />}
-        {aba === "nfce" && !compras && <NotasConsumidor />}
-        {aba === "cte" && !compras && <NotasFrete />}
-        {aba === "icms" && !compras && <ApuracaoIcms />}
-        {aba === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setAba("notas")} />}
-        {aba === "sefaz" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /><LeituraCte /><LeituraNfce /></>}
+      <main className="miolo tv es nf nf-larga nt">
+        <aside className="nt-menu" aria-label="Notas fiscais">
+          <div className="nt-menu-titulo"><span>Fiscal e Contábil</span><b>Notas fiscais</b></div>
+          {menu.map((g) => (
+            <nav key={g.grupo} className="nt-grupo">
+              <span className="nt-grupo-nome">{g.grupo}</span>
+              {g.itens.map((i) => (
+                <button key={i.id} className={vista === i.id ? "on" : ""} aria-current={vista === i.id ? "page" : undefined} onClick={() => setVista(i.id)}>{i.nome}</button>
+              ))}
+            </nav>
+          ))}
+        </aside>
+        <section className="nt-conteudo">
+          {atual && (
+            <header className="nt-cab">
+              <span className="es-sobre">{atual.grupo}</span>
+              <h1>{atual.titulo ?? atual.nome}</h1>
+              <p>{compras && atual.id === "nfe:notas" ? "As notas de compra (NF-e) chegam da SEFAZ todo dia. Clique numa nota para ver os detalhes." : atual.explica}</p>
+            </header>
+          )}
+          {vista === "nfce:geral" && !compras && <VisaoGeralNfce irPara={setVista} />}
+          {vista === "nfce:notas" && !compras && <NotasConsumidor />}
+          {vista === "nfce:produtos" && !compras && <ProdutosTotvs />}
+          {vista === "nfce:impostos" && !compras && <ImpostosNfce />}
+          {vista === "nfce:pendencias" && !compras && <PendenciasNfce irPara={setVista} />}
+          {vista === "nfce:reforma" && !compras && <ReformaNfce />}
+          {vista === "nfe:notas" && <ListaNotas empresas={empresas} podeConferir={!compras} modoFixo="notas" />}
+          {vista === "nfe:conferencia" && !compras && <ListaNotas empresas={empresas} podeConferir modoFixo="conferencia" />}
+          {vista === "nfse:notas" && !compras && <NotasServico />}
+          {vista === "cte:notas" && !compras && <NotasFrete />}
+          {vista === "avulsa" && <NotaAvulsa empresas={empresas} onPronto={() => setVista("nfe:notas")} />}
+          {vista === "leituras" && !compras && <><LeituraSefaz empresas={empresas} onMudou={carregarEmpresas} /><LeituraNfse /><LeituraCte /><LeituraNfce /></>}
+        </section>
       </main>
     </div>
   );
 }
 
+// Menu lateral da página de notas: grupos e visões (compras = o que o setor de compras vê)
+type ItemMenu = { id: string; nome: string; titulo?: string; explica: string; compras?: boolean };
+const MENU: { grupo: string; itens: ItemMenu[] }[] = [
+  { grupo: "Vendas · NFC-e", itens: [
+    { id: "nfce:geral", nome: "Visão geral", titulo: "Vendas e impostos", explica: "As notas das vendas dos restaurantes (NFC-e do caixa TOTVS): quanto foi vendido com nota, os impostos destacados, o que precisa corrigir e cada casa. Atualiza a cada minuto." },
+    { id: "nfce:notas", nome: "Notas", titulo: "NFC-e emitidas", explica: "Cada venda com a nota fiscal: autorizadas, canceladas, sem autorização, sem nota (assinadas) e vendas canceladas, por dia. Clique numa nota para ver os itens e o PDF." },
+    { id: "nfce:produtos", nome: "Produtos", titulo: "Produtos e regras fiscais", explica: "O cadastro de cada produto no Chef Web, a regra fiscal do NCM em cada casa, as vendas e o que corrigir." },
+    { id: "nfce:impostos", nome: "Impostos do mês", titulo: "Impostos das vendas", explica: "ICMS, PIS, Cofins e o teste da CBS/IBS destacados nas NFC-e, mês a mês, e a apuração do ICMS (vendas menos o crédito das compras)." },
+    { id: "nfce:pendencias", nome: "Pendências", titulo: "O que precisa ser corrigido", explica: "Tudo o que a conferência achou nas notas, no cadastro do Chef Web e nas regras fiscais, separado por quem resolve." },
+    { id: "nfce:reforma", nome: "Reforma 2027", titulo: "Reforma tributária", explica: "Como os itens vendidos saem na classificação da reforma (cClassTrib) e uma simulação da CBS de 2027 com a regra oficial de bares e restaurantes." },
+  ] },
+  { grupo: "Compras · NF-e", itens: [
+    { id: "nfe:notas", nome: "Notas de compra", titulo: "NF-e de compra", explica: "As notas de compra (NF-e) recebidas por todas as empresas do grupo, da SEFAZ, por mês e por CNPJ. Clique numa nota para ver os itens e o PDF.", compras: true },
+    { id: "nfe:conferencia", nome: "Conferência fiscal", titulo: "Conferência das notas de compra", explica: "Os campos fiscais do XML de cada nota conferidos com regras fixas: total, CFOP, NCM, ICMS, ST, IBS/CBS, notas em dobro e canceladas." },
+  ] },
+  { grupo: "Serviços · NFS-e", itens: [
+    { id: "nfse:notas", nome: "Notas de serviço", titulo: "NFS-e emitidas e tomadas", explica: "As notas de serviço do Portal Nacional: as que as empresas do grupo emitiram e as que receberam, com ISS e retenções." },
+  ] },
+  { grupo: "Fretes · CT-e", itens: [
+    { id: "cte:notas", nome: "Fretes", titulo: "CT-e (fretes)", explica: "Os conhecimentos de transporte em que uma empresa do grupo aparece, do Ambiente Nacional do CT-e, ligados às NF-e transportadas." },
+  ] },
+  { grupo: "Outros", itens: [
+    { id: "avulsa", nome: "Nota avulsa", titulo: "Lançar nota avulsa", explica: "Compra sem NF-e (cupom, recibo), lançada com foto e itens.", compras: true },
+    { id: "leituras", nome: "Leituras", titulo: "Leituras automáticas", explica: "De onde vem cada nota e quando foi a última leitura: SEFAZ (NF-e), Portal Nacional (NFS-e), caixa TOTVS (NFC-e) e CT-e." },
+  ] },
+];
+
 // ---------------------------------------------------------------------
 // Aba Notas: escolha do mês, da empresa e busca; lista por mês e CNPJ, com páginas
 // ---------------------------------------------------------------------
-function ListaNotas({ empresas, podeConferir }: { empresas: Empresa[]; podeConferir: boolean }) {
+function ListaNotas({ empresas, podeConferir, modoFixo }: { empresas: Empresa[]; podeConferir: boolean; modoFixo?: "notas" | "conferencia" }) {
   const supabase = useMemo(() => createClient(), []);
-  // Notas (a lista) ou Conferência fiscal (só sócios: lê os campos fiscais do XML, components/ConferenciaCompras.tsx)
-  const [modo, setModo] = useState<"notas" | "conferencia">("notas");
+  // Notas (a lista) ou Conferência fiscal (só sócios: lê os campos fiscais do XML, components/ConferenciaCompras.tsx).
+  // Com o menu lateral, a visão vem de fora (modoFixo) e o seletor some.
+  const [modo, setModo] = useState<"notas" | "conferencia">(modoFixo ?? "notas");
+  useEffect(() => { if (modoFixo) setModo(modoFixo); }, [modoFixo]);
   const [meses, setMeses] = useState<Mes[]>([]);
   const [mes, setMes] = useState("");
   const [mesesProntos, setMesesProntos] = useState(false);
@@ -215,7 +263,7 @@ function ListaNotas({ empresas, podeConferir }: { empresas: Empresa[]; podeConfe
 
   return (
     <>
-      {podeConferir && (
+      {podeConferir && !modoFixo && (
         <div className="nf-modos">
           <div className="nc-modos" role="tablist" aria-label="Visão">
             <button role="tab" aria-selected={modo === "notas"} className={modo === "notas" ? "on" : ""} onClick={() => setModo("notas")}>Notas</button>

@@ -15,7 +15,7 @@ type Fora = {
 };
 type Cobertura = { dias_venda: number; dias_lidos: number; total_caixa: number; total_sem_nota: number | null; falta_de: string | null; falta_ate: string | null };
 type Empresa = {
-  cnpj: string; nome: string; regime: string | null; debito: number; debito_taxa: number; credito_insumos: number; icms_ativo: number;
+  cnpj: string; nome: string; casas_nome?: string | null; regime: string | null; debito: number; debito_taxa: number; credito_insumos: number; icms_ativo: number;
   credito_ativo_mes: number; credito_cte: number; difal: number; antecipacao: number; debito_estimado_faltante: number;
   cobertura: Cobertura | null; vendido: { valor: number; icms: number } | null;
   debitos: Debito[]; creditos: Credito[]; fora: Fora[]; cte: { ctes: number; valor: number; icms: number } | null;
@@ -111,7 +111,7 @@ export default function ApuracaoIcms() {
             return (
               <section key={e.cnpj} className="ap-empresa">
                 <header className="ap-cabeca">
-                  <div><h3>{e.nome}</h3><small>CNPJ {cnpjMask(e.cnpj)}{e.regime ? ` · ${e.regime.toLowerCase()}` : ""}</small></div>
+                  <div><h3>{e.casas_nome || e.nome}</h3><small>{e.casas_nome ? `${e.nome} · ` : ""}CNPJ {cnpjMask(e.cnpj)}{e.regime ? ` · ${e.regime.toLowerCase()}` : ""}</small></div>
                   {c && <span className={falta ? "ap-cob falta" : "ap-cob"}>{num(c.dias_lidos)} de {num(c.dias_venda)} dias com NFC-e lidas</span>}
                 </header>
 

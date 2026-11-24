@@ -153,7 +153,9 @@ begin
           'debito_estimado_faltante', case when coalesce((p.cobertura->>'total_caixa')::numeric, 0) - coalesce((p.cobertura->>'total_sem_nota')::numeric, 0) > 0
             then round(coalesce((p.cobertura->>'total_sem_nota')::numeric, 0) * coalesce((p.vendido->>'icms')::numeric, 0)
               / ((p.cobertura->>'total_caixa')::numeric - coalesce((p.cobertura->>'total_sem_nota')::numeric, 0)), 2) else 0 end,
-          'credito_ativo_mes', round(p.icms_ativo / 48, 2))
+          'credito_ativo_mes', round(p.icms_ativo / 48, 2),
+          -- nome da casa (Cicchetti Pipa, Hotel Filha da Lua) ao lado da empresa
+          'casas_nome', (select string_agg(u.nome, ' + ' order by u.ordem) from casa c2 join public.totvs_unidades u on u.id = c2.unidade_id where c2.cnpj = p.cnpj))
         order by p.debito desc) from por_empresa p), '[]')
   ) into r;
   return r;

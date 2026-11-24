@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import JanelaPdfNota from "./JanelaPdfNota";
-import ConferenciaFiscal from "./ConferenciaFiscal";
-import ProdutosTotvs from "./ProdutosTotvs";
 
 // NFC-e da página Notas: as notas fiscais de consumidor das vendas dos restaurantes, que a TOTVS manda junto
 // com cada venda (supabase/nfce.sql). Atualiza sozinho: a leitura ao vivo da TOTVS roda a cada minuto.
@@ -101,8 +99,7 @@ export default function NotasConsumidor() {
   const [mes, setMes] = useState("");
   const [unidade, setUnidade] = useState("");
   const [grupo, setGrupo] = useState("autorizada");
-  // Duas visões: as vendas (por grupo e dia) ou a conferência fiscal dos itens (components/ConferenciaFiscal.tsx)
-  const [modo, setModo] = useState<"vendas" | "conferencia" | "produtos">("vendas");
+  // Visão "Notas" da área de NFC-e (o menu lateral fica em components/Notas.tsx; as outras visões em NfcePainel.tsx e ProdutosTotvs.tsx)
   const [busca, setBusca] = useState("");
   const [termo, setTermo] = useState("");
   const [pagina, setPagina] = useState(0);
@@ -215,7 +212,7 @@ export default function NotasConsumidor() {
   return (
     <div className="nc">
       <div className="nc-filtros">
-        {modo !== "produtos" && <><select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
+        <><select value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
           {!listaMeses.length && <option value="">Sem notas ainda</option>}
           {listaMeses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
         </select>
@@ -224,16 +221,11 @@ export default function NotasConsumidor() {
           {casas.map((u) => (
             <button key={u.id} role="tab" aria-selected={unidade === u.id} className={unidade === u.id ? "on" : ""} onClick={() => setUnidade(u.id)}>{u.nome}</button>
           ))}
-        </div></>}
-        <div className="nc-modos" role="tablist" aria-label="Visão">
-          <button role="tab" aria-selected={modo === "vendas"} className={modo === "vendas" ? "on" : ""} onClick={() => setModo("vendas")}>Vendas</button>
-          <button role="tab" aria-selected={modo === "conferencia"} className={modo === "conferencia" ? "on" : ""} onClick={() => setModo("conferencia")}>Conferência fiscal</button>
-          <button role="tab" aria-selected={modo === "produtos"} className={modo === "produtos" ? "on" : ""} onClick={() => setModo("produtos")}>Produtos</button>
-        </div>
+        </div></>
+
       </div>
 
-      {modo === "produtos" ? <ProdutosTotvs />
-        : modo === "conferencia" ? <ConferenciaFiscal mes={mes} fimMes={fimMes} unidade={unidade} nomeUnidade={nomeUnidade} /> : (<>
+      {(<>
       {!unidade && pdvSv && pdvSv.total > 0 && (
         <div className="nc-aviso">
           <span className="nc-aviso-marca" aria-hidden="true">!</span>
