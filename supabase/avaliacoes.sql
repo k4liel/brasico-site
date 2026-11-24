@@ -186,7 +186,8 @@ begin
     end if;
 
     with dados as (
-      select i->>'id' as externo_id, i from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) i
+      -- a mesma avaliação pode vir duas vezes na leitura (o site repete ao carregar mais): fica a primeira
+      select distinct on (i->>'id') i->>'id' as externo_id, i from jsonb_array_elements(coalesce(p_itens, '[]'::jsonb)) i
        where coalesce(i->>'id', '') <> ''
     ), gravadas as (
       insert into public.avaliacoes as a (fonte_id, externo_id, autor, autor_info, pais, nota, escala, titulo, texto, positivo,

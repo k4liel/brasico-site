@@ -190,7 +190,8 @@
       const iTipo = linhas.findIndex((l) => /^Tipo de viagem:?$/i.test(l));
       const iResp = linhas.findIndex((l) => /^Resposta de /i.test(l));
       const corpo = c.querySelector('[data-test-target="review-body"], [data-automation="reviewText"]');
-      return { id, autor: linhas[0] || null, autor_info: linhas.find((l) => /contribui[çc]/.test(l)) || null,
+      const perfil = [...c.querySelectorAll("a[href^='/Profile/']")].map((a) => a.textContent.trim()).find(Boolean);
+      return { id, autor: perfil || linhas[0] || null, autor_info: linhas.find((l) => /contribui[çc]/.test(l)) || null,
         nota: numero(bolhas), titulo: c.querySelector('[data-test-target="review-title"]')?.innerText.trim() || null,
         texto: limpa((corpo?.innerText ?? corpo?.textContent)?.replace(/\s*Leia mais$/, "")), data: dataPt(feita), aproximada: !/\(\d{1,2} de /.test(feita || ""), data_texto: feita,
         estadia: iEst >= 0 ? linhas[iEst + 1] : null, perfil: iTipo >= 0 ? linhas[iTipo + 1] : null,
@@ -269,7 +270,8 @@
       if (!mais) break;
       mais.click(); await dormir(2000);
     }
-    const itens = [...dlg.querySelectorAll("article")].slice(0, max).map((a) => {
+    const vistos = new Set();
+    const itens = [...dlg.querySelectorAll("article")].filter((a) => !a.id || (!vistos.has(a.id) && vistos.add(a.id))).slice(0, max).map((a) => {
       const h3 = a.querySelector("h3")?.innerText || "";
       const cab = [...a.querySelectorAll("h4 ~ div, h4 + div")].map((e) => e.innerText.trim());
       const dataTxt = [...a.querySelectorAll("div")].map((e) => e.innerText.trim()).find((x) => /^[A-Z][a-z]{2} \d{1,2}, \d{4}$/.test(x)) || null;

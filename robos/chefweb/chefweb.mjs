@@ -90,6 +90,19 @@ async function lerGrade(page, nome) {
 }
 
 export async function lerChefWeb({ chromium, rpc, segredo, log, forcar = false }) {
+  // Avaliações (24/11/2026): o robô do PMS só chama este arquivo depois de cada rodada; daqui sai também a leitura das
+  // avaliações (robos/avaliacoes/avaliacoes.mjs, baixado do GitHub na hora). Falha lá não atrapalha o Chef Web.
+  try {
+    const r = await fetch("https://api.github.com/repos/k4liel/brasico-site/contents/robos/avaliacoes/avaliacoes.mjs?ref=main",
+      { headers: { Accept: "application/vnd.github.raw", "User-Agent": "brasico-pms-robo" } });
+    if (!r.ok) throw new Error(`GitHub ${r.status}`);
+    const { writeFileSync } = await import("node:fs");
+    const { pathToFileURL } = await import("node:url");
+    writeFileSync("/tmp/avaliacoes.mjs", await r.text());
+    const m = await import(`${pathToFileURL("/tmp/avaliacoes.mjs").href}?v=${Date.now()}`);
+    await m.lerAvaliacoes({ chromium, rpc, segredo, log });
+  } catch (e) { log(`[avaliacoes] não rodou: ${String(e?.message || e).slice(0, 200)}`); }
+
   const c = await rpc("chefweb_robo_comecar", { p_segredo: segredo, p_forcar: forcar });
   if (!c?.fazer) { if (c?.motivo && c.motivo !== "já leu hoje") log(`[chefweb] não leu: ${c.motivo}`); return; }
   const exec = c.execucao;
