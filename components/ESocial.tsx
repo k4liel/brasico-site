@@ -363,7 +363,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   return (
     <div className="pagina">
       <Topo email={userEmail} ativo="esocial" />
-      <main className="miolo es es-sistema">
+      <main className="miolo es es-sistema es-largo">
         {/* Cabeçalho do sistema de RH */}
         <div className="es-topo">
           <div>
