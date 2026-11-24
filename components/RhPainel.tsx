@@ -12,6 +12,8 @@ import { cpfVisivel, dataBR, nomeCurto, nomeMes, ROTULO_SITUACAO, tempoDeCasa, t
 import { localDaUnidadeRH } from "@/lib/esocial/locais";
 import { estadoEsocial, estadoPonto, quando, type SaudeRH } from "./RhDados";
 import type { Ponto } from "./PontoDados";
+import { classificarDia } from "@/lib/esocial/ponto-mes";
+import { hoje } from "@/lib/esocial/rh";
 
 const MINUSCULAS = new Set(["de", "da", "do", "das", "dos", "e", "di", "del", "von", "van"]);
 export const nomeProprio = (s: string) =>
@@ -86,19 +88,27 @@ export function PainelRH({ pessoas, empresas, numeros, alertas, emExperiencia, c
   const ultimaEs = saude?.esocial.map((e) => e.ultima_resposta).filter(Boolean).sort().at(-1) ?? null;
   const fichas = comSalario >= numeros.ativos * 0.95 ? "ok" : comSalario >= numeros.ativos * 0.8 ? "atencao" : "erro";
 
-  // Hoje no ponto, por casa (pela situação de agora de cada pessoa no relógio)
+  // Hoje no ponto, por casa, pela mesma regra do Ponto do mês (relógio × escala do Brasico; lib/esocial/ponto-mes.ts):
+  // bateu ponto, tinha de trabalhar e ainda não bateu, e quem passou 10 min da entrada sem bater (atrasado)
+  const { vistas, planejada, afastamentosDe, relogio } = ponto;
   const pontoCasas = useMemo(() => {
+    const agora = hoje();
+    const [h, mi] = relogio.split(":").map(Number);
     const m = new Map<string, { trab: number; atr: number; escala: number }>();
-    for (const l of ponto.vistas) {
+    for (const l of vistas) {
       if (l.afastado || l.setor === "Afastados") continue;
+      const d = classificarDia(agora, agora, l.dias.get(agora), planejada.get(`${l.p.cliente_id}:${l.p.id}:${agora}`), afastamentosDe.get(l.k) ?? [], true);
       const c = m.get(l.local || "Sem local") ?? { trab: 0, atr: 0, escala: 0 };
-      if (l.estado === "Trabalhando" || l.estado === "Já saiu") { c.trab++; c.escala++; }
-      else if (l.estado === "Atrasado") { c.atr++; c.escala++; }
-      else if (l.estado === "Entra mais tarde") c.escala++;
+      if (d.tipo === "trab" || d.tipo === "atr") { c.trab++; c.escala++; }
+      else if (d.tipo === "hoje") {
+        c.escala++;
+        const e = d.previsto.match(/^(\d{2}):(\d{2})/);
+        if (e && h * 60 + mi >= Number(e[1]) * 60 + Number(e[2]) + 10) c.atr++;
+      }
       m.set(l.local || "Sem local", c);
     }
     return [...m.entries()].filter(([, c]) => c.escala > 0).sort((a, b) => b[1].escala - a[1].escala);
-  }, [ponto.vistas]);
+  }, [vistas, planejada, afastamentosDe, relogio]);
   const bateram = pontoCasas.reduce((t, [, c]) => t + c.trab, 0), comEscala = pontoCasas.reduce((t, [, c]) => t + c.escala, 0);
   const prazos = calendario.filter((c) => c.estado !== "feito").slice(0, 4);
   const mostrados = todosAlertas ? alertas : alertas.slice(0, 5);
@@ -110,7 +120,7 @@ export function PainelRH({ pessoas, empresas, numeros, alertas, emExperiencia, c
         <section className="fs-card rp-equipe">
           <span className="fs-eyebrow">Na equipe hoje</span>
           <button type="button" className="rp-grande" onClick={() => onIr("pessoas", "lista")}>{numeros.ativos} <small>pessoa{numeros.ativos === 1 ? "" : "s"}</small></button>
-          <span className="muted">+{numeros.entraram} entraram · −{numeros.sairam} saíram em {nomeMes(new Date().toISOString().slice(0, 7)).split("/")[0]}{emExperiencia.length ? ` · ${emExperiencia.length} em experiência` : ""}</span>
+          <span className="muted">Em {nomeMes(hoje().slice(0, 7)).split("/")[0]}: {numeros.entraram ? `${numeros.entraram} entrada${numeros.entraram === 1 ? "" : "s"}` : "nenhuma entrada"} · {numeros.sairam ? `${numeros.sairam} saída${numeros.sairam === 1 ? "" : "s"}` : "nenhuma saída"}</span>
           <div className="fs-sub">
             <button type="button" onClick={() => onIr("pessoas", "ausencias")}><b>{numeros.ferias + numeros.afastados}</b><small>fora hoje ({numeros.ferias} férias · {numeros.afastados} afastados)</small></button>
             <button type="button" onClick={() => onIr("pessoas", "experiencia")}><b>{emExperiencia.length}</b><small>{emExperiencia[0] ? `em experiência · próximo acaba ${dataBR(emExperiencia[0].fimContrato)}` : "em experiência"}</small></button>
@@ -173,7 +183,7 @@ export function PainelRH({ pessoas, empresas, numeros, alertas, emExperiencia, c
                   <small>{c.trab}/{c.escala}</small>
                 </div>
               ))}
-              <small className="muted rp-leg"><i style={{ background: "var(--rp-ok)" }} />bateram ponto <i style={{ background: "var(--rp-amber)" }} />atrasados (sem batida 10 min depois da entrada)</small>
+              <small className="muted rp-leg"><i style={{ background: "var(--rp-ok)" }} />bateram ponto <i style={{ background: "var(--rp-amber)" }} />atrasados (sem batida 10 min depois da entrada) · cruzado com a escala do Brasico</small>
             </div>
           )}
         </section>
