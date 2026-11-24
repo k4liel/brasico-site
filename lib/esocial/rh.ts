@@ -20,6 +20,8 @@ export type TrabalhadorRH = {
 };
 // Um pagamento do S-1210 (view rh_pagamentos): líquido pago, mês de referência e tipo
 export type PagamentoRH = { empresa_id: string; cpf: string; dt_pgto: string | null; per_ref: string | null; tipo: string; vr_liq: number };
+// Salário do último mês da folha (S-1200, rubrica 8781 do contador; view rh_salario_folha, desde 23/11/2026)
+export type SalarioFolhaRH = { empresa_id: string; cpf: string; per_apur: string; dias: number; salario: number | string; proporcional: boolean };
 export type ExecucaoRH = {
   id: string; empresa_id: string; ambiente: number; tipo: string; parametros: Record<string, unknown>; origem: string; status: string;
   cd_resposta: number | null; desc_resposta: string; resultado: Record<string, unknown>; erro: string; created_at: string;
@@ -32,7 +34,11 @@ export type Pessoa = {
   chave: string; empresa_id: string; cpf: string; nome: string; matricula: string; cargo: string; unidade: string; vinculo: string;
   dtAdm: string | null; dtDeslig: string | null; motivoSaida: string | null; codSaida: string | null; fimContrato: string | null;
   afastamento: { desde: string; motivo: string; saude: boolean } | null;
-  salario: string | null; situacao: Situacao; eventos: EventoRH[]; alertas: Alerta[];
+  // salario = o salário de hoje: o da folha quando ela é mais nova que o contrato (os reajustes do mínimo e da
+  // convenção não chegam como S-2206), senão o de contrato. salarioFonte diz de onde veio.
+  salario: string | null; salarioContrato: string | null; salarioContratoDesde: string | null;
+  salarioFonte: { fonte: "folha" | "contrato"; mes: string | null; proporcional: boolean } | null;
+  situacao: Situacao; eventos: EventoRH[]; alertas: Alerta[];
   // Pagamentos (S-1210), do mais novo ao mais velho, e o líquido do último mês pago (só os mensais somados)
   pagamentos: PagamentoRH[]; liquido: { mes: string; valor: number } | null;
   pontoSituacao: string | null;
@@ -120,7 +126,19 @@ function validos(eventos: EventoRH[]) {
 // ---------------------------------------------------------------------
 // Pessoas
 // ---------------------------------------------------------------------
-export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[], pagamentos: PagamentoRH[] = []): Pessoa[] {
+// Salário de hoje: a folha vale quando o mês dela é o mesmo ou depois do mês do contrato (admissão ou alteração)
+export function salarioAtual(contrato: string | null, contratoDesde: string | null, folha: SalarioFolhaRH | undefined): {
+  salario: string | null; fonte: Pessoa["salarioFonte"];
+} {
+  const vFolha = folha && Number(folha.salario) > 0 ? Number(folha.salario).toFixed(2) : null;
+  if (vFolha && (!contrato || !Number(contrato) || !contratoDesde || folha!.per_apur >= contratoDesde.slice(0, 7)))
+    return { salario: vFolha, fonte: { fonte: "folha", mes: folha!.per_apur, proporcional: !!folha!.proporcional } };
+  if (contrato && Number(contrato)) return { salario: contrato, fonte: { fonte: "contrato", mes: contratoDesde?.slice(0, 7) ?? null, proporcional: false } };
+  return { salario: null, fonte: null };
+}
+
+export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[], pagamentos: PagamentoRH[] = [], salariosFolha: SalarioFolhaRH[] = []): Pessoa[] {
+  const folhaDe = new Map(salariosFolha.map((s) => [`${s.empresa_id}:${s.cpf}`, s]));
   const pagosDe = new Map<string, PagamentoRH[]>();
   for (const g of pagamentos) {
     const k = `${g.empresa_id}:${g.cpf}`;
@@ -145,6 +163,9 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
     const reintegrado = ultimo("S-2298");
     const comCargo = [...evs].reverse().find((e) => e.resumo?.nmCargo);
     const comSalario = [...evs].reverse().find((e) => e.resumo?.vrSalFx);
+    const salarioContrato = comSalario?.resumo.vrSalFx ?? null;
+    const salarioContratoDesde = comSalario ? comSalario.resumo.dtAlteracao || comSalario.resumo.dtAdm || dataDoFato(comSalario) : null;
+    const atual = salarioAtual(salarioContrato, salarioContratoDesde, folhaDe.get(chave));
     const nome = [...evs].reverse().find((e) => e.resumo?.nome)?.resumo.nome || t?.nome || "";
 
     // Afastamento aberto: o último início sem término depois dele (ou com término no futuro)
@@ -172,7 +193,8 @@ export function montarPessoas(eventos: EventoRH[], trabalhadores: TrabalhadorRH[
       dtAdm, dtDeslig: saiu ? saida!.resumo.dtDeslig || saida!.resumo.dtTerm || null : null,
       motivoSaida: saiu ? MOTIVO_SAIDA[saida!.resumo.mtvDeslig ?? ""] ?? (saida!.resumo.mtvDeslig ? `motivo ${saida!.resumo.mtvDeslig}` : null) : null,
       codSaida: saiu ? saida!.resumo.mtvDeslig || null : null,
-      fimContrato, afastamento, salario: comSalario?.resumo.vrSalFx ?? null, situacao, eventos: evs, alertas: [],
+      fimContrato, afastamento, salario: atual.salario, salarioContrato, salarioContratoDesde, salarioFonte: atual.fonte,
+      situacao, eventos: evs, alertas: [],
       leitura: { desde: t?.consultado_desde?.slice(0, 10) ?? null, ate: t?.consultado_ate?.slice(0, 10) ?? null, eventos: evs.length },
       pagamentos: [], liquido: null, pontoSituacao: t?.ponto_situacao ?? null, faltando: [],
     };
@@ -197,7 +219,7 @@ export function liquidoDoUltimoMes(pagamentos: PagamentoRH[]): { mes: string; va
 export function faltandoNaFicha(p: Pessoa): string[] {
   if (p.situacao === "saiu") return [];
   const f: string[] = [];
-  if (!p.salario) f.push("salário de contrato");
+  if (!p.salario) f.push("salário");
   if (!p.liquido) f.push("pagamento");
   if (!p.leitura.ate) f.push("leitura do eSocial");
   if (!p.pontoSituacao || p.pontoSituacao === "sem_ponto") f.push("cadastro no ponto");

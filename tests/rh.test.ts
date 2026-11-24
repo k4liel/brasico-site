@@ -33,6 +33,24 @@ test("salário vem da alteração de contrato mais nova (S-2206 depois do S-2200
   assert.equal(ps[0].situacao, "trabalhando");
 });
 
+test("salário da folha vale quando é mais novo que o contrato (reajuste sem S-2206)", () => {
+  const sf = (cpf: string, per_apur: string, salario: number) => ({ empresa_id: "E1", cpf, per_apur, dias: 30, salario, proporcional: false });
+  const ps = montarPessoas([
+    ev("S-2200", "131", { dtAdm: "2023-08-17", vrSalFx: "1400.00", nome: "BIA" }),
+    ev("S-2200", "132", { dtAdm: "2026-11-12", vrSalFx: "2000.00", nome: "CAIO" }),
+  ], [trab("131"), trab("132"), trab("133")], [], [sf("131", "2026-10", 1621), sf("132", "2026-10", 1621), sf("133", "2026-10", 1900)]);
+  const de = (cpf: string) => ps.find((p) => p.cpf === cpf)!;
+  assert.equal(de("131").salario, "1621.00");
+  assert.equal(de("131").salarioFonte?.fonte, "folha");
+  assert.equal(de("131").salarioContrato, "1400.00");
+  // contrato de novembro é mais novo que a folha de outubro: vale o contrato
+  assert.equal(de("132").salario, "2000.00");
+  assert.equal(de("132").salarioFonte?.fonte, "contrato");
+  // sem contrato lido (transferido no grupo): a folha completa o salário
+  assert.equal(de("133").salario, "1900.00");
+  assert.deepEqual(faltandoNaFicha(de("133")).includes("salário"), false);
+});
+
 test("desligamento (S-2299) marca 'saiu' e não conta como ativo", () => {
   const ps = montarPessoas([
     ev("S-2200", "222", { dtAdm: "2025-01-10" }),
@@ -90,7 +108,7 @@ test("pagamentos entram na ficha certa e a conferência conta quem tem salário 
   const a = ps.find((p) => p.cpf === "777")!, b = ps.find((p) => p.cpf === "888")!;
   assert.deepEqual(a.liquido, { mes: "2026-09", valor: 1700 });
   assert.deepEqual(a.faltando, []);
-  assert.deepEqual(faltandoNaFicha(b), ["salário de contrato", "pagamento", "leitura do eSocial", "cadastro no ponto"]);
+  assert.deepEqual(faltandoNaFicha(b), ["salário", "pagamento", "leitura do eSocial", "cadastro no ponto"]);
   const c = montarCobertura(ps);
   assert.equal(c.ativos, 2);
   assert.equal(c.comSalario, 1);

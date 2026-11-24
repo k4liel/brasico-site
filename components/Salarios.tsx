@@ -1,6 +1,7 @@
 "use client";
 
-// Seção Salários do RH: o salário de contrato de cada pessoa (último S-2200/S-2206 lido do eSocial) e o
+// Seção Salários do RH: o salário de hoje de cada pessoa — o da folha do último mês (S-1200, rubrica 8781; view
+// rh_salario_folha, desde 23/11/2026) quando é mais novo que o contrato (último S-2200/S-2206), senão o de contrato — e o
 // líquido pago no último mês (S-1210, view rh_pagamentos; desde 10/11/2026), agrupados por local, com totais. Dado sensível: vem escondido e só aparece com o olhinho,
 // e o valor nunca sai desta tela (não vai para o conector).
 import { useState, type ReactNode } from "react";
@@ -39,10 +40,10 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
   return (
     <>
       <div className="es-numeros">
-        <div className="es-numero"><span className="tv-cartao-rotulo">Folha de contrato</span><span className="es-numero-valor">{ver ? reais(total) : ESCONDIDO}</span><span className="tv-cartao-detalhe">soma dos salários lidos · {comSalario.length} pessoas</span></div>
+        <div className="es-numero"><span className="tv-cartao-rotulo">Soma dos salários</span><span className="es-numero-valor">{ver ? reais(total) : ESCONDIDO}</span><span className="tv-cartao-detalhe">salário de hoje · {comSalario.length} pessoas</span></div>
         <div className="es-numero"><span className="tv-cartao-rotulo">Líquido pago</span><span className="es-numero-valor">{ver ? reais(totalLiquido) : ESCONDIDO}</span><span className="tv-cartao-detalhe">{mesLiquido ? `último mês pago (${nomeMes(mesLiquido)}) · ${comLiquido.length} pessoas` : "nenhum pagamento lido ainda"}</span></div>
         <div className="es-numero"><span className="tv-cartao-rotulo">Salário médio</span><span className="es-numero-valor">{ver ? reais(media) : ESCONDIDO}</span><span className="tv-cartao-detalhe">entre quem já tem o salário lido</span></div>
-        <div className="es-numero"><span className="tv-cartao-rotulo">Salários lidos</span><span className="es-numero-valor">{comSalario.length} de {vistas.length}</span><span className="tv-cartao-detalhe">o resto chega com a leitura da admissão no eSocial (10 por dia por empresa)</span></div>
+        <div className="es-numero"><span className="tv-cartao-rotulo">Salários lidos</span><span className="es-numero-valor">{comSalario.length} de {vistas.length}</span><span className="tv-cartao-detalhe">{comSalario.filter((x) => x.p.salarioFonte?.fonte === "folha").length} pela folha do mês · {comSalario.filter((x) => x.p.salarioFonte?.fonte === "contrato").length} pelo contrato</span></div>
       </div>
 
       <section className="es-bloco">
@@ -67,7 +68,7 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
           <p className="muted tv-nada">Ninguém neste filtro.</p>
         ) : (
           <>
-            <div className="bh-cabeca sl-cabeca" aria-hidden="true"><span>Pessoa</span><span>Cargo</span><span>Salário</span><span>Líquido</span><span>Desde</span></div>
+            <div className="bh-cabeca sl-cabeca" aria-hidden="true"><span>Pessoa</span><span>Cargo</span><span>Salário</span><span>Líquido</span><span>Fonte</span></div>
             <ul className="bh-lista">
               {locais.filter((g) => !local || g === local).map((g) => {
                 const do_ = vistas.filter((x) => (x.local || "Sem local") === g).sort((a, b) => (b.salario ?? -1) - (a.salario ?? -1) || a.p.nome.localeCompare(b.p.nome));
@@ -79,7 +80,7 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
                     <div className="bh-grupo"><span>{g} <span className="muted">· {do_.length}</span></span><span className="muted">{lidos ? `${ver ? reais(soma) : ESCONDIDO} · ${lidos} de ${do_.length} lidos` : "nenhum salário lido ainda"}</span></div>
                     <ul className="bh-lista">
                       {do_.map((x) => {
-                        const ult = [...x.p.eventos].reverse().find((e) => e.resumo?.vrSalFx);
+                        const f = x.p.salarioFonte;
                         return (
                           <li key={x.p.chave}>
                             <button className="bh-linha sl-linha" onClick={() => onAbrirPessoa(x.p.chave)} title="Ver a ficha">
@@ -89,7 +90,8 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
                               <span className={`bh-saldo sl-liquido ${x.p.liquido ? "" : "muted"}`} title={x.p.liquido ? `Líquido de ${nomeMes(x.p.liquido.mes)}` : "Nenhum pagamento lido"}>
                                 {valor(x.p.liquido?.valor ?? null)}{x.p.liquido && <small>{nomeMes(x.p.liquido.mes).slice(0, 3)}</small>}
                               </span>
-                              <span className="bh-var">{ult ? dataBR(ult.resumo?.dtAlteracao || ult.resumo?.dtAdm || "") : "não lido"}</span>
+                              <span className="bh-var" title={f?.fonte === "folha" ? `Salário da folha de ${nomeMes(f.mes!)}${f.proporcional ? " (mês incompleto, levado a 30 dias)" : ""}` : f ? "Salário de contrato (admissão ou última alteração)" : "Sem folha nem contrato lidos"}>
+                                {f?.fonte === "folha" ? `folha ${nomeMes(f.mes!).slice(0, 3)}/${f.mes!.slice(2, 4)}` : f ? `contrato ${dataBR(x.p.salarioContratoDesde)}` : "não lido"}</span>
                             </button>
                           </li>
                         );
@@ -101,7 +103,7 @@ export default function Salarios({ pessoas, empresas, verCpf, onAbrirPessoa, ico
             </ul>
           </>
         )}
-        <p className="muted es-nota">Salário = salário de contrato (fixo) informado pelo contador ao eSocial na admissão (S-2200) ou na última alteração (S-2206); quem ainda está sem valor recebe quando a leitura da admissão chegar. Líquido = o que foi pago no último mês de referência (pagamentos do S-1210, com horas extras, adicionais e descontos), sem férias, 13º e rescisão.
+        <p className="muted es-nota">Salário = o salário de hoje: o da folha do último mês que o contador mandou ao eSocial (S-1200, salário do mês; num mês incompleto, levado a 30 dias) e, quando a folha ainda não foi lida ou é mais velha, o de contrato (admissão S-2200 ou alteração S-2206). Os reajustes do mínimo e da convenção quase nunca chegam como alteração de contrato: por isso vale a folha. Líquido = o que foi pago no último mês de referência (pagamentos do S-1210, com horas extras, adicionais e descontos), sem férias, 13º e rescisão.
           Os valores não saem desta tela: o conector do Claude não tem acesso a eles.</p>
       </section>
     </>

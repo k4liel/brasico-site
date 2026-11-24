@@ -6,7 +6,7 @@ import { NOMES } from "@/lib/esocial/nomes";
 import {
   cpfVisivel, dataBR, diasEntre, ehAssociacao, nomeCurto, hoje, linhaDoTempo, mesAnterior, montarAlertas, montarFolhas, montarNumeros, montarPassos,
   montarAusencias, montarCalendario, montarCobertura, montarLeitura, montarMovimentacoes, montarPessoas, nomeMes, ROTULO_SITUACAO, somarDias, tempoDeCasa,
-  type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type PagamentoRH, type Pessoa, type Situacao,
+  type Alerta, type EmpresaRH as Empresa, type EventoRH as Evento, type ExecucaoRH as Execucao, type PagamentoRH, type SalarioFolhaRH, type Pessoa, type Situacao,
   type TrabalhadorRH as Trabalhador,
 } from "@/lib/esocial/rh";
 import Topo from "./Topo";
@@ -126,6 +126,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   const [visaoPessoas, setVisaoPessoas] = useState<VisaoPessoas>("lista");
   const [visaoHoras, setVisaoHoras] = useState<VisaoHoras>("ponto");
   const [pagamentos, setPagamentos] = useState<PagamentoRH[]>([]);
+  const [salariosFolha, setSalariosFolha] = useState<SalarioFolhaRH[]>([]);
   const [saude, setSaude] = useState<SaudeRH | null>(null);
   // A seção fica no endereço (#pessoas, #folha…) para dar para voltar e compartilhar
   useEffect(() => {
@@ -164,7 +165,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
 
   const carregar = useCallback(async () => {
     const sb: Sb = supabase;
-    let ev: Evento[] = [], tr: Trabalhador[] = [], pg: PagamentoRH[] = [];
+    let ev: Evento[] = [], tr: Trabalhador[] = [], pg: PagamentoRH[] = [], sf: SalarioFolhaRH[] = [];
     const [em, ex, sd] = await Promise.all([
       sb.from("esocial_empresas")
         .select("id,nome,cnpj,leitura_automatica,limite_diario,historico_desde,cert_validade,cert_emissor,cert_atualizado_em,falhas_contam,aviso_acessos")
@@ -174,12 +175,13 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
       sb.rpc("rh_saude"),
       (async () => {
         try {
-          [ev, tr, pg] = await Promise.all([
+          [ev, tr, pg, sf] = await Promise.all([
             lerTudo<Evento>((de, ate) => sb.from("esocial_eventos").select("id_evento,empresa_id,tipo,cpf_trab,per_apur,situacao,nr_recibo,resumo,descoberto_em,baixado_em")
               .eq("ambiente", 1).order("descoberto_em", { ascending: false }).order("id_evento").range(de, ate)),
             lerTudo<Trabalhador>((de, ate) => sb.from("esocial_trabalhadores")
               .select("empresa_id,cpf,nome,matricula,cargo,admissao,unidade,origem,ativo,consultado_ate,consultado_desde,ponto_situacao").order("nome").order("cpf").range(de, ate)),
             lerTudo<PagamentoRH>((de, ate) => sb.from("rh_pagamentos").select("empresa_id,cpf,dt_pgto,per_ref,tipo,vr_liq").order("dt_pgto", { ascending: false }).order("cpf").range(de, ate)),
+            lerTudo<SalarioFolhaRH>((de, ate) => sb.from("rh_salario_folha").select("empresa_id,cpf,per_apur,dias,salario,proporcional").order("empresa_id").order("cpf").range(de, ate)),
           ]);
         } catch (e) {
           setErro(`Não deu para ler todos os dados do RH: ${e instanceof Error ? e.message : String(e)}`);
@@ -190,6 +192,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
     setEventos(ev);
     setTrabalhadores(tr);
     setPagamentos(pg.map((g) => ({ ...g, vr_liq: Number(g.vr_liq) })));
+    setSalariosFolha(sf);
     setExecucoes((ex.data ?? []) as Execucao[]);
     setSaude((sd.data as SaudeRH) ?? null);
     const { data: cs } = await supabase.from("esocial_consultas").select("id,user_id,origem,ferramenta,parametros,quantidade,created_at")
@@ -254,7 +257,7 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
   // Tudo o que a página mostra sai destes cálculos (lib/esocial/rh.ts)
   const daEmpresa = <T extends { empresa_id: string }>(l: T[]) => (filtroEmpresa === "todas" ? l : l.filter((x) => x.empresa_id === filtroEmpresa));
   const empresasVistas = filtroEmpresa === "todas" ? empresas : empresas.filter((e) => e.id === filtroEmpresa);
-  const pessoas = useMemo(() => montarPessoas(eventos, trabalhadores, pagamentos), [eventos, trabalhadores, pagamentos]);
+  const pessoas = useMemo(() => montarPessoas(eventos, trabalhadores, pagamentos, salariosFolha), [eventos, trabalhadores, pagamentos, salariosFolha]);
   const pessoasVistas = daEmpresa(pessoas);
   const cobertura = montarCobertura(pessoasVistas);
   const competencias = [mesAnterior(), mesAnterior(hoje(), 2)];
@@ -940,7 +943,11 @@ function Ficha({ pessoa: p, empresa, verCpf, alternarCpf, historicoDesde, onFech
           <div><dt>CPF</dt><dd>{cpfVisivel(p.cpf, verCpf)} <button className="es-olho-mini" onClick={alternarCpf} aria-label={verCpf ? "Esconder CPF" : "Mostrar CPF"}><Olho aberto={verCpf} /></button></dd></div>
           {p.matricula && <div><dt>Matrícula</dt><dd>{p.matricula}</dd></div>}
           <div><dt>Leitura do governo</dt><dd>{p.leitura.ate ? `${dataBR(p.leitura.desde)} a ${dataBR(p.leitura.ate)} · ${p.leitura.eventos} evento${p.leitura.eventos === 1 ? "" : "s"}` : "ainda não lida"}</dd></div>
-          <div><dt>Salário de contrato</dt><dd>{p.salario ? <>{verSalario ? reais(p.salario) : "R$ •••••"} <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button></> : <span className="muted">ainda não lido do eSocial</span>}</dd></div>
+          <div><dt>Salário</dt><dd>{p.salario ? <>{verSalario ? reais(p.salario) : "R$ •••••"} <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button>
+            <span className="muted"> · {p.salarioFonte?.fonte === "folha" ? `pela folha de ${nomeMes(p.salarioFonte.mes!)}${p.salarioFonte.proporcional ? " (mês incompleto, levado a 30 dias)" : ""}` : `de contrato${p.salarioContratoDesde ? ` (desde ${dataBR(p.salarioContratoDesde)})` : ""}`}</span></> : <span className="muted">ainda sem folha nem contrato lidos do eSocial</span>}</dd></div>
+          {p.salarioFonte?.fonte === "folha" && p.salarioContrato && Number(p.salarioContrato) !== Number(p.salario) && (
+            <div><dt>Salário no contrato</dt><dd>{verSalario ? reais(p.salarioContrato) : "R$ •••••"} <span className="muted">· {p.salarioContratoDesde ? `desde ${dataBR(p.salarioContratoDesde)}; ` : ""}o reajuste não veio como alteração de contrato (S-2206)</span></dd></div>
+          )}
           <div><dt>Líquido pago</dt><dd>{p.liquido ? <>{verSalario ? reais(String(p.liquido.valor)) : "R$ •••••"} <span className="muted">· {nomeMes(p.liquido.mes)}</span>{!p.salario && <button className="es-olho-mini" onClick={() => setVerSalario((v) => !v)} aria-label={verSalario ? "Esconder valores" : "Mostrar valores"}><Olho aberto={verSalario} /></button>}</> : <span className="muted">nenhum pagamento lido</span>}</dd></div>
           <div><dt>Relógio de ponto</dt><dd>{PONTO_SIT[p.pontoSituacao ?? ""] ?? "sem cadastro no RHiD"}</dd></div>
           {p.afastamento && <div><dt>{p.afastamento.motivo === "15" ? "De férias desde" : "Afastado desde"}</dt><dd>{dataBR(p.afastamento.desde)} ({diasEntre(p.afastamento.desde, agora)} dias)</dd></div>}
