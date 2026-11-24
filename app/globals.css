@@ -6106,11 +6106,11 @@ body:has(.mp) { background: #f6f2ea; }
    Cores dos sites só nos selos e no gráfico; o resto nas cores do Brasico.
    ===================================================================== */
 :root {
-  --av-google: #4f7fd9; --av-tripadvisor: #1f9e74; --av-booking: #1f4e9c; --av-expedia: #d9a520;
+  --av-google: #4f7fd9; --av-tripadvisor: #1f9e74; --av-booking: #6a4bc4; --av-expedia: #d9a520;
   --av-estrela: #e0a526; --av-estrela-fundo: #dcd7cc; --av-bom: #3f8f5a; --av-ruim: #c2473d;
 }
 [data-theme="dark"] {
-  --av-google: #7aa3ec; --av-tripadvisor: #4cc49a; --av-booking: #6f97df; --av-expedia: #e8bd4a;
+  --av-google: #7aa3ec; --av-tripadvisor: #4cc49a; --av-booking: #a790f2; --av-expedia: #e8bd4a;
   --av-estrela: #e9b949; --av-estrela-fundo: #3a3f4b; --av-bom: #6cc07c; --av-ruim: #ef7b72;
 }
 .miolo.av-pagina { max-width: 1240px; }
@@ -6149,7 +6149,7 @@ body:has(.mp) { background: #f6f2ea; }
 .av-casa-site small { font-weight: 400; color: var(--muted); }
 .av-casa-vazia { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
 
-.av-duas { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; margin-bottom: 8px; }
+.av-duas { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; margin-bottom: 8px; align-items: start; }
 @media (max-width: 900px) { .av-duas { grid-template-columns: 1fr; } }
 .av-cartao { padding: 20px 22px; border-radius: 16px; background: var(--panel); border: 1px solid var(--border); margin-bottom: 24px; }
 .av-legenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 12px; color: var(--muted); }
