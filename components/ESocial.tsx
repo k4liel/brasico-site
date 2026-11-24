@@ -706,52 +706,8 @@ export default function ESocial({ userId, userEmail, cliente }: { userId: string
               {/* ===================== Folha e salários ===================== */}
               {secao === "folha" && (
                 <>
-                  <div className="es-visoes es-visoes-direita">
-                    <button className="ghost small es-olho" onClick={alternarCpf} aria-pressed={verCpf} title={verCpf ? "Esconder CPFs" : "Mostrar CPFs"}>
-                      <Olho aberto={verCpf} /> {verCpf ? "Esconder CPF" : "Mostrar CPF"}
-                    </button>
-                  </div>
-                  <Salarios pessoas={pessoasVistas} empresas={empresas} verCpf={verCpf} onAbrirPessoa={setAberta} icone={(n) => <Icone nome={n} />} />
-                  <section className="es-bloco">
-                    <div className="es-bloco-cabeca">
-                      <h2><Icone nome="folha" />Folha do mês</h2>
-                      <Ajuda texto="Todo mês o contador envia a folha ao governo e a 'fecha' até o dia 15. Depois disso saem as guias de INSS (DCTFWeb) e FGTS (FGTS Digital), que vencem no dia 20." />
-                    </div>
-                    <ul className="es-folhas">
-                      {folhas.map((f) => (
-                        <li key={`${f.empresa_id}-${f.competencia}`}>
-                          <span><strong>{nomeMes(f.competencia)}</strong> · {nomeEmpresa(f.empresa_id)}</span>
-                          {f.fechada != null ? (
-                            <span className="es-ok">✓ Fechada pelo contador{f.fechada ? ` em ${dataBR(f.fechada)}` : ""}</span>
-                          ) : f.consultada ? (
-                            <span className={f.competencia === mesAnterior() && diaDoMes() <= 15 ? "muted" : "es-ruim"}>
-                              {f.competencia === mesAnterior() && diaDoMes() <= 15 ? "Ainda não fechada (prazo dia 15)" : "✕ Não vimos o fechamento"}
-                            </span>
-                          ) : (
-                            <span className="muted">Ainda não lemos esta folha</span>
-                          )}
-                          {(f.fechada != null || f.inss || f.fgts || f.lidas > 0) && (
-                            <span className="es-folha-conferencia">
-                              <span className={f.inss ? "es-ok" : "muted"}>{f.inss ? "✓" : "·"} INSS calculado pelo governo</span>
-                              <span className={f.fgts ? "es-ok" : "muted"}>{f.fgts ? "✓" : "·"} FGTS calculado pelo governo</span>
-                              {f.lidas > 0 && (
-                                <span className={f.semFolha.length ? "es-ruim" : "es-ok"}>
-                                  {f.semFolha.length ? "✕" : "✓"} Folha individual de {f.lidas - f.semFolha.length} de {f.lidas} pessoa{f.lidas === 1 ? "" : "s"}
-                                  {f.semFolha.length > 0 && (
-                                    <> · faltam {f.semFolha.slice(0, 3).map((p) => (
-                                      <button key={p.chave} className="es-link" onClick={() => setAberta(p.chave)}>{p.nome ? nomeProprio(p.nome) : "sem nome"}</button>
-                                    )).reduce<React.ReactNode[]>((acc, el, i) => (i ? [...acc, ", ", el] : [el]), [])}{f.semFolha.length > 3 ? ` e mais ${f.semFolha.length - 3}` : ""}</>
-                                  )}
-                                </span>
-                              )}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="muted es-nota">A conferência mostra se o governo calculou o INSS e o FGTS do mês e se cada pessoa que trabalhou (e já foi lida) tem a sua folha.
-                      Os valores dos totais do governo não são entregues por este serviço; o valor das guias fica na DCTFWeb e no FGTS Digital.</p>
-                  </section>
+                  <Salarios pessoas={pessoasVistas} empresas={empresas} folhas={folhas} verCpf={verCpf} onAlternarCpf={alternarCpf}
+                    onAbrirPessoa={setAberta} nomeEmpresa={nomeEmpresa} />
                   <section className="es-bloco">
                     <div className="es-bloco-cabeca">
                       <h2><Icone nome="calendario" />Calendário de {nomeMes(hoje().slice(0, 7))}</h2>
