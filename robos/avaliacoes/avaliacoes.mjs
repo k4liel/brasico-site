@@ -115,6 +115,13 @@ export async function passada({ chromium, rpc, segredo, log, onde = "vps", maxim
           const d = new Date(Date.now() + 30 * 864e5), d2 = new Date(Date.now() + 31 * 864e5);
           const ymd = (x) => x.toISOString().slice(0, 10);
           await page.goto(`${f.url}?chkin=${ymd(d)}&chkout=${ymd(d2)}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+          // abre a janela das avaliações com um clique de verdade (o clique feito pela página nem sempre abre)
+          try {
+            const b = page.locator('[data-stid="reviews-link"]').first();
+            await b.waitFor({ timeout: 30000 });
+            await b.click({ timeout: 10000 });
+            await page.locator("[role=dialog] article").first().waitFor({ timeout: 30000 });
+          } catch (e) { log(`[avaliacoes] ${f.id}: janela da Expedia: ${String(e?.message || e).split(String.fromCharCode(10))[0].slice(0, 120)}`); }
           resultado = await rodar("expedia", { max: f.primeira ? 100 : 30 });
         } else throw new Error(`leitor desconhecido: ${f.leitor}`);
         const g = await rpc("avaliacoes_gravar", { p_segredo: segredo, p_fonte: f.id, p_resumo: resultado.resumo || {}, p_itens: resultado.itens || [], p_execucao: exec });
