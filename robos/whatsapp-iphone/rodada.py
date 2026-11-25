@@ -29,7 +29,11 @@ def iphone_por_perto():
         return True
     # O serviço da Apple às vezes não vê o iPhone pelo Wi-Fi (depois que ele religa); procura direto na rede
     r = subprocess.run([pmd, "bonjour", "mobdev2"], capture_output=True, text=True, timeout=60)
-    return '"UniqueDeviceID"' in r.stdout
+    if '"UniqueDeviceID"' in r.stdout:
+        return True
+    # Rede marcada como "Pública" no Windows: o firewall esconde o anúncio; procura pela porta do iPhone
+    from rede import iphones_na_rede
+    return bool(iphones_na_rede())
 
 
 ULTIMA_OK = os.path.join(BASE, "ultima_ok.txt")

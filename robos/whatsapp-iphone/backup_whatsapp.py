@@ -108,8 +108,20 @@ async def conectar():
     try:
         return await create_using_usbmux(connection_type="Network")
     except Exception:
-        from pymobiledevice3.lockdown import create_using_mobdev2
+        pass
+    from pymobiledevice3.lockdown import create_using_mobdev2
+    try:
         return await create_using_mobdev2()
+    except Exception:
+        pass
+    # Rede "Pública" no Windows: o firewall esconde o anúncio do iPhone. Procura pela porta e conecta pelo endereço.
+    from rede import iphones_na_rede
+    for ip in iphones_na_rede():
+        try:
+            return await create_using_mobdev2(hostname=ip)
+        except Exception:
+            continue
+    raise RuntimeError("iPhone não encontrado: nem no cabo nem no Wi-Fi")
 
 
 def eh_cabo(lockdown):
