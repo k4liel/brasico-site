@@ -5221,6 +5221,17 @@ button.rc-cartao:focus-visible { outline: 2px solid var(--gold); outline-offset:
 .rc-botao.forte:hover { filter: brightness(1.08); color: var(--on-primary); }
 .rc-botao:disabled { opacity: .5; cursor: default; }
 .rc-vazio { padding: 28px; border: 1px dashed var(--border); border-radius: 16px; text-align: center; color: var(--muted); font-size: 14px; }
+/* Página Menus: uma aba por casa (25/11/2026) */
+.rc-abas { display: flex; gap: 8px; flex-wrap: wrap; margin-top: -16px; }
+.rc-aba { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; transition: border-color .15s ease, background .15s ease; }
+.rc-aba:hover { border-color: color-mix(in srgb, var(--gold) 55%, var(--border)); }
+.rc-aba.on { background: var(--gold); border-color: var(--gold); color: #fff; }
+.rc-aba-sem { font-size: 10.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.rc-aba.on .rc-aba-sem { color: rgba(255,255,255,.8); }
+.rc-vazio-casa { display: grid; gap: 6px; justify-items: center; padding: 40px 28px; }
+.rc-vazio-casa b { color: var(--strong); font-size: 16px; }
+.rc-vazio-casa span { max-width: 560px; }
+@media (max-width: 760px) { .rc-abas { flex-wrap: nowrap; overflow-x: auto; margin: -16px -24px 0; padding: 0 24px 4px; } .rc-aba { flex: none; } }
 .rc-esqueleto { height: 290px; background: linear-gradient(90deg, var(--panel), var(--seg), var(--panel)); background-size: 200% 100%; animation: rc-brilho 1.4s linear infinite; }
 @keyframes rc-brilho { to { background-position: -200% 0; } }
 

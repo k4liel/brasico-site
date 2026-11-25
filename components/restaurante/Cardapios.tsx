@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "../Topo";
 import VisorMenu from "../VisorMenu";
+import Link from "next/link";
+import { RESTAURANTES } from "@/lib/restaurantes";
 
+// Página Menus (/cardapios/<casa>, 25/11/2026): uma aba por casa no topo; a casa sem projeto ainda não tem menus.
 // Cardápios de um restaurante (22/11/2026, pedido do dono: "separar melhor o que é de edição e o que é
 // de impressão"). Duas partes, cada uma numa grade só:
 //  1. Editar na tela — os menus vivos (cardapios_vivos): clicar abre o VisorMenu (Editar, Salvar, Versões).
@@ -17,7 +20,7 @@ type Impresso = {
   id: string; codigo: string; menu_codigo: string | null; menu_versao: number | null; titulo: string; descricao: string; formato: string;
   paginas: number | null; arquivo: string; situacao: "ativo" | "pausado"; ordem: number; atualizado_em: string;
 };
-type Link = { slug: string; nome: string; ativo: boolean; criado_em: string };
+type LinkPub = { slug: string; nome: string; ativo: boolean; criado_em: string };
 
 const data = (s: string) => new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 const dataHora = (s: string) => new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -29,19 +32,23 @@ function capaDe(projeto: string, arquivo: string) {
 }
 
 // `previa`: dados de exemplo, sem ler o banco (para conferir o visual)
-export type PreviaCardapios = { vivos: Vivo[]; impressos: Impresso[]; link: Link | null };
+export type PreviaCardapios = { vivos: Vivo[]; impressos: Impresso[]; link: LinkPub | null };
 
-export default function Cardapios({ casa, nome, projeto, userEmail, previa }: { casa: string; nome: string; projeto: string; userEmail: string; previa?: PreviaCardapios }) {
+export default function Cardapios({ casa, nome, projeto, userEmail, previa }: { casa: string; nome: string; projeto: string | null; userEmail: string; previa?: PreviaCardapios }) {
   const supabase = useRef(createClient()).current;
   const [vivos, setVivos] = useState<Vivo[] | null>(null);
   const [impressos, setImpressos] = useState<Impresso[]>([]);
-  const [link, setLink] = useState<Link | null>(null);
+  const [link, setLink] = useState<LinkPub | null>(null);
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [mexendo, setMexendo] = useState(false);
   const [origem, setOrigem] = useState("");
 
   const carregar = useCallback(async () => {
+    if (!projeto) {
+      setVivos([]);
+      return;
+    }
     if (previa) {
       setVivos(previa.vivos);
       setImpressos(previa.impressos);
@@ -56,7 +63,7 @@ export default function Cardapios({ casa, nome, projeto, userEmail, previa }: { 
     if (v.error) setErro("Não foi possível ler os menus. Você precisa fazer parte do projeto da casa.");
     setVivos((v.data ?? []) as Vivo[]);
     setImpressos((i.data ?? []) as Impresso[]);
-    setLink((l.data as Link | null) ?? null);
+    setLink((l.data as LinkPub | null) ?? null);
   }, [supabase, projeto, previa]);
   useEffect(() => {
     carregar();
@@ -85,6 +92,7 @@ export default function Cardapios({ casa, nome, projeto, userEmail, previa }: { 
   async function gerar() {
     if (link && !confirm("Gerar um link novo? O link atual para de abrir na hora (quem já recebeu precisa do novo).")) return;
     setMexendo(true);
+    if (!projeto) return;
     const { error } = await supabase.rpc("cardapios_link_gerar", { p_ws: projeto, p_nome: link?.nome ?? nome });
     setMexendo(false);
     if (error) return alert(error.message);
@@ -101,15 +109,31 @@ export default function Cardapios({ casa, nome, projeto, userEmail, previa }: { 
 
   return (
     <div className="pagina rc-pagina">
-      <Topo email={userEmail} ativo={`rest:${casa}/cardapios`} />
+      <Topo email={userEmail} ativo="cardapios" />
       <main className="rc-main">
         <header className="rc-cab">
-          <span className="rc-olho">{nome}</span>
-          <h1>Cardápios</h1>
-          <p>Em cima, os menus que se editam aqui na tela. Embaixo, os PDFs prontos para imprimir e o link para a equipe e o marketing baixarem.</p>
+          <span className="rc-olho">Toda a companhia</span>
+          <h1>Menus</h1>
+          <p>Escolha a casa. Em cima, os menus que se editam aqui na tela. Embaixo, os PDFs prontos para imprimir e o link para a equipe e o marketing baixarem.</p>
         </header>
 
+        <nav className="rc-abas" aria-label="Casas">
+          {RESTAURANTES.map((r) => (
+            <Link key={r.id} href={`/cardapios/${r.id}`} className={`rc-aba${r.id === casa ? " on" : ""}`} aria-current={r.id === casa ? "page" : undefined}>
+              {r.casa}
+              {!r.projeto && <span className="rc-aba-sem">em breve</span>}
+            </Link>
+          ))}
+        </nav>
+
         {erro && <div className="rc-erro">{erro}</div>}
+
+        {!projeto ? (
+          <div className="rc-vazio rc-vazio-casa">
+            <b>{nome} ainda não tem menus aqui.</b>
+            <span>Mande os menus da casa (PDF, foto ou arquivo) para o Claude: ele monta os editáveis, os PDFs para imprimir e o link público, como no Ponta Negra.</span>
+          </div>
+        ) : (<>
 
         {/* 1 · Editar na tela */}
         <section className="rc-secao">
@@ -240,8 +264,9 @@ export default function Cardapios({ casa, nome, projeto, userEmail, previa }: { 
             </div>
           )}
         </section>
+        </>)}
       </main>
-      <VisorMenu projectId={projeto} />
+      {projeto && <VisorMenu projectId={projeto} />}
     </div>
   );
 }
