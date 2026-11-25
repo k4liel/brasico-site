@@ -6,8 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import { RESTAURANTES } from "@/lib/restaurantes";
 
 const OPERACAO = ["compras", "precos", "fichas", "estoque", "producao"];
-// Fiscal e Contábil: a página Fiscal (/receita) e as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
-const FISCAL = ["receita", "notas"];
+// Fiscal e Contábil: a página Fiscal (/receita), as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
+// e as Skills contábeis (25/11/2026)
+const FISCAL = ["receita", "notas", "skills"];
 const RH = ["esocial", "escala"];
 // Hotéis e restaurantes (22/11/2026, pedido do dono): uma página por hotel (/hoteis/<id>, tabela hoteis)
 // e uma por restaurante (/restaurantes/<id>, lib/restaurantes.ts; por enquanto só os Cardápios)
@@ -133,6 +134,8 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             <div id="menu-fiscal" className={fiscalAberta ? "menu-sub aberto" : "menu-sub"}><div>
               {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto && fiscalAberta} icone={I.receita}>Fiscal</Item>}
               {ve("operacao") && <Item href="/notas" on={ativo === "notas"} vis={aberto && fiscalAberta} icone={I.notas}>Notas fiscais</Item>}
+              {/* Skills contábeis: a Biblioteca PRO de prompts (25/11/2026); só os sócios (sem linha em usuario_areas) */}
+              {areas === null && <Item href="/skills" on={ativo === "skills"} vis={aberto && fiscalAberta} icone={I.skills}>Skills contábeis</Item>}
             </div></div>
           </>)}
 
@@ -189,8 +192,6 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             </div></div>
           </>)}
 
-          {/* Skills contábeis: a Biblioteca PRO de prompts, página própria (25/11/2026); só os sócios (sem linha em usuario_areas) */}
-          {areas === null && <Item href="/skills" on={ativo === "skills"} vis={aberto} icone={I.skills}>Skills contábeis</Item>}
           {ve("integracoes") && <Item href="/integracoes" on={ativo === "integracoes"} vis={aberto} icone={I.integracoes}>Integrações</Item>}
           {ve("certificados") && <Item href="/certificados" on={ativo === "certificados"} vis={aberto} icone={I.certificados}>Certificados digitais</Item>}
           {/* Usuários e o Claude de cada um numa página só (15/11/2026) */}
