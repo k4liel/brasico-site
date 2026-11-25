@@ -14,8 +14,11 @@ import Gaveta from "./Gaveta";
 type Fonte = {
   id: string; casa: string; site: string; tipo: string; nome_no_site: string | null; url: string | null; escala: number;
   ativa: boolean; observacao: string | null; nota: number | null; total: number | null; distribuicao: Record<string, number> | null;
-  posicao: string | null; lida_em: string | null; erro: string | null; erro_em: string | null; ordem: number;
+  posicao: string | null; lida_em: string | null; tentou_em: string | null; intervalo_minutos: number; erro: string | null; erro_em: string | null; ordem: number;
 };
+// mais nova primeiro (data da avaliação; no mesmo dia, a que chegou por último)
+const ordemAvaliacoes = (a: { data_avaliacao: string | null; id: number }, b: { data_avaliacao: string | null; id: number }) =>
+  (b.data_avaliacao ?? "").localeCompare(a.data_avaliacao ?? "") || b.id - a.id;
 type Avaliacao = {
   id: number; fonte_id: string; autor: string | null; autor_info: string | null; pais: string | null; nota: number | null; escala: number;
   nota5: number | null; titulo: string | null; texto: string | null; positivo: string | null; negativo: string | null; resposta: string | null;
@@ -115,6 +118,11 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
   const [mostrar, setMostrar] = useState(30);
   const [aberta, setAberta] = useState<Avaliacao | null>(null);
   const [verSites, setVerSites] = useState(false);
+  const [aoVivo, setAoVivo] = useState(false);
+  const [recemChegadas, setRecemChegadas] = useState<Set<number>>(new Set());
+  const [avisos, setAvisos] = useState<{ id: number; a: Avaliacao }[]>([]);
+  const [ultimaVisita, setUltimaVisita] = useState<string | null>(null);
+  const [, setTique] = useState(0);
 
   const carregar = useCallback(async () => {
     const f = await supabase.from("avaliacoes_fontes").select("*").order("ordem");
@@ -135,16 +143,58 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
 
   useEffect(() => {
     carregar();
-    const t = setInterval(() => document.visibilityState === "visible" && carregar(), 5 * 60 * 1000);
+    const t = setInterval(() => document.visibilityState === "visible" && carregar(), 10 * 60 * 1000);
     const vis = () => document.visibilityState === "visible" && carregar();
     document.addEventListener("visibilitychange", vis);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
   }, [carregar]);
 
+  // Ao vivo (Supabase Realtime): avaliação nova aparece na hora, com aviso no canto e destaque no cartão;
+  // nota e total de cada site e a hora da leitura também mudam sozinhos.
+  useEffect(() => {
+    const canal = supabase.channel("avaliacoes-ao-vivo")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "avaliacoes" }, (p) => {
+        const a = p.new as Avaliacao;
+        setAvs((v) => (v.some((x) => x.id === a.id) ? v : [a, ...v].sort(ordemAvaliacoes)));
+        setRecemChegadas((s) => new Set(s).add(a.id));
+        setAvisos((l) => [...l.slice(-3), { id: a.id, a }]);
+        setTimeout(() => setAvisos((l) => l.filter((x) => x.id !== a.id)), 12000);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "avaliacoes" }, (p) => {
+        const a = p.new as Avaliacao;
+        setAvs((v) => v.map((x) => (x.id === a.id ? { ...x, ...a } : x)));
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "avaliacoes_fontes" }, (p) => {
+        const f = p.new as Fonte;
+        setFontes((v) => v.map((x) => (x.id === f.id ? { ...x, ...f } : x)));
+      })
+      .subscribe((status) => setAoVivo(status === "SUBSCRIBED"));
+    return () => { supabase.removeChannel(canal); };
+  }, [supabase]);
+
+  // relógio da tela ("há 3 min", "próxima olhada em…") e a última visita (o que chegou depois dela ganha "nova")
+  useEffect(() => {
+    const t = setInterval(() => setTique((n) => n + 1), 20000);
+    try {
+      const antes = localStorage.getItem("brasico-av-visita");
+      if (antes) setUltimaVisita(antes);
+      localStorage.setItem("brasico-av-visita", new Date().toISOString());
+    } catch {}
+    return () => clearInterval(t);
+  }, []);
+
   const fontePorId = useMemo(() => Object.fromEntries(fontes.map((f) => [f.id, f])), [fontes]);
   const desde = periodo === "tudo" ? "0000" : diasAtras(Number(periodo));
   const noPeriodo = useMemo(() => avs.filter((a) => (a.data_avaliacao ?? "") >= desde), [avs, desde]);
   const ultimaLeitura = useMemo(() => fontes.reduce<string | null>((m, f) => (f.lida_em && (!m || f.lida_em > m) ? f.lida_em : m), null), [fontes]);
+  // quando o robô olha o Google de novo (a vigia confere a cada 1–2 min o que já passou do intervalo)
+  const proximaGoogle = (() => {
+    const g = fontes.filter((f) => f.site === "google" && f.ativa && f.tentou_em);
+    if (!g.length) return null;
+    const prox = Math.min(...g.map((f) => new Date(f.tentou_em!).getTime() + (f.intervalo_minutos || 10) * 60000));
+    return Math.max(0, Math.ceil((prox - Date.now()) / 60000));
+  })();
+  const ehNova = (a: Avaliacao) => recemChegadas.has(a.id) || (!!ultimaVisita && new Date(a.primeira_leitura) > new Date(ultimaVisita));
 
   // números do topo (todas as casas)
   const topo = useMemo(() => {
@@ -230,7 +280,12 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
         <header className="fx-topo">
           <div>
             <h1>Avaliações</h1>
-            <p className="muted">Google, Tripadvisor, Booking e Expedia das casas, num lugar só. Google lido a cada hora, os outros sites a cada 3 horas · última leitura {haQuanto(ultimaLeitura)}.</p>
+            <p className="muted">Google, Tripadvisor, Booking e Expedia das casas, num lugar só. Avaliação nova aparece aqui sozinha, sem recarregar.</p>
+            <p className="av-vivo">
+              <span className={aoVivo ? "av-vivo-ponto on" : "av-vivo-ponto"} />
+              <b>{aoVivo ? "Ao vivo" : "Conectando…"}</b>
+              <span className="muted">· última leitura {haQuanto(ultimaLeitura)}{proximaGoogle != null ? ` · Google de novo ${proximaGoogle <= 0 ? "agora" : `em ${proximaGoogle} min`}` : ""}</span>
+            </p>
           </div>
           <div className="av-seg" role="tablist" aria-label="Período">
             {PERIODOS.map((p) => (
@@ -360,7 +415,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
 
             {lista.length === 0 ? <p className="vazio muted">Nenhuma avaliação com esses filtros.</p> : (
               <div className="av-lista">
-                {lista.slice(0, mostrar).map((a) => <CartaoAvaliacao key={a.id} a={a} f={fontePorId[a.fonte_id]} abrir={() => setAberta(a)} />)}
+                {lista.slice(0, mostrar).map((a) => <CartaoAvaliacao key={a.id} a={a} f={fontePorId[a.fonte_id]} nova={ehNova(a)} recem={recemChegadas.has(a.id)} abrir={() => setAberta(a)} />)}
               </div>
             )}
             {lista.length > mostrar && <button className="botao-painel fx-mais" onClick={() => setMostrar((m) => m + 30)}>Mostrar mais ({inteiro(lista.length - mostrar)})</button>}
@@ -393,6 +448,20 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
         </>)}
       </main>
 
+      {avisos.length > 0 && (
+        <div className="av-avisos" aria-live="polite">
+          {avisos.map(({ id, a }) => {
+            const f = fontePorId[a.fonte_id];
+            return (
+              <button key={id} className="av-aviso" onClick={() => { setAberta(a); setAvisos((l) => l.filter((x) => x.id !== id)); }}>
+                <Selo site={f?.site ?? ""} />
+                <span><b>Nova avaliação · {nomeCasa(f?.casa ?? "")}</b><small><Estrelas n={a.nota5} tam={11} /> {a.autor ?? ""} — {(a.texto ?? a.titulo ?? "").slice(0, 90)}</small></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {aberta && (() => {
         const f = fontePorId[aberta.fonte_id];
         return (
@@ -422,16 +491,16 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
   );
 }
 
-function CartaoAvaliacao({ a, f, abrir }: { a: Avaliacao; f?: Fonte; abrir: () => void }) {
+function CartaoAvaliacao({ a, f, nova, recem, abrir }: { a: Avaliacao; f?: Fonte; nova?: boolean; recem?: boolean; abrir: () => void }) {
   const texto = a.positivo || a.negativo
     ? [a.positivo && `👍 ${a.positivo}`, a.negativo && `👎 ${a.negativo}`].filter(Boolean).join("   ")
     : a.texto;
   const ruim = (a.nota5 ?? 5) <= 3;
   return (
-    <article className={`av-card${ruim ? " ruim" : ""}`} onClick={abrir} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && abrir()}>
+    <article className={`av-card${ruim ? " ruim" : ""}${recem ? " recem" : ""}`} onClick={abrir} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && abrir()}>
       <header>
         <Selo site={f?.site ?? ""} />
-        <div className="av-card-quem"><b>{a.autor ?? "Anônimo"}</b><span className="muted">{nomeCasa(f?.casa ?? "")}{f?.tipo === "restaurante" && f.casa === "sempre_vivo" ? " · restaurante" : ""} · {dataCurta(a)}</span></div>
+        <div className="av-card-quem"><b>{nova && <i className="av-nova">nova</i>}{a.autor ?? "Anônimo"}</b><span className="muted">{nomeCasa(f?.casa ?? "")}{f?.tipo === "restaurante" && f.casa === "sempre_vivo" ? " · restaurante" : ""} · {dataCurta(a)}</span></div>
         <div className="av-card-nota"><Estrelas n={a.nota5} tam={13} />{a.escala === 10 && <small>{fmt(a.nota, 1)}</small>}</div>
       </header>
       {a.titulo && <h4>{a.titulo}</h4>}

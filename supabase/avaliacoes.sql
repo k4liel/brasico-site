@@ -145,7 +145,7 @@ begin
              'atraso', extract(epoch from now() - coalesce(f.tentou_em, '2000-01-01'))::bigint) x
       from public.avaliacoes_fontes f
      where f.ativa and f.leitor is not null and f.url is not null
-       and coalesce(f.tentou_em, '2000-01-01') < now() - make_interval(hours => f.intervalo_horas)
+       and coalesce(f.tentou_em, '2000-01-01') < now() - make_interval(mins => f.intervalo_minutos)
      order by coalesce(f.tentou_em, '2000-01-01') limit greatest(p_max, 1)) s;
   if jsonb_array_length(v_fontes) = 0 then return jsonb_build_object('fazer', false, 'motivo', 'nada para ler agora'); end if;
   insert into public.avaliacoes_execucoes default values returning id into v_id;
@@ -278,3 +278,14 @@ on conflict (id) do nothing;
 
 -- 24/11/2026, pedido do dono ("quero mais rápido"): Google a cada 1 h, os outros a cada 3 h
 update public.avaliacoes_fontes set intervalo_horas = case when site = 'google' then 1 else 3 end;
+
+-- 24/11/2026, pedido do dono ("tem que atualizar em tempo real"): intervalo em MINUTOS (Google 10, os outros 60), lido
+-- por uma vigia contínua no robô (robos/avaliacoes/avaliacoes.mjs, fora da rodada de 30 min do PMS), e as tabelas no
+-- Realtime: a página mostra a avaliação nova assim que ela é gravada. intervalo_horas ficou sem uso.
+alter table public.avaliacoes_fontes add column if not exists intervalo_minutos int not null default 60;
+update public.avaliacoes_fontes set intervalo_minutos = case when site = 'google' then 10 else 60 end;
+-- avaliacoes_robo_comecar passou a usar make_interval(mins => f.intervalo_minutos) (o resto igual ao de cima)
+do $$ begin
+  begin alter publication supabase_realtime add table public.avaliacoes; exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.avaliacoes_fontes; exception when duplicate_object then null; end;
+end $$;

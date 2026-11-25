@@ -1,21 +1,51 @@
 // Leitura das avaliações (24/11/2026; supabase/avaliacoes.sql, página /avaliacoes).
-// Roda dentro do robô do PMS na VPS: robos/chefweb/chefweb.mjs (baixado do GitHub a cada rodada) baixa este arquivo e o
-// robos/avaliacoes/extratores.js também a cada rodada, então mudar a leitura não exige reiniciar o robô.
-// O banco decide o que ler (avaliacoes_robo_comecar: cada fonte a cada `intervalo_horas`, no máximo 4 por rodada).
-// Só lê páginas públicas, sem login. Uma falha aqui nunca derruba o robô do PMS.
-const GITHUB = "https://api.github.com/repos/k4liel/brasico-site/contents/robos/avaliacoes/extratores.js?ref=main";
-const LIMITE_MS = 8 * 60 * 1000; // no máximo 8 min por rodada
+// Roda dentro do robô do PMS na VPS: robos/chefweb/chefweb.mjs (baixado do GitHub a cada rodada do PMS) chama
+// lerAvaliacoes, que liga uma VIGIA contínua (pedido do dono: "tem que atualizar em tempo real"): um laço em segundo plano,
+// fora da rodada de 30 min do PMS, que a cada 1–2 min pergunta ao banco o que está na hora de ler
+// (avaliacoes_robo_comecar: cada fonte a cada `intervalo_minutos` — Google 10, os outros 60) e lê com um navegador próprio.
+// A vigia se renova sozinha a cada ~2 h (a próxima rodada do PMS liga a versão nova deste arquivo). Os leitores
+// (extratores.js) são baixados de novo a cada 15 min. Só lê páginas públicas, sem login. Falha aqui nunca derruba o robô.
+const GITHUB = "https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/avaliacoes/extratores.js";
+const LIMITE_MS = 8 * 60 * 1000;     // no máximo 8 min por passada
+const VIDA_MS = 2 * 60 * 60 * 1000;  // a vigia dura ~2 h e é religada com o código novo
+let extratoresCache = { texto: null, em: 0 };
 
+async function extratores() {
+  if (extratoresCache.texto && Date.now() - extratoresCache.em < 15 * 60 * 1000) return extratoresCache.texto;
+  const r = await fetch(`${GITHUB}?v=${Math.floor(Date.now() / 300000)}`, { headers: { "User-Agent": "brasico-pms-robo" } });
+  if (!r.ok) throw new Error(`GitHub ${r.status}`);
+  extratoresCache = { texto: await r.text(), em: Date.now() };
+  return extratoresCache.texto;
+}
+
+// Chamado a cada rodada do PMS: garante que a vigia está viva (uma só por processo) e volta na hora.
 export async function lerAvaliacoes({ chromium, rpc, segredo, log }) {
+  const v = globalThis.__vigiaAvaliacoes;
+  if (v && Date.now() - v.batida < 20 * 60 * 1000 && Date.now() - v.desde < VIDA_MS) return;
+  if (v) v.parar = true; // a antiga (parada ou velha) termina na próxima volta
+  const vigia = { desde: Date.now(), batida: Date.now(), parar: false };
+  globalThis.__vigiaAvaliacoes = vigia;
+  log("[avaliacoes] vigia ligada (Google a cada 10 min, os outros a cada hora)");
+  (async () => {
+    while (!vigia.parar && Date.now() - vigia.desde < VIDA_MS + 30 * 60 * 1000) {
+      vigia.batida = Date.now();
+      try { await passada({ chromium, rpc, segredo, log }); }
+      catch (e) { log(`[avaliacoes] passada falhou: ${String(e?.message || e).slice(0, 200)}`); }
+      await new Promise((r) => setTimeout(r, 60000 + Math.random() * 60000));
+    }
+    if (globalThis.__vigiaAvaliacoes === vigia) globalThis.__vigiaAvaliacoes = null;
+    log("[avaliacoes] vigia encerrada (a próxima rodada do PMS liga a nova)");
+  })();
+}
+
+async function passada({ chromium, rpc, segredo, log }) {
   const c = await rpc("avaliacoes_robo_comecar", { p_segredo: segredo, p_max: 4 });
   if (!c?.fazer) return;
   const exec = c.execucao;
   const inicio = Date.now();
   let browser, erroGeral = null;
   try {
-    const r = await fetch(GITHUB, { headers: { Accept: "application/vnd.github.raw", "User-Agent": "brasico-pms-robo" } });
-    if (!r.ok) throw new Error(`GitHub ${r.status}`);
-    const extratores = await r.text();
+    const codigo = await extratores();
     browser = await chromium.launch({ headless: process.env.JANELA !== "1" });
     for (const f of c.fontes) {
       if (Date.now() - inicio > LIMITE_MS) { log(`[avaliacoes] tempo da rodada acabou antes de ${f.id}`); break; }
@@ -23,7 +53,7 @@ export async function lerAvaliacoes({ chromium, rpc, segredo, log }) {
       const ctx = await browser.newContext({ locale: "pt-BR", timezoneId: "America/Fortaleza", viewport: { width: 1366, height: 900 } });
       const page = await ctx.newPage();
       const rodar = async (fn, opcoes) => {
-        await page.evaluate(extratores);
+        await page.evaluate(codigo);
         return page.evaluate(([nome, op]) => globalThis.__avaliacoes[nome](op), [fn, opcoes]);
       };
       try {
