@@ -6,6 +6,7 @@
 // A vigia se renova sozinha a cada ~2 h (a próxima rodada do PMS liga a versão nova deste arquivo). Os leitores
 // (extratores.js) são baixados de novo a cada 15 min. Só lê páginas públicas, sem login. Falha aqui nunca derruba o robô.
 const GITHUB = "https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/avaliacoes/extratores.js";
+const PROPRIO = "https://raw.githubusercontent.com/k4liel/brasico-site/main/robos/avaliacoes/avaliacoes.mjs";
 const LIMITE_MS = 8 * 60 * 1000;     // no máximo 8 min por passada
 const VIDA_MS = 2 * 60 * 60 * 1000;  // a vigia dura ~2 h e é religada com o código novo
 let extratoresCache = { texto: null, em: 0 };
@@ -29,7 +30,19 @@ export async function lerAvaliacoes({ chromium, rpc, segredo, log }) {
   (async () => {
     while (!vigia.parar && Date.now() - vigia.desde < VIDA_MS + 30 * 60 * 1000) {
       vigia.batida = Date.now();
-      try { await passada({ chromium, rpc, segredo, log }); }
+      try {
+        let fn = passada;
+        try {
+          const r = await fetch(`${PROPRIO}?v=${Math.floor(Date.now() / 300000)}`, { headers: { "User-Agent": "brasico-pms-robo" } });
+          if (r.ok) {
+            const { writeFileSync } = await import("node:fs");
+            const { pathToFileURL } = await import("node:url");
+            writeFileSync("/tmp/avaliacoes-passada.mjs", await r.text());
+            fn = (await import(`${pathToFileURL("/tmp/avaliacoes-passada.mjs").href}?v=${Date.now()}`)).passada || passada;
+          }
+        } catch {}
+        await fn({ chromium, rpc, segredo, log });
+      }
       catch (e) { log(`[avaliacoes] passada falhou: ${String(e?.message || e).slice(0, 200)}`); }
       await new Promise((r) => setTimeout(r, 60000 + Math.random() * 60000));
     }
@@ -38,7 +51,7 @@ export async function lerAvaliacoes({ chromium, rpc, segredo, log }) {
   })();
 }
 
-async function passada({ chromium, rpc, segredo, log }) {
+export async function passada({ chromium, rpc, segredo, log }) {
   const c = await rpc("avaliacoes_robo_comecar", { p_segredo: segredo, p_max: 4 });
   if (!c?.fazer) return;
   const exec = c.execucao;
@@ -52,9 +65,18 @@ async function passada({ chromium, rpc, segredo, log }) {
       // um contexto novo por fonte (sessão limpa, como um visitante)
       const ctx = await browser.newContext({ locale: "pt-BR", timezoneId: "America/Fortaleza", viewport: { width: 1366, height: 900 } });
       const page = await ctx.newPage();
+      // roda um leitor na página; se a página recarregar no meio (Booking faz isso), espera e tenta de novo uma vez
       const rodar = async (fn, opcoes) => {
-        await page.evaluate(codigo);
-        return page.evaluate(([nome, op]) => globalThis.__avaliacoes[nome](op), [fn, opcoes]);
+        for (let t = 0; ; t++) {
+          try {
+            await page.waitForLoadState("load", { timeout: 30000 }).catch(() => {});
+            await page.evaluate(codigo);
+            return await page.evaluate(([nome, op]) => globalThis.__avaliacoes[nome](op), [fn, opcoes]);
+          } catch (e) {
+            if (t >= 1 || !/context was destroyed|navigation/i.test(String(e?.message))) throw e;
+            await page.waitForTimeout(4000);
+          }
+        }
       };
       try {
         const conhecidos = f.conhecidos || [];
@@ -94,7 +116,10 @@ async function passada({ chromium, rpc, segredo, log }) {
         const g = await rpc("avaliacoes_gravar", { p_segredo: segredo, p_fonte: f.id, p_resumo: resultado.resumo || {}, p_itens: resultado.itens || [], p_execucao: exec });
         log(`[avaliacoes] ${f.id}: ${g?.lidas ?? 0} lidas, ${g?.novas ?? 0} novas (nota ${resultado.resumo?.nota ?? "?"}, total ${resultado.resumo?.total ?? "?"})`);
       } catch (e) {
-        const msg = String(e?.message || e).slice(0, 400);
+        // o que a página mostrou de fato (bloqueio, aviso de cookies, outro idioma…), para saber o porquê
+        let tela = "";
+        try { tela = ` | ${page.url().slice(0, 120)} | ${(await page.evaluate(() => document.body?.innerText || "")).replace(/\s+/g, " ").slice(0, 220)}`; } catch {}
+        const msg = (String(e?.message || e).split("\n")[0] + tela).slice(0, 500);
         log(`[avaliacoes] ${f.id} falhou: ${msg}`);
         await rpc("avaliacoes_gravar", { p_segredo: segredo, p_fonte: f.id, p_resumo: {}, p_itens: [], p_erro: msg, p_execucao: exec }).catch(() => {});
       } finally {
