@@ -73,7 +73,14 @@ export async function passada({ chromium, rpc, segredo, log }) {
             if (px?.host && px?.porta) {
               browserProxy = await chromium.launch({ headless: process.env.JANELA !== "1",
                 proxy: { server: `${px.protocolo || "http"}://${px.host}:${px.porta}`, username: px.usuario || undefined, password: px.senha || undefined } });
-            }
+              // confere o IP de saída (para saber se o proxy está mesmo em uso)
+              try {
+                const cx = await browserProxy.newContext(); const pg = await cx.newPage();
+                await pg.goto("https://api.ipify.org?format=json", { timeout: 20000 });
+                log(`[avaliacoes] proxy residencial ligado · IP de saída ${(await pg.textContent("body"))?.trim()}`);
+                await cx.close();
+              } catch (e) { log(`[avaliacoes] proxy não respondeu: ${String(e?.message || e).slice(0, 120)}`); }
+            } else log("[avaliacoes] proxy sem endereço no Vault");
           } catch (e) { log(`[avaliacoes] proxy indisponível: ${String(e?.message || e).slice(0, 120)}`); }
         }
         if (browserProxy) nav = browserProxy;
