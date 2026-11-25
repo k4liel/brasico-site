@@ -56,14 +56,30 @@ export async function passada({ chromium, rpc, segredo, log }) {
   if (!c?.fazer) return;
   const exec = c.execucao;
   const inicio = Date.now();
-  let browser, erroGeral = null;
+  let browser, browserProxy, erroGeral = null;
   try {
     const codigo = await extratores();
     browser = await chromium.launch({ headless: process.env.JANELA !== "1" });
     for (const f of c.fontes) {
       if (Date.now() - inicio > LIMITE_MS) { log(`[avaliacoes] tempo da rodada acabou antes de ${f.id}`); break; }
+      // Google ("tráfego incomum"), TripAdvisor e Expedia bloqueiam IP de servidor: esses passam pelo proxy residencial
+      // brasileiro (IPRoyal, o de reserva do WhatsApp; avaliacoes_proxy). Booking funciona direto.
+      let nav = browser;
+      if (/^(google_|tripadvisor|expedia)/.test(f.leitor)) {
+        if (browserProxy === undefined) {
+          browserProxy = null;
+          try {
+            const px = await rpc("avaliacoes_proxy", { p_segredo: segredo });
+            if (px?.host && px?.porta) {
+              browserProxy = await chromium.launch({ headless: process.env.JANELA !== "1",
+                proxy: { server: `${px.protocolo || "http"}://${px.host}:${px.porta}`, username: px.usuario || undefined, password: px.senha || undefined } });
+            }
+          } catch (e) { log(`[avaliacoes] proxy indisponível: ${String(e?.message || e).slice(0, 120)}`); }
+        }
+        if (browserProxy) nav = browserProxy;
+      }
       // um contexto novo por fonte (sessão limpa, como um visitante)
-      const ctx = await browser.newContext({ locale: "pt-BR", timezoneId: "America/Fortaleza", viewport: { width: 1366, height: 900 } });
+      const ctx = await nav.newContext({ locale: "pt-BR", timezoneId: "America/Fortaleza", viewport: { width: 1366, height: 900 } });
       const page = await ctx.newPage();
       // roda um leitor na página; se a página recarregar no meio (Booking faz isso), espera e tenta de novo uma vez
       const rodar = async (fn, opcoes) => {
@@ -132,6 +148,7 @@ export async function passada({ chromium, rpc, segredo, log }) {
     log(`[avaliacoes] falhou: ${erroGeral}`);
   } finally {
     await browser?.close().catch(() => {});
+    await browserProxy?.close().catch(() => {});
     await rpc("avaliacoes_robo_fim", { p_segredo: segredo, p_execucao: exec, p_erro: erroGeral }).catch(() => {});
   }
 }
