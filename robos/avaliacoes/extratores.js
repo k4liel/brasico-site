@@ -252,13 +252,16 @@
 
   // ---------- Expedia: janela das avaliações (todas, "More reviews") ----------
   async function expedia({ max = 60 } = {}) {
-    for (let i = 0; i < 20 && !document.querySelector('[data-stid="reviews-link"]'); i++) await dormir(500);
+    // a página da Expedia demora a montar: espera o botão até 30 s, descendo um pouco a página
+    for (let i = 0; i < 60 && !document.querySelector('[data-stid="reviews-link"]'); i++) { if (i % 6 === 5) window.scrollBy(0, 400); await dormir(500); }
+    window.scrollTo(0, 0);
     const resumo = {};
     const b = document.querySelector('[data-stid="reviews-link"]') || [...document.querySelectorAll("button")].find((e) => /^\d+ reviews$/i.test(e.innerText.trim()));
     if (!b) throw new Error("não achei o botão das avaliações na Expedia");
     b.click();
-    for (let i = 0; i < 20 && !document.querySelector("[role=dialog] article"); i++) await dormir(500);
+    for (let i = 0; i < 40 && !document.querySelector("[role=dialog] article"); i++) await dormir(500);
     const dlg = document.querySelector("[role=dialog]");
+    if (!dlg?.querySelector("article")) throw new Error("a janela das avaliações da Expedia não abriu");
     const t = dlg.innerText;
     const n = t.match(/rated (\d+(?:\.\d)?) out of 10/); if (n) resumo.nota = Number(n[1]);
     const tt = t.match(/([\d,]+) verified reviews/); if (tt) resumo.total = Number(tt[1].replace(/,/g, ""));
