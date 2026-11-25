@@ -289,3 +289,12 @@ do $$ begin
   begin alter publication supabase_realtime add table public.avaliacoes; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.avaliacoes_fontes; exception when duplicate_object then null; end;
 end $$;
+
+-- 25/11/2026: do servidor (VPS), Google ("Nossos sistemas detectaram tráfego incomum"), TripAdvisor e Expedia ("Show us your
+-- human side") respondem com verificação de robô — inclusive pelo IP residencial do proxy (testado e retirado). Não
+-- contornamos verificação de robô: o robô lê só onde não há bloqueio (Booking, robo = true). Google e TripAdvisor vão pela
+-- API oficial (a pedir); até lá, carga feita à mão pelo navegador do app.
+alter table public.avaliacoes_fontes add column if not exists robo boolean not null default true;
+update public.avaliacoes_fontes set robo = (site = 'booking');
+-- avaliacoes_robo_comecar passou a filtrar "f.ativa and f.robo" (o resto igual).
+-- avaliacoes_proxy(p_segredo) foi criada para o teste do proxy e ficou sem execute para ninguém (revoke de anon).

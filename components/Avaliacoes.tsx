@@ -14,7 +14,7 @@ import Gaveta from "./Gaveta";
 type Fonte = {
   id: string; casa: string; site: string; tipo: string; nome_no_site: string | null; url: string | null; escala: number;
   ativa: boolean; observacao: string | null; nota: number | null; total: number | null; distribuicao: Record<string, number> | null;
-  posicao: string | null; lida_em: string | null; tentou_em: string | null; intervalo_minutos: number; erro: string | null; erro_em: string | null; ordem: number;
+  posicao: string | null; lida_em: string | null; tentou_em: string | null; intervalo_minutos: number; robo: boolean; erro: string | null; erro_em: string | null; ordem: number;
 };
 // mais nova primeiro (data da avaliação; no mesmo dia, a que chegou por último)
 const ordemAvaliacoes = (a: { data_avaliacao: string | null; id: number }, b: { data_avaliacao: string | null; id: number }) =>
@@ -189,7 +189,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
   const ultimaLeitura = useMemo(() => fontes.reduce<string | null>((m, f) => (f.lida_em && (!m || f.lida_em > m) ? f.lida_em : m), null), [fontes]);
   // quando o robô olha o Google de novo (a vigia confere a cada 1–2 min o que já passou do intervalo)
   const proximaGoogle = (() => {
-    const g = fontes.filter((f) => f.site === "google" && f.ativa && f.tentou_em);
+    const g = fontes.filter((f) => f.robo && f.ativa && f.tentou_em);
     if (!g.length) return null;
     const prox = Math.min(...g.map((f) => new Date(f.tentou_em!).getTime() + (f.intervalo_minutos || 10) * 60000));
     return Math.max(0, Math.ceil((prox - Date.now()) / 60000));
@@ -284,7 +284,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
             <p className="av-vivo">
               <span className={aoVivo ? "av-vivo-ponto on" : "av-vivo-ponto"} />
               <b>{aoVivo ? "Ao vivo" : "Conectando…"}</b>
-              <span className="muted">· última leitura {haQuanto(ultimaLeitura)}{proximaGoogle != null ? ` · Google de novo ${proximaGoogle <= 0 ? "agora" : `em ${proximaGoogle} min`}` : ""}</span>
+              <span className="muted">· última leitura {haQuanto(ultimaLeitura)}{proximaGoogle != null ? ` · próxima leitura automática ${proximaGoogle <= 0 ? "agora" : `em ${proximaGoogle} min`}` : ""}</span>
             </p>
           </div>
           <div className="av-seg" role="tablist" aria-label="Período">
@@ -435,6 +435,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
                     <div className="av-site-nota">{f.nota != null ? <><b><NotaSite f={f} /></b><span className="muted">{inteiro(f.total)} aval.</span></> : <span className="muted">—</span>}</div>
                     <div className="av-site-sit">
                       {!f.ativa ? <span className="muted">{f.observacao ?? "desligado"}</span>
+                        : !f.robo ? <span className="muted" title="O site responde ao robô com verificação de robô; a leitura automática vai pela API oficial">carga manual {haQuanto(f.lida_em)} · automático pela API oficial (a pedir)</span>
                         : f.erro && (!f.lida_em || (f.erro_em ?? "") > f.lida_em) ? <span className="fx-perigo" title={f.erro}>falhou {haQuanto(f.erro_em)}</span>
                         : f.lida_em ? <span className="fx-ok">lido {haQuanto(f.lida_em)}</span> : <span className="muted">{f.url ? "ainda não lido" : f.observacao ?? "falta o endereço"}</span>}
                       {f.posicao && <small className="muted">{f.posicao}</small>}

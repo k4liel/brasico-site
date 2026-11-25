@@ -56,35 +56,15 @@ export async function passada({ chromium, rpc, segredo, log }) {
   if (!c?.fazer) return;
   const exec = c.execucao;
   const inicio = Date.now();
-  let browser, browserProxy, erroGeral = null;
+  let browser, erroGeral = null;
   try {
     const codigo = await extratores();
     browser = await chromium.launch({ headless: process.env.JANELA !== "1" });
     for (const f of c.fontes) {
       if (Date.now() - inicio > LIMITE_MS) { log(`[avaliacoes] tempo da rodada acabou antes de ${f.id}`); break; }
-      // Google ("tráfego incomum"), TripAdvisor e Expedia bloqueiam IP de servidor: esses passam pelo proxy residencial
-      // brasileiro (IPRoyal, o de reserva do WhatsApp; avaliacoes_proxy). Booking funciona direto.
-      let nav = browser;
-      if (/^(google_|tripadvisor|expedia)/.test(f.leitor)) {
-        if (browserProxy === undefined) {
-          browserProxy = null;
-          try {
-            const px = await rpc("avaliacoes_proxy", { p_segredo: segredo });
-            if (px?.host && px?.porta) {
-              browserProxy = await chromium.launch({ headless: process.env.JANELA !== "1",
-                proxy: { server: `${px.protocolo || "http"}://${px.host}:${px.porta}`, username: px.usuario || undefined, password: px.senha || undefined } });
-              // confere o IP de saída (para saber se o proxy está mesmo em uso)
-              try {
-                const cx = await browserProxy.newContext(); const pg = await cx.newPage();
-                await pg.goto("https://api.ipify.org?format=json", { timeout: 20000 });
-                log(`[avaliacoes] proxy residencial ligado · IP de saída ${(await pg.textContent("body"))?.trim()}`);
-                await cx.close();
-              } catch (e) { log(`[avaliacoes] proxy não respondeu: ${String(e?.message || e).slice(0, 120)}`); }
-            } else log("[avaliacoes] proxy sem endereço no Vault");
-          } catch (e) { log(`[avaliacoes] proxy indisponível: ${String(e?.message || e).slice(0, 120)}`); }
-        }
-        if (browserProxy) nav = browserProxy;
-      }
+      // Google, TripAdvisor e Expedia respondem ao servidor com verificação de robô: o banco não manda mais essas fontes
+      // (avaliacoes_fontes.robo = false; vão pela API oficial). Não contornamos verificação de robô.
+      const nav = browser;
       // um contexto novo por fonte (sessão limpa, como um visitante)
       const ctx = await nav.newContext({ locale: "pt-BR", timezoneId: "America/Fortaleza", viewport: { width: 1366, height: 900 } });
       const page = await ctx.newPage();
@@ -155,7 +135,6 @@ export async function passada({ chromium, rpc, segredo, log }) {
     log(`[avaliacoes] falhou: ${erroGeral}`);
   } finally {
     await browser?.close().catch(() => {});
-    await browserProxy?.close().catch(() => {});
     await rpc("avaliacoes_robo_fim", { p_segredo: segredo, p_execucao: exec, p_erro: erroGeral }).catch(() => {});
   }
 }
