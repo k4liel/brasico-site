@@ -6,8 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import { RESTAURANTES } from "@/lib/restaurantes";
 
 const OPERACAO = ["compras", "precos", "fichas", "estoque", "producao"];
-// Fiscal e Contábil: a página Fiscal (/receita) e as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
-const FISCAL = ["receita", "notas"];
+// Fiscal e Contábil: a página Fiscal (/receita), as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
+// e as Skills contábeis (25/11/2026)
+const FISCAL = ["receita", "notas", "skills"];
 const RH = ["esocial", "escala"];
 // Hotéis e restaurantes (22/11/2026, pedido do dono): uma página por hotel (/hoteis/<id>, tabela hoteis)
 // e uma por restaurante (/restaurantes/<id>, lib/restaurantes.ts; por enquanto só os Cardápios)
@@ -17,7 +18,7 @@ const HOTEIS = [
   { id: "sempre-vivo", nome: "Sempre Vivo", icone: <path d="M12 21c0-6 0-9 5-13-6 0-9 3-9 7M12 21c0-4-1-6-5-8 3-.5 5 1 5 3" /> },
 ];
 
-export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "avaliacoes" | "conectar" | "usuarios" | "notas" | "precos" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` | `rest:${string}` }) {
+export default function Topo({ email, ativo }: { email: string; ativo?: "projetos" | "brainstorm" | "whatsapp" | "vendas" | "esocial" | "escala" | "receita" | "certificados" | "integracoes" | "avaliacoes" | "skills" | "conectar" | "usuarios" | "notas" | "precos" | "compras" | "fichas" | "estoque" | "producao" | `hotel:${string}` | `ophotel:${string}` | `rest:${string}` }) {
   const [tema, setTema] = useState<"light" | "dark">("dark");
   useEffect(() => {
     setTema(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
@@ -133,6 +134,8 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
             <div id="menu-fiscal" className={fiscalAberta ? "menu-sub aberto" : "menu-sub"}><div>
               {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto && fiscalAberta} icone={I.receita}>Fiscal</Item>}
               {ve("operacao") && <Item href="/notas" on={ativo === "notas"} vis={aberto && fiscalAberta} icone={I.notas}>Notas fiscais</Item>}
+              {/* Skills contábeis: a Biblioteca PRO de prompts (25/11/2026); só os sócios (sem linha em usuario_areas) */}
+              {areas === null && <Item href="/skills" on={ativo === "skills"} vis={aberto && fiscalAberta} icone={I.skills}>Skills contábeis</Item>}
             </div></div>
           </>)}
 
@@ -252,6 +255,7 @@ const I = {
   compras: <><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h9.2a1 1 0 0 0 1-.8L20 8H6.2" /><circle cx="9" cy="20" r="1.3" /><circle cx="17" cy="20" r="1.3" /></>,
   fichas: <><path d="M6 3h12v18H6z" /><path d="M9 7h6M9 11h6M9 15h4" /></>,
   estoque: <path d="M12 3v18M4.5 7.5l15 9M19.5 7.5l-15 9" />,
+  skills: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" /><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5A2.5 2.5 0 0 1 4 20.5ZM9 8h7M9 11.5h5" /></>,
   avaliacoes: <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z" />,
   integracoes: <><circle cx="12" cy="12" r="2.6" /><circle cx="4.5" cy="5.5" r="1.8" /><circle cx="19.5" cy="5.5" r="1.8" /><circle cx="4.5" cy="18.5" r="1.8" /><circle cx="19.5" cy="18.5" r="1.8" /><path d="M6 7l4 3.3M18 7l-4 3.3M6 17l4-3.3M18 17l-4-3.3" /></>,
   certificados: <><circle cx="12" cy="9" r="5" /><path d="M9 13.5 8 21l4-2 4 2-1-7.5" /></>,

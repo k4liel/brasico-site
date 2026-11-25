@@ -6240,3 +6240,53 @@ body:has(.mp) { background: #f6f2ea; }
 .av-aviso small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 @keyframes av-entra { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .av-vivo-ponto.on, .av-card.recem, .av-aviso { animation: none; } }
+
+/* =====================================================================
+   Skills contábeis (/skills, components/SkillsContabeis.tsx; 25/11/2026)
+   A Biblioteca PRO de prompts, numa página própria; cores do Brasico.
+   ===================================================================== */
+.miolo.sk-pagina { max-width: 1240px; }
+.sk-aviso { font-size: 13px; color: var(--muted); border-left: 3px solid var(--gold); background: var(--panel);
+  padding: 8px 12px; border-radius: 0 8px 8px 0; margin: 0 0 16px; }
+.sk-barra { margin-bottom: 12px; }
+.sk-busca { width: 100%; font: inherit; padding: 11px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); color: var(--text); }
+.sk-busca:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.sk-areas { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.sk-area { all: unset; cursor: pointer; font-size: 12.5px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted); transition: background .15s, color .15s, border-color .15s; }
+.sk-area small { opacity: .7; margin-left: 3px; }
+.sk-area:hover { color: var(--strong); border-color: var(--line-strong); }
+.sk-area.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+.sk-area:focus-visible, .sk-card:focus-visible, .sk-aba:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.sk-contagem { font-size: 13px; margin: 0 0 10px; }
+.sk-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.sk-card { all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 12px; align-items: flex-start; padding: 13px 15px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; transition: border-color .15s, transform .15s, box-shadow .15s; }
+.sk-card:hover { border-color: var(--gold); box-shadow: 0 2px 10px var(--shadow); transform: translateY(-1px); }
+.sk-num { flex: 0 0 auto; min-width: 26px; font-size: 12px; font-weight: 700; color: var(--gold); padding-top: 2px; }
+.sk-corpo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sk-corpo b { color: var(--strong); font-size: 14.5px; line-height: 1.35; }
+.sk-desc { color: var(--muted); font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sk-chip { align-self: flex-start; font-style: normal; font-size: 11px; color: var(--muted); background: var(--soft);
+  border: 1px solid var(--soft-line); border-radius: 999px; padding: 1px 8px; margin-top: 4px; }
+.sk-mais { display: block; margin: 16px auto 0; font: inherit; font-size: 13px; padding: 9px 18px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+.sk-mais:hover { border-color: var(--gold); }
+.sk-ficha { display: flex; flex-direction: column; gap: 12px; }
+.sk-ficha > p { margin: 0; }
+.sk-abas { display: flex; gap: 6px; flex-wrap: wrap; }
+.sk-aba { all: unset; cursor: pointer; font-size: 13px; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); }
+.sk-aba.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
+.sk-texto { margin: 0; white-space: pre-wrap; word-wrap: break-word; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; max-height: 60vh; overflow: auto; color: var(--text); }
+.sk-acoes { display: flex; align-items: center; gap: 10px; }
+.sk-copiar { font: inherit; font-size: 13.5px; font-weight: 600; padding: 9px 18px; border-radius: 10px; border: none; cursor: pointer;
+  background: var(--gold); color: #fff; }
+.sk-copiar:hover { filter: brightness(1.06); }
+.sk-ok { font-size: 13px; color: var(--gold); }
+@media (max-width: 760px) {
+  .sk-lista { grid-template-columns: 1fr; }
+  .sk-areas { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .sk-area { flex: 0 0 auto; }
+}
