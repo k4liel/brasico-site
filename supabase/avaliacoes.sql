@@ -298,3 +298,11 @@ alter table public.avaliacoes_fontes add column if not exists robo boolean not n
 update public.avaliacoes_fontes set robo = (site = 'booking');
 -- avaliacoes_robo_comecar passou a filtrar "f.ativa and f.robo" (o resto igual).
 -- avaliacoes_proxy(p_segredo) foi criada para o teste do proxy e ficou sem execute para ninguém (revoke de anon).
+
+-- 25/11/2026 (dono: "as datas e horários estão errados"): `quando` timestamptz + `precisao` calculados pelo gatilho
+-- avaliacoes_quando (função avaliacoes_calcular_quando: hora da leitura − "4 horas atrás"; data exata = meio-dia do dia;
+-- conserta o texto cortado "um a" do leitor antigo). E quem lê cada fonte: avaliacoes_fontes.leitura
+-- ('vps' Booking · 'pc' Expedia, computador do escritório · 'app' Google e TripAdvisor, pelo Claude no navegador do app),
+-- com avaliacoes_robo_comecar(p_segredo, p_max, p_onde). O SQL aplicado está na migration "avaliacoes_quando".
+-- 25/11/2026: Google Viagens — código estável = a pessoa (contrib do Google); repetidas marcadas em
+-- avaliacoes.duplicada_de (nada se apaga; a página não mostra). Migration "avaliacoes_google_viagens_id_estavel".

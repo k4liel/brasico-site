@@ -128,7 +128,8 @@
       const completo = c.querySelector(".OlkcBc.eLNT1d .K7oBsc") || c.querySelector(".K7oBsc");
       const texto = limpa(completo?.innerText.replace(/\s*Ler mais$/, ""));
       const resp = [...c.querySelectorAll("*")].find((e) => e.childElementCount <= 2 && /^Resposta do propriet[áa]rio/.test(e.textContent.trim()));
-      return { site, id: contrib ? `${contrib}-${codigo(dataTxt, (texto || "").slice(0, 60))}` : codigo(autor, dataTxt, texto),
+      // o Google aceita uma avaliação por pessoa em cada lugar: o código é a pessoa (a data muda de "4 semanas" para "um mês")
+      return { site, id: contrib || codigo(autor, (texto || "").slice(0, 80)),
         autor, nota: numero(c.querySelector(".GDWaad")?.textContent), data: relativa(dataTxt), aproximada: true, data_texto: dataTxt,
         perfil: c.querySelector(".ThUm5b")?.textContent.trim() || null, texto,
         resposta: resp ? limpa(resp.parentElement?.innerText.replace(/^Resposta do propriet[áa]rio\s*/, "")) : null };
