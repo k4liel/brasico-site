@@ -17,13 +17,14 @@ type Fonte = {
   posicao: string | null; lida_em: string | null; tentou_em: string | null; intervalo_minutos: number; robo: boolean; erro: string | null; erro_em: string | null; ordem: number;
 };
 // mais nova primeiro (data da avaliação; no mesmo dia, a que chegou por último)
-const ordemAvaliacoes = (a: { data_avaliacao: string | null; id: number }, b: { data_avaliacao: string | null; id: number }) =>
-  (b.data_avaliacao ?? "").localeCompare(a.data_avaliacao ?? "") || b.id - a.id;
+const ordemAvaliacoes = (a: { quando: string | null; id: number }, b: { quando: string | null; id: number }) =>
+  (b.quando ?? "").localeCompare(a.quando ?? "") || b.id - a.id;
 type Avaliacao = {
   id: number; fonte_id: string; autor: string | null; autor_info: string | null; pais: string | null; nota: number | null; escala: number;
   nota5: number | null; titulo: string | null; texto: string | null; positivo: string | null; negativo: string | null; resposta: string | null;
   data_avaliacao: string | null; data_aproximada: boolean; data_texto: string | null; estadia: string | null; perfil: string | null;
   quarto: string | null; link: string | null; primeira_leitura: string;
+  quando: string | null; precisao: "hora" | "dia" | "semana" | "mes" | "ano" | null;
 };
 
 export const CASAS = [
@@ -71,11 +72,25 @@ function haQuanto(iso: string | null) {
   const h = Math.round(m / 60); if (h < 24) return `há ${h} h`;
   return `há ${Math.round(h / 24)} d`;
 }
+// Data e hora da avaliação (25/11/2026): o Google só diz "4 horas atrás"/"um mês atrás"; o banco guarda o momento estimado
+// (`quando` = hora da leitura − o tempo dito) e a precisão. Mostra a data/hora de verdade, com "~" quando é aproximada.
+const FUSO = "America/Fortaleza";
+const diaDe = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: FUSO });
 function dataCurta(a: Avaliacao) {
-  if (a.data_aproximada && a.data_texto) return a.data_texto;
-  if (!a.data_avaliacao) return a.data_texto ?? "";
-  const [y, m, d] = a.data_avaliacao.split("-");
-  return `${d}/${m}/${y}`;
+  if (!a.quando) return a.data_texto ?? "";
+  const q = new Date(a.quando);
+  const hoje = new Date(), ontem = new Date(Date.now() - 864e5);
+  const hora = q.toLocaleTimeString("pt-BR", { timeZone: FUSO, hour: "2-digit", minute: "2-digit" }).replace(":", "h");
+  const dia = diaDe(q);
+  const meses = Math.max(1, Math.round((Date.now() - q.getTime()) / (30.44 * 864e5)));
+  switch (a.precisao) {
+    case "hora": return dia === diaDe(hoje) ? `hoje, ~${hora}` : dia === diaDe(ontem) ? `ontem, ~${hora}` : `${dia.slice(0, 5)}, ~${hora}`;
+    case "dia": return a.data_aproximada ? `~${dia}` : dia;
+    case "semana": return `~${dia} (há ${Math.max(1, Math.round((Date.now() - q.getTime()) / (7 * 864e5)))} sem.)`;
+    case "mes": return `~${MES[Number(q.toLocaleDateString("pt-BR", { timeZone: FUSO, month: "numeric" })) - 1]}/${q.toLocaleDateString("pt-BR", { timeZone: FUSO, year: "numeric" })} (há ${meses} ${meses === 1 ? "mês" : "meses"})`;
+    case "ano": { const anos = Math.max(1, Math.round(meses / 12)); return `~${q.toLocaleDateString("pt-BR", { timeZone: FUSO, year: "numeric" })} (há ${anos} ${anos === 1 ? "ano" : "anos"})`; }
+    default: return dia;
+  }
 }
 const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
@@ -130,8 +145,8 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
     const todas: Avaliacao[] = [];
     for (let de = 0; ; de += 1000) {
       const r = await supabase.from("avaliacoes")
-        .select("id,fonte_id,autor,autor_info,pais,nota,escala,nota5,titulo,texto,positivo,negativo,resposta,data_avaliacao,data_aproximada,data_texto,estadia,perfil,quarto,link,primeira_leitura")
-        .order("data_avaliacao", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(de, de + 999);
+        .select("id,fonte_id,autor,autor_info,pais,nota,escala,nota5,titulo,texto,positivo,negativo,resposta,data_avaliacao,data_aproximada,data_texto,estadia,perfil,quarto,link,primeira_leitura,quando,precisao")
+        .order("quando", { ascending: false, nullsFirst: false }).order("id", { ascending: false }).range(de, de + 999);
       if (r.error || !r.data?.length) break;
       todas.push(...(r.data as Avaliacao[]));
       if (r.data.length < 1000) break;
@@ -476,6 +491,7 @@ export default function Avaliacoes({ userEmail }: { userEmail: string }) {
                 {aberta.negativo && <p className="av-neg"><b>Não gostou:</b> {aberta.negativo}</p>}
               </>) : <p className="av-det-texto">{aberta.texto ?? "(sem texto, só a nota)"}</p>}
               <dl className="av-det-info">
+                <dt>Data</dt><dd>{dataCurta(aberta)}{aberta.data_aproximada && aberta.data_texto ? ` · o site diz "${aberta.data_texto}"` : ""}</dd>
                 {aberta.estadia && <><dt>Estadia</dt><dd>{aberta.estadia}</dd></>}
                 {aberta.perfil && <><dt>Perfil</dt><dd>{aberta.perfil}</dd></>}
                 {aberta.quarto && <><dt>Quarto</dt><dd>{aberta.quarto}</dd></>}

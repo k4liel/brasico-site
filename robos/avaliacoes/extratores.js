@@ -124,7 +124,7 @@
       const contrib = (c.querySelector("a.DHIhE")?.getAttribute("href") || "").match(/contrib\/(\d+)/)?.[1] || null;
       const quando = c.querySelector("span.iUtr1")?.textContent.replace(/\s+/g, " ").trim() || "";
       const site = /no\s+Google/.test(quando) ? "google" : /Tripadvisor/i.test(quando) ? "tripadvisor" : "outro";
-      const dataTxt = quando.replace(/\s*no\s+.*$/, "").trim();
+      const dataTxt = quando.replace(/\s+no\s+\S+\s*$/, "").trim(); // "um ano atrás no Google" → "um ano atrás" (antes cortava em "um a")
       const completo = c.querySelector(".OlkcBc.eLNT1d .K7oBsc") || c.querySelector(".K7oBsc");
       const texto = limpa(completo?.innerText.replace(/\s*Ler mais$/, ""));
       const resp = [...c.querySelectorAll("*")].find((e) => e.childElementCount <= 2 && /^Resposta do propriet[áa]rio/.test(e.textContent.trim()));

@@ -51,8 +51,9 @@ export async function lerAvaliacoes({ chromium, rpc, segredo, log }) {
   })();
 }
 
-export async function passada({ chromium, rpc, segredo, log }) {
-  const c = await rpc("avaliacoes_robo_comecar", { p_segredo: segredo, p_max: 4 });
+// onde: "vps" (robô do PMS; só Booking) ou "pc" (computador do escritório, robos/avaliacoes/pc.mjs: Google, TripAdvisor, Expedia)
+export async function passada({ chromium, rpc, segredo, log, onde = "vps", maximo = 4 }) {
+  const c = await rpc("avaliacoes_robo_comecar", { p_segredo: segredo, p_max: maximo, p_onde: onde });
   if (!c?.fazer) return;
   const exec = c.execucao;
   const inicio = Date.now();
