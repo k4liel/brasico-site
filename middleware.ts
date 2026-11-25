@@ -31,6 +31,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Links públicos (/p/<código> do projeto e /menus/<código> dos cardápios) não precisam de login: saem
+  // antes de perguntar ao Supabase quem é o usuário. Antes a pergunta vinha primeiro e, com o banco
+  // sobrecarregado de manhã (24 e 25/11/2026), travava 25 s e a página dos menus caía.
+  const caminho = request.nextUrl.pathname;
+  if (caminho.startsWith("/p/") || caminho.startsWith("/menus/")) return NextResponse.next({ request });
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -56,11 +62,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
-  // /p/<código>: link público de um projeto (só leitura, sem login)
-  if (path.startsWith("/p/")) return response;
-  // /menus/<código>: cardápios em PDF para baixar, sem login (cardapios_links, supabase/cardapios_impressos.sql)
-  if (path.startsWith("/menus/")) return response;
+  const path = caminho;
   // /colaboradores: login próprio da equipe das casas (só usuário e senha)
   const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/colaboradores");
   const areaEquipe = path.startsWith("/compras") || path.startsWith("/estoque") || path.startsWith("/producao") || path.startsWith("/escala");

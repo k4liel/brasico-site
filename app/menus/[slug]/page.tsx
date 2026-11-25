@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import MenusPublicos, { type MenuPublico } from "@/components/MenusPublicos";
 import { createClient } from "@supabase/supabase-js";
 
@@ -8,16 +7,26 @@ import { createClient } from "@supabase/supabase-js";
 // qualquer um que tiver o link baixar ... sempre atualizado", para o grupo da casa e o marketing).
 // Sem login; mostra só os PDFs ativos (cardapios_publicos). O link e cada PDF têm endereço fixo.
 
-export const dynamic = "force-dynamic";
+// A página fica guardada pronta na Vercel e é relida do banco no máximo a cada minuto (25/11/2026: o banco
+// fica sobrecarregado algumas manhãs e a página caía junto). Se a releitura falhar, a Vercel continua
+// mostrando a última versão boa; por isso um erro do banco lança (não vira "não encontrado").
+export const revalidate = 60;
+export async function generateStaticParams() {
+  return [];
+}
 
 type Dados = { nome: string; menus: MenuPublico[] };
+
+const BASE = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL ?? "brasico.vercel.app"}`;
 
 async function ler(slug: string): Promise<Dados | null> {
   if (!/^[a-z0-9][a-z0-9-]{11,79}$/.test(slug)) return null;
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(12000) }) },
   });
-  const { data } = await supabase.rpc("cardapios_publicos", { p_slug: slug });
+  const { data, error } = await supabase.rpc("cardapios_publicos", { p_slug: slug });
+  if (error) throw new Error(`cardapios_publicos: ${error.message}`);
   return (data as Dados | null) ?? null;
 }
 
@@ -26,8 +35,7 @@ async function ler(slug: string): Promise<Dados | null> {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const d = await ler(slug);
-  const h = await headers();
-  const base = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host") ?? "brasico.vercel.app"}`;
+  const base = BASE;
   const titulo = d ? `Cardápios · ${d.nome}` : "Cardápios";
   const descricao = d ? `Baixe os cardápios do ${d.nome} em PDF, sempre na versão atual.` : "Cardápios em PDF.";
   const selo = { url: `${base}/marcas/ccht-selo.png`, width: 1024, height: 1024, alt: "CCHT", type: "image/png" };

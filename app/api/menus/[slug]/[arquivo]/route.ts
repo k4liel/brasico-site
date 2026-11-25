@@ -19,13 +19,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   // cliente sem sessão: vale só a regra pública
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(20000) }) },
   });
-  const { data: info } = await supabase.rpc("cardapio_publico_arquivo", { p_slug: slug, p_codigo: m[1], p_capa: capa });
+  // Erro do banco ou do armazenamento = 503 sem guardar (a Vercel segue entregando a última cópia boa);
+  // 404 só quando o banco respondeu que o cardápio não existe ou está pausado.
+  const indisponivel = () =>
+    new Response("O cardápio está demorando para abrir. Tente de novo em alguns minutos.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store", "Retry-After": "60" },
+    });
+  const { data: info, error } = await supabase.rpc("cardapio_publico_arquivo", { p_slug: slug, p_codigo: m[1], p_capa: capa });
+  if (error) return indisponivel();
   const i = info as { caminho: string; nome: string } | null;
-  if (!i?.caminho) return new Response("Este cardápio não está disponível.", { status: 404 });
+  if (!i?.caminho) return new Response("Este cardápio não está disponível.", { status: 404, headers: { "Cache-Control": "no-store" } });
 
   const { data: blob } = await supabase.storage.from("workspace-files").download(i.caminho);
-  if (!blob) return new Response("Arquivo não encontrado.", { status: 404 });
+  if (!blob) return indisponivel();
   const dados = new Uint8Array(await blob.arrayBuffer());
 
   const baixar = new URL(req.url).searchParams.has("baixar");
@@ -35,8 +44,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     headers: {
       "Content-Type": capa ? "image/jpeg" : "application/pdf",
       "Content-Disposition": `${baixar ? "attachment" : "inline"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nome)}`,
-      // sempre a versão atual: o PDF pode ser trocado a qualquer hora
-      "Cache-Control": capa ? "public, max-age=300" : "no-store",
+      // O navegador sempre pergunta de novo (o PDF pode ser trocado a qualquer hora); a Vercel guarda uma
+      // cópia por 1 minuto e, se o banco travar, continua entregando a última boa (25/11/2026).
+      "Cache-Control": capa ? "public, max-age=300" : "public, max-age=0, must-revalidate",
+      "CDN-Cache-Control": "max-age=60, stale-while-revalidate=604800, stale-if-error=604800",
       "X-Content-Type-Options": "nosniff",
       "X-Robots-Tag": "noindex",
       "Referrer-Policy": "no-referrer",
