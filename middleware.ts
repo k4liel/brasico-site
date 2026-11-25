@@ -114,6 +114,11 @@ export async function middleware(request: NextRequest) {
       const { data: lider } = await supabase.rpc("escala_eh_lider", { p_user: user.id });
       if (lider) liberadas.push("/escala");
     }
+    // telas da Operação dos hotéis liberadas para a pessoa (op_paginas_pessoas; ex.: o Memo do Sempre Vivo para a Carol)
+    if (destino && path.startsWith("/hoteis/") && path.includes("/operacao")) {
+      const { data: telas } = await supabase.rpc("operacao_minhas_telas");
+      for (const t of (Array.isArray(telas) ? telas : []) as { hotel: string }[]) liberadas.push(`/hoteis/${t.hotel}/operacao`);
+    }
     if (destino && !liberadas.some((p) => path.startsWith(p))) {
       const url = request.nextUrl.clone();
       url.pathname = destino;

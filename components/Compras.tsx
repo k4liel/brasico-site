@@ -146,12 +146,28 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
   const [completa, setCompleta] = useState<{ href: string; nome: string }[] | null>(null);
   // Quem monta a escala de alguma casa vê também a Escala no menu
   const [ehLider, setEhLider] = useState(false);
+  // telas da Operação dos hotéis liberadas para a pessoa (op_paginas_pessoas): entram no menu de três linhas
+  const [telas, setTelas] = useState<{ href: string; nome: string }[]>([]);
+  const [menuAberto, setMenuAberto] = useState(false);
+  useEffect(() => {
+    if (!menuAberto) return;
+    const fechar = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as HTMLElement).closest?.(".cp-hamb")) setMenuAberto(false);
+    };
+    document.addEventListener("click", fechar);
+    document.addEventListener("keydown", fechar);
+    return () => { document.removeEventListener("click", fechar); document.removeEventListener("keydown", fechar); };
+  }, [menuAberto]);
   useEffect(() => {
     (async () => {
       const sb = createClient();
       const { data: { user } } = await sb.auth.getUser();
       if (!user) return;
       sb.rpc("escala_eh_lider", { p_user: user.id }).then(({ data }) => setEhLider(!!data));
+      sb.rpc("operacao_minhas_telas").then(({ data }) => {
+        const lista = (Array.isArray(data) ? data : []) as { hotel: string; slug: string; titulo: string }[];
+        setTelas(lista.map((t) => ({ href: `/hoteis/${t.hotel}/operacao/${t.slug}`, nome: t.titulo })));
+      });
       const { data: ok } = await sb.rpc("operacao_completa", { p_user: user.id });
       if (!ok) return;
       const { data: ws } = await sb.from("workspaces").select("id,name").is("removido_em", null).order("name");
@@ -170,6 +186,34 @@ export function TopoSimples({ email, nome, area = "Compras", outra }: { email: s
   const paginas = ehLider && !(base ?? [{ nome: area }]).some((p) => p.nome === "Escala")
     ? [...(base ?? [{ href: "", nome: area }]), { href: "/escala", nome: "Escala" }]
     : base;
+  // quem tem telas da Operação liberadas usa o menu de três linhas no canto (pedido do dono, 25/11/2026)
+  const todas = telas.length ? [
+    ...(paginas ?? [{ href: "", nome: area }]).filter((p) => !(p.href === "" && telas.some((t) => t.nome === area))),
+    ...telas.filter((t) => !(paginas ?? []).some((p) => p.href === t.href)),
+  ] : null;
+  if (todas) return (
+    <>
+      <header className="topo cp-topo">
+        <div className="cp-hamb">
+          <button className="cp-hamb-botao" aria-label="Menu" aria-expanded={menuAberto} onClick={() => setMenuAberto(!menuAberto)}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d={menuAberto ? "M6 6l12 12M18 6L6 18" : "M4 7h16M4 12h16M4 17h16"} /></svg>
+          </button>
+          <span className="marca">Brasico · {area}</span>
+          {menuAberto && (
+            <nav className="cp-hamb-menu" aria-label="Páginas">
+              {todas.map((p) =>
+                p.nome === area ? <span key={p.href || p.nome} className="cp-hamb-item on" aria-current="page">{p.nome}</span>
+                  : <a key={p.href || p.nome} className="cp-hamb-item" href={p.href}>{p.nome}</a>)}
+            </nav>
+          )}
+        </div>
+        <span className="cp-quem">{nome || email}
+          <button className="ghost small" onClick={() => setSenha(!senha)} aria-expanded={senha}>Trocar senha</button>
+          <button className="ghost small" onClick={sair}>Sair</button></span>
+      </header>
+      {senha && <TrocarSenha onFechar={() => setSenha(false)} />}
+    </>
+  );
   return (
     <>
       <header className="topo cp-topo">

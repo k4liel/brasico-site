@@ -6290,3 +6290,14 @@ body:has(.mp) { background: #f6f2ea; }
   .sk-areas { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .sk-area { flex: 0 0 auto; }
 }
+
+/* Topo simples com o menu de três linhas no canto (quem tem telas da Operação liberadas; components/Compras.tsx, TopoSimples) */
+.cp-hamb { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cp-hamb .marca { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-hamb-botao { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border-radius: 10px; background: transparent; color: var(--strong); border: 1px solid var(--border); flex-shrink: 0; }
+.cp-hamb-botao:hover { background: var(--hover-bg); }
+.cp-hamb-menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 60; min-width: 240px; max-width: calc(100vw - 32px); display: flex; flex-direction: column; gap: 2px; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px var(--shadow); }
+.cp-hamb-item { padding: 10px 14px; border-radius: 8px; font-size: 14.5px; font-weight: 600; color: var(--muted); text-decoration: none; }
+a.cp-hamb-item:hover { color: var(--strong); background: var(--seg); }
+.cp-hamb-item.on { color: var(--strong); background: var(--soft); }
+.cp-topo:has(.cp-hamb) { overflow: visible; }

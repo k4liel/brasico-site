@@ -7,10 +7,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Topo from "../Topo";
+import { TopoSimples } from "../Compras";
 
 type Tela = {
   slug: string; titulo: string; descricao: string | null; icone: string | null; ordem: number;
   html: string | null; rascunho: string | null; tem_rascunho: boolean; publicado_em: string | null; atualizado_em: string;
+  nivel_tela?: "ver" | "editar"; // só para quem é da equipe e tem a tela liberada (op_paginas_pessoas)
 };
 
 // a ponte que entra no começo de toda tela
@@ -59,12 +61,18 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
   const [tema, setTema] = useState("claro");
   const [eu, setEu] = useState<{ id: string; nome: string | null } | null>(null);
   const [aviso, setAviso] = useState("");
+  // equipe das casas com telas liberadas (op_paginas_pessoas): topo simples, sem o menu dos sócios
+  const [equipe, setEquipe] = useState<{ nome: string } | null>(null);
   const quadro = useRef<HTMLIFrameElement>(null);
 
   const carregar = useCallback(async () => {
     const { data, error } = await supabase.rpc("operacao_paginas_site", { p_hotel: hotel });
     if (error) { setErro(error.message); setTelas([]); return; }
-    const d = data as { nivel: "ver" | "editar"; paginas: Tela[] };
+    const d = data as { nivel: "ver" | "editar"; paginas: Tela[]; equipe?: boolean };
+    if (d.equipe) {
+      const { data: e } = await supabase.rpc("operacao_eu");
+      setEquipe({ nome: ((e ?? {}) as { pessoa?: { nome: string } | null }).pessoa?.nome ?? "" });
+    }
     setNivel(d.nivel);
     setTelas(d.paginas);
   }, [supabase, hotel]);
@@ -95,7 +103,7 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
         if (/^[a-z0-9][a-z0-9-]{0,60}$/.test(s)) window.location.href = `/hoteis/${hotel}/operacao/${s}${rascunho ? "?rascunho=1" : ""}`;
         return;
       }
-      if (m.tipo === "eu") return responder(true, { id: eu?.id, nome: eu?.nome, nivel });
+      if (m.tipo === "eu") return responder(true, { id: eu?.id, nome: equipe?.nome || eu?.nome, nivel: tela?.nivel_tela ?? nivel });
       if (m.tipo === "chamar") {
         const { data, error } = await supabase.rpc("operacao_chamar", { p_hotel: hotel, p_funcao: String(m.dados?.funcao ?? ""), p_args: m.dados?.args ?? {} });
         return error ? responder(false, undefined, error.message) : responder(true, data);
@@ -103,7 +111,7 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
     }
     window.addEventListener("message", ouvir);
     return () => window.removeEventListener("message", ouvir);
-  }, [supabase, hotel, eu, nivel, rascunho]);
+  }, [supabase, hotel, eu, nivel, rascunho, equipe, tela]);
 
   async function publicar() {
     if (!tela) return;
@@ -116,7 +124,8 @@ export default function Operacao({ hotel, nome, slug, userEmail, verRascunho }: 
 
   return (
     <div className="pagina pagina-doc modo-pagina">
-      <Topo email={userEmail} ativo={slug ? `ophotel:${hotel}/${slug}` : `ophotel:${hotel}`} />
+      {equipe ? <TopoSimples email={userEmail} nome={equipe.nome} area={tela?.titulo ?? `Operação · ${nome}`} />
+        : telas && <Topo email={userEmail} ativo={slug ? `ophotel:${hotel}/${slug}` : `ophotel:${hotel}`} />}
       <main className="hx-pagina op">
         {erro ? <p className="tv-alerta">{erro}</p> : !telas ? (
           <div className="es-esqueleto" aria-hidden="true"><i /><i /><i /></div>
