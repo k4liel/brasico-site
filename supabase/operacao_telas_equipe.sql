@@ -136,3 +136,6 @@ end $$;
 -- Primeira liberação: Memo do casamento (Sempre Vivo) para a Carol, líder da escala do Sempre Vivo, usando a tela
 -- (marca as tarefas e escreve as notas). Feita pelo SQL em 25/11/2026:
 -- select public.op_tela_liberar('sempre-vivo', 'casamento-valentina-diego', '<user_id da Carol>', 'editar');
+-- Segunda liberação (25/11/2026, pedido do dono: "igual à Carol"): o mesmo Memo para o Maurício (login de Compras,
+-- Sempre Vivo · Salão/Bar), também usando a tela:
+-- select public.op_tela_liberar('sempre-vivo', 'casamento-valentina-diego', '<user_id do Maurício>', 'editar');
