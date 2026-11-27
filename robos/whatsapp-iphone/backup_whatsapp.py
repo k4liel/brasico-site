@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 
+from pymobiledevice3.exceptions import ConnectionTerminatedError
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services import device_link
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -166,9 +167,13 @@ async def main():
                 await mb.backup(full=False, backup_directory=pasta, filter_callback=guardar, progress_callback=andamento)
             break
         except Exception as e:
-            if "208" not in str(e) or tentativa == TENTATIVAS:
+            # Pelo Wi-Fi a conexão costuma cair logo depois que o código é digitado (25 e 27/11/2026); na tentativa
+            # seguinte o iPhone já segue. Bloqueado (208) ou conexão perdida: espera e tenta de novo.
+            caiu = isinstance(e, (ConnectionError, ConnectionTerminatedError, OSError)) or "Connection" in type(e).__name__
+            if not ("208" in str(e) or caiu) or tentativa == TENTATIVAS:
                 raise
-            print(f"iPhone bloqueado: desbloqueie e digite o código (tentativa {tentativa} de {TENTATIVAS})", flush=True)
+            print(f"{'Conexão caiu' if caiu else 'iPhone bloqueado'}: tentando de novo; se o iPhone pedir, digite o código "
+                  f"(tentativa {tentativa} de {TENTATIVAS})", flush=True)
             await asyncio.sleep(30)
             lockdown = await conectar()
     print(f"FIM: guardados {contagem['guardados']}, descartados {contagem['descartados']}", flush=True)

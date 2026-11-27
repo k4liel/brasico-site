@@ -7,6 +7,9 @@ $py = Join-Path $base "venv\Scripts\pythonw.exe"
 $script = Join-Path $PSScriptRoot "rodada.py"
 $acao = New-ScheduledTaskAction -Execute $py -Argument "`"$script`"" -WorkingDirectory $base
 $repete = (New-ScheduledTaskTrigger -Once -At "08:00" -RepetitionInterval (New-TimeSpan -Minutes 15) -RepetitionDuration (New-TimeSpan -Hours 1)).Repetition
+# Não parar a rodada no fim da hora de repetição: com isso ligado o Windows matava o backup no meio
+# (código 0xC000013A / tarefa "terminada", 27/11/2026). O limite de verdade é o ExecutionTimeLimit de 3 h.
+$repete.StopAtDurationEnd = $false
 $gatilhos = foreach ($hora in "08:00", "14:00", "21:00") {
   $g = New-ScheduledTaskTrigger -Daily -At $hora
   $g.Repetition = $repete

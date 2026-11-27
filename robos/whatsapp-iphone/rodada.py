@@ -14,6 +14,9 @@ BASE = os.path.join(os.environ["LOCALAPPDATA"], "brasico-wa-iphone")
 AQUI = os.path.dirname(os.path.abspath(__file__))
 PY = os.path.join(BASE, "venv", "Scripts", "python.exe")
 TRAVA = os.path.join(BASE, "rodada.trava")
+# Sem janela: rodando pelo pythonw, cada python.exe filho abria uma janela preta; fechar a janela mata o backup
+# (código 3221225786 = 0xC000013A, "fechado pelo Ctrl+C/janela"), como em 27/11/2026 às 8h39 e 9h58.
+SEM_JANELA = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 LOG = os.path.join(BASE, "rodadas.log")
 
 
@@ -24,11 +27,13 @@ def registrar(texto):
 
 def iphone_por_perto():
     pmd = os.path.join(BASE, "venv", "Scripts", "pymobiledevice3.exe")
-    r = subprocess.run([pmd, "usbmux", "list"], capture_output=True, text=True, timeout=60)
+    r = subprocess.run([pmd, "usbmux", "list"], capture_output=True, text=True, timeout=60,
+                       creationflags=SEM_JANELA)
     if '"ConnectionType"' in r.stdout:
         return True
     # O serviço da Apple às vezes não vê o iPhone pelo Wi-Fi (depois que ele religa); procura direto na rede
-    r = subprocess.run([pmd, "bonjour", "mobdev2"], capture_output=True, text=True, timeout=60)
+    r = subprocess.run([pmd, "bonjour", "mobdev2"], capture_output=True, text=True, timeout=60,
+                       creationflags=SEM_JANELA)
     if '"UniqueDeviceID"' in r.stdout:
         return True
     # Rede marcada como "Pública" no Windows: o firewall esconde o anúncio; procura pela porta do iPhone
@@ -56,7 +61,7 @@ def main():
         with open(os.path.join(BASE, "backup.log"), "w", encoding="utf-8") as saida:
             b = subprocess.run([PY, os.path.join(AQUI, "backup_whatsapp.py"), os.path.join(BASE, "backup")],
                                stdout=saida, stderr=subprocess.STDOUT, timeout=3 * 3600,
-                               env={**os.environ, "WA_TENTATIVAS": "6"})  # ~3 min esperando o código
+                               env={**os.environ, "WA_TENTATIVAS": "6"}, creationflags=SEM_JANELA)  # ~3 min esperando o código
         if b.returncode == 4:
             registrar("backup incompleto: precisa ligar o iPhone no cabo uma vez (pelo Wi-Fi levaria horas)")
             return 4
@@ -64,7 +69,7 @@ def main():
             registrar(f"backup falhou (código {b.returncode}); veja backup.log")
             return 1
         e = subprocess.run([PY, "-I", os.path.join(AQUI, "enviar.py")], capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=2 * 3600)
+                           encoding="utf-8", errors="replace", timeout=2 * 3600, creationflags=SEM_JANELA)
         fim = [l for l in e.stdout.splitlines() if l.startswith(("Grupos:", "FIM"))]
         registrar("envio: " + " | ".join(fim) if e.returncode == 0 else f"envio falhou: {e.stdout[-300:]} {e.stderr[-300:]}")
         if e.returncode == 0:
