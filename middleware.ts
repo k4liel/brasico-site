@@ -14,7 +14,7 @@ const PAGINAS_DA_AREA: Record<string, string[]> = {
   usuarios: ["/usuarios"],
   conectar: ["/usuarios", "/conectar"], // o Claude de cada um fica na página Usuários
   hoteis: ["/hoteis/filha-da-lua", "/hoteis", "/filha-da-lua", "/restaurantes", "/cardapios", "/avaliacoes"],
-  operacao: ["/notas", "/compras", "/precos", "/fichas", "/estoque", "/producao"],
+  operacao: ["/notas", "/compras", "/precos", "/fichas", "/cardapios", "/estoque", "/producao"],
   // Operação de cada hotel: a área de criação (supabase/operacao_hoteis.sql)
   op_filha_da_lua: ["/hoteis/filha-da-lua/operacao"],
   op_sempre_vivo: ["/hoteis/sempre-vivo/operacao"],

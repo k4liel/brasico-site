@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
-const OPERACAO = ["compras", "precos", "fichas", "estoque", "producao"];
+const OPERACAO = ["compras", "precos", "fichas", "cardapios", "estoque", "producao"];
 // Fiscal e Contábil: a página Fiscal (/receita), as Notas fiscais (15/11/2026, pedido do dono; as notas saíram de Operação)
-// e as Skills contábeis (25/11/2026)
-const FISCAL = ["receita", "notas", "skills"];
+// e as Skills contábeis (25/11/2026); Certificados digitais entrou aqui em 27/11/2026 (pedido do dono)
+const FISCAL = ["receita", "notas", "skills", "certificados"];
 const RH = ["esocial", "escala"];
 // Hotéis e restaurantes (22/11/2026, pedido do dono): uma página por hotel (/hoteis/<id>, tabela hoteis).
 // Os cardápios saíram daqui em 25/11/2026: página Menus (/cardapios, lib/restaurantes.ts), com todas as casas.
@@ -127,13 +127,14 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               <Item href="/escala" on={ativo === "escala"} vis={aberto && rhAberta} icone={I.escala}>Escala</Item>
             </div></div>
           </>)}
-          {(ve("receita") || ve("operacao")) && (<>
+          {(ve("receita") || ve("operacao") || ve("certificados")) && (<>
             <Pasta id="menu-fiscal" on={FISCAL.includes(ativo ?? "")} aberta={fiscalAberta} alternar={() => setFiscalAberta((o) => !o)} vis={aberto} icone={I.receita}>Fiscal e Contábil</Pasta>
             <div id="menu-fiscal" className={fiscalAberta ? "menu-sub aberto" : "menu-sub"}><div>
               {ve("receita") && <Item href="/receita" on={ativo === "receita"} vis={aberto && fiscalAberta} icone={I.receita}>Fiscal</Item>}
               {ve("operacao") && <Item href="/notas" on={ativo === "notas"} vis={aberto && fiscalAberta} icone={I.notas}>Notas fiscais</Item>}
               {/* Skills contábeis: a Biblioteca PRO de prompts (25/11/2026); só os sócios (sem linha em usuario_areas) */}
               {areas === null && <Item href="/skills" on={ativo === "skills"} vis={aberto && fiscalAberta} icone={I.skills}>Skills contábeis</Item>}
+              {ve("certificados") && <Item href="/certificados" on={ativo === "certificados"} vis={aberto && fiscalAberta} icone={I.certificados}>Certificados digitais</Item>}
             </div></div>
           </>)}
 
@@ -165,23 +166,22 @@ export default function Topo({ email, ativo }: { email: string; ativo?: "projeto
               })}
             </div></div>
           </>)}
-          {/* Menus de todas as casas: editar na tela, PDFs para imprimir e o link público (25/11/2026) */}
-          {ve("hoteis") && <Item href="/cardapios" on={ativo === "cardapios"} vis={aberto} icone={I.cardapios}>Menus</Item>}
           {/* Avaliações de todas as casas (Google, Tripadvisor, Booking, Expedia; 24/11/2026) */}
           {ve("hoteis") && <Item href="/avaliacoes" on={ativo === "avaliacoes"} vis={aberto} icone={I.avaliacoes}>Avaliações</Item>}
-          {/* Operação: compras, índice de preços, fichas e câmara fria */}
-          {ve("operacao") && (<>
+          {/* Operação: compras, índice de preços, fichas, menus e câmara fria. Menus (todas as casas: editar na tela, PDFs para
+              imprimir e o link público) entrou aqui em 27/11/2026, pedido do dono; quem só tem a área de hotéis também vê */}
+          {(ve("operacao") || ve("hoteis")) && (<>
             <Pasta id="menu-operacao" on={OPERACAO.includes(ativo ?? "")} aberta={opAberta} alternar={() => setOpAberta((o) => !o)} vis={aberto} icone={I.operacao}>Operação</Pasta>
             <div id="menu-operacao" className={opAberta ? "menu-sub aberto" : "menu-sub"}><div>
-              <Item href="/compras" on={ativo === "compras"} vis={aberto && opAberta} icone={I.compras}>Compras</Item>
-              <Item href="/precos" on={ativo === "precos"} vis={aberto && opAberta} icone={I.precos}>Índice de preços</Item>
-              <Item href="/fichas" on={ativo === "fichas"} vis={aberto && opAberta} icone={I.fichas}>Fichas técnicas</Item>
-              <Item href="/estoque" on={ativo === "estoque"} vis={aberto && opAberta} icone={I.estoque}>Câmara fria</Item>
+              {ve("operacao") && <Item href="/compras" on={ativo === "compras"} vis={aberto && opAberta} icone={I.compras}>Compras</Item>}
+              {ve("operacao") && <Item href="/precos" on={ativo === "precos"} vis={aberto && opAberta} icone={I.precos}>Índice de preços</Item>}
+              {ve("operacao") && <Item href="/fichas" on={ativo === "fichas"} vis={aberto && opAberta} icone={I.fichas}>Fichas técnicas</Item>}
+              <Item href="/cardapios" on={ativo === "cardapios"} vis={aberto && opAberta} icone={I.cardapios}>Menus</Item>
+              {ve("operacao") && <Item href="/estoque" on={ativo === "estoque"} vis={aberto && opAberta} icone={I.estoque}>Câmara fria</Item>}
             </div></div>
           </>)}
 
           {ve("integracoes") && <Item href="/integracoes" on={ativo === "integracoes"} vis={aberto} icone={I.integracoes}>Integrações</Item>}
-          {ve("certificados") && <Item href="/certificados" on={ativo === "certificados"} vis={aberto} icone={I.certificados}>Certificados digitais</Item>}
           {/* Usuários e o Claude de cada um numa página só (15/11/2026) */}
           {(ve("usuarios") || ve("conectar")) && <Item href="/usuarios" on={ativo === "usuarios" || ativo === "conectar"} vis={aberto} icone={I.usuarios}>Usuários</Item>}
         </nav>
