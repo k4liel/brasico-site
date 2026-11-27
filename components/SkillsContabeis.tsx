@@ -109,7 +109,12 @@ export default function SkillsContabeis({ userEmail }: { userEmail: string }) {
     return { grupo, pro, todas };
   }, [lista, combina]);
 
-  const filtradas = useMemo(() => (lista ?? []).filter((s) => (!area || s.a === area) && combina(s)), [lista, area, combina]);
+  // As áreas do grupo vêm primeiro (na ordem de DO_GRUPO); a Biblioteca PRO depois, como veio do banco
+  const filtradas = useMemo(() => {
+    const peso = (a: string) => (a in DO_GRUPO ? ORDEM_GRUPO.indexOf(a) : ORDEM_GRUPO.length);
+    return (lista ?? []).map((s, i) => ({ s, i })).filter(({ s }) => (!area || s.a === area) && combina(s))
+      .sort((x, y) => peso(x.s.a) - peso(y.s.a) || x.i - y.i).map(({ s }) => s);
+  }, [lista, area, combina]);
   const achadasTotal = useMemo(() => (lista ?? []).filter(combina).length, [lista, combina]);
   const recentesItens = useMemo(() => {
     const porChave = new Map((lista ?? []).map((s) => [chave(s), s]));
